@@ -42,6 +42,11 @@ export default function PublicSchedule() {
   const [busy, setBusy] = useState(false);
   const [booking, setBooking] = useState(null);
 
+  function onGoPay() {
+    if (!booking?.id) return;
+    navigate(`/p/${token}/pay?bookingId=${encodeURIComponent(booking.id)}`);
+  }
+
   // carrega proposta
   useEffect(() => {
     setOffer(null);
@@ -364,13 +369,7 @@ export default function PublicSchedule() {
                 Próximo passo (MVP): direcionar para pagamento Pix.
               </div>
               <div className="mt-3">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() =>
-                    alert("MVP: tela de pagamento Pix (placeholder).")
-                  }
-                >
+                <Button type="button" variant="secondary" onClick={onGoPay}>
                   Ir para pagamento Pix
                 </Button>
               </div>

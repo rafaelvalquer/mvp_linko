@@ -1,24 +1,45 @@
+// server/src/app.js
 import express from "express";
 import cors from "cors";
 import { env } from "./config/env.js";
+
 import healthRoutes from "./routes/health.routes.js";
 import offersRoutes from "./routes/offers.routes.js";
 import publicRoutes from "./routes/public.routes.js";
+import webhooksAbacatepayRoutes from "./routes/webhooks.abacatepay.routes.js";
 
 export function createApp() {
   const app = express();
 
   app.use(cors({ origin: env.corsOrigin, credentials: true }));
-  app.use(express.json({ limit: "1mb" }));
+  app.use(
+    express.json({
+      limit: "1mb",
+      verify: (req, _res, buf) => {
+        req.rawBody = buf;
+      },
+    }),
+  );
 
   app.use("/api", healthRoutes);
   app.use("/api", offersRoutes);
   app.use("/api", publicRoutes);
+  app.use("/api", webhooksAbacatepayRoutes);
 
-  // erro padrão
   app.use((err, _req, res, _next) => {
     console.error(err);
-    res.status(500).json({ ok: false, error: "Internal error" });
+
+    const status = Number(err?.status) || 500;
+    const payload = {
+      ok: false,
+      error: err?.message || "Internal error",
+    };
+
+    if (process.env.NODE_ENV !== "production" && err?.details) {
+      payload.details = err.details;
+    }
+
+    res.status(status).json(payload);
   });
 
   return app;
