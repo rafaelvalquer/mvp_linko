@@ -9,6 +9,29 @@ import Badge from "../components/appui/Badge.jsx";
 import EmptyState from "../components/appui/EmptyState.jsx";
 import { Link } from "react-router-dom";
 
+function normStatus(s) {
+  return String(s || "")
+    .trim()
+    .toUpperCase();
+}
+
+function isSameLocalDay(a, b) {
+  if (!(a instanceof Date) || Number.isNaN(a.getTime())) return false;
+  if (!(b instanceof Date) || Number.isNaN(b.getTime())) return false;
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+function safeDate(v) {
+  if (!v) return null;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
+}
+
 export default function Dashboard() {
   const [offers, setOffers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -31,21 +54,69 @@ export default function Dashboard() {
     load();
   }, []);
 
-  const kpis = useMemo(() => {
-    const total = offers.length;
-    const totalValueCents = offers.reduce(
-      (acc, o) => acc + (o.amountCents || 0),
-      0,
-    );
-    const last5 = offers.slice(0, 5);
-    return { total, totalValueCents, last5 };
-  }, [offers]);
-
   const fmtBRL = (cents) =>
     new Intl.NumberFormat("pt-BR", {
       style: "currency",
       currency: "BRL",
     }).format((cents || 0) / 100);
+
+  const kpis = useMemo(() => {
+    const total = offers.length;
+
+    // Volume: mantém seu comportamento atual (somatório de amountCents)
+    const totalValueCents = offers.reduce(
+      (acc, o) => acc + (o.amountCents || 0),
+      0,
+    );
+
+    const PAID_SET = new Set(["PAID", "CONFIRMED"]);
+    const BOOKED_SET = new Set(["BOOKED_HOLD", "HOLD", "CONFIRMED", "PAID"]);
+
+    const paidOffers = offers.filter((o) => PAID_SET.has(normStatus(o.status)));
+    const paidCount = paidOffers.length;
+
+    // Agendamentos: conta se tem bookingId/scheduledStartAt ou status de agendado
+    const bookedOffers = offers.filter((o) => {
+      const st = normStatus(o.status);
+      return (
+        !!o.bookingId ||
+        !!o.scheduledStartAt ||
+        !!o.scheduledEndAt ||
+        BOOKED_SET.has(st)
+      );
+    });
+    const bookedCount = bookedOffers.length;
+
+    // Pagos hoje: conta e soma valores hoje (por paidAt; fallback: updatedAt)
+    const now = new Date();
+    const paidToday = paidOffers.filter((o) => {
+      const dt = safeDate(o.paidAt) || safeDate(o.updatedAt);
+      return dt ? isSameLocalDay(dt, now) : false;
+    });
+    const paidTodayCount = paidToday.length;
+
+    // Valor pago hoje: fallback em amountCents, depois totalCents
+    const paidTodayValueCents = paidToday.reduce(
+      (acc, o) => acc + (o.amountCents || o.totalCents || 0),
+      0,
+    );
+
+    // Conversão: pagos / propostas (em %)
+    const conversionPct = total > 0 ? Math.round((paidCount / total) * 100) : 0;
+
+    const last5 = offers.slice(0, 5);
+
+    return {
+      total,
+      totalValueCents,
+      last5,
+      paidCount,
+      bookedCount,
+      conversionPct,
+      paidTodayCount,
+      paidTodayValueCents,
+    };
+  }, [offers]);
 
   return (
     <Shell>
@@ -81,11 +152,23 @@ export default function Dashboard() {
             {
               label: "Volume",
               value: fmtBRL(kpis.totalValueCents),
-              meta: "somatório",
+              meta: "somatório (amountCents)",
             },
-            { label: "Conversão", value: "—", meta: "MVP" },
-            { label: "Agendamentos", value: "—", meta: "MVP" },
-            { label: "Pagos hoje", value: "—", meta: "MVP" },
+            {
+              label: "Conversão",
+              value: `${kpis.conversionPct}%`,
+              meta: `${kpis.paidCount}/${kpis.total} pagos`,
+            },
+            {
+              label: "Agendamentos",
+              value: kpis.bookedCount,
+              meta: "com booking/hold",
+            },
+            {
+              label: "Pagos hoje",
+              value: kpis.paidTodayCount,
+              meta: fmtBRL(kpis.paidTodayValueCents),
+            },
           ].map((it) => (
             <Card key={it.label}>
               <CardBody>
@@ -237,7 +320,9 @@ export default function Dashboard() {
                   <div className="text-xs font-semibold text-zinc-500">
                     Pagos hoje
                   </div>
-                  <div className="mt-1 text-lg font-semibold">—</div>
+                  <div className="mt-1 text-lg font-semibold">
+                    {loading ? "—" : fmtBRL(kpis.paidTodayValueCents)}
+                  </div>
                 </div>
                 <div className="rounded-xl border bg-zinc-50 p-3">
                   <div className="text-xs font-semibold text-zinc-500">
