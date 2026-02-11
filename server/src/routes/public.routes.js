@@ -113,6 +113,23 @@ function isPaidStatus(st) {
   return s === "PAID" || s === "CONFIRMED";
 }
 
+function isNonEmptyString(v) {
+  return typeof v === "string" && v.trim().length > 0;
+}
+
+function normalizeOfferTypeFromOffer(offer) {
+  const items = Array.isArray(offer?.items) ? offer.items : [];
+  const hasItems = items.length > 0;
+
+  const raw = isNonEmptyString(offer?.offerType)
+    ? offer.offerType.trim().toLowerCase()
+    : "";
+
+  const offerType = raw === "product" || hasItems ? "product" : "service";
+
+  return { offerType, items };
+}
+
 // pixByBooking pode ser Map ou objeto
 function getPixByBooking(bookingId) {
   if (!pixByBooking) return null;
@@ -224,7 +241,17 @@ router.get("/p/:token", async (req, res, next) => {
         .json({ ok: false, error: "Proposta não encontrada." });
 
     const locked = isPaidStatus(offer?.status);
-    return res.json({ ok: true, offer, locked, doneOnly: locked });
+
+    // ✅ Compat: garante offerType/items sempre presentes no JSON
+    const norm = normalizeOfferTypeFromOffer(offer);
+    const safeOffer = {
+      ...offer,
+      offerType: norm.offerType,
+      items: norm.items,
+    };
+
+    noStore(res);
+    return res.json({ ok: true, offer: safeOffer, locked, doneOnly: locked });
   } catch (e) {
     next(e);
   }

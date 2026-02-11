@@ -1,8 +1,29 @@
 import mongoose from "mongoose";
 
+const OfferItemSchema = new mongoose.Schema(
+  {
+    description: { type: String, default: "" },
+    qty: { type: Number },
+    unitPriceCents: { type: Number },
+    lineTotalCents: { type: Number },
+  },
+  { _id: false },
+);
+
 const OfferSchema = new mongoose.Schema(
   {
     publicToken: { type: String, unique: true, index: true, required: true },
+
+    // ✅ NOVO: tipo de proposta
+    offerType: {
+      type: String,
+      enum: ["service", "product"],
+      default: "service",
+      index: true,
+    },
+
+    // ✅ NOVO: itens do orçamento (produto)
+    items: { type: [OfferItemSchema], default: [] },
 
     // Cliente
     customerName: { type: String, required: true },

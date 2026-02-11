@@ -149,19 +149,14 @@ export default function PublicOffer() {
   const view = useMemo(() => {
     const o = offer || {};
 
-    const inferredType =
-      (o.offerType && String(o.offerType)) ||
-      (Array.isArray(o.items) && o.items.length ? "product" : "service");
-
-    const offerType = inferredType === "product" ? "product" : "service";
-
     const items = Array.isArray(o.items) ? o.items : [];
     const hasItems = items.length > 0;
 
-    const totalCents =
-      (Number.isFinite(o.totalCents) && o.totalCents) ||
-      (Number.isFinite(o.amountCents) && o.amountCents) ||
-      0;
+    // Compat: infer product if items exist (even if offerType is missing or inconsistent)
+    const rawType = isNonEmpty(o.offerType)
+      ? String(o.offerType).trim().toLowerCase()
+      : "";
+    const offerType = rawType === "product" || hasItems ? "product" : "service";
 
     // subtotal: prefer explicit, else items sum (if available), else total as fallback
     const itemsSubtotal = sumItemsSubtotalCents(items);
@@ -182,6 +177,29 @@ export default function PublicOffer() {
       Number.isFinite(o.freightCents) && o.freightCents > 0
         ? o.freightCents
         : null;
+
+    // ✅ total: prefer explicit totalCents, else amountCents; if missing, compute from subtotal/discount/freight
+    const explicitTotalCents =
+      Number.isFinite(o.totalCents) && o.totalCents >= 0
+        ? o.totalCents
+        : Number.isFinite(o.amountCents) && o.amountCents >= 0
+          ? o.amountCents
+          : null;
+
+    const computedTotalCents =
+      subtotalCents != null
+        ? Math.max(
+            0,
+            subtotalCents - (discountCents ?? 0) + (freightCents ?? 0),
+          )
+        : null;
+
+    const totalCents =
+      explicitTotalCents != null
+        ? explicitTotalCents
+        : computedTotalCents != null
+          ? computedTotalCents
+          : 0;
 
     const depositPctRaw = Number(o.depositPct);
     const depositPct =
@@ -500,7 +518,7 @@ export default function PublicOffer() {
         {/* Detalhamento */}
         {view.offerType === "service" ? (
           <SectionCard
-            title="Descrição do serviço"
+            title="Resumo do serviço 🧾"
             subtitle={
               Number.isFinite(offer.durationMin)
                 ? "Detalhes e observações do atendimento."
@@ -528,98 +546,128 @@ export default function PublicOffer() {
           </SectionCard>
         ) : (
           <SectionCard
-            title="Itens do orçamento"
+            title="Itens do orçamento 🧾"
             subtitle="Confira os itens, quantidades e valores."
           >
             {/* Mobile list */}
-            <div className="space-y-2 sm:hidden">
-              {view.items.map((it, idx) => {
-                const desc = it?.description || `Item ${idx + 1}`;
-                const qty = Number(it?.qty) || 1;
-                const unit = Number.isFinite(it?.unitPriceCents)
-                  ? it.unitPriceCents
-                  : null;
-                const line = Number.isFinite(it?.lineTotalCents)
-                  ? it.lineTotalCents
-                  : null;
-                return (
-                  <div key={idx} className="rounded-xl border bg-white p-3">
-                    <div className="text-sm font-semibold text-zinc-900">
-                      {desc}
-                    </div>
-                    <div className="mt-1 text-xs text-zinc-600">
-                      Qtd:{" "}
-                      <span className="font-semibold text-zinc-900">{qty}</span>
-                      {" • "}
-                      Unit:{" "}
-                      <span className="font-semibold text-zinc-900">
-                        {unit != null ? fmtBRL(unit) : "—"}
-                      </span>
-                    </div>
-                    <div className="mt-2 text-sm text-zinc-700">
-                      Total do item:{" "}
-                      <span className="font-semibold text-zinc-900">
-                        {line != null ? fmtBRL(line) : "—"}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Desktop table */}
-            <div className="hidden overflow-auto rounded-xl border sm:block">
-              <table className="min-w-full text-left text-sm">
-                <thead className="bg-zinc-50 text-xs font-semibold text-zinc-600">
-                  <tr>
-                    <th className="px-3 py-2">Descrição</th>
-                    <th className="px-3 py-2">Qtd</th>
-                    <th className="px-3 py-2">Valor unit.</th>
-                    <th className="px-3 py-2">Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y bg-white">
+            {!view.items.length ? (
+              <div className="text-sm text-zinc-600">
+                Nenhum item informado neste orçamento.
+              </div>
+            ) : (
+              <>
+                {/* Mobile list */}
+                <div className="space-y-2 sm:hidden">
                   {view.items.map((it, idx) => {
-                    const desc = it?.description || `Item ${idx + 1}`;
-                    const qty = Number(it?.qty) || 1;
-                    const unit = Number.isFinite(it?.unitPriceCents)
-                      ? it.unitPriceCents
-                      : null;
-                    const line = Number.isFinite(it?.lineTotalCents)
-                      ? it.lineTotalCents
-                      : null;
+                    const desc = isNonEmpty(it?.description)
+                      ? it.description
+                      : "—";
+                    const qty =
+                      Number.isFinite(it?.qty) && it.qty >= 0 ? it.qty : null;
+                    const unit =
+                      Number.isFinite(it?.unitPriceCents) &&
+                      it.unitPriceCents >= 0
+                        ? it.unitPriceCents
+                        : null;
+                    const line =
+                      Number.isFinite(it?.lineTotalCents) &&
+                      it.lineTotalCents >= 0
+                        ? it.lineTotalCents
+                        : null;
                     return (
-                      <tr key={idx}>
-                        <td className="px-3 py-2 text-zinc-900">{desc}</td>
-                        <td className="px-3 py-2 text-zinc-700">{qty}</td>
-                        <td className="px-3 py-2 text-zinc-700">
-                          {unit != null ? fmtBRL(unit) : "—"}
-                        </td>
-                        <td className="px-3 py-2 font-semibold text-zinc-900">
-                          {line != null ? fmtBRL(line) : "—"}
-                        </td>
-                      </tr>
+                      <div key={idx} className="rounded-xl border bg-white p-3">
+                        <div className="text-sm font-semibold text-zinc-900">
+                          {desc}
+                        </div>
+                        <div className="mt-1 text-xs text-zinc-600">
+                          Qtd:{" "}
+                          <span className="font-semibold text-zinc-900">
+                            {qty != null ? qty : "—"}
+                          </span>
+                          {" • "}
+                          Unit:{" "}
+                          <span className="font-semibold text-zinc-900">
+                            {unit != null ? fmtBRL(unit) : "—"}
+                          </span>
+                        </div>
+                        <div className="mt-2 text-sm text-zinc-700">
+                          Total do item:{" "}
+                          <span className="font-semibold text-zinc-900">
+                            {line != null ? fmtBRL(line) : "—"}
+                          </span>
+                        </div>
+                      </div>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
+                </div>
 
-            {Number.isFinite(offer.durationMin) && offer.durationMin > 0 ? (
-              <div className="mt-4 rounded-xl border bg-zinc-50 p-3 text-sm text-zinc-700">
-                Prazo estimado (duração):{" "}
-                <span className="font-semibold text-zinc-900">
-                  {offer.durationMin} min
-                </span>
+                {/* Desktop table */}
+                <div className="hidden overflow-auto rounded-xl border sm:block">
+                  <table className="min-w-full text-left text-sm">
+                    <thead className="bg-zinc-50 text-xs font-semibold text-zinc-600">
+                      <tr>
+                        <th className="px-3 py-2">Descrição</th>
+                        <th className="px-3 py-2 text-right">Qtd</th>
+                        <th className="px-3 py-2 text-right">Valor unit.</th>
+                        <th className="px-3 py-2 text-right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y bg-white">
+                      {view.items.map((it, idx) => {
+                        const desc = isNonEmpty(it?.description)
+                          ? it.description
+                          : "—";
+                        const qty =
+                          Number.isFinite(it?.qty) && it.qty >= 0
+                            ? it.qty
+                            : null;
+                        const unit =
+                          Number.isFinite(it?.unitPriceCents) &&
+                          it.unitPriceCents >= 0
+                            ? it.unitPriceCents
+                            : null;
+                        const line =
+                          Number.isFinite(it?.lineTotalCents) &&
+                          it.lineTotalCents >= 0
+                            ? it.lineTotalCents
+                            : null;
+                        return (
+                          <tr
+                            key={idx}
+                            className={`${idx % 2 ? "bg-zinc-50/40" : ""} hover:bg-zinc-50`}
+                          >
+                            <td className="px-3 py-2 text-zinc-900">{desc}</td>
+                            <td className="px-3 py-2 text-right text-zinc-700">
+                              {qty != null ? qty : "—"}
+                            </td>
+                            <td className="px-3 py-2 text-right text-zinc-700">
+                              {unit != null ? fmtBRL(unit) : "—"}
+                            </td>
+                            <td className="px-3 py-2 text-right font-semibold text-zinc-900">
+                              {line != null ? fmtBRL(line) : "—"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
+            <div className="mt-4 flex items-center justify-between rounded-xl border bg-zinc-50 p-3 text-sm">
+              <div className="text-zinc-600">Total geral</div>
+              <div className="font-semibold text-zinc-900">
+                {fmtBRL(view.totalCents)}
               </div>
-            ) : null}
+            </div>
           </SectionCard>
         )}
 
-        {/* Resumo de valores */}
+        {/* Total (e extras, se existirem) */}
         <SectionCard
-          title="Resumo de valores"
-          subtitle="Tudo organizado para você bater o olho e decidir."
+          title="Total 🧾"
+          subtitle="Subtotal/Desconto/Frete só aparecem se foram definidos."
         >
           <div className="space-y-2 text-sm">
             {Number.isFinite(view.subtotalCents) ? (
