@@ -214,6 +214,13 @@ export default function PublicOffer() {
 
     const remainingCents = Math.max(0, totalCents - depositCents);
 
+    const durationEnabled = o.durationEnabled === true;
+
+    const durationMin =
+      durationEnabled && Number.isFinite(o.durationMin) && o.durationMin > 0
+        ? o.durationMin
+        : null;
+
     const issuedAt = o.createdAt || o.issuedAt || "";
     const validityDays =
       Number.isFinite(o.validityDays) && o.validityDays > 0
@@ -283,6 +290,8 @@ export default function PublicOffer() {
       depositPct,
       depositCents,
       remainingCents,
+      durationEnabled,
+      durationMin,
       headerMeta,
       contactWhatsApp,
       contactEmail,
@@ -482,12 +491,11 @@ export default function PublicOffer() {
                       {view.items.length}
                     </span>
                   </>
-                ) : Number.isFinite(offer.durationMin) &&
-                  offer.durationMin > 0 ? (
+                ) : view.durationMin != null ? (
                   <>
                     Duração estimada:{" "}
                     <span className="font-semibold text-zinc-900">
-                      {offer.durationMin} min
+                      {view.durationMin} min
                     </span>
                   </>
                 ) : (
@@ -520,7 +528,7 @@ export default function PublicOffer() {
           <SectionCard
             title="Resumo do serviço 🧾"
             subtitle={
-              Number.isFinite(offer.durationMin)
+              view.durationMin != null
                 ? "Detalhes e observações do atendimento."
                 : "Detalhes e observações."
             }
@@ -535,11 +543,11 @@ export default function PublicOffer() {
               </div>
             )}
 
-            {Number.isFinite(offer.durationMin) && offer.durationMin > 0 ? (
+            {view.durationMin != null ? (
               <div className="mt-4 rounded-xl border bg-zinc-50 p-3 text-sm text-zinc-700">
                 Duração estimada:{" "}
                 <span className="font-semibold text-zinc-900">
-                  {offer.durationMin} min
+                  {view.durationMin} min
                 </span>
               </div>
             ) : null}

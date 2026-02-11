@@ -37,7 +37,10 @@ const OfferSchema = new mongoose.Schema(
 
     // Sinal (MVP)
     depositPct: { type: Number, default: 30 }, // ex.: 30%
-    durationMin: { type: Number, default: 60 },
+
+    // Duração estimada (opcional)
+    durationEnabled: { type: Boolean, default: false },
+    durationMin: { type: Number, default: null },
 
     // Regras
     policyText: {

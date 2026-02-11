@@ -59,27 +59,25 @@ function clampInt(n, min, max) {
 }
 
 export default function NewOffer() {
-  const [form, setForm] = useState({
+  const [form, setForm] = useState(() => ({
     customerName: "",
     customerWhatsApp: "",
 
-    // type
-    offerType: "service", // "service" | "product"
+    offerType: "service",
 
-    // service fields
     title: "",
     description: "",
     amount: "100.00",
 
-    // product fields
     items: [{ description: "", qty: 1, unitPrice: "0,00" }],
 
-    // payment
     depositEnabled: true,
     depositPct: 30,
+
+    // ✅ duração opcional: começa DESLIGADO
+    durationEnabled: false,
     durationMin: 60,
 
-    // conditions toggles + values
     validityEnabled: false,
     validityDays: 7,
 
@@ -93,12 +91,12 @@ export default function NewOffer() {
     conditionsNotes: "",
 
     discountEnabled: false,
-    discountType: "fixed", // "fixed" | "pct"
-    discountValue: "0,00", // fixed BRL or pct number string
+    discountType: "fixed",
+    discountValue: "0,00",
 
     freightEnabled: false,
     freightValue: "0,00",
-  });
+  }));
 
   const [result, setResult] = useState(null);
   const [err, setErr] = useState("");
@@ -178,7 +176,11 @@ export default function NewOffer() {
   function setOfferType(next) {
     setForm((p) => {
       const offerType = next;
-      return { ...p, offerType };
+      return {
+        ...p,
+        offerType,
+        ...(offerType === "product" ? { durationEnabled: false } : null),
+      };
     });
   }
 
@@ -278,7 +280,10 @@ export default function NewOffer() {
         // safer compatibility: always a number
         depositPct: form.depositEnabled ? clampInt(form.depositPct, 0, 100) : 0,
 
-        durationMin: clampInt(form.durationMin, 1),
+        durationMin:
+          form.offerType === "service" && form.durationEnabled
+            ? clampInt(form.durationMin, 1)
+            : null,
 
         // optional computed
         subtotalCents: calc.baseCents,
@@ -422,37 +427,38 @@ export default function NewOffer() {
             </CardBody>
           </Card>
 
-          {/* Serviço (somente service) */}
+          {/* ✅ Serviço (somente service) */}
           {!isProduct ? (
             <Card>
               <CardHeader
                 title="Serviço"
-                subtitle="O que será feito e observações."
+                subtitle="Informe o título e a descrição do serviço."
               />
               <CardBody className="space-y-3">
                 <div>
                   <label className="text-xs font-semibold text-zinc-600">
-                    Título
+                    Título do serviço
                   </label>
                   <Input
                     value={form.title}
                     onChange={(e) =>
                       setForm({ ...form, title: e.target.value })
                     }
-                    placeholder="Título do serviço"
+                    placeholder="Ex.: Instalação de ar-condicionado"
                   />
                 </div>
+
                 <div>
                   <label className="text-xs font-semibold text-zinc-600">
-                    Descrição (opcional)
+                    Descrição do serviço
                   </label>
                   <Textarea
-                    className="min-h-[100px]"
+                    className="min-h-[120px]"
                     value={form.description}
                     onChange={(e) =>
                       setForm({ ...form, description: e.target.value })
                     }
-                    placeholder="Detalhes, itens/opções, condições específicas…"
+                    placeholder="Descreva o que está incluso, observações, etc."
                   />
                 </div>
               </CardBody>
@@ -586,6 +592,56 @@ export default function NewOffer() {
               subtitle="Habilite apenas as seções que deseja incluir no orçamento."
             />
             <CardBody className="space-y-3">
+              {/* ✅ duração estimada (somente service) */}
+              {!isProduct ? (
+                <>
+                  <div className="flex items-start justify-between gap-3 rounded-xl border p-3">
+                    <div>
+                      <div className="text-sm font-semibold text-zinc-900">
+                        Duração estimada
+                      </div>
+                      <div className="text-xs text-zinc-500">
+                        Ex.: 60 min. Só aparece no link do cliente se habilitar.
+                      </div>
+                    </div>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={form.durationEnabled}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            durationEnabled: e.target.checked,
+                          })
+                        }
+                      />
+                      <span className="text-zinc-700">Habilitar</span>
+                    </label>
+                  </div>
+
+                  {form.durationEnabled ? (
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <div className="sm:col-span-1">
+                        <label className="text-xs font-semibold text-zinc-600">
+                          Duração estimada (min)
+                        </label>
+                        <Input
+                          type="number"
+                          min={1}
+                          value={form.durationMin}
+                          onChange={(e) =>
+                            setForm({
+                              ...form,
+                              durationMin: clampInt(e.target.value, 1),
+                            })
+                          }
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
+
               {/* validade */}
               <div className="flex items-start justify-between gap-3 rounded-xl border p-3">
                 <div>
@@ -832,13 +888,13 @@ export default function NewOffer() {
             </CardBody>
           </Card>
 
-          {/* Pagamento e duração */}
+          {/* Pagamento */}
           <Card>
             <CardHeader
-              title="Pagamento e duração"
-              subtitle="Valor, sinal e tempo estimado."
+              title="Pagamento"
+              subtitle="Valor e sinal (se aplicável)."
             />
-            <CardBody className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <CardBody className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {/* Valor */}
               <div>
                 <label className="text-xs font-semibold text-zinc-600">
@@ -924,23 +980,6 @@ export default function NewOffer() {
                     </span>
                   </div>
                 )}
-              </div>
-
-              {/* Duração */}
-              <div>
-                <label className="text-xs font-semibold text-zinc-600">
-                  Duração (min)
-                </label>
-                <Input
-                  type="number"
-                  value={form.durationMin}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      durationMin: clampInt(e.target.value, 1),
-                    })
-                  }
-                />
               </div>
             </CardBody>
           </Card>
