@@ -76,7 +76,8 @@ function computeAmountCents(offer) {
 }
 
 async function findOfferByPublicToken(token) {
-  const projection = { workspaceId: 0, ownerUserId: 0 };
+  // ✅ evita vazar multi-tenant no público (mesmo que não exista ainda, é seguro)
+  const projection = "-workspaceId -ownerUserId -__v";
   const offer =
     (await Offer.findOne({ publicToken: token }).select(projection).lean()) ||
     (await Offer.findOne({ token }).select(projection).lean()) ||
@@ -335,6 +336,7 @@ router.get("/p/:token/summary", async (req, res, next) => {
     const offerLocked = isPaidStatus(offer?.status);
 
     const booking = findConfirmedBooking(token, bookingId);
+    const offerType = offer?.offerType || inferOfferType(offer);
 
     const amounts = computeAmountCents(offer);
     const amountToChargeCents = amounts.amountCents;
@@ -345,11 +347,16 @@ router.get("/p/:token/summary", async (req, res, next) => {
     const summary = {
       locked: offerLocked || booking?.status === "CONFIRMED",
       paidAt,
-      offer: {
-        title: offer?.title || "Pagamento",
-        customerName: offer?.customerName || offer?.customer?.name || "",
-        status: offer?.status,
-      },
+      // ✅ agora o /done consegue renderizar produtos/itens
+      // ✅ mantém público (sem workspaceId/ownerUserId por causa do projection acima)
+      offer: offer
+        ? {
+            ...offer,
+            offerType,
+            // compat extra: garante string
+            customerName: offer?.customerName || offer?.customer?.name || "",
+          }
+        : null,
       booking: booking
         ? {
             id: booking.id,

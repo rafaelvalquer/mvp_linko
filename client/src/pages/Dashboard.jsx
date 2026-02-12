@@ -1,7 +1,7 @@
 // src/pages/Dashboard.jsx
 import Shell from "../components/layout/Shell.jsx";
 import { api } from "../app/api.js";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import PageHeader from "../components/appui/PageHeader.jsx";
 import Card, { CardBody, CardHeader } from "../components/appui/Card.jsx";
 import Button from "../components/appui/Button.jsx";
@@ -54,8 +54,16 @@ export default function Dashboard() {
   const [offers, setOffers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [copiedId, setCopiedId] = useState(null);
+  const copiedTimerRef = useRef(null);
   const nav = useNavigate();
   const { signOut } = useAuth();
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+    };
+  }, []);
 
   async function load() {
     try {
@@ -95,6 +103,9 @@ export default function Dashboard() {
     );
 
     const PAID_SET = new Set(["PAID", "CONFIRMED"]);
+    const PIX_PENDING_SET = new Set(["PENDING"]);
+    const PIX_DONE_SET = new Set(["PAID"]);
+    const PIX_FAIL_SET = new Set(["EXPIRED", "CANCELLED", "REFUNDED"]);
     const BOOKED_SET = new Set(["BOOKED_HOLD", "HOLD", "CONFIRMED", "PAID"]);
 
     const paidOffers = offers.filter((o) => PAID_SET.has(normStatus(o.status)));
@@ -126,6 +137,35 @@ export default function Dashboard() {
       0,
     );
 
+    const getValueCents = (o) => {
+      const v = Number(o?.amountCents ?? o?.totalCents ?? 0);
+      return Number.isFinite(v) ? v : 0;
+    };
+
+    // Pendentes (preferir Pix status; fallback status Offer)
+    const pendingOffers = offers.filter((o) => {
+      const valueCents = getValueCents(o);
+      if (valueCents <= 0) return false;
+
+      const pixSt = normStatus(o?.payment?.lastPixStatus);
+      if (pixSt) {
+        if (PIX_PENDING_SET.has(pixSt)) return true;
+        if (PIX_DONE_SET.has(pixSt)) return false;
+        if (PIX_FAIL_SET.has(pixSt)) return false;
+        // status desconhecido -> cai no fallback de status da offer
+      }
+
+      const st = normStatus(o?.status);
+      if (PAID_SET.has(st)) return false;
+      return st === "PUBLIC" || st === "SENT" || st === "DRAFT";
+    });
+
+    const pendingCount = pendingOffers.length;
+    const pendingValueCents = pendingOffers.reduce(
+      (acc, o) => acc + getValueCents(o),
+      0,
+    );
+
     // Conversão: pagos / propostas (em %)
     const conversionPct = total > 0 ? Math.round((paidCount / total) * 100) : 0;
 
@@ -140,6 +180,8 @@ export default function Dashboard() {
       conversionPct,
       paidTodayCount,
       paidTodayValueCents,
+      pendingCount,
+      pendingValueCents,
     };
   }, [offers]);
 
@@ -235,132 +277,129 @@ export default function Dashboard() {
                       title="Nenhuma proposta ainda"
                       description="Crie uma proposta e envie o link para o cliente."
                       ctaLabel="Nova proposta"
-                      onCta={() => (window.location.href = "/offers/new")}
+                      onCta={() => nav("/offers/new")}
                     />
                   </div>
                 ) : (
-                  <div className="overflow-auto">
-                    <table className="w-full min-w-[720px]">
-                      <thead className="text-left text-xs font-semibold text-zinc-500">
-                        <tr>
-                          <th className="border-b px-5 py-3">Cliente</th>
-                          <th className="border-b px-5 py-3">Serviço</th>
-                          <th className="border-b px-5 py-3">Valor</th>
-                          <th className="border-b px-5 py-3">Status</th>
-                          <th className="border-b px-5 py-3">Ações</th>
-                        </tr>
-                      </thead>
-                      <tbody className="text-sm">
-                        {kpis.last5.map((o) => {
-                          const publicUrl = `/p/${o.publicToken}`;
-                          const payUrl = `${publicUrl}/pay`;
-                          const pixSt = normStatus(o?.payment?.lastPixStatus);
-                          const pixUpdatedAt = o?.payment?.lastPixUpdatedAt;
+                  <div className="p-4 sm:p-5 space-y-3">
+                    {kpis.last5.map((o) => {
+                      const publicUrl = `/p/${o.publicToken}`;
+                      const payUrl = `${publicUrl}/pay`;
+                      const pixSt = normStatus(o?.payment?.lastPixStatus);
+                      const pixUpdatedAt = o?.payment?.lastPixUpdatedAt;
 
-                          const offerSt = normStatus(o?.status);
-                          const isPaidOffer =
-                            offerSt === "PAID" || offerSt === "CONFIRMED";
+                      const offerSt = normStatus(o?.status);
+                      const isPaidOffer =
+                        offerSt === "PAID" || offerSt === "CONFIRMED";
 
-                          return (
-                            <tr key={o._id} className="hover:bg-zinc-50">
-                              <td className="border-b px-5 py-4">
-                                <div className="font-semibold text-zinc-900">
-                                  {o.customerName}
-                                </div>
-                                <div className="text-xs text-zinc-500">
-                                  {o.customerWhatsApp || "—"}
-                                </div>
-                              </td>
-                              <td className="border-b px-5 py-4">
-                                <div className="font-medium text-zinc-900">
+                      const isCopied = copiedId === o._id;
+
+                      return (
+                        <div
+                          key={o._id}
+                          className="rounded-2xl border border-zinc-200 bg-white p-4 hover:bg-zinc-50 transition"
+                        >
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold text-zinc-900">
+                                {o.customerName}
+                              </div>
+                              <div className="text-xs text-zinc-500">
+                                {o.customerWhatsApp || "—"}
+                              </div>
+                              <div className="mt-2 min-w-0">
+                                <div className="text-sm font-medium text-zinc-900">
                                   {o.title}
                                 </div>
-                                <div className="text-xs text-zinc-500 line-clamp-1">
+                                <div className="text-xs text-zinc-500 line-clamp-2">
                                   {o.description || "—"}
                                 </div>
-                              </td>
-                              <td className="border-b px-5 py-4 font-semibold">
-                                {fmtBRL(o.amountCents)}
-                              </td>
+                              </div>
+                            </div>
 
-                              {/* ✅ Status (reaproveita coluna atual) */}
-                              <td className="border-b px-5 py-4">
-                                <div className="space-y-1">
-                                  <Badge tone={o.status || "PUBLIC"}>
-                                    {o.status || "PUBLIC"}
-                                  </Badge>
+                            <div className="flex flex-col items-start sm:items-end gap-2">
+                              <div className="text-sm font-semibold text-zinc-900">
+                                {fmtBRL(o.amountCents || o.totalCents || 0)}
+                              </div>
 
-                                  {pixSt ? (
-                                    <div
-                                      className={`text-[11px] ${pixToneClasses(
-                                        pixSt,
-                                      )}`}
-                                    >
-                                      Pix:{" "}
-                                      <span className="font-semibold">
-                                        {pixSt}
-                                      </span>
-                                      {pixUpdatedAt ? (
-                                        <> • {fmtDateTimeBR(pixUpdatedAt)}</>
-                                      ) : null}
-                                    </div>
-                                  ) : null}
-                                </div>
-                              </td>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Badge tone={o.status || "PUBLIC"}>
+                                  {o.status || "PUBLIC"}
+                                </Badge>
+                                {pixSt ? (
+                                  <div
+                                    className={`text-[11px] ${pixToneClasses(
+                                      pixSt,
+                                    )}`}
+                                  >
+                                    Pix:{" "}
+                                    <span className="font-semibold">
+                                      {pixSt}
+                                    </span>
+                                    {pixUpdatedAt ? (
+                                      <> • {fmtDateTimeBR(pixUpdatedAt)}</>
+                                    ) : null}
+                                  </div>
+                                ) : null}
+                              </div>
 
-                              <td className="border-b px-5 py-4">
-                                <div className="flex flex-wrap gap-2">
+                              <div className="flex flex-wrap gap-2 pt-1">
+                                <Button
+                                  variant="secondary"
+                                  type="button"
+                                  onClick={async () => {
+                                    try {
+                                      await navigator.clipboard.writeText(
+                                        window.location.origin + publicUrl,
+                                      );
+                                      setCopiedId(o._id);
+                                      if (copiedTimerRef.current)
+                                        clearTimeout(copiedTimerRef.current);
+                                      copiedTimerRef.current = setTimeout(
+                                        () => setCopiedId(null),
+                                        1200,
+                                      );
+                                    } catch {}
+                                  }}
+                                >
+                                  {isCopied ? "Copiado!" : "Copiar"}
+                                </Button>
+
+                                <Button
+                                  variant="ghost"
+                                  type="button"
+                                  onClick={() =>
+                                    window.open(
+                                      publicUrl,
+                                      "_blank",
+                                      "noopener,noreferrer",
+                                    )
+                                  }
+                                >
+                                  Abrir
+                                </Button>
+
+                                {!isPaidOffer ? (
                                   <Button
                                     variant="secondary"
                                     type="button"
-                                    onClick={async () => {
-                                      try {
-                                        await navigator.clipboard.writeText(
-                                          window.location.origin + publicUrl,
-                                        );
-                                      } catch {}
-                                    }}
-                                  >
-                                    Copiar
-                                  </Button>
-
-                                  <Button
-                                    variant="ghost"
-                                    type="button"
                                     onClick={() =>
                                       window.open(
-                                        publicUrl,
+                                        payUrl,
                                         "_blank",
                                         "noopener,noreferrer",
                                       )
                                     }
                                   >
-                                    Abrir
+                                    Abrir pagamento
                                   </Button>
-
-                                  {/* ✅ ação rápida quando houve falha/pendência */}
-                                  {!isPaidOffer ? (
-                                    <Button
-                                      variant="secondary"
-                                      type="button"
-                                      onClick={() =>
-                                        window.open(
-                                          payUrl,
-                                          "_blank",
-                                          "noopener,noreferrer",
-                                        )
-                                      }
-                                    >
-                                      Abrir pagamento
-                                    </Button>
-                                  ) : null}
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                                ) : null}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </CardBody>
@@ -400,7 +439,12 @@ export default function Dashboard() {
                   <div className="text-xs font-semibold text-zinc-500">
                     Pendentes
                   </div>
-                  <div className="mt-1 text-lg font-semibold">—</div>
+                  <div className="mt-1 text-lg font-semibold">
+                    {loading ? "—" : fmtBRL(kpis.pendingValueCents)}
+                  </div>
+                  <div className="mt-1 text-xs text-zinc-500">
+                    {loading ? "—" : `${kpis.pendingCount} propostas`}
+                  </div>
                 </div>
               </CardBody>
             </Card>
