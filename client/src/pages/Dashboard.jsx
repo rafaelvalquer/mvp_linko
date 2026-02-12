@@ -1,3 +1,4 @@
+// src/pages/Dashboard.jsx
 import Shell from "../components/layout/Shell.jsx";
 import { api } from "../app/api.js";
 import { useEffect, useMemo, useState } from "react";
@@ -13,6 +14,22 @@ function normStatus(s) {
   return String(s || "")
     .trim()
     .toUpperCase();
+}
+
+function fmtDateTimeBR(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString("pt-BR");
+}
+
+function pixToneClasses(st) {
+  const s = normStatus(st);
+  if (s === "EXPIRED" || s === "CANCELLED") return "text-red-700";
+  if (s === "REFUNDED") return "text-amber-800";
+  if (s === "PENDING") return "text-amber-900";
+  if (s === "PAID") return "text-emerald-800";
+  return "text-zinc-500";
 }
 
 function isSameLocalDay(a, b) {
@@ -228,6 +245,14 @@ export default function Dashboard() {
                       <tbody className="text-sm">
                         {kpis.last5.map((o) => {
                           const publicUrl = `/p/${o.publicToken}`;
+                          const payUrl = `${publicUrl}/pay`;
+                          const pixSt = normStatus(o?.payment?.lastPixStatus);
+                          const pixUpdatedAt = o?.payment?.lastPixUpdatedAt;
+
+                          const offerSt = normStatus(o?.status);
+                          const isPaidOffer =
+                            offerSt === "PAID" || offerSt === "CONFIRMED";
+
                           return (
                             <tr key={o._id} className="hover:bg-zinc-50">
                               <td className="border-b px-5 py-4">
@@ -249,11 +274,32 @@ export default function Dashboard() {
                               <td className="border-b px-5 py-4 font-semibold">
                                 {fmtBRL(o.amountCents)}
                               </td>
+
+                              {/* ✅ Status (reaproveita coluna atual) */}
                               <td className="border-b px-5 py-4">
-                                <Badge tone={o.status || "PUBLIC"}>
-                                  {o.status || "PUBLIC"}
-                                </Badge>
+                                <div className="space-y-1">
+                                  <Badge tone={o.status || "PUBLIC"}>
+                                    {o.status || "PUBLIC"}
+                                  </Badge>
+
+                                  {pixSt ? (
+                                    <div
+                                      className={`text-[11px] ${pixToneClasses(
+                                        pixSt,
+                                      )}`}
+                                    >
+                                      Pix:{" "}
+                                      <span className="font-semibold">
+                                        {pixSt}
+                                      </span>
+                                      {pixUpdatedAt ? (
+                                        <> • {fmtDateTimeBR(pixUpdatedAt)}</>
+                                      ) : null}
+                                    </div>
+                                  ) : null}
+                                </div>
                               </td>
+
                               <td className="border-b px-5 py-4">
                                 <div className="flex flex-wrap gap-2">
                                   <Button
@@ -269,6 +315,7 @@ export default function Dashboard() {
                                   >
                                     Copiar
                                   </Button>
+
                                   <Button
                                     variant="ghost"
                                     type="button"
@@ -282,6 +329,23 @@ export default function Dashboard() {
                                   >
                                     Abrir
                                   </Button>
+
+                                  {/* ✅ ação rápida quando houve falha/pendência */}
+                                  {!isPaidOffer ? (
+                                    <Button
+                                      variant="secondary"
+                                      type="button"
+                                      onClick={() =>
+                                        window.open(
+                                          payUrl,
+                                          "_blank",
+                                          "noopener,noreferrer",
+                                        )
+                                      }
+                                    >
+                                      Abrir pagamento
+                                    </Button>
+                                  ) : null}
                                 </div>
                               </td>
                             </tr>

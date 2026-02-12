@@ -34,6 +34,14 @@ const OfferSchema = new mongoose.Schema(
     agreeTerms: { type: Boolean, default: false },
     ackDeposit: { type: Boolean, default: false },
 
+    // ✅ Status/infos da última tentativa de cobrança Pix
+    payment: {
+      lastPixId: { type: String, default: "" },
+      lastPixStatus: { type: String, default: "" }, // PENDING/PAID/EXPIRED/CANCELLED/REFUNDED
+      lastPixExpiresAt: { type: Date },
+      lastPixUpdatedAt: { type: Date },
+    },
+
     // Tipo
     offerType: {
       type: String,
@@ -101,4 +109,5 @@ const OfferSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-export const Offer = mongoose.models.Offer || mongoose.model("Offer", OfferSchema);
+export const Offer =
+  mongoose.models.Offer || mongoose.model("Offer", OfferSchema);

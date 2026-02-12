@@ -170,6 +170,65 @@ function findConfirmedBooking(token, bookingId) {
   );
 }
 
+/** -----------------------------
+ *  Pix status helpers + persistência
+ * ------------------------------ */
+function normalizePixStatus(st) {
+  const s = String(st || "")
+    .trim()
+    .toUpperCase();
+  // compat: alguns gateways usam "CANCELED" (1 L)
+  if (s === "CANCELED") return "CANCELLED";
+  return s;
+}
+function isTerminalPixStatus(st) {
+  const s = normalizePixStatus(st);
+  return (
+    s === "PAID" || s === "EXPIRED" || s === "CANCELLED" || s === "REFUNDED"
+  );
+}
+// suporta retorno { data: {...} } ou direto {...}
+function pickPixData(abResult) {
+  const d = abResult?.data;
+  return d && d.id ? d : abResult;
+}
+function toDateOrNull(iso) {
+  if (!iso) return null;
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return null;
+  return t;
+}
+function computeExpiresAtIso(pixData, fallbackExpiresInSec) {
+  const fromApi = pixData?.expiresAt || pixData?.expires_at || null;
+  if (fromApi) return fromApi;
+  const expSec = Number(pixData?.expiresIn || pixData?.expires_in || 0);
+  const useSec =
+    Number.isFinite(expSec) && expSec > 0
+      ? expSec
+      : Math.max(60, Number(fallbackExpiresInSec) || 3600);
+  return new Date(Date.now() + useSec * 1000).toISOString();
+}
+
+async function updateOfferPayment(offerId, patch) {
+  if (!offerId) return;
+
+  const $set = {};
+  if (patch.lastPixId !== undefined)
+    $set["payment.lastPixId"] = patch.lastPixId;
+  if (patch.lastPixStatus !== undefined)
+    $set["payment.lastPixStatus"] = patch.lastPixStatus;
+  if (patch.lastPixExpiresAt !== undefined)
+    $set["payment.lastPixExpiresAt"] = patch.lastPixExpiresAt;
+  if (patch.lastPixUpdatedAt !== undefined)
+    $set["payment.lastPixUpdatedAt"] = patch.lastPixUpdatedAt;
+
+  if (!Object.keys($set).length) return;
+
+  await Offer.updateOne({ _id: offerId }, { $set }, { strict: false }).catch(
+    () => {},
+  );
+}
+
 async function markAsPaid({ token, offerId, booking, pix }) {
   const paidAt = nowIso();
 
@@ -195,6 +254,14 @@ async function markAsPaid({ token, offerId, booking, pix }) {
       { strict: false },
     ).catch(() => {});
   }
+
+  // ✅ também mantém o rastro do Pix na seção payment.*
+  await updateOfferPayment(offerId, {
+    lastPixId: pix?.id,
+    lastPixStatus: "PAID",
+    lastPixExpiresAt: toDateOrNull(pix?.expiresAt) || undefined,
+    lastPixUpdatedAt: new Date(paidAt),
+  });
 
   // store in-memory
   const externalId = String(
@@ -525,41 +592,59 @@ router.post("/p/:token/pix/create", async (req, res, next) => {
       }
     }
 
-    // idempotência: se já existe pix para esse "effectiveBookingId", reutiliza (se não expirou)
+    // idempotência: se já existe pix para esse "effectiveBookingId", reutiliza (se não terminal)
     const existing = getPixByBooking(effectiveBookingId);
     if (existing?.pixId) {
       const chk = await abacateCheckPix({ pixId: existing.pixId });
-      const pixData = chk?.data;
-      if (pixData?.id) {
+      const pixDataRaw = pickPixData(chk);
+      if (pixDataRaw?.id) {
+        const st = normalizePixStatus(pixDataRaw.status);
+        const expiresAtIso = computeExpiresAtIso(pixDataRaw, PIX_EXPIRES_IN);
+        const updatedAt = new Date();
+
         // atualiza store
         setPixByBooking(effectiveBookingId, {
           ...existing,
-          status: pixData.status,
-          pix: pixData,
+          pixId: pixDataRaw.id,
+          status: st,
+          pix: { ...pixDataRaw, status: st, expiresAt: expiresAtIso },
         });
 
-        if (pixData.status === "PAID") {
+        // ✅ persiste rastro do Pix no Offer
+        await updateOfferPayment(offer._id, {
+          lastPixId: pixDataRaw.id,
+          lastPixStatus: st,
+          lastPixExpiresAt: toDateOrNull(expiresAtIso) || undefined,
+          lastPixUpdatedAt: updatedAt,
+        });
+
+        if (st === "PAID") {
           const paidAt = await markAsPaid({
             token,
             offerId: offer._id,
             booking,
-            pix: pixData,
+            pix: { ...pixDataRaw, status: st, expiresAt: expiresAtIso },
           });
           noStore(res);
           return res.json({
             ok: true,
-            pix: pixData,
+            pix: { ...pixDataRaw, status: st, expiresAt: expiresAtIso },
             locked: true,
             paidAt,
             reused: true,
           });
         }
 
-        if (pixData.status !== "EXPIRED") {
+        // ✅ se não é terminal, reutiliza; se é EXPIRED/CANCELLED/REFUNDED, cria outro
+        if (!isTerminalPixStatus(st)) {
           noStore(res);
-          return res.json({ ok: true, pix: pixData, reused: true });
+          return res.json({
+            ok: true,
+            pix: { ...pixDataRaw, status: st, expiresAt: expiresAtIso },
+            reused: true,
+          });
         }
-        // se EXPIRED, segue e cria outro
+        // terminal (EXPIRED/CANCELLED/REFUNDED): segue e cria outro
       }
     }
 
@@ -617,32 +702,46 @@ router.post("/p/:token/pix/create", async (req, res, next) => {
       metadata,
     });
 
-    const pixData = ab;
+    const pixDataRaw = pickPixData(ab);
 
-    if (!pixData?.id) {
+    if (!pixDataRaw?.id) {
       return res.status(502).json({ ok: false, error: "Falha ao gerar Pix." });
     }
 
-    if (booking) booking.pixId = pixData.id;
+    const st = normalizePixStatus(pixDataRaw.status || "PENDING");
+    const expiresAtIso = computeExpiresAtIso(pixDataRaw, expiresIn);
+
+    if (booking) booking.pixId = pixDataRaw.id;
 
     setPixByBooking(effectiveBookingId, {
-      pixId: pixData.id,
-      status: pixData.status || "PENDING",
+      pixId: pixDataRaw.id,
+      status: st,
       token,
-      pix: pixData,
+      pix: { ...pixDataRaw, status: st, expiresAt: expiresAtIso },
     });
 
     upsertPixCharge({
-      pixId: pixData.id,
+      pixId: pixDataRaw.id,
       bookingId: isProduct ? null : effectiveBookingId, // mantém compat; produto não tem booking real
       token,
-      status: pixData.status || "PENDING",
+      status: st,
       updatedAt: nowIso(),
-      pix: pixData,
+      pix: { ...pixDataRaw, status: st, expiresAt: expiresAtIso },
+    });
+
+    // ✅ persiste no Offer: payment.lastPixId/status/expiresAt/updatedAt
+    await updateOfferPayment(offer._id, {
+      lastPixId: pixDataRaw.id,
+      lastPixStatus: st,
+      lastPixExpiresAt: toDateOrNull(expiresAtIso) || undefined,
+      lastPixUpdatedAt: new Date(),
     });
 
     noStore(res);
-    return res.json({ ok: true, pix: pixData });
+    return res.json({
+      ok: true,
+      pix: { ...pixDataRaw, status: st, expiresAt: expiresAtIso },
+    });
   } catch (e) {
     next(e);
   }
@@ -668,22 +767,59 @@ router.get("/p/:token/pix/status", async (req, res, next) => {
         .json({ ok: false, error: "Proposta não encontrada." });
 
     const ab = await abacateCheckPix({ pixId });
-    const pixData = ab;
+    const pixDataRaw = pickPixData(ab);
 
-    if (!pixData?.id) {
+    if (!pixDataRaw?.id) {
       return res
         .status(502)
         .json({ ok: false, error: "Falha ao consultar status do Pix." });
     }
 
+    const st = normalizePixStatus(pixDataRaw.status);
+    const expiresAtIso = computeExpiresAtIso(pixDataRaw, PIX_EXPIRES_IN);
+    const updatedAt = new Date();
+
+    // ✅ atualiza payment.lastPixStatus e payment.lastPixUpdatedAt (e mantém id/expiresAt)
+    await updateOfferPayment(offer._id, {
+      lastPixId: pixDataRaw.id,
+      lastPixStatus: st,
+      lastPixExpiresAt: toDateOrNull(expiresAtIso) || undefined,
+      lastPixUpdatedAt: updatedAt,
+    });
+
+    // atualiza store in-memory (se conseguir inferir externalId)
+    const externalId = String(
+      pixDataRaw?.metadata?.externalId ||
+        pixDataRaw?.metadata?.external_id ||
+        "",
+    ).trim();
+    if (externalId) {
+      const prev = getPixByBooking(externalId) || {};
+      setPixByBooking(externalId, {
+        ...prev,
+        pixId: pixDataRaw.id,
+        status: st,
+        token,
+        pix: { ...pixDataRaw, status: st, expiresAt: expiresAtIso },
+      });
+    }
+
+    upsertPixCharge({
+      pixId: pixDataRaw.id,
+      bookingId: externalId || null,
+      token,
+      status: st,
+      updatedAt: nowIso(),
+      pix: { ...pixDataRaw, status: st, expiresAt: expiresAtIso },
+    });
+
     let paidAt = null;
     let locked = false;
 
-    if (pixData.status === "PAID") {
+    if (st === "PAID") {
       locked = true;
 
       // tenta achar booking pelo pixId; fallback pelo metadata.externalId
-      const externalId = String(pixData?.metadata?.externalId || "").trim();
       const booking =
         bookings.find((b) => b.token === token && b.pixId === pixId) ||
         (externalId
@@ -695,12 +831,17 @@ router.get("/p/:token/pix/status", async (req, res, next) => {
         token,
         offerId: offer._id,
         booking,
-        pix: pixData,
+        pix: { ...pixDataRaw, status: st, expiresAt: expiresAtIso },
       });
     }
 
     noStore(res);
-    return res.json({ ok: true, pix: pixData, locked, paidAt });
+    return res.json({
+      ok: true,
+      pix: { ...pixDataRaw, status: st, expiresAt: expiresAtIso },
+      locked,
+      paidAt,
+    });
   } catch (e) {
     next(e);
   }
