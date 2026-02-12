@@ -8,7 +8,8 @@ import Button from "../components/appui/Button.jsx";
 import Skeleton from "../components/appui/Skeleton.jsx";
 import Badge from "../components/appui/Badge.jsx";
 import EmptyState from "../components/appui/EmptyState.jsx";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../app/AuthContext.jsx";
 
 function normStatus(s) {
   return String(s || "")
@@ -53,6 +54,8 @@ export default function Dashboard() {
   const [offers, setOffers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const nav = useNavigate();
+  const { signOut } = useAuth();
 
   async function load() {
     try {
@@ -61,6 +64,11 @@ export default function Dashboard() {
       const d = await api("/offers");
       setOffers(d.items || []);
     } catch (e) {
+      if (e?.status === 401) {
+        signOut();
+        nav(`/login?next=${encodeURIComponent("/")}`, { replace: true });
+        return;
+      }
       setError(e?.message || "Falha ao carregar dados.");
     } finally {
       setLoading(false);

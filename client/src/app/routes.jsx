@@ -4,6 +4,9 @@ import Dashboard from "../pages/Dashboard.jsx";
 import Offers from "../pages/Offers.jsx";
 import NewOffer from "../pages/NewOffer.jsx";
 import Calendar from "../pages/Calendar.jsx";
+import Login from "../pages/Login.jsx";
+import Register from "../pages/Register.jsx";
+import RequireAuth from "../components/auth/RequireAuth.jsx";
 
 import PublicOffer from "../pages/PublicOffer.jsx";
 import PublicSchedule from "../pages/PublicSchedule.jsx";
@@ -13,10 +16,41 @@ import PublicPaidGuard from "../pages/PublicPaidGuard.jsx";
 
 export const router = createBrowserRouter(
   [
-    { path: "/", element: <Dashboard /> },
-    { path: "/offers", element: <Offers /> },
-    { path: "/offers/new", element: <NewOffer /> },
-    { path: "/calendar", element: <Calendar /> },
+    { path: "/login", element: <Login /> },
+    { path: "/register", element: <Register /> },
+
+    {
+      path: "/",
+      element: (
+        <RequireAuth>
+          <Dashboard />
+        </RequireAuth>
+      ),
+    },
+    {
+      path: "/offers",
+      element: (
+        <RequireAuth>
+          <Offers />
+        </RequireAuth>
+      ),
+    },
+    {
+      path: "/offers/new",
+      element: (
+        <RequireAuth>
+          <NewOffer />
+        </RequireAuth>
+      ),
+    },
+    {
+      path: "/calendar",
+      element: (
+        <RequireAuth>
+          <Calendar />
+        </RequireAuth>
+      ),
+    },
 
     // PÚBLICO (guard redireciona para /done quando já estiver pago)
     {

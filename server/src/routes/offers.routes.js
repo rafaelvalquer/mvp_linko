@@ -7,6 +7,8 @@ import { ensureAuth, tenantFromUser } from "../middleware/auth.js";
 const r = Router();
 
 const LINK_TTL_DAYS = Number(process.env.OFFER_LINK_TTL_DAYS || 90);
+const HAS_TENANT = !!Offer?.schema?.path?.("workspaceId");
+const HAS_OWNER = !!Offer?.schema?.path?.("ownerUserId");
 
 function isNonEmpty(s) {
   return String(s || "").trim().length > 0;
@@ -149,7 +151,12 @@ async function createOfferLocal(body, ctx) {
   // Items (product)
   const items = offerType === "product" ? normalizeItems(b.items) : [];
 
+  const extra = {};
+  if (HAS_TENANT && ctx?.tenantId) extra.workspaceId = ctx.tenantId;
+  if (HAS_OWNER && ctx?.userId) extra.ownerUserId = ctx.userId;
+
   const offer = await Offer.create({
+    ...extra,
     workspaceId: tenantId,
     ownerUserId: userId,
     customerName: String(b.customerName || "").trim(),
@@ -203,9 +210,8 @@ r.use(ensureAuth, tenantFromUser);
 r.get(
   "/offers",
   asyncHandler(async (req, res) => {
-    const items = await Offer.find({ workspaceId: req.tenantId })
-      .sort({ createdAt: -1 })
-      .limit(200);
+    const q = HAS_TENANT ? { workspaceId: req.tenantId } : {};
+    const items = await Offer.find(q).sort({ createdAt: -1 }).limit(200);
     res.json({ ok: true, items });
   }),
 );
@@ -235,7 +241,7 @@ r.post(
 
     const offer = await createOfferLocal(req.body, {
       tenantId: req.tenantId,
-      userId: req.user._id,
+      userId: req.user?._id,
     });
     res.json({ ok: true, offer, publicUrl: `/p/${offer.publicToken}` });
   }),
