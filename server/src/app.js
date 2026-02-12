@@ -7,6 +7,8 @@ import healthRoutes from "./routes/health.routes.js";
 import offersRoutes from "./routes/offers.routes.js";
 import publicRoutes from "./routes/public.routes.js";
 import webhooksAbacatepayRoutes from "./routes/webhooks.abacatepay.routes.js";
+import authRoutes from "./routes/auth.routes.js";
+import { authOptional } from "./middleware/auth.js";
 
 export function createApp() {
   const app = express();
@@ -21,7 +23,11 @@ export function createApp() {
     }),
   );
 
+  // Se tiver Bearer token válido, popula req.user (senão segue)
+  app.use(authOptional);
+
   app.use("/api", healthRoutes);
+  app.use("/api", authRoutes);
   app.use("/api", offersRoutes);
   app.use("/api", publicRoutes);
   app.use("/api", webhooksAbacatepayRoutes);

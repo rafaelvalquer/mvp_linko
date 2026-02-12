@@ -2,6 +2,7 @@ import { Router } from "express";
 import crypto from "crypto";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { Offer } from "../models/Offer.js";
+import { ensureAuth, tenantFromUser } from "../middleware/auth.js";
 
 const r = Router();
 
@@ -58,62 +59,103 @@ function normalizeItems(raw) {
     .filter((it) => isNonEmpty(it.description));
 }
 
-async function createOfferLocal(body) {
+async function createOfferLocal(body, ctx) {
   const b = body || {};
+  const tenantId = ctx?.tenantId;
+  const userId = ctx?.userId;
 
-  const offerTypeRaw = String(b.offerType || "service").trim().toLowerCase();
+  const offerTypeRaw = String(b.offerType || "service")
+    .trim()
+    .toLowerCase();
   const offerType = offerTypeRaw === "product" ? "product" : "service";
 
   const now = new Date();
   const publicToken = await generateUniquePublicToken();
-  const expiresAt = addDays(now, Number.isFinite(LINK_TTL_DAYS) ? LINK_TTL_DAYS : 90);
+  const expiresAt = addDays(
+    now,
+    Number.isFinite(LINK_TTL_DAYS) ? LINK_TTL_DAYS : 90,
+  );
 
-  const title = isNonEmpty(b.title) ? String(b.title).trim() : offerType === "product" ? "Orçamento" : "Proposta";
+  const title = isNonEmpty(b.title)
+    ? String(b.title).trim()
+    : offerType === "product"
+      ? "Orçamento"
+      : "Proposta";
   const description = isNonEmpty(b.description) ? String(b.description) : "";
 
   // Totais
   const amountCents = Number(b.amountCents);
-  const subtotalCents = Number.isFinite(Number(b.subtotalCents)) ? Number(b.subtotalCents) : null;
-  const discountCents = Number.isFinite(Number(b.discountCents)) ? Number(b.discountCents) : null;
-  const freightCents = Number.isFinite(Number(b.freightCents)) ? Number(b.freightCents) : null;
-  const totalCents = Number.isFinite(Number(b.totalCents)) ? Number(b.totalCents) : amountCents;
+  const subtotalCents = Number.isFinite(Number(b.subtotalCents))
+    ? Number(b.subtotalCents)
+    : null;
+  const discountCents = Number.isFinite(Number(b.discountCents))
+    ? Number(b.discountCents)
+    : null;
+  const freightCents = Number.isFinite(Number(b.freightCents))
+    ? Number(b.freightCents)
+    : null;
+  const totalCents = Number.isFinite(Number(b.totalCents))
+    ? Number(b.totalCents)
+    : amountCents;
 
   const depositEnabled = b.depositEnabled !== false && Number(b.depositPct) > 0;
   const depositPct = depositEnabled ? clampInt(b.depositPct, 0, 100) : 0;
 
   // ✅ Condições (opcional) — sempre persistir flags + valor
-  const durationEnabled = offerType === "service" ? safeBool(b.durationEnabled) : false;
+  const durationEnabled =
+    offerType === "service" ? safeBool(b.durationEnabled) : false;
   const durationMin =
-    offerType === "service" && durationEnabled && Number.isFinite(Number(b.durationMin))
+    offerType === "service" &&
+    durationEnabled &&
+    Number.isFinite(Number(b.durationMin))
       ? clampInt(b.durationMin, 1)
       : null;
 
   const validityEnabled = safeBool(b.validityEnabled);
-  const validityDays = validityEnabled && Number.isFinite(Number(b.validityDays)) ? clampInt(b.validityDays, 1) : null;
+  const validityDays =
+    validityEnabled && Number.isFinite(Number(b.validityDays))
+      ? clampInt(b.validityDays, 1)
+      : null;
 
   const deliveryEnabled = safeBool(b.deliveryEnabled);
-  const deliveryText = deliveryEnabled && isNonEmpty(b.deliveryText) ? String(b.deliveryText).trim() : null;
+  const deliveryText =
+    deliveryEnabled && isNonEmpty(b.deliveryText)
+      ? String(b.deliveryText).trim()
+      : null;
 
   const warrantyEnabled = safeBool(b.warrantyEnabled);
-  const warrantyText = warrantyEnabled && isNonEmpty(b.warrantyText) ? String(b.warrantyText).trim() : null;
+  const warrantyText =
+    warrantyEnabled && isNonEmpty(b.warrantyText)
+      ? String(b.warrantyText).trim()
+      : null;
 
   const notesEnabled = safeBool(b.notesEnabled);
-  const conditionsNotes = notesEnabled && isNonEmpty(b.conditionsNotes) ? String(b.conditionsNotes).trim() : null;
+  const conditionsNotes =
+    notesEnabled && isNonEmpty(b.conditionsNotes)
+      ? String(b.conditionsNotes).trim()
+      : null;
 
   // Desconto/Frete: persistir flags e também os valores em cents (já calculados no front)
   const discountEnabled = safeBool(b.discountEnabled);
-  const discountType = discountEnabled && (b.discountType === "pct" || b.discountType === "fixed") ? b.discountType : null;
-  const discountValue = discountEnabled ? b.discountValue ?? null : null;
+  const discountType =
+    discountEnabled && (b.discountType === "pct" || b.discountType === "fixed")
+      ? b.discountType
+      : null;
+  const discountValue = discountEnabled ? (b.discountValue ?? null) : null;
 
   const freightEnabled = safeBool(b.freightEnabled);
-  const freightValue = freightEnabled ? b.freightValue ?? null : null;
+  const freightValue = freightEnabled ? (b.freightValue ?? null) : null;
 
   // Items (product)
   const items = offerType === "product" ? normalizeItems(b.items) : [];
 
   const offer = await Offer.create({
+    workspaceId: tenantId,
+    ownerUserId: userId,
     customerName: String(b.customerName || "").trim(),
-    customerWhatsApp: isNonEmpty(b.customerWhatsApp) ? String(b.customerWhatsApp).trim() : "",
+    customerWhatsApp: isNonEmpty(b.customerWhatsApp)
+      ? String(b.customerWhatsApp).trim()
+      : "",
 
     offerType,
     title,
@@ -156,10 +198,14 @@ async function createOfferLocal(body) {
   return offer;
 }
 
+r.use(ensureAuth, tenantFromUser);
+
 r.get(
   "/offers",
-  asyncHandler(async (_req, res) => {
-    const items = await Offer.find().sort({ createdAt: -1 }).limit(200);
+  asyncHandler(async (req, res) => {
+    const items = await Offer.find({ workspaceId: req.tenantId })
+      .sort({ createdAt: -1 })
+      .limit(200);
     res.json({ ok: true, items });
   }),
 );
@@ -171,12 +217,10 @@ r.post(
 
     // Validações mínimas (mantém compatibilidade)
     if (!isNonEmpty(customerName)) {
-      return res
-        .status(400)
-        .json({
-          ok: false,
-          error: "customerName required",
-        });
+      return res.status(400).json({
+        ok: false,
+        error: "customerName required",
+      });
     }
 
     // Para service, title é obrigatório; para product, title pode vir vazio (front manda 'Orçamento')
@@ -189,7 +233,10 @@ r.post(
       return res.status(400).json({ ok: false, error: "amountCents invalid" });
     }
 
-    const offer = await createOfferLocal(req.body);
+    const offer = await createOfferLocal(req.body, {
+      tenantId: req.tenantId,
+      userId: req.user._id,
+    });
     res.json({ ok: true, offer, publicUrl: `/p/${offer.publicToken}` });
   }),
 );

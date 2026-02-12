@@ -19,6 +19,20 @@ const ItemSchema = new mongoose.Schema(
 
 const OfferSchema = new mongoose.Schema(
   {
+    // Multi-tenant
+    workspaceId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Workspace",
+      required: true,
+      index: true,
+    },
+    ownerUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      index: true,
+    },
+
     // Identificação
     customerName: { type: String, required: true, trim: true },
     customerWhatsApp: { type: String, default: "", trim: true },
@@ -108,6 +122,10 @@ const OfferSchema = new mongoose.Schema(
   },
   { timestamps: true },
 );
+
+// Índices para performance por tenant
+OfferSchema.index({ workspaceId: 1, createdAt: -1 });
+OfferSchema.index({ workspaceId: 1, publicToken: 1 });
 
 export const Offer =
   mongoose.models.Offer || mongoose.model("Offer", OfferSchema);

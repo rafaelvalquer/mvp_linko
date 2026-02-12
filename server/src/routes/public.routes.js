@@ -76,10 +76,11 @@ function computeAmountCents(offer) {
 }
 
 async function findOfferByPublicToken(token) {
+  const projection = { workspaceId: 0, ownerUserId: 0 };
   const offer =
-    (await Offer.findOne({ publicToken: token }).lean()) ||
-    (await Offer.findOne({ token }).lean()) ||
-    (await Offer.findOne({ publicId: token }).lean());
+    (await Offer.findOne({ publicToken: token }).select(projection).lean()) ||
+    (await Offer.findOne({ token }).select(projection).lean()) ||
+    (await Offer.findOne({ publicId: token }).select(projection).lean());
   return offer || null;
 }
 
