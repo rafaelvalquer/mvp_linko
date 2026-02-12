@@ -72,6 +72,29 @@ function isNonEmpty(s) {
   return String(s || "").trim().length > 0;
 }
 
+function normalizeStatus(st) {
+  const s = String(st || "")
+    .trim()
+    .toUpperCase();
+  // compat: alguns gateways usam "CANCELED" (1 L)
+  if (s === "CANCELED") return "CANCELLED";
+  return s;
+}
+
+function isTerminalPixStatus(st) {
+  const s = normalizeStatus(st);
+  return (
+    s === "PAID" || s === "EXPIRED" || s === "CANCELLED" || s === "REFUNDED"
+  );
+}
+
+function msUntil(iso) {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return null;
+  return t - Date.now();
+}
+
 export default function PublicPixPayment() {
   const { token } = useParams();
   const navigate = useNavigate();
@@ -93,6 +116,7 @@ export default function PublicPixPayment() {
 
   const [pix, setPix] = useState(null); // {id,status,brCode,brCodeBase64,expiresAt,amountCents}
   const pollRef = useRef(null);
+  const expireTimerRef = useRef(null);
 
   const [showPaidModal, setShowPaidModal] = useState(false);
   const [locked, setLocked] = useState(false);
@@ -108,6 +132,9 @@ export default function PublicPixPayment() {
   const stopPolling = useCallback(() => {
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = null;
+
+    if (expireTimerRef.current) clearTimeout(expireTimerRef.current);
+    expireTimerRef.current = null;
   }, []);
 
   const markPaidOnce = useCallback(
@@ -204,7 +231,7 @@ export default function PublicPixPayment() {
           return;
         }
 
-        const st = String(o?.status || "").toUpperCase();
+        const st = normalizeStatus(o?.status);
         if (st === "PAID" || st === "CONFIRMED") {
           navigate(doneUrl, { replace: true });
           return;
@@ -221,6 +248,9 @@ export default function PublicPixPayment() {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = null;
+
+      if (expireTimerRef.current) clearTimeout(expireTimerRef.current);
+      expireTimerRef.current = null;
     };
   }, []);
 
@@ -231,13 +261,14 @@ export default function PublicPixPayment() {
       );
 
       const p = d?.pix || {};
-      const st = String(p.status || "").toUpperCase();
+      const st = normalizeStatus(p.status);
 
       setPix((prev) =>
         prev
           ? {
               ...prev,
               ...p,
+              status: st,
               amountCents: Number.isFinite(p.amount)
                 ? p.amount
                 : prev.amountCents,
@@ -249,9 +280,14 @@ export default function PublicPixPayment() {
         markPaidOnce(p, d?.paidAt);
       }
 
+      // ✅ CANCELLED / REFUNDED / EXPIRED: terminal (para o polling)
+      if (st === "EXPIRED" || st === "CANCELLED" || st === "REFUNDED") {
+        stopPolling();
+      }
+
       return st;
     },
-    [token, markPaidOnce],
+    [token, markPaidOnce, stopPolling],
   );
 
   async function createPix() {
@@ -289,6 +325,7 @@ export default function PublicPixPayment() {
 
       const mapped = {
         ...res.pix,
+        status: normalizeStatus(res?.pix?.status),
         amountCents: Number.isFinite(res?.pix?.amount)
           ? res.pix.amount
           : undefined,
@@ -296,7 +333,7 @@ export default function PublicPixPayment() {
 
       setPix(mapped);
 
-      const st = String(mapped?.status || "").toUpperCase();
+      const st = normalizeStatus(mapped?.status);
       if (st === "PAID") {
         markPaidOnce(mapped, res?.paidAt);
       }
@@ -323,30 +360,52 @@ export default function PublicPixPayment() {
     }
   }
 
+  // ✅ Polling + timeout por expiresAt (encerra automaticamente ao expirar)
   useEffect(() => {
     if (!pix?.id) return;
     if (locked) return;
 
-    if (pollRef.current) clearInterval(pollRef.current);
-    pollRef.current = null;
+    const currentStatus = normalizeStatus(pix?.status);
+    if (isTerminalPixStatus(currentStatus)) return;
+
+    stopPolling();
 
     let stopped = false;
+
+    // timer local de expiração (timeout por expiresAt)
+    const ms = msUntil(pix?.expiresAt);
+    if (ms != null) {
+      if (ms <= 0) {
+        // já passou do prazo: marca como EXPIRED localmente
+        setPix((prev) => (prev ? { ...prev, status: "EXPIRED" } : prev));
+        return;
+      }
+
+      expireTimerRef.current = setTimeout(() => {
+        if (stopped) return;
+        setPix((prev) =>
+          prev && prev.id === pix.id && !isTerminalPixStatus(prev.status)
+            ? { ...prev, status: "EXPIRED" }
+            : prev,
+        );
+        stopPolling();
+      }, ms + 250); // pequena folga para evitar edge de relógio
+    }
 
     (async () => {
       try {
         const st = await refreshStatus(pix.id);
-        if (st === "PAID" || st === "EXPIRED") return;
+        if (isTerminalPixStatus(st)) return;
         if (stopped) return;
 
         pollRef.current = setInterval(async () => {
           try {
             const s = await refreshStatus(pix.id);
-            if (s === "PAID" || s === "EXPIRED") {
-              if (pollRef.current) clearInterval(pollRef.current);
-              pollRef.current = null;
+            if (isTerminalPixStatus(s)) {
+              stopPolling();
             }
           } catch {
-            // mantém polling silencioso
+            // mantém polling silencioso (rede instável)
           }
         }, 3000);
       } catch {
@@ -356,14 +415,23 @@ export default function PublicPixPayment() {
 
     return () => {
       stopped = true;
-      if (pollRef.current) clearInterval(pollRef.current);
-      pollRef.current = null;
+      stopPolling();
     };
-  }, [pix?.id, locked, refreshStatus]);
+  }, [
+    pix?.id,
+    pix?.expiresAt,
+    pix?.status,
+    locked,
+    refreshStatus,
+    stopPolling,
+  ]);
 
   async function devSimulate() {
     if (!pix?.id) return;
     if (locked) return;
+
+    const st = normalizeStatus(pix?.status);
+    if (isTerminalPixStatus(st)) return;
 
     setPixErr("");
     try {
@@ -408,7 +476,7 @@ export default function PublicPixPayment() {
     );
   }
 
-  const status = String(pix?.status || "").toUpperCase();
+  const status = normalizeStatus(pix?.status);
 
   const paidDetail = pix?.id
     ? `Valor: ${fmtBRL(pix?.amountCents ?? pix?.amount)}${
@@ -653,7 +721,7 @@ export default function PublicPixPayment() {
 
             {status === "PENDING" ? (
               <div className="mt-4 rounded-xl border bg-amber-50 p-3 text-sm text-amber-900">
-                Aguardando pagamento… (atualizando automaticamente)
+                Aguardando pagamento… (atualizando automaticamente até expirar)
               </div>
             ) : null}
 
@@ -676,6 +744,86 @@ export default function PublicPixPayment() {
               </div>
             ) : null}
 
+            {/* ✅ CANCELLED */}
+            {status === "CANCELLED" && !locked ? (
+              <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4">
+                <div className="text-sm font-semibold text-red-800">
+                  Pix cancelado
+                </div>
+                <div className="mt-1 text-xs text-red-800">
+                  Este Pix foi cancelado. Gere um novo Pix para continuar.
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      paidOnceRef.current = false;
+                      setLocked(false);
+                      setPaidAt(null);
+                      setShowPaidModal(false);
+                      setPix(null);
+                      setPixErr("");
+                    }}
+                  >
+                    Gerar novo Pix
+                  </Button>
+
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() =>
+                      view.offerType === "product"
+                        ? navigate(`/p/${token}`)
+                        : navigate(`/p/${token}/schedule`)
+                    }
+                  >
+                    Voltar
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
+            {/* ✅ REFUNDED */}
+            {status === "REFUNDED" && !locked ? (
+              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+                <div className="text-sm font-semibold text-amber-900">
+                  Pagamento estornado
+                </div>
+                <div className="mt-1 text-xs text-amber-900">
+                  Este Pix consta como estornado (REFUNDED). Se precisar pagar
+                  novamente, gere um novo Pix.
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      paidOnceRef.current = false;
+                      setLocked(false);
+                      setPaidAt(null);
+                      setShowPaidModal(false);
+                      setPix(null);
+                      setPixErr("");
+                    }}
+                  >
+                    Gerar novo Pix
+                  </Button>
+
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() =>
+                      view.offerType === "product"
+                        ? navigate(`/p/${token}`)
+                        : navigate(`/p/${token}/schedule`)
+                    }
+                  >
+                    Voltar
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
+            {/* ✅ EXPIRED (inclui timeout por expiresAt) */}
             {status === "EXPIRED" && !locked ? (
               <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4">
                 <div className="text-sm font-semibold text-red-800">
@@ -688,6 +836,10 @@ export default function PublicPixPayment() {
                   <Button
                     type="button"
                     onClick={() => {
+                      paidOnceRef.current = false;
+                      setLocked(false);
+                      setPaidAt(null);
+                      setShowPaidModal(false);
                       setPix(null);
                       setPixErr("");
                     }}
