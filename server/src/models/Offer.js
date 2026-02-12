@@ -1,20 +1,40 @@
 import mongoose from "mongoose";
 
-const OfferItemSchema = new mongoose.Schema(
+/*
+  Offer model
+  - Persiste campos de proposta (serviço/produto)
+  - Persiste condições opcionais COM flags (enabled) para o front respeitar o que foi "ticado"
+  - Mantém compatibilidade com campos já usados no front (amountCents, totalCents, etc.)
+*/
+
+const ItemSchema = new mongoose.Schema(
   {
     description: { type: String, default: "" },
-    qty: { type: Number },
-    unitPriceCents: { type: Number },
-    lineTotalCents: { type: Number },
+    qty: { type: Number, default: 1 },
+    unitPriceCents: { type: Number, default: 0 },
+    lineTotalCents: { type: Number, default: 0 },
   },
   { _id: false },
 );
 
 const OfferSchema = new mongoose.Schema(
   {
-    publicToken: { type: String, unique: true, index: true, required: true },
+    // Identificação
+    customerName: { type: String, required: true, trim: true },
+    customerWhatsApp: { type: String, default: "", trim: true },
 
-    // ✅ NOVO: tipo de proposta
+    // Público
+    publicToken: { type: String, required: true, unique: true, index: true },
+    // Expiração técnica do link (não confundir com validade comercial)
+    expiresAt: { type: Date, required: true, index: true },
+
+    // Status
+    status: { type: String, default: "PUBLIC" },
+    acceptedAt: { type: Date },
+    agreeTerms: { type: Boolean, default: false },
+    ackDeposit: { type: Boolean, default: false },
+
+    // Tipo
     offerType: {
       type: String,
       enum: ["service", "product"],
@@ -22,49 +42,63 @@ const OfferSchema = new mongoose.Schema(
       index: true,
     },
 
-    // ✅ NOVO: itens do orçamento (produto)
-    items: { type: [OfferItemSchema], default: [] },
-
-    // Cliente
-    customerName: { type: String, required: true },
-    customerWhatsApp: { type: String, default: "" },
-
-    // Proposta
-    title: { type: String, required: true },
+    // Conteúdo
+    title: { type: String, required: true, trim: true },
     description: { type: String, default: "" },
-    currency: { type: String, default: "BRL" },
-    amountCents: { type: Number, required: true }, // valor total
 
-    // Sinal (MVP)
-    depositPct: { type: Number, default: 30 }, // ex.: 30%
+    // Produtos
+    items: { type: [ItemSchema], default: undefined },
 
-    // Duração estimada (opcional)
+    // Valores
+    amountCents: { type: Number, required: true }, // compat: valor final
+    subtotalCents: { type: Number, default: null },
+    discountCents: { type: Number, default: null },
+    freightCents: { type: Number, default: null },
+    totalCents: { type: Number, default: null },
+
+    // Pagamento
+    depositEnabled: { type: Boolean, default: false },
+    depositPct: { type: Number, default: 0 },
+
+    /* =========================
+       Condições opcionais (com flags)
+    ========================= */
+
+    // Duração (serviço)
     durationEnabled: { type: Boolean, default: false },
     durationMin: { type: Number, default: null },
 
-    // Regras
-    policyText: {
-      type: String,
-      default: "Cancelamentos com 24h de antecedência.",
-    },
-    expiresAt: { type: Date, required: true },
+    // Validade comercial
+    validityEnabled: { type: Boolean, default: false },
+    validityDays: { type: Number, default: null },
+    validityUntil: { type: Date, default: null },
 
-    // Disponibilidade (MVP simples)
-    availability: {
-      timezone: { type: String, default: "America/Sao_Paulo" },
-      days: { type: [Number], default: [1, 2, 3, 4, 5] }, // 0=Dom..6=Sáb
-      startHour: { type: String, default: "09:00" },
-      endHour: { type: String, default: "18:00" },
-    },
+    // Prazo de entrega
+    deliveryEnabled: { type: Boolean, default: false },
+    deliveryText: { type: String, default: null },
 
-    status: {
-      type: String,
-      enum: ["DRAFT", "PUBLIC", "EXPIRED"],
-      default: "PUBLIC",
-      index: true,
-    },
+    // Garantia
+    warrantyEnabled: { type: Boolean, default: false },
+    warrantyText: { type: String, default: null },
+
+    // Observações/condições
+    notesEnabled: { type: Boolean, default: false },
+    conditionsNotes: { type: String, default: null },
+
+    // Desconto
+    discountEnabled: { type: Boolean, default: false },
+    discountType: { type: String, enum: ["fixed", "pct"], default: "fixed" },
+    discountValue: { type: Number, default: null }, // cents (fixed) ou número (pct), conforme discountType
+
+    // Frete
+    freightEnabled: { type: Boolean, default: false },
+    freightValue: { type: Number, default: null }, // cents
+
+    // Campos legados/compat
+    discount: { type: mongoose.Schema.Types.Mixed, default: null },
+    freight: { type: mongoose.Schema.Types.Mixed, default: null },
   },
   { timestamps: true },
 );
 
-export const Offer = mongoose.model("Offer", OfferSchema);
+export const Offer = mongoose.models.Offer || mongoose.model("Offer", OfferSchema);

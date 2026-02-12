@@ -28,10 +28,7 @@ function SuccessModal({ open, title, sub, detail, onConfirm }) {
   const btnRef = useRef(null);
 
   useEffect(() => {
-    if (open) {
-      // foco acessível no botão principal
-      setTimeout(() => btnRef.current?.focus?.(), 0);
-    }
+    if (open) setTimeout(() => btnRef.current?.focus?.(), 0);
   }, [open]);
 
   if (!open) return null;
@@ -42,10 +39,10 @@ function SuccessModal({ open, title, sub, detail, onConfirm }) {
       role="dialog"
       aria-modal="true"
       aria-label="Pagamento aprovado"
+      onClick={(e) => e.stopPropagation()}
     >
       <div
         className="w-full max-w-md rounded-2xl border bg-white p-6 shadow-lg"
-        // não fecha ao clicar fora
         onClick={(e) => e.stopPropagation()}
       >
         <div className="text-xl font-semibold text-zinc-900">{title}</div>
@@ -69,6 +66,10 @@ function SuccessModal({ open, title, sub, detail, onConfirm }) {
       </div>
     </div>
   );
+}
+
+function isNonEmpty(s) {
+  return String(s || "").trim().length > 0;
 }
 
 export default function PublicPixPayment() {
@@ -127,39 +128,17 @@ export default function PublicPixPayment() {
     [stopPolling],
   );
 
-  useEffect(() => {
-    if (!bookingId) {
-      setOfferErr(
-        "bookingId ausente na URL. Volte e crie a reserva novamente.",
-      );
-      setLoadingOffer(false);
-      return;
-    }
-
-    setLoadingOffer(true);
-    setOfferErr("");
-    api(`/p/${token}`)
-      .then((d) => {
-        setOffer(d.offer);
-        setName(d.offer?.customerName || "");
-        setCellphone(
-          d.offer?.customerWhatsApp || d.offer?.customerCellphone || "",
-        );
-        const st = String(d.offer?.status || "").toUpperCase();
-        if (st === "PAID" || st === "CONFIRMED") {
-          navigate(doneUrl, { replace: true });
-          return;
-        }
-      })
-      .catch((e) => {
-        setOfferErr(e?.message || "Falha ao carregar proposta.");
-        setOffer(null);
-      })
-      .finally(() => setLoadingOffer(false));
-  }, [token, bookingId]);
-
   const view = useMemo(() => {
     const o = offer || {};
+    const items = Array.isArray(o.items) ? o.items : [];
+    const hasItems = items.length > 0;
+
+    // infer offerType (compat)
+    const rawType = isNonEmpty(o.offerType)
+      ? String(o.offerType).trim().toLowerCase()
+      : "";
+    const offerType = rawType === "product" || hasItems ? "product" : "service";
+    const requiresBooking = offerType === "service";
 
     const totalCents =
       (Number.isFinite(o.totalCents) && o.totalCents) ||
@@ -179,6 +158,8 @@ export default function PublicPixPayment() {
     const amountToChargeCents = depositEnabled ? depositCents : totalCents;
 
     return {
+      offerType,
+      requiresBooking,
       title: o.title || "Pagamento",
       customerName: o.customerName || "",
       totalCents,
@@ -189,6 +170,53 @@ export default function PublicPixPayment() {
     };
   }, [offer]);
 
+  // Load offer (e decide se bookingId é obrigatório)
+  useEffect(() => {
+    setLoadingOffer(true);
+    setOfferErr("");
+    setPixErr("");
+    paidOnceRef.current = false;
+    setLocked(false);
+    setShowPaidModal(false);
+    setPaidAt(null);
+
+    api(`/p/${token}`)
+      .then((d) => {
+        const o = d.offer || null;
+        setOffer(o);
+
+        setName(o?.customerName || "");
+        setCellphone(o?.customerWhatsApp || o?.customerCellphone || "");
+
+        // infer product/service aqui também (para validar bookingId)
+        const items = Array.isArray(o?.items) ? o.items : [];
+        const hasItems = items.length > 0;
+        const rawType = isNonEmpty(o?.offerType)
+          ? String(o.offerType).trim().toLowerCase()
+          : "";
+        const isProduct = rawType === "product" || hasItems;
+
+        // ✅ Somente serviço exige bookingId (produto não precisa agendar)
+        if (!isProduct && !bookingId) {
+          setOfferErr(
+            "bookingId ausente na URL. Para serviços, volte e crie o agendamento novamente.",
+          );
+          return;
+        }
+
+        const st = String(o?.status || "").toUpperCase();
+        if (st === "PAID" || st === "CONFIRMED") {
+          navigate(doneUrl, { replace: true });
+          return;
+        }
+      })
+      .catch((e) => {
+        setOfferErr(e?.message || "Falha ao carregar proposta.");
+        setOffer(null);
+      })
+      .finally(() => setLoadingOffer(false));
+  }, [token, bookingId, doneUrl, navigate]);
+
   useEffect(() => {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
@@ -196,16 +224,47 @@ export default function PublicPixPayment() {
     };
   }, []);
 
+  const refreshStatus = useCallback(
+    async (pixId) => {
+      const d = await api(
+        `/p/${token}/pix/status?pixId=${encodeURIComponent(pixId)}`,
+      );
+
+      const p = d?.pix || {};
+      const st = String(p.status || "").toUpperCase();
+
+      setPix((prev) =>
+        prev
+          ? {
+              ...prev,
+              ...p,
+              amountCents: Number.isFinite(p.amount)
+                ? p.amount
+                : prev.amountCents,
+            }
+          : prev,
+      );
+
+      if (st === "PAID") {
+        markPaidOnce(p, d?.paidAt);
+      }
+
+      return st;
+    },
+    [token, markPaidOnce],
+  );
+
   async function createPix() {
     setPixErr("");
 
-    if (!bookingId) {
-      setPixErr("bookingId ausente.");
+    // ✅ Para serviço, bookingId é obrigatório. Para produto, não.
+    if (view.requiresBooking && !bookingId) {
+      setPixErr("bookingId ausente para serviço.");
       return;
     }
 
     const payload = {
-      bookingId,
+      ...(view.requiresBooking ? { bookingId } : {}),
       customer: {
         name: String(name || "").trim(),
         cellphone: onlyDigits(cellphone),
@@ -255,7 +314,6 @@ export default function PublicPixPayment() {
     try {
       await navigator.clipboard.writeText(code);
     } catch {
-      // fallback simples
       const ta = document.createElement("textarea");
       ta.value = code;
       document.body.appendChild(ta);
@@ -265,33 +323,6 @@ export default function PublicPixPayment() {
     }
   }
 
-  async function refreshStatus(pixId) {
-    const d = await api(
-      `/p/${token}/pix/status?pixId=${encodeURIComponent(pixId)}`,
-    );
-
-    const p = d?.pix || {};
-    const st = String(p.status || "").toUpperCase();
-
-    setPix((prev) =>
-      prev
-        ? {
-            ...prev,
-            ...p,
-            amountCents: Number.isFinite(p.amount)
-              ? p.amount
-              : prev.amountCents,
-          }
-        : prev,
-    );
-
-    if (st === "PAID") {
-      markPaidOnce(p, d?.paidAt);
-    }
-
-    return st;
-  }
-
   useEffect(() => {
     if (!pix?.id) return;
     if (locked) return;
@@ -299,7 +330,6 @@ export default function PublicPixPayment() {
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = null;
 
-    // dispara uma checagem imediata e depois a cada 3s
     let stopped = false;
 
     (async () => {
@@ -316,11 +346,11 @@ export default function PublicPixPayment() {
               pollRef.current = null;
             }
           } catch {
-            // silencioso: mantém polling
+            // mantém polling silencioso
           }
         }, 3000);
       } catch {
-        // silencioso: mantém UI
+        // mantém UI
       }
     })();
 
@@ -329,7 +359,7 @@ export default function PublicPixPayment() {
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = null;
     };
-  }, [pix?.id, token, locked]);
+  }, [pix?.id, locked, refreshStatus]);
 
   async function devSimulate() {
     if (!pix?.id) return;
@@ -339,9 +369,7 @@ export default function PublicPixPayment() {
     try {
       const res = await api(
         `/p/${token}/pix/dev/simulate?pixId=${encodeURIComponent(pix.id)}`,
-        {
-          method: "POST",
-        },
+        { method: "POST" },
       );
       if (!res?.ok)
         throw new Error(res?.error || "Falha ao simular pagamento.");
@@ -373,7 +401,7 @@ export default function PublicPixPayment() {
             variant="secondary"
             onClick={() => navigate(`/p/${token}`)}
           >
-            Voltar
+            Voltar para a proposta
           </Button>
         </div>
       </div>
@@ -382,15 +410,29 @@ export default function PublicPixPayment() {
 
   const status = String(pix?.status || "").toUpperCase();
 
-  const paidDetail =
-    pix?.id && bookingId
-      ? `Valor: ${fmtBRL(pix?.amountCents ?? pix?.amount)} • Reserva: ${bookingId}`
-      : pix?.id
-        ? `Valor: ${fmtBRL(pix?.amountCents ?? pix?.amount)}`
-        : null;
+  const paidDetail = pix?.id
+    ? `Valor: ${fmtBRL(pix?.amountCents ?? pix?.amount)}${
+        view.requiresBooking && bookingId ? ` • Reserva: ${bookingId}` : ""
+      }`
+    : null;
 
   return (
     <div className="min-h-screen bg-zinc-50">
+      <SuccessModal
+        open={showPaidModal}
+        title="Pagamento aprovado"
+        sub={
+          paidAt
+            ? `Pagamento confirmado em ${fmtDateTime(paidAt)}.`
+            : "Pagamento confirmado."
+        }
+        detail={paidDetail}
+        onConfirm={() => {
+          setShowPaidModal(false);
+          navigate(doneUrl, { replace: true });
+        }}
+      />
+
       <div className="border-b bg-white">
         <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3">
           <div>
@@ -399,10 +441,15 @@ export default function PublicPixPayment() {
               Pagamento Pix • AbacatePay
             </div>
           </div>
+
           <Button
             type="button"
             variant="secondary"
-            onClick={() => navigate(`/p/${token}/schedule`)}
+            onClick={() =>
+              view.offerType === "product"
+                ? navigate(`/p/${token}`)
+                : navigate(`/p/${token}/schedule`)
+            }
           >
             Voltar
           </Button>
@@ -416,6 +463,7 @@ export default function PublicPixPayment() {
           <div className="mt-1 text-xl font-semibold text-zinc-900">
             {view.title}
           </div>
+
           {view.customerName ? (
             <div className="mt-1 text-sm text-zinc-600">
               Para:{" "}
@@ -453,9 +501,16 @@ export default function PublicPixPayment() {
               <div className="mt-1 text-lg font-semibold text-zinc-900">
                 {fmtBRL(view.amountToChargeCents)}
               </div>
-              <div className="mt-1 text-xs text-zinc-600">
-                Reserva: {bookingId}
-              </div>
+
+              {view.requiresBooking ? (
+                <div className="mt-1 text-xs text-zinc-600">
+                  Reserva: {bookingId || "—"}
+                </div>
+              ) : (
+                <div className="mt-1 text-xs text-zinc-600">
+                  Produto (sem agendamento)
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -643,7 +698,11 @@ export default function PublicPixPayment() {
                     <Button
                       type="button"
                       variant="secondary"
-                      onClick={() => navigate(`/p/${token}/schedule`)}
+                      onClick={() =>
+                        view.offerType === "product"
+                          ? navigate(`/p/${token}`)
+                          : navigate(`/p/${token}/schedule`)
+                      }
                     >
                       Voltar
                     </Button>

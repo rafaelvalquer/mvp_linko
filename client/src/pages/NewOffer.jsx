@@ -59,25 +59,29 @@ function clampInt(n, min, max) {
 }
 
 export default function NewOffer() {
-  const [form, setForm] = useState(() => ({
+  const [form, setForm] = useState({
     customerName: "",
     customerWhatsApp: "",
 
-    offerType: "service",
+    // type
+    offerType: "service", // "service" | "product"
 
+    // service fields
     title: "",
     description: "",
     amount: "100.00",
 
+    // product fields
     items: [{ description: "", qty: 1, unitPrice: "0,00" }],
 
+    // payment
     depositEnabled: true,
     depositPct: 30,
-
-    // ✅ duração opcional: começa DESLIGADO
+    // ✅ duração opcional (somente service)
     durationEnabled: false,
     durationMin: 60,
 
+    // conditions toggles + values
     validityEnabled: false,
     validityDays: 7,
 
@@ -91,12 +95,12 @@ export default function NewOffer() {
     conditionsNotes: "",
 
     discountEnabled: false,
-    discountType: "fixed",
-    discountValue: "0,00",
+    discountType: "fixed", // "fixed" | "pct"
+    discountValue: "0,00", // fixed BRL or pct number string
 
     freightEnabled: false,
     freightValue: "0,00",
-  }));
+  });
 
   const [result, setResult] = useState(null);
   const [err, setErr] = useState("");
@@ -176,11 +180,7 @@ export default function NewOffer() {
   function setOfferType(next) {
     setForm((p) => {
       const offerType = next;
-      return {
-        ...p,
-        offerType,
-        ...(offerType === "product" ? { durationEnabled: false } : null),
-      };
+      return { ...p, offerType };
     });
   }
 
@@ -243,6 +243,12 @@ export default function NewOffer() {
           throw new Error("Informe um valor válido.");
         if (!Number.isFinite(calc.totalCents) || calc.totalCents <= 0)
           throw new Error("Total do orçamento inválido.");
+
+        if (form.durationEnabled) {
+          const d = clampInt(form.durationMin, 1);
+          if (!Number.isFinite(d) || d <= 0)
+            throw new Error("Informe uma duração válida.");
+        }
       } else {
         const items = Array.isArray(form.items) ? form.items : [];
         if (items.length < 1) throw new Error("Adicione pelo menos 1 item.");
@@ -280,6 +286,9 @@ export default function NewOffer() {
         // safer compatibility: always a number
         depositPct: form.depositEnabled ? clampInt(form.depositPct, 0, 100) : 0,
 
+        // ✅ duração (somente service, opcional)
+        durationEnabled:
+          form.offerType === "service" ? !!form.durationEnabled : false,
         durationMin:
           form.offerType === "service" && form.durationEnabled
             ? clampInt(form.durationMin, 1)
@@ -291,19 +300,31 @@ export default function NewOffer() {
         freightCents: form.freightEnabled ? calc.freightCents : null,
         totalCents: calc.totalCents,
 
-        // optional conditions (only if enabled)
-        validityDays: form.validityEnabled
-          ? clampInt(form.validityDays, 1)
-          : null,
+        // ✅ condições (com flags + valores)
+        validityEnabled: !!form.validityEnabled,
+        validityDays: form.validityEnabled ? clampInt(form.validityDays, 1) : null,
+
+        deliveryEnabled: !!form.deliveryEnabled,
         deliveryText: form.deliveryEnabled
           ? String(form.deliveryText || "").trim()
           : null,
+
+        warrantyEnabled: !!form.warrantyEnabled,
         warrantyText: form.warrantyEnabled
           ? String(form.warrantyText || "").trim()
           : null,
+
+        notesEnabled: !!form.notesEnabled,
         conditionsNotes: form.notesEnabled
           ? String(form.conditionsNotes || "").trim()
           : null,
+
+        discountEnabled: !!form.discountEnabled,
+        discountType: form.discountEnabled ? form.discountType : null,
+        discountValue: form.discountEnabled ? String(form.discountValue || "") : null,
+
+        freightEnabled: !!form.freightEnabled,
+        freightValue: form.freightEnabled ? String(form.freightValue || "") : null,
 
         discount: form.discountEnabled
           ? {
@@ -427,38 +448,37 @@ export default function NewOffer() {
             </CardBody>
           </Card>
 
-          {/* ✅ Serviço (somente service) */}
+          {/* Serviço (somente service) */}
           {!isProduct ? (
             <Card>
               <CardHeader
                 title="Serviço"
-                subtitle="Informe o título e a descrição do serviço."
+                subtitle="O que será feito e observações."
               />
               <CardBody className="space-y-3">
                 <div>
                   <label className="text-xs font-semibold text-zinc-600">
-                    Título do serviço
+                    Título
                   </label>
                   <Input
                     value={form.title}
                     onChange={(e) =>
                       setForm({ ...form, title: e.target.value })
                     }
-                    placeholder="Ex.: Instalação de ar-condicionado"
+                    placeholder="Título do serviço"
                   />
                 </div>
-
                 <div>
                   <label className="text-xs font-semibold text-zinc-600">
-                    Descrição do serviço
+                    Descrição (opcional)
                   </label>
                   <Textarea
-                    className="min-h-[120px]"
+                    className="min-h-[100px]"
                     value={form.description}
                     onChange={(e) =>
                       setForm({ ...form, description: e.target.value })
                     }
-                    placeholder="Descreva o que está incluso, observações, etc."
+                    placeholder="Detalhes, itens/opções, condições específicas…"
                   />
                 </div>
               </CardBody>
@@ -607,7 +627,7 @@ export default function NewOffer() {
                     <label className="flex items-center gap-2 text-sm">
                       <input
                         type="checkbox"
-                        checked={form.durationEnabled}
+                        checked={!!form.durationEnabled}
                         onChange={(e) =>
                           setForm({
                             ...form,
@@ -981,6 +1001,7 @@ export default function NewOffer() {
                   </div>
                 )}
               </div>
+
             </CardBody>
           </Card>
 

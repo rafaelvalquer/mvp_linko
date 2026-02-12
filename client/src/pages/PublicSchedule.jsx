@@ -43,8 +43,9 @@ export default function PublicSchedule() {
   const [booking, setBooking] = useState(null);
 
   function onGoPay() {
-    if (!booking?.id) return;
-    navigate(`/p/${token}/pay?bookingId=${encodeURIComponent(booking.id)}`);
+    const bookingId = booking?.id || booking?._id || booking?.bookingId;
+    if (!bookingId) return;
+    navigate(`/p/${token}/pay?bookingId=${encodeURIComponent(bookingId)}`);
   }
 
   // carrega proposta

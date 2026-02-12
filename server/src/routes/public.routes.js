@@ -113,21 +113,20 @@ function isPaidStatus(st) {
   return s === "PAID" || s === "CONFIRMED";
 }
 
-function isNonEmptyString(v) {
-  return typeof v === "string" && v.trim().length > 0;
-}
-
-function normalizeOfferTypeFromOffer(offer) {
+/**
+ * Infer tipo sem quebrar legado:
+ * - Se offerType for "product" => produto
+ * - Se não houver offerType mas existir items => produto
+ * - Caso contrário => service
+ */
+function inferOfferType(offer) {
+  const raw = String(offer?.offerType || "")
+    .trim()
+    .toLowerCase();
+  if (raw === "product") return "product";
   const items = Array.isArray(offer?.items) ? offer.items : [];
-  const hasItems = items.length > 0;
-
-  const raw = isNonEmptyString(offer?.offerType)
-    ? offer.offerType.trim().toLowerCase()
-    : "";
-
-  const offerType = raw === "product" || hasItems ? "product" : "service";
-
-  return { offerType, items };
+  if (items.length > 0) return "product";
+  return "service";
 }
 
 // pixByBooking pode ser Map ou objeto
@@ -241,17 +240,7 @@ router.get("/p/:token", async (req, res, next) => {
         .json({ ok: false, error: "Proposta não encontrada." });
 
     const locked = isPaidStatus(offer?.status);
-
-    // ✅ Compat: garante offerType/items sempre presentes no JSON
-    const norm = normalizeOfferTypeFromOffer(offer);
-    const safeOffer = {
-      ...offer,
-      offerType: norm.offerType,
-      items: norm.items,
-    };
-
-    noStore(res);
-    return res.json({ ok: true, offer: safeOffer, locked, doneOnly: locked });
+    return res.json({ ok: true, offer, locked, doneOnly: locked });
   } catch (e) {
     next(e);
   }
@@ -477,7 +466,9 @@ router.post("/p/:token/book", async (req, res, next) => {
 
 /**
  * POST /p/:token/pix/create
- * Body: { bookingId, customer: { name, cellphone, email, taxId } }
+ * Body:
+ *  - service: { bookingId, customer: { name, cellphone, email, taxId } }
+ *  - product: { customer: { name, cellphone, email, taxId } }  (SEM bookingId)
  */
 router.post("/p/:token/pix/create", async (req, res, next) => {
   try {
@@ -488,16 +479,27 @@ router.post("/p/:token/pix/create", async (req, res, next) => {
 
     if (!token)
       return res.status(400).json({ ok: false, error: "Token inválido." });
-    if (!bookingId)
-      return res
-        .status(400)
-        .json({ ok: false, error: "bookingId obrigatório." });
 
     const offer = await findOfferByPublicToken(token);
     if (!offer)
       return res
         .status(404)
         .json({ ok: false, error: "Proposta não encontrada." });
+
+    const offerType = inferOfferType(offer);
+    const isProduct = offerType === "product";
+
+    // ✅ Produto: não exige bookingId (usa uma chave estável para idempotência)
+    // ✅ Serviço: mantém obrigatório
+    const effectiveBookingId = String(
+      (bookingId && String(bookingId).trim()) || (isProduct ? token : ""),
+    ).trim();
+
+    if (!effectiveBookingId) {
+      return res
+        .status(400)
+        .json({ ok: false, error: "bookingId obrigatório." });
+    }
 
     // trava total se já pago
     if (isPaidStatus(offer?.status)) {
@@ -509,24 +511,28 @@ router.post("/p/:token/pix/create", async (req, res, next) => {
       });
     }
 
-    const booking = bookings.find(
-      (b) => b.id === bookingId && b.token === token,
-    );
-    if (!booking || booking.status !== "HOLD") {
-      return res.status(409).json({
-        ok: false,
-        error: "Reserva inválida/expirada. Refaça o agendamento.",
-      });
+    // Serviço: valida HOLD do booking
+    let booking = null;
+    if (!isProduct) {
+      booking = bookings.find(
+        (b) => b.id === effectiveBookingId && b.token === token,
+      );
+      if (!booking || booking.status !== "HOLD") {
+        return res.status(409).json({
+          ok: false,
+          error: "Reserva inválida/expirada. Refaça o agendamento.",
+        });
+      }
     }
 
-    // idempotência: se já existe pix para esse bookingId, reutiliza (se não expirou)
-    const existing = getPixByBooking(bookingId);
+    // idempotência: se já existe pix para esse "effectiveBookingId", reutiliza (se não expirou)
+    const existing = getPixByBooking(effectiveBookingId);
     if (existing?.pixId) {
       const chk = await abacateCheckPix({ pixId: existing.pixId });
       const pixData = chk?.data;
       if (pixData?.id) {
         // atualiza store
-        setPixByBooking(bookingId, {
+        setPixByBooking(effectiveBookingId, {
           ...existing,
           status: pixData.status,
           pix: pixData,
@@ -579,20 +585,29 @@ router.post("/p/:token/pix/create", async (req, res, next) => {
         .json({ ok: false, error: "Valor inválido para cobrança." });
     }
 
-    // expiração alinhada com HOLD (com fallback)
+    // expiração:
+    // - service: alinhada com HOLD
+    // - product: usa PIX_EXPIRES_IN (fallback), sem dependência de booking
     const now = Date.now();
-    const remainingHoldSec = Math.max(
-      60,
-      Math.floor(
-        ((booking.expiresAt || now + HOLD_MINUTES * 60 * 1000) - now) / 1000,
-      ),
-    );
-    const expiresIn = Math.min(
-      Math.max(60, remainingHoldSec),
-      Math.max(60, PIX_EXPIRES_IN),
-    );
+    let expiresIn = Math.max(60, PIX_EXPIRES_IN);
 
-    const metadata = { externalId: String(bookingId) };
+    if (!isProduct && booking) {
+      const remainingHoldSec = Math.max(
+        60,
+        Math.floor(
+          ((booking.expiresAt || now + HOLD_MINUTES * 60 * 1000) - now) / 1000,
+        ),
+      );
+      expiresIn = Math.min(
+        Math.max(60, remainingHoldSec),
+        Math.max(60, PIX_EXPIRES_IN),
+      );
+    }
+
+    // metadata.externalId:
+    // - service: bookingId
+    // - product: token (chave estável)
+    const metadata = { externalId: String(effectiveBookingId) };
 
     const ab = await abacateCreatePixQr({
       amount,
@@ -608,9 +623,9 @@ router.post("/p/:token/pix/create", async (req, res, next) => {
       return res.status(502).json({ ok: false, error: "Falha ao gerar Pix." });
     }
 
-    booking.pixId = pixData.id;
+    if (booking) booking.pixId = pixData.id;
 
-    setPixByBooking(bookingId, {
+    setPixByBooking(effectiveBookingId, {
       pixId: pixData.id,
       status: pixData.status || "PENDING",
       token,
@@ -619,7 +634,7 @@ router.post("/p/:token/pix/create", async (req, res, next) => {
 
     upsertPixCharge({
       pixId: pixData.id,
-      bookingId,
+      bookingId: isProduct ? null : effectiveBookingId, // mantém compat; produto não tem booking real
       token,
       status: pixData.status || "PENDING",
       updatedAt: nowIso(),

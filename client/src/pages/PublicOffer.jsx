@@ -31,8 +31,7 @@ function isNonEmpty(s) {
 }
 
 function safeLines(text) {
-  const t = String(text || "");
-  return t;
+  return String(text || "");
 }
 
 function sumItemsSubtotalCents(items) {
@@ -55,7 +54,6 @@ function extractBulletsFromText(text, max = 4) {
   const t = String(text || "").trim();
   if (!t) return [];
 
-  // Prefer line breaks first
   const lines = t
     .split("\n")
     .map((x) => x.trim())
@@ -152,38 +150,38 @@ export default function PublicOffer() {
     const items = Array.isArray(o.items) ? o.items : [];
     const hasItems = items.length > 0;
 
-    // Compat: infer product if items exist (even if offerType is missing or inconsistent)
+    // Compat: infer product if items exist (even if offerType is missing)
     const rawType = isNonEmpty(o.offerType)
       ? String(o.offerType).trim().toLowerCase()
       : "";
     const offerType = rawType === "product" || hasItems ? "product" : "service";
 
-    // subtotal: prefer explicit, else items sum (if available), else total as fallback
+    // subtotal: prefer explicit, else items sum (if available), else null
     const itemsSubtotal = sumItemsSubtotalCents(items);
     const subtotalCents =
-      Number.isFinite(o.subtotalCents) && o.subtotalCents >= 0
-        ? o.subtotalCents
+      Number.isFinite(Number(o.subtotalCents)) && Number(o.subtotalCents) >= 0
+        ? Number(o.subtotalCents)
         : itemsSubtotal != null
           ? itemsSubtotal
           : null;
 
     // discount/freight: show only if exists and >0
     const discountCents =
-      Number.isFinite(o.discountCents) && o.discountCents > 0
-        ? o.discountCents
+      Number.isFinite(Number(o.discountCents)) && Number(o.discountCents) > 0
+        ? Number(o.discountCents)
         : null;
 
     const freightCents =
-      Number.isFinite(o.freightCents) && o.freightCents > 0
-        ? o.freightCents
+      Number.isFinite(Number(o.freightCents)) && Number(o.freightCents) > 0
+        ? Number(o.freightCents)
         : null;
 
-    // ✅ total: prefer explicit totalCents, else amountCents; if missing, compute from subtotal/discount/freight
+    // total: prefer explicit totalCents, else amountCents; if missing, compute from subtotal/discount/freight
     const explicitTotalCents =
-      Number.isFinite(o.totalCents) && o.totalCents >= 0
-        ? o.totalCents
-        : Number.isFinite(o.amountCents) && o.amountCents >= 0
-          ? o.amountCents
+      Number.isFinite(Number(o.totalCents)) && Number(o.totalCents) >= 0
+        ? Number(o.totalCents)
+        : Number.isFinite(Number(o.amountCents)) && Number(o.amountCents) >= 0
+          ? Number(o.amountCents)
           : null;
 
     const computedTotalCents =
@@ -214,22 +212,103 @@ export default function PublicOffer() {
 
     const remainingCents = Math.max(0, totalCents - depositCents);
 
-    const durationEnabled = o.durationEnabled === true;
+    /* =========================
+       ✅ Condições (respeitar "ticado" + preenchido)
+       - Se existir flag booleana no backend, ela manda.
+       - Se não existir (legacy), inferimos pelo conteúdo.
+    ========================= */
+
+    // Duração (somente service)
+    const hasDurationFlag = typeof o.durationEnabled === "boolean";
+    const durationEnabledLegacy =
+      !hasDurationFlag &&
+      Number.isFinite(Number(o.durationMin)) &&
+      Number(o.durationMin) > 0;
+    const durationEnabled = hasDurationFlag
+      ? o.durationEnabled
+      : durationEnabledLegacy;
 
     const durationMin =
-      durationEnabled && Number.isFinite(o.durationMin) && o.durationMin > 0
-        ? o.durationMin
+      offerType === "service" &&
+      durationEnabled &&
+      Number.isFinite(Number(o.durationMin)) &&
+      Number(o.durationMin) > 0
+        ? Number(o.durationMin)
         : null;
 
-    const issuedAt = o.createdAt || o.issuedAt || "";
+    // Validade (NÃO usar expiresAt como “validade” — é expiração técnica do link)
+    const hasValidityFlag = typeof o.validityEnabled === "boolean";
+    const validityDaysRaw = Number(o.validityDays);
     const validityDays =
-      Number.isFinite(o.validityDays) && o.validityDays > 0
-        ? o.validityDays
-        : 0;
+      Number.isFinite(validityDaysRaw) && validityDaysRaw > 0
+        ? validityDaysRaw
+        : null;
 
-    const validityUntil =
-      o.validityUntil || o.validUntil || o.expiresAt || o.validityUntilAt || "";
+    const validityUntil = pickFirst(o, [
+      "validityUntil",
+      "validUntil",
+      "validityUntilAt",
+    ]);
 
+    const validityEnabledLegacy =
+      !hasValidityFlag && (validityDays != null || isNonEmpty(validityUntil));
+    const validityEnabled = hasValidityFlag
+      ? o.validityEnabled
+      : validityEnabledLegacy;
+
+    const validityText = validityEnabled
+      ? validityUntil
+        ? `Válida até ${fmtDate(validityUntil)}`
+        : validityDays != null
+          ? `Válida por ${validityDays} dia(s)`
+          : ""
+      : "";
+
+    // Prazo de entrega
+    const deliveryTextRaw = pickFirst(o, ["deliveryText", "delivery"]);
+    const hasDeliveryFlag = typeof o.deliveryEnabled === "boolean";
+    const deliveryEnabled = hasDeliveryFlag
+      ? o.deliveryEnabled
+      : isNonEmpty(deliveryTextRaw);
+    const deliveryText =
+      deliveryEnabled && isNonEmpty(deliveryTextRaw) ? deliveryTextRaw : "";
+
+    // Garantia
+    const warrantyTextRaw = pickFirst(o, ["warrantyText", "warranty"]);
+    const hasWarrantyFlag = typeof o.warrantyEnabled === "boolean";
+    const warrantyEnabled = hasWarrantyFlag
+      ? o.warrantyEnabled
+      : isNonEmpty(warrantyTextRaw);
+    const warrantyText =
+      warrantyEnabled && isNonEmpty(warrantyTextRaw) ? warrantyTextRaw : "";
+
+    // Observações/condições
+    const notesTextRaw = pickFirst(o, [
+      "conditionsNotes",
+      "notes",
+      "observations",
+      "termsNotes",
+      "notesText",
+    ]);
+    const hasNotesFlag = typeof o.notesEnabled === "boolean";
+    const notesEnabled = hasNotesFlag
+      ? o.notesEnabled
+      : isNonEmpty(notesTextRaw);
+    const notesText =
+      notesEnabled && isNonEmpty(notesTextRaw) ? notesTextRaw : "";
+
+    // Desconto/Frete (respeitar flags quando existirem)
+    const hasDiscountFlag = typeof o.discountEnabled === "boolean";
+    const discountEnabled = hasDiscountFlag
+      ? o.discountEnabled
+      : discountCents != null;
+
+    const hasFreightFlag = typeof o.freightEnabled === "boolean";
+    const freightEnabled = hasFreightFlag
+      ? o.freightEnabled
+      : freightCents != null;
+
+    const issuedAt = o.createdAt || o.issuedAt || "";
     const status = o.status || "";
 
     const contactWhatsApp = pickFirst(o, [
@@ -250,25 +329,25 @@ export default function PublicOffer() {
     const headerMeta = {
       status,
       issuedAt: fmtDate(issuedAt),
-      validityText: validityUntil
-        ? `Válida até ${fmtDate(validityUntil)}`
-        : validityDays
-          ? `Válida por ${validityDays} dia(s)`
-          : "",
+      validityText,
     };
 
     const includeBullets = extractBulletsFromText(
-      o.description || o.conditionsNotes || "",
+      o.description || notesTextRaw || "",
       4,
     );
 
-    // Conditions (only show if field exists / non-empty)
     const conditions = {
-      validityText: headerMeta.validityText,
-      deliveryText: isNonEmpty(o.deliveryText) ? o.deliveryText : "",
-      warrantyText: isNonEmpty(o.warrantyText) ? o.warrantyText : "",
-      notesText: isNonEmpty(o.conditionsNotes) ? o.conditionsNotes : "",
-      policyText: isNonEmpty(o.policyText) ? o.policyText : "",
+      durationEnabled,
+      durationMin,
+      validityText,
+      deliveryText,
+      warrantyText,
+      notesText,
+      discountEnabled,
+      discountCents,
+      freightEnabled,
+      freightCents,
     };
 
     const ctaLabel =
@@ -290,8 +369,6 @@ export default function PublicOffer() {
       depositPct,
       depositCents,
       remainingCents,
-      durationEnabled,
-      durationMin,
       headerMeta,
       contactWhatsApp,
       contactEmail,
@@ -307,16 +384,10 @@ export default function PublicOffer() {
 
   async function onCta() {
     setCtaError("");
-
-    // Mantém o placeholder de produto (MVP futuro)
-    if (view.offerType === "product") {
-      alert("MVP: Aceitar e pagar (placeholder).");
-      return;
-    }
-
-    // Service: POST accept + navegar
     setBusy(true);
+
     try {
+      // registra aceite para SERVICE e PRODUCT
       const res = await api(`/p/${token}/accept`, {
         method: "POST",
         body: JSON.stringify({
@@ -326,11 +397,16 @@ export default function PublicOffer() {
         }),
       });
 
-      if (!res?.ok) {
-        throw new Error(res?.error || "Falha ao registrar aceite.");
-      }
+      if (!res?.ok) throw new Error(res?.error || "Falha ao registrar aceite.");
 
-      navigate(`/p/${token}/schedule`);
+      // ✅ fluxo:
+      // - service -> agenda
+      // - product -> pagamento direto
+      if (view.offerType === "product") {
+        navigate(`/p/${token}/pay`);
+      } else {
+        navigate(`/p/${token}/schedule`);
+      }
     } catch (e) {
       setCtaError(e?.message || "Falha ao registrar aceite.");
     } finally {
@@ -372,6 +448,19 @@ export default function PublicOffer() {
     if (s.includes("cancel") || s.includes("expir")) return "red";
     return "blue";
   })();
+
+  const hasAnyConditions =
+    isNonEmpty(view.conditions.validityText) ||
+    isNonEmpty(view.conditions.deliveryText) ||
+    isNonEmpty(view.conditions.warrantyText) ||
+    isNonEmpty(view.conditions.notesText) ||
+    (view.conditions.durationEnabled && view.conditions.durationMin != null) ||
+    (view.offerType === "service" &&
+      view.conditions.discountEnabled &&
+      Number.isFinite(view.conditions.discountCents)) ||
+    (view.offerType === "service" &&
+      view.conditions.freightEnabled &&
+      Number.isFinite(view.conditions.freightCents));
 
   return (
     <div className="min-h-screen bg-zinc-50">
@@ -491,11 +580,12 @@ export default function PublicOffer() {
                       {view.items.length}
                     </span>
                   </>
-                ) : view.durationMin != null ? (
+                ) : view.conditions.durationEnabled &&
+                  view.conditions.durationMin != null ? (
                   <>
                     Duração estimada:{" "}
                     <span className="font-semibold text-zinc-900">
-                      {view.durationMin} min
+                      {view.conditions.durationMin} min
                     </span>
                   </>
                 ) : (
@@ -528,8 +618,8 @@ export default function PublicOffer() {
           <SectionCard
             title="Resumo do serviço 🧾"
             subtitle={
-              view.durationMin != null
-                ? "Detalhes e observações do atendimento."
+              hasAnyConditions
+                ? "Detalhes e condições do atendimento."
                 : "Detalhes e observações."
             }
           >
@@ -543,12 +633,94 @@ export default function PublicOffer() {
               </div>
             )}
 
-            {view.durationMin != null ? (
-              <div className="mt-4 rounded-xl border bg-zinc-50 p-3 text-sm text-zinc-700">
-                Duração estimada:{" "}
-                <span className="font-semibold text-zinc-900">
-                  {view.durationMin} min
-                </span>
+            {/* ✅ Condições (opcional) dentro do resumo do serviço */}
+            {hasAnyConditions ? (
+              <div className="mt-4 space-y-3">
+                {view.conditions.durationEnabled &&
+                view.conditions.durationMin != null ? (
+                  <div className="rounded-xl border bg-zinc-50 p-3 text-sm">
+                    <div className="text-xs font-semibold text-zinc-600">
+                      Duração estimada
+                    </div>
+                    <div className="mt-1 text-zinc-800">
+                      <span className="font-semibold text-zinc-900">
+                        {view.conditions.durationMin} min
+                      </span>
+                    </div>
+                  </div>
+                ) : null}
+
+                {isNonEmpty(view.conditions.validityText) ? (
+                  <div className="rounded-xl border bg-zinc-50 p-3 text-sm">
+                    <div className="text-xs font-semibold text-zinc-600">
+                      Validade
+                    </div>
+                    <div className="mt-1 text-zinc-800">
+                      {view.conditions.validityText}
+                    </div>
+                  </div>
+                ) : null}
+
+                {isNonEmpty(view.conditions.deliveryText) ? (
+                  <div className="rounded-xl border bg-zinc-50 p-3 text-sm">
+                    <div className="text-xs font-semibold text-zinc-600">
+                      Prazo de entrega
+                    </div>
+                    <div className="mt-1 whitespace-pre-wrap text-zinc-800">
+                      {safeLines(view.conditions.deliveryText)}
+                    </div>
+                  </div>
+                ) : null}
+
+                {isNonEmpty(view.conditions.warrantyText) ? (
+                  <div className="rounded-xl border bg-zinc-50 p-3 text-sm">
+                    <div className="text-xs font-semibold text-zinc-600">
+                      Garantia
+                    </div>
+                    <div className="mt-1 whitespace-pre-wrap text-zinc-800">
+                      {safeLines(view.conditions.warrantyText)}
+                    </div>
+                  </div>
+                ) : null}
+
+                {isNonEmpty(view.conditions.notesText) ? (
+                  <div className="rounded-xl border bg-zinc-50 p-3 text-sm">
+                    <div className="text-xs font-semibold text-zinc-600">
+                      Observações/condições
+                    </div>
+                    <div className="mt-1 whitespace-pre-wrap text-zinc-800">
+                      {safeLines(view.conditions.notesText)}
+                    </div>
+                  </div>
+                ) : null}
+
+                {view.conditions.discountEnabled &&
+                Number.isFinite(view.conditions.discountCents) ? (
+                  <div className="rounded-xl border bg-zinc-50 p-3 text-sm">
+                    <div className="text-xs font-semibold text-zinc-600">
+                      Desconto
+                    </div>
+                    <div className="mt-1 text-zinc-800">
+                      <span className="font-semibold text-zinc-900">
+                        - {fmtBRL(view.conditions.discountCents)}
+                      </span>
+                    </div>
+                  </div>
+                ) : null}
+
+                {view.conditions.freightEnabled &&
+                Number.isFinite(view.conditions.freightCents) ? (
+                  <div className="rounded-xl border bg-zinc-50 p-3 text-sm">
+                    <div className="text-xs font-semibold text-zinc-600">
+                      Frete
+                    </div>
+                    <div className="mt-1 text-zinc-800">
+                      <span className="font-semibold text-zinc-900">
+                        {fmtBRL(view.conditions.freightCents)}
+                      </span>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </SectionCard>
@@ -557,14 +729,13 @@ export default function PublicOffer() {
             title="Itens do orçamento 🧾"
             subtitle="Confira os itens, quantidades e valores."
           >
-            {/* Mobile list */}
             {!view.items.length ? (
               <div className="text-sm text-zinc-600">
                 Nenhum item informado neste orçamento.
               </div>
             ) : (
               <>
-                {/* Mobile list */}
+                {/* Mobile */}
                 <div className="space-y-2 sm:hidden">
                   {view.items.map((it, idx) => {
                     const desc = isNonEmpty(it?.description)
@@ -592,8 +763,7 @@ export default function PublicOffer() {
                           <span className="font-semibold text-zinc-900">
                             {qty != null ? qty : "—"}
                           </span>
-                          {" • "}
-                          Unit:{" "}
+                          {" • "}Unit:{" "}
                           <span className="font-semibold text-zinc-900">
                             {unit != null ? fmtBRL(unit) : "—"}
                           </span>
@@ -609,7 +779,7 @@ export default function PublicOffer() {
                   })}
                 </div>
 
-                {/* Desktop table */}
+                {/* Desktop */}
                 <div className="hidden overflow-auto rounded-xl border sm:block">
                   <table className="min-w-full text-left text-sm">
                     <thead className="bg-zinc-50 text-xs font-semibold text-zinc-600">
@@ -642,7 +812,9 @@ export default function PublicOffer() {
                         return (
                           <tr
                             key={idx}
-                            className={`${idx % 2 ? "bg-zinc-50/40" : ""} hover:bg-zinc-50`}
+                            className={`${
+                              idx % 2 ? "bg-zinc-50/40" : ""
+                            } hover:bg-zinc-50`}
                           >
                             <td className="px-3 py-2 text-zinc-900">{desc}</td>
                             <td className="px-3 py-2 text-right text-zinc-700">
@@ -736,12 +908,12 @@ export default function PublicOffer() {
           ) : null}
         </SectionCard>
 
-        {/* Condições e termos (somente o que existir) */}
-        {(isNonEmpty(view.conditions.validityText) ||
+        {/* ✅ Condições e termos: mantém para PRODUTO */}
+        {view.offerType === "product" &&
+        (isNonEmpty(view.conditions.validityText) ||
           isNonEmpty(view.conditions.deliveryText) ||
           isNonEmpty(view.conditions.warrantyText) ||
-          isNonEmpty(view.conditions.notesText) ||
-          isNonEmpty(view.conditions.policyText)) && (
+          isNonEmpty(view.conditions.notesText)) ? (
           <SectionCard
             title="Condições e termos"
             subtitle="Somente o que foi definido para esta proposta."
@@ -788,20 +960,9 @@ export default function PublicOffer() {
                   </div>
                 </div>
               ) : null}
-
-              {isNonEmpty(view.conditions.policyText) ? (
-                <div className="rounded-xl border bg-white p-3">
-                  <div className="text-xs font-semibold text-zinc-600">
-                    Política
-                  </div>
-                  <div className="mt-1 whitespace-pre-wrap">
-                    {safeLines(view.conditions.policyText)}
-                  </div>
-                </div>
-              ) : null}
             </div>
           </SectionCard>
-        )}
+        ) : null}
 
         {/* Próximos passos */}
         <SectionCard title="Próximos passos" subtitle="Rápido, sem enrolação.">
@@ -855,7 +1016,7 @@ export default function PublicOffer() {
               />
               <div>
                 <div className="text-sm font-semibold text-zinc-900">
-                  Li e concordo com as condições e política (quando aplicável).
+                  Li e concordo com as condições (quando aplicável).
                 </div>
                 <div className="text-xs text-zinc-600">
                   Você está aceitando o que foi descrito acima para esta
