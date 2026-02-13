@@ -1,6 +1,7 @@
 // src/pages/Dashboard.jsx
 import Shell from "../components/layout/Shell.jsx";
 import { api } from "../app/api.js";
+import { listBookings } from "../app/bookingsApi.js";
 import { useEffect, useMemo, useRef, useState } from "react";
 import PageHeader from "../components/appui/PageHeader.jsx";
 import Card, { CardBody, CardHeader } from "../components/appui/Card.jsx";
@@ -52,6 +53,9 @@ function safeDate(v) {
 
 export default function Dashboard() {
   const [offers, setOffers] = useState([]);
+  const [bookingsBusy, setBookingsBusy] = useState(true);
+  const [bookingsErr, setBookingsErr] = useState("");
+  const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [copiedId, setCopiedId] = useState(null);
@@ -65,7 +69,7 @@ export default function Dashboard() {
     };
   }, []);
 
-  async function load() {
+  async function loadOffers() {
     try {
       setError("");
       setLoading(true);
@@ -83,8 +87,106 @@ export default function Dashboard() {
     }
   }
 
+  function bookingStatusLabel(st) {
+    const s = normStatus(st);
+    if (s === "CONFIRMED") return "Confirmada";
+    if (s === "HOLD") return "Em espera";
+    if (s === "EXPIRED") return "Expirada";
+    if (s === "CANCELLED" || s === "CANCELED") return "Cancelada";
+    return s || "—";
+  }
+
+  function bookingTone(st) {
+    // mantém compat com seu Badge.jsx (que tem HOLD/CONFIRMED/EXPIRED/CANCELED)
+    const s = normStatus(st);
+    if (s === "CANCELLED") return "CANCELED";
+    return s || "DRAFT";
+  }
+
+  function fmtTimeBR(iso) {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    return d.toLocaleTimeString("pt-BR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  function fmtDateBR(iso) {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    return d.toLocaleDateString("pt-BR");
+  }
+
+  function fmtRangeBR(startAt, endAt) {
+    const s = safeDate(startAt);
+    const e = safeDate(endAt);
+    if (!s || !e) return "";
+    if (isSameLocalDay(s, e)) {
+      return `${fmtDateBR(startAt)} • ${fmtTimeBR(startAt)}–${fmtTimeBR(endAt)}`;
+    }
+    return `${fmtDateTimeBR(startAt)} – ${fmtDateTimeBR(endAt)}`;
+  }
+
+  function pickOfferTitle(b) {
+    return b?.offer?.title || b?.offerTitle || b?.title || "Proposta";
+  }
+  function pickOfferId(b) {
+    return b?.offer?._id || b?.offerId || b?.offer?.id || "";
+  }
+  function pickPublicToken(b) {
+    return b?.offer?.publicToken || b?.publicToken || b?.offerPublicToken || "";
+  }
+
+  async function loadBookings() {
+    try {
+      setBookingsErr("");
+      setBookingsBusy(true);
+
+      const now = new Date();
+      const from = now.toISOString();
+      const to = new Date(
+        now.getTime() + 7 * 24 * 60 * 60 * 1000,
+      ).toISOString();
+
+      // backend ideal: status=HOLD,CONFIRMED (ou repetido), mas filtramos no front também por segurança
+      const d = await listBookings({ from, to, status: "HOLD,CONFIRMED" });
+      const items = d?.items || d?.bookings || [];
+
+      const arr = Array.isArray(items) ? items : [];
+      const filtered = arr
+        .filter((b) => {
+          const st = normStatus(b?.status);
+          return st === "HOLD" || st === "CONFIRMED";
+        })
+        .sort((a, b) => {
+          const as = safeDate(a?.startAt)?.getTime() || 0;
+          const bs = safeDate(b?.startAt)?.getTime() || 0;
+          return as - bs;
+        });
+
+      setBookings(filtered);
+    } catch (e) {
+      if (e?.status === 401) {
+        signOut();
+        nav(`/login?next=${encodeURIComponent("/")}`, { replace: true });
+        return;
+      }
+      setBookingsErr(e?.message || "Falha ao carregar reservas.");
+      setBookings([]);
+    } finally {
+      setBookingsBusy(false);
+    }
+  }
+
+  async function loadAll() {
+    await Promise.all([loadOffers(), loadBookings()]);
+  }
+
   useEffect(() => {
-    load();
+    loadAll();
   }, []);
 
   const fmtBRL = (cents) =>
@@ -193,7 +295,11 @@ export default function Dashboard() {
           subtitle="Orçamento que vira contrato + cobrança + agenda em 1 clique."
           actions={
             <>
-              <Button variant="secondary" onClick={load} disabled={loading}>
+              <Button
+                variant="secondary"
+                onClick={loadAll}
+                disabled={loading || bookingsBusy}
+              >
                 Atualizar
               </Button>
               <Link to="/offers/new">
@@ -411,13 +517,88 @@ export default function Dashboard() {
             <Card>
               <CardHeader
                 title="Agenda (MVP)"
-                subtitle="Reservas e confirmados aparecerão aqui."
+                subtitle="Próximas reservas (7 dias) — HOLD e CONFIRMED."
               />
               <CardBody>
-                <div className="rounded-xl border bg-zinc-50 p-3 text-sm text-zinc-600">
-                  Próximo passo: listar bookings (HOLD/CONFIRMED) com filtro por
-                  dia.
-                </div>
+                {bookingsBusy ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-10 w-full" />
+                    <Skeleton className="h-10 w-full" />
+                    <Skeleton className="h-10 w-full" />
+                  </div>
+                ) : bookingsErr ? (
+                  <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                    {bookingsErr}{" "}
+                    <button
+                      className="ml-2 font-semibold underline"
+                      onClick={loadBookings}
+                    >
+                      Tentar novamente
+                    </button>
+                  </div>
+                ) : bookings.length === 0 ? (
+                  <EmptyState
+                    title="Nenhuma reserva nos próximos 7 dias"
+                    description="Quando um cliente agendar (HOLD) ou confirmar (CONFIRMED), vai aparecer aqui."
+                  />
+                ) : (
+                  <div className="space-y-2">
+                    {bookings.map((b) => {
+                      const offerTitle = pickOfferTitle(b);
+                      const offerId = pickOfferId(b);
+                      const publicToken = pickPublicToken(b);
+                      const publicUrl = publicToken ? `/p/${publicToken}` : "";
+
+                      return (
+                        <div
+                          key={b._id || b.id}
+                          className="rounded-xl border bg-white p-3"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold text-zinc-900">
+                                {fmtRangeBR(b.startAt, b.endAt) || "—"}
+                              </div>
+                              <div className="mt-0.5 text-xs text-zinc-500 line-clamp-1">
+                                {offerTitle}
+                              </div>
+                            </div>
+
+                            <Badge tone={bookingTone(b.status)}>
+                              {bookingStatusLabel(b.status)}
+                            </Badge>
+                          </div>
+
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {offerId ? (
+                              <Link to={`/offers/${offerId}`}>
+                                <Button variant="secondary" type="button">
+                                  Ver no painel
+                                </Button>
+                              </Link>
+                            ) : null}
+
+                            {publicUrl ? (
+                              <Button
+                                variant="ghost"
+                                type="button"
+                                onClick={() =>
+                                  window.open(
+                                    publicUrl,
+                                    "_blank",
+                                    "noopener,noreferrer",
+                                  )
+                                }
+                              >
+                                Abrir link público
+                              </Button>
+                            ) : null}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </CardBody>
             </Card>
 

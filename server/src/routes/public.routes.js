@@ -1,14 +1,11 @@
 // server/src/routes/public.routes.js
 import express from "express";
-import crypto from "crypto";
-import { Offer } from "../models/Offer.js";
+import mongoose from "mongoose";
 
-import {
-  acceptances,
-  bookings,
-  pixCharges,
-  pixByBooking,
-} from "../mvpStore.js";
+import { Offer } from "../models/Offer.js";
+import Booking from "../models/Booking.js";
+
+import { acceptances, pixCharges } from "../mvpStore.js";
 import {
   abacateCreatePixQr,
   abacateCheckPix,
@@ -18,7 +15,7 @@ import {
 const router = express.Router();
 
 const HOLD_MINUTES = 15;
-const PIX_EXPIRES_IN = Number(process.env.PIX_EXPIRES_IN || 3600); // fallback (segundos)
+const PIX_EXPIRES_IN = Number(process.env.PIX_EXPIRES_IN || 3600); // segundos
 
 function nowIso() {
   return new Date().toISOString();
@@ -35,14 +32,13 @@ function noStore(res) {
   return res;
 }
 
-function cleanupExpiredHolds() {
-  const now = Date.now();
-  for (let i = bookings.length - 1; i >= 0; i--) {
-    const b = bookings[i];
-    if (b.status === "HOLD" && b.expiresAt && b.expiresAt <= now) {
-      bookings.splice(i, 1);
-    }
-  }
+/** Expira HOLDs antigos no Mongo (substitui array em memória) */
+async function expireOldHolds() {
+  const now = new Date();
+  await Booking.updateMany(
+    { status: "HOLD", holdExpiresAt: { $lte: now } },
+    { $set: { status: "EXPIRED" } },
+  ).catch(() => {});
 }
 
 function overlaps(aStart, aEnd, bStart, bEnd) {
@@ -75,14 +71,22 @@ function computeAmountCents(offer) {
   return { totalCents, depositEnabled, depositPct, depositCents, amountCents };
 }
 
+/** Busca offer por token público (mantém tenant internamente; sanitiza antes de responder) */
 async function findOfferByPublicToken(token) {
-  // ✅ evita vazar multi-tenant no público (mesmo que não exista ainda, é seguro)
-  const projection = "-workspaceId -ownerUserId -__v";
   const offer =
-    (await Offer.findOne({ publicToken: token }).select(projection).lean()) ||
-    (await Offer.findOne({ token }).select(projection).lean()) ||
-    (await Offer.findOne({ publicId: token }).select(projection).lean());
+    (await Offer.findOne({ publicToken: token }).lean()) ||
+    (await Offer.findOne({ token }).lean()) ||
+    (await Offer.findOne({ publicId: token }).lean());
   return offer || null;
+}
+
+function sanitizeOfferPublic(offer) {
+  if (!offer) return null;
+  const o = { ...offer };
+  delete o.workspaceId;
+  delete o.ownerUserId;
+  delete o.__v;
+  return o;
 }
 
 function onlyDigits(v) {
@@ -117,9 +121,9 @@ function isPaidStatus(st) {
 
 /**
  * Infer tipo sem quebrar legado:
- * - Se offerType for "product" => produto
- * - Se não houver offerType mas existir items => produto
- * - Caso contrário => service
+ * - offerType === "product" => produto
+ * - se não houver offerType mas existir items => produto
+ * - senão => service
  */
 function inferOfferType(offer) {
   const raw = String(offer?.offerType || "")
@@ -129,19 +133,6 @@ function inferOfferType(offer) {
   const items = Array.isArray(offer?.items) ? offer.items : [];
   if (items.length > 0) return "product";
   return "service";
-}
-
-// pixByBooking pode ser Map ou objeto
-function getPixByBooking(bookingId) {
-  if (!pixByBooking) return null;
-  if (typeof pixByBooking.get === "function")
-    return pixByBooking.get(bookingId) || null;
-  return pixByBooking[bookingId] || null;
-}
-function setPixByBooking(bookingId, val) {
-  if (!pixByBooking) return;
-  if (typeof pixByBooking.set === "function") pixByBooking.set(bookingId, val);
-  else pixByBooking[bookingId] = val;
 }
 
 function upsertPixCharge(charge) {
@@ -159,19 +150,6 @@ function upsertPixCharge(charge) {
   pixCharges[charge.pixId] = charge;
 }
 
-function findConfirmedBooking(token, bookingId) {
-  if (bookingId) {
-    return (
-      bookings.find((b) => b.id === bookingId && b.token === token) || null
-    );
-  }
-  return (
-    bookings.find((b) => b.token === token && b.status === "CONFIRMED") ||
-    bookings.find((b) => b.token === token && b.status === "HOLD") ||
-    null
-  );
-}
-
 /** -----------------------------
  *  Pix status helpers + persistência
  * ------------------------------ */
@@ -179,7 +157,6 @@ function normalizePixStatus(st) {
   const s = String(st || "")
     .trim()
     .toUpperCase();
-  // compat: alguns gateways usam "CANCELED" (1 L)
   if (s === "CANCELED") return "CANCELLED";
   return s;
 }
@@ -189,7 +166,6 @@ function isTerminalPixStatus(st) {
     s === "PAID" || s === "EXPIRED" || s === "CANCELLED" || s === "REFUNDED"
   );
 }
-// suporta retorno { data: {...} } ou direto {...}
 function pickPixData(abResult) {
   const d = abResult?.data;
   return d && d.id ? d : abResult;
@@ -231,66 +207,79 @@ async function updateOfferPayment(offerId, patch) {
   );
 }
 
-async function markAsPaid({ token, offerId, booking, pix }) {
-  const paidAt = nowIso();
+async function markAsPaid({ token, offerId, bookingId, pix }) {
+  const paidAtIso = nowIso();
+  const paidAt = new Date(paidAtIso);
 
-  // booking -> CONFIRMED
-  if (booking) {
-    booking.status = "CONFIRMED";
-    booking.paidAt = booking.paidAt || paidAt;
-    booking.confirmedAt = booking.confirmedAt || paidAt;
-  }
-
-  // offer -> PAID + trava pública (done-only)
-  if (offerId) {
-    await Offer.updateOne(
-      { _id: offerId },
+  if (bookingId && mongoose.Types.ObjectId.isValid(String(bookingId))) {
+    await Booking.updateOne(
+      { _id: bookingId },
       {
         $set: {
-          status: "PAID",
-          paidAt,
-          publicDoneOnly: true,
-          publicLockedAt: paidAt,
+          status: "CONFIRMED",
+          confirmedAt: paidAt,
+          "payment.status": "PAID",
+          "payment.paidAt": paidAt,
+          ...(pix?.id ? { "payment.providerPaymentId": pix.id } : {}),
+          ...(pix?.amount ? { "payment.amountCents": Number(pix.amount) } : {}),
         },
       },
       { strict: false },
     ).catch(() => {});
   }
 
-  // ✅ também mantém o rastro do Pix na seção payment.*
+  if (offerId) {
+    await Offer.updateOne(
+      { _id: offerId },
+      {
+        $set: {
+          status: "PAID",
+          paidAt: paidAtIso,
+          publicDoneOnly: true,
+          publicLockedAt: paidAtIso,
+        },
+      },
+      { strict: false },
+    ).catch(() => {});
+  }
+
   await updateOfferPayment(offerId, {
     lastPixId: pix?.id,
     lastPixStatus: "PAID",
     lastPixExpiresAt: toDateOrNull(pix?.expiresAt) || undefined,
-    lastPixUpdatedAt: new Date(paidAt),
+    lastPixUpdatedAt: paidAt,
   });
-
-  // store in-memory
-  const externalId = String(
-    pix?.metadata?.externalId || pix?.metadata?.external_id || "",
-  ).trim();
-
-  if (externalId) {
-    setPixByBooking(externalId, {
-      pixId: pix?.id,
-      status: "PAID",
-      paidAt,
-      token,
-      pix,
-    });
-  }
 
   upsertPixCharge({
     pixId: pix?.id,
-    bookingId: booking?.id || externalId || null,
+    bookingId: bookingId ? String(bookingId) : null,
     token,
     status: "PAID",
-    paidAt,
-    updatedAt: paidAt,
+    paidAt: paidAtIso,
+    updatedAt: paidAtIso,
     pix,
   });
 
-  return paidAt;
+  return paidAtIso;
+}
+
+function pickExternalId(pixDataRaw) {
+  return String(
+    pixDataRaw?.metadata?.externalId || pixDataRaw?.metadata?.external_id || "",
+  ).trim();
+}
+
+async function findActiveConflicts({ offerId, startAt, endAt, now }) {
+  return Booking.exists({
+    offerId,
+    startAt: { $lt: endAt },
+    endAt: { $gt: startAt },
+    status: { $in: ["HOLD", "CONFIRMED"] },
+    $or: [
+      { status: "CONFIRMED" },
+      { status: "HOLD", holdExpiresAt: { $gt: now } },
+    ],
+  });
 }
 
 /**
@@ -309,7 +298,12 @@ router.get("/p/:token", async (req, res, next) => {
         .json({ ok: false, error: "Proposta não encontrada." });
 
     const locked = isPaidStatus(offer?.status);
-    return res.json({ ok: true, offer, locked, doneOnly: locked });
+    return res.json({
+      ok: true,
+      offer: sanitizeOfferPublic(offer),
+      locked,
+      doneOnly: locked,
+    });
   } catch (e) {
     next(e);
   }
@@ -317,10 +311,11 @@ router.get("/p/:token", async (req, res, next) => {
 
 /**
  * GET /p/:token/summary?bookingId=...
- * -> resumo final (somente leitura). Usado pelo /done
  */
 router.get("/p/:token/summary", async (req, res, next) => {
   try {
+    await expireOldHolds();
+
     const { token } = req.params;
     const bookingId = String(req.query.bookingId || "").trim();
 
@@ -334,32 +329,59 @@ router.get("/p/:token/summary", async (req, res, next) => {
         .json({ ok: false, error: "Proposta não encontrada." });
 
     const offerLocked = isPaidStatus(offer?.status);
-
-    const booking = findConfirmedBooking(token, bookingId);
     const offerType = offer?.offerType || inferOfferType(offer);
 
     const amounts = computeAmountCents(offer);
     const amountToChargeCents = amounts.amountCents;
 
-    // paidAt do offer ou do booking
-    const paidAt = offer?.paidAt || booking?.paidAt || null;
+    // booking (Mongo)
+    let booking = null;
+
+    if (bookingId && mongoose.Types.ObjectId.isValid(bookingId)) {
+      booking = await Booking.findOne({
+        _id: bookingId,
+        offerId: offer._id,
+      })
+        .select("status startAt endAt payment holdExpiresAt")
+        .lean();
+    } else {
+      // tenta o mais recente CONFIRMED; fallback HOLD ainda válido
+      booking =
+        (await Booking.findOne({
+          offerId: offer._id,
+          status: "CONFIRMED",
+        })
+          .sort({ updatedAt: -1, startAt: -1 })
+          .select("status startAt endAt payment holdExpiresAt")
+          .lean()) ||
+        (await Booking.findOne({
+          offerId: offer._id,
+          status: "HOLD",
+          holdExpiresAt: { $gt: new Date() },
+        })
+          .sort({ updatedAt: -1, startAt: -1 })
+          .select("status startAt endAt payment holdExpiresAt")
+          .lean());
+    }
+
+    const paidAt =
+      offer?.paidAt || booking?.payment?.paidAt || booking?.paidAt || null;
+
+    const locked = offerLocked || booking?.status === "CONFIRMED";
 
     const summary = {
-      locked: offerLocked || booking?.status === "CONFIRMED",
+      locked,
       paidAt,
-      // ✅ agora o /done consegue renderizar produtos/itens
-      // ✅ mantém público (sem workspaceId/ownerUserId por causa do projection acima)
       offer: offer
         ? {
-            ...offer,
+            ...sanitizeOfferPublic(offer),
             offerType,
-            // compat extra: garante string
             customerName: offer?.customerName || offer?.customer?.name || "",
           }
         : null,
       booking: booking
         ? {
-            id: booking.id,
+            id: String(booking._id),
             status: booking.status,
             startAt: booking.startAt,
             endAt: booking.endAt,
@@ -370,6 +392,8 @@ router.get("/p/:token/summary", async (req, res, next) => {
       depositPct: amounts.depositPct,
       depositCents: amounts.depositCents,
       amountToChargeCents,
+      // mantém payment no summary para o /done (se quiser)
+      payment: offer?.payment ? { ...offer.payment } : undefined,
     };
 
     noStore(res);
@@ -392,7 +416,6 @@ router.post("/p/:token/accept", async (req, res, next) => {
     if (!agreeTerms)
       return res.status(400).json({ ok: false, error: "Aceite obrigatório." });
 
-    // se já pagou, não faz sentido aceitar de novo
     const offer = await findOfferByPublicToken(token);
     if (offer && isPaidStatus(offer?.status)) {
       return res
@@ -400,20 +423,21 @@ router.post("/p/:token/accept", async (req, res, next) => {
         .json({ ok: false, error: "Proposta já concluída." });
     }
 
-    acceptances.set(token, {
-      agreeTerms: true,
-      ackDeposit: !!ackDeposit,
-      acceptedAt: acceptedAt || nowIso(),
-    });
+    try {
+      acceptances?.set?.(token, {
+        agreeTerms: true,
+        ackDeposit: !!ackDeposit,
+        acceptedAt: acceptedAt || nowIso(),
+      });
+    } catch {}
 
     try {
       await Offer.updateOne(
         { publicToken: token },
         { $set: { status: "ACCEPTED", acceptedAt: acceptedAt || nowIso() } },
+        { strict: false },
       );
-    } catch {
-      // ignora
-    }
+    } catch {}
 
     return res.json({ ok: true });
   } catch (e) {
@@ -426,7 +450,7 @@ router.post("/p/:token/accept", async (req, res, next) => {
  */
 router.get("/p/:token/slots", async (req, res, next) => {
   try {
-    cleanupExpiredHolds();
+    await expireOldHolds();
 
     const { token } = req.params;
     const date = String(req.query.date || "").trim();
@@ -457,16 +481,33 @@ router.get("/p/:token/slots", async (req, res, next) => {
     const durationMin =
       Number(offer?.durationMin) > 0 ? Number(offer.durationMin) : 60;
 
+    const now = new Date();
+
+    // range do dia (base local, igual ao buildDaySlots)
+    const dayStart = new Date(`${date}T00:00:00`);
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+
+    const dayBookings = await Booking.find({
+      offerId: offer._id,
+      status: { $in: ["HOLD", "CONFIRMED"] },
+      startAt: { $lt: dayEnd },
+      endAt: { $gt: dayStart },
+      $or: [
+        { status: "CONFIRMED" },
+        { status: "HOLD", holdExpiresAt: { $gt: now } },
+      ],
+    })
+      .select("status startAt endAt holdExpiresAt")
+      .lean();
+
     const slots = buildDaySlots(date, durationMin).map((s) => {
-      const conflict = bookings.find(
-        (b) =>
-          b.token === token &&
-          (b.status === "HOLD" || b.status === "CONFIRMED") &&
-          overlaps(s.startAt, s.endAt, b.startAt, b.endAt),
+      const conflict = dayBookings.find((b) =>
+        overlaps(s.startAt, s.endAt, b.startAt, b.endAt),
       );
       return conflict ? { ...s, status: conflict.status } : s;
     });
 
+    noStore(res);
     return res.json({ ok: true, date, slots });
   } catch (e) {
     next(e);
@@ -475,14 +516,14 @@ router.get("/p/:token/slots", async (req, res, next) => {
 
 /**
  * POST /p/:token/book
- * Body: { startAt, endAt, customerName, customerWhatsApp? }
+ * Body: { startAt, endAt, customerName?, customerWhatsApp? }
  */
 router.post("/p/:token/book", async (req, res, next) => {
   try {
-    cleanupExpiredHolds();
+    await expireOldHolds();
 
     const { token } = req.params;
-    const { startAt, endAt } = req.body || {};
+    const { startAt, endAt, customerName, customerWhatsApp } = req.body || {};
 
     if (!token)
       return res.status(400).json({ ok: false, error: "Token inválido." });
@@ -490,6 +531,14 @@ router.post("/p/:token/book", async (req, res, next) => {
       return res
         .status(400)
         .json({ ok: false, error: "startAt/endAt obrigatórios." });
+    }
+
+    const s = new Date(startAt);
+    const e = new Date(endAt);
+    if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime()) || e <= s) {
+      return res
+        .status(400)
+        .json({ ok: false, error: "Intervalo startAt/endAt inválido." });
     }
 
     const offer = await findOfferByPublicToken(token);
@@ -507,32 +556,63 @@ router.post("/p/:token/book", async (req, res, next) => {
       });
     }
 
-    const conflict = bookings.find(
-      (b) =>
-        b.token === token &&
-        (b.status === "HOLD" || b.status === "CONFIRMED") &&
-        overlaps(startAt, endAt, b.startAt, b.endAt),
-    );
-    if (conflict)
+    const now = new Date();
+    const hasConflict = await findActiveConflicts({
+      offerId: offer._id,
+      startAt: s,
+      endAt: e,
+      now,
+    });
+
+    if (hasConflict) {
       return res
         .status(409)
         .json({ ok: false, error: "Horário indisponível." });
+    }
 
-    const id = crypto.randomUUID();
-    const now = Date.now();
+    const holdExpiresAt = new Date(now.getTime() + HOLD_MINUTES * 60 * 1000);
+
+    const created = await Booking.create({
+      offerId: offer._id,
+      workspaceId: offer.workspaceId,
+      ownerUserId: offer.ownerUserId,
+      publicToken: offer.publicToken || token,
+      customerName: String(customerName || offer.customerName || "").trim(),
+      customerWhatsApp: String(customerWhatsApp || offer.customerWhatsApp || "")
+        .trim()
+        .replace(/\s+/g, " "),
+      startAt: s,
+      endAt: e,
+      status: "HOLD",
+      holdExpiresAt,
+      payment: {
+        provider: "ABACATEPAY",
+        status: "PENDING",
+      },
+    });
+
+    // ✅ compat/UX: salva referência do agendamento na Offer (ajuda dashboard/legacy)
+    await Offer.updateOne(
+      { _id: offer._id },
+      {
+        $set: {
+          bookingId: created._id,
+          scheduledStartAt: s,
+          scheduledEndAt: e,
+        },
+      },
+      { strict: false },
+    ).catch(() => {});
 
     const booking = {
-      id,
-      token,
-      startAt,
-      endAt,
-      status: "HOLD",
-      createdAt: new Date(now).toISOString(),
-      expiresAt: now + HOLD_MINUTES * 60 * 1000,
+      id: String(created._id),
+      status: created.status,
+      startAt: created.startAt,
+      endAt: created.endAt,
+      holdExpiresAt: created.holdExpiresAt,
     };
 
-    bookings.push(booking);
-
+    noStore(res);
     return res.json({ ok: true, booking });
   } catch (e) {
     next(e);
@@ -547,7 +627,7 @@ router.post("/p/:token/book", async (req, res, next) => {
  */
 router.post("/p/:token/pix/create", async (req, res, next) => {
   try {
-    cleanupExpiredHolds();
+    await expireOldHolds();
 
     const { token } = req.params;
     const { bookingId, customer } = req.body || {};
@@ -564,96 +644,13 @@ router.post("/p/:token/pix/create", async (req, res, next) => {
     const offerType = inferOfferType(offer);
     const isProduct = offerType === "product";
 
-    // ✅ Produto: não exige bookingId (usa uma chave estável para idempotência)
-    // ✅ Serviço: mantém obrigatório
-    const effectiveBookingId = String(
-      (bookingId && String(bookingId).trim()) || (isProduct ? token : ""),
-    ).trim();
-
-    if (!effectiveBookingId) {
-      return res
-        .status(400)
-        .json({ ok: false, error: "bookingId obrigatório." });
-    }
-
-    // trava total se já pago
     if (isPaidStatus(offer?.status)) {
       return res.status(409).json({
         ok: false,
-        error: "Pagamento já confirmado para esta reserva.",
+        error: "Pagamento já confirmado para esta proposta.",
         locked: true,
         doneOnly: true,
       });
-    }
-
-    // Serviço: valida HOLD do booking
-    let booking = null;
-    if (!isProduct) {
-      booking = bookings.find(
-        (b) => b.id === effectiveBookingId && b.token === token,
-      );
-      if (!booking || booking.status !== "HOLD") {
-        return res.status(409).json({
-          ok: false,
-          error: "Reserva inválida/expirada. Refaça o agendamento.",
-        });
-      }
-    }
-
-    // idempotência: se já existe pix para esse "effectiveBookingId", reutiliza (se não terminal)
-    const existing = getPixByBooking(effectiveBookingId);
-    if (existing?.pixId) {
-      const chk = await abacateCheckPix({ pixId: existing.pixId });
-      const pixDataRaw = pickPixData(chk);
-      if (pixDataRaw?.id) {
-        const st = normalizePixStatus(pixDataRaw.status);
-        const expiresAtIso = computeExpiresAtIso(pixDataRaw, PIX_EXPIRES_IN);
-        const updatedAt = new Date();
-
-        // atualiza store
-        setPixByBooking(effectiveBookingId, {
-          ...existing,
-          pixId: pixDataRaw.id,
-          status: st,
-          pix: { ...pixDataRaw, status: st, expiresAt: expiresAtIso },
-        });
-
-        // ✅ persiste rastro do Pix no Offer
-        await updateOfferPayment(offer._id, {
-          lastPixId: pixDataRaw.id,
-          lastPixStatus: st,
-          lastPixExpiresAt: toDateOrNull(expiresAtIso) || undefined,
-          lastPixUpdatedAt: updatedAt,
-        });
-
-        if (st === "PAID") {
-          const paidAt = await markAsPaid({
-            token,
-            offerId: offer._id,
-            booking,
-            pix: { ...pixDataRaw, status: st, expiresAt: expiresAtIso },
-          });
-          noStore(res);
-          return res.json({
-            ok: true,
-            pix: { ...pixDataRaw, status: st, expiresAt: expiresAtIso },
-            locked: true,
-            paidAt,
-            reused: true,
-          });
-        }
-
-        // ✅ se não é terminal, reutiliza; se é EXPIRED/CANCELLED/REFUNDED, cria outro
-        if (!isTerminalPixStatus(st)) {
-          noStore(res);
-          return res.json({
-            ok: true,
-            pix: { ...pixDataRaw, status: st, expiresAt: expiresAtIso },
-            reused: true,
-          });
-        }
-        // terminal (EXPIRED/CANCELLED/REFUNDED): segue e cria outro
-      }
     }
 
     const name = String(customer?.name || "").trim();
@@ -678,19 +675,108 @@ router.post("/p/:token/pix/create", async (req, res, next) => {
         .json({ ok: false, error: "Valor inválido para cobrança." });
     }
 
-    // expiração:
-    // - service: alinhada com HOLD
-    // - product: usa PIX_EXPIRES_IN (fallback), sem dependência de booking
-    const now = Date.now();
-    let expiresIn = Math.max(60, PIX_EXPIRES_IN);
+    const now = new Date();
 
-    if (!isProduct && booking) {
-      const remainingHoldSec = Math.max(
-        60,
-        Math.floor(
-          ((booking.expiresAt || now + HOLD_MINUTES * 60 * 1000) - now) / 1000,
-        ),
-      );
+    // SERVICE: precisa booking HOLD válido
+    let booking = null;
+    if (!isProduct) {
+      const bid = String(bookingId || "").trim();
+      if (!bid || !mongoose.Types.ObjectId.isValid(bid)) {
+        return res
+          .status(400)
+          .json({ ok: false, error: "bookingId obrigatório." });
+      }
+
+      booking = await Booking.findOne({
+        _id: bid,
+        offerId: offer._id,
+        status: "HOLD",
+        holdExpiresAt: { $gt: now },
+      }).lean();
+
+      if (!booking) {
+        return res.status(409).json({
+          ok: false,
+          error: "Reserva inválida/expirada. Refaça o agendamento.",
+        });
+      }
+    }
+
+    // idempotência:
+    // - service: usa Booking.payment.providerPaymentId
+    // - product: usa Offer.payment.lastPixId
+    const existingPixId = !isProduct
+      ? booking?.payment?.providerPaymentId
+      : offer?.payment?.lastPixId;
+
+    if (existingPixId) {
+      const chk = await abacateCheckPix({ pixId: existingPixId });
+      const pixDataRaw = pickPixData(chk);
+
+      if (pixDataRaw?.id) {
+        const st = normalizePixStatus(pixDataRaw.status);
+        const expiresAtIso = computeExpiresAtIso(pixDataRaw, PIX_EXPIRES_IN);
+        const updatedAt = new Date();
+
+        await updateOfferPayment(offer._id, {
+          lastPixId: pixDataRaw.id,
+          lastPixStatus: st,
+          lastPixExpiresAt: toDateOrNull(expiresAtIso) || undefined,
+          lastPixUpdatedAt: updatedAt,
+        });
+
+        if (!isProduct && booking?._id) {
+          await Booking.updateOne(
+            { _id: booking._id },
+            {
+              $set: {
+                "payment.provider": "ABACATEPAY",
+                "payment.providerPaymentId": pixDataRaw.id,
+                "payment.status": st === "PAID" ? "PAID" : "PENDING",
+                "payment.amountCents": amount,
+              },
+            },
+            { strict: false },
+          ).catch(() => {});
+        }
+
+        if (st === "PAID") {
+          const paidAt = await markAsPaid({
+            token,
+            offerId: offer._id,
+            bookingId: !isProduct ? booking?._id : null,
+            pix: { ...pixDataRaw, status: st, expiresAt: expiresAtIso },
+          });
+
+          noStore(res);
+          return res.json({
+            ok: true,
+            pix: { ...pixDataRaw, status: st, expiresAt: expiresAtIso },
+            locked: true,
+            paidAt,
+            reused: true,
+          });
+        }
+
+        if (!isTerminalPixStatus(st)) {
+          noStore(res);
+          return res.json({
+            ok: true,
+            pix: { ...pixDataRaw, status: st, expiresAt: expiresAtIso },
+            reused: true,
+          });
+        }
+        // terminal: cai e cria outro
+      }
+    }
+
+    // expiração:
+    // - service: alinhada ao HOLD
+    // - product: PIX_EXPIRES_IN
+    let expiresIn = Math.max(60, PIX_EXPIRES_IN);
+    if (!isProduct && booking?.holdExpiresAt) {
+      const holdMs = new Date(booking.holdExpiresAt).getTime() - now.getTime();
+      const remainingHoldSec = Math.max(60, Math.floor(holdMs / 1000));
       expiresIn = Math.min(
         Math.max(60, remainingHoldSec),
         Math.max(60, PIX_EXPIRES_IN),
@@ -698,9 +784,9 @@ router.post("/p/:token/pix/create", async (req, res, next) => {
     }
 
     // metadata.externalId:
-    // - service: bookingId
+    // - service: bookingId (mongo _id)
     // - product: token (chave estável)
-    const metadata = { externalId: String(effectiveBookingId) };
+    const metadata = { externalId: String(!isProduct ? booking._id : token) };
 
     const ab = await abacateCreatePixQr({
       amount,
@@ -711,7 +797,6 @@ router.post("/p/:token/pix/create", async (req, res, next) => {
     });
 
     const pixDataRaw = pickPixData(ab);
-
     if (!pixDataRaw?.id) {
       return res.status(502).json({ ok: false, error: "Falha ao gerar Pix." });
     }
@@ -719,30 +804,37 @@ router.post("/p/:token/pix/create", async (req, res, next) => {
     const st = normalizePixStatus(pixDataRaw.status || "PENDING");
     const expiresAtIso = computeExpiresAtIso(pixDataRaw, expiresIn);
 
-    if (booking) booking.pixId = pixDataRaw.id;
-
-    setPixByBooking(effectiveBookingId, {
-      pixId: pixDataRaw.id,
-      status: st,
-      token,
-      pix: { ...pixDataRaw, status: st, expiresAt: expiresAtIso },
-    });
-
-    upsertPixCharge({
-      pixId: pixDataRaw.id,
-      bookingId: isProduct ? null : effectiveBookingId, // mantém compat; produto não tem booking real
-      token,
-      status: st,
-      updatedAt: nowIso(),
-      pix: { ...pixDataRaw, status: st, expiresAt: expiresAtIso },
-    });
-
-    // ✅ persiste no Offer: payment.lastPixId/status/expiresAt/updatedAt
+    // persist no Offer
     await updateOfferPayment(offer._id, {
       lastPixId: pixDataRaw.id,
       lastPixStatus: st,
       lastPixExpiresAt: toDateOrNull(expiresAtIso) || undefined,
       lastPixUpdatedAt: new Date(),
+    });
+
+    // persist no Booking (service)
+    if (!isProduct && booking?._id) {
+      await Booking.updateOne(
+        { _id: booking._id },
+        {
+          $set: {
+            "payment.provider": "ABACATEPAY",
+            "payment.providerPaymentId": pixDataRaw.id,
+            "payment.amountCents": amount,
+            "payment.status": "PENDING",
+          },
+        },
+        { strict: false },
+      ).catch(() => {});
+    }
+
+    upsertPixCharge({
+      pixId: pixDataRaw.id,
+      bookingId: !isProduct ? String(booking?._id) : null,
+      token,
+      status: st,
+      updatedAt: nowIso(),
+      pix: { ...pixDataRaw, status: st, expiresAt: expiresAtIso },
     });
 
     noStore(res);
@@ -760,6 +852,8 @@ router.post("/p/:token/pix/create", async (req, res, next) => {
  */
 router.get("/p/:token/pix/status", async (req, res, next) => {
   try {
+    await expireOldHolds();
+
     const { token } = req.params;
     const pixId = String(req.query.pixId || "").trim();
 
@@ -787,7 +881,6 @@ router.get("/p/:token/pix/status", async (req, res, next) => {
     const expiresAtIso = computeExpiresAtIso(pixDataRaw, PIX_EXPIRES_IN);
     const updatedAt = new Date();
 
-    // ✅ atualiza payment.lastPixStatus e payment.lastPixUpdatedAt (e mantém id/expiresAt)
     await updateOfferPayment(offer._id, {
       lastPixId: pixDataRaw.id,
       lastPixStatus: st,
@@ -795,26 +888,9 @@ router.get("/p/:token/pix/status", async (req, res, next) => {
       lastPixUpdatedAt: updatedAt,
     });
 
-    // atualiza store in-memory (se conseguir inferir externalId)
-    const externalId = String(
-      pixDataRaw?.metadata?.externalId ||
-        pixDataRaw?.metadata?.external_id ||
-        "",
-    ).trim();
-    if (externalId) {
-      const prev = getPixByBooking(externalId) || {};
-      setPixByBooking(externalId, {
-        ...prev,
-        pixId: pixDataRaw.id,
-        status: st,
-        token,
-        pix: { ...pixDataRaw, status: st, expiresAt: expiresAtIso },
-      });
-    }
-
     upsertPixCharge({
       pixId: pixDataRaw.id,
-      bookingId: externalId || null,
+      bookingId: pickExternalId(pixDataRaw) || null,
       token,
       status: st,
       updatedAt: nowIso(),
@@ -827,18 +903,37 @@ router.get("/p/:token/pix/status", async (req, res, next) => {
     if (st === "PAID") {
       locked = true;
 
-      // tenta achar booking pelo pixId; fallback pelo metadata.externalId
-      const booking =
-        bookings.find((b) => b.token === token && b.pixId === pixId) ||
-        (externalId
-          ? bookings.find((b) => b.token === token && b.id === externalId)
-          : null) ||
-        null;
+      // tenta achar booking:
+      // 1) metadata.externalId = bookingId (service)
+      // 2) booking.payment.providerPaymentId == pixId
+      const externalId = pickExternalId(pixDataRaw);
+
+      let bookingId = null;
+
+      if (externalId && mongoose.Types.ObjectId.isValid(externalId)) {
+        const b = await Booking.findOne({
+          _id: externalId,
+          offerId: offer._id,
+        })
+          .select("_id")
+          .lean();
+        if (b?._id) bookingId = b._id;
+      }
+
+      if (!bookingId) {
+        const b2 = await Booking.findOne({
+          offerId: offer._id,
+          "payment.providerPaymentId": pixId,
+        })
+          .select("_id")
+          .lean();
+        if (b2?._id) bookingId = b2._id;
+      }
 
       paidAt = await markAsPaid({
         token,
         offerId: offer._id,
-        booking,
+        bookingId,
         pix: { ...pixDataRaw, status: st, expiresAt: expiresAtIso },
       });
     }

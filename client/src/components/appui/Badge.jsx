@@ -1,64 +1,52 @@
 const MAP = {
-  // Neutro / rascunho
-  DRAFT: "bg-zinc-50 text-zinc-700 border-zinc-200",
-
-  // Link publicado/enviado
-  PUBLIC: "bg-sky-50 text-sky-700 border-sky-200",
-  SENT: "bg-sky-50 text-sky-700 border-sky-200",
-
-  // Aguardando ação
-  HOLD: "bg-violet-50 text-violet-700 border-violet-200",
-
-  // Aceito / aprovado
+  PUBLIC: "bg-blue-50 text-blue-700 border-blue-200",
   ACCEPTED: "bg-amber-50 text-amber-800 border-amber-200",
-
-  // Finalizado com sucesso
-  CONFIRMED: "bg-emerald-50 text-emerald-700 border-emerald-200",
   PAID: "bg-emerald-50 text-emerald-700 border-emerald-200",
-
-  // Falhou / inválido
-  EXPIRED: "bg-red-50 text-red-700 border-red-200",
+  EXPIRED: "bg-zinc-50 text-zinc-600 border-zinc-200",
+  DRAFT: "bg-zinc-50 text-zinc-700 border-zinc-200",
+  HOLD: "bg-amber-50 text-amber-800 border-amber-200",
+  CONFIRMED: "bg-emerald-50 text-emerald-700 border-emerald-200",
   CANCELED: "bg-red-50 text-red-700 border-red-200",
   CANCELLED: "bg-red-50 text-red-700 border-red-200",
-
-  // Pós-pagamento
-  REFUNDED: "bg-rose-50 text-rose-700 border-rose-200",
 };
 
-const LABELS_PT = {
+const LABEL = {
+  PUBLIC: "Público",
+  ACCEPTED: "Aceito",
+  PAID: "Pago",
+  EXPIRED: "Expirado",
   DRAFT: "Rascunho",
-  PUBLIC: "Pública",
-  SENT: "Enviada",
-  HOLD: "Em espera",
-  ACCEPTED: "Aceita",
-  CONFIRMED: "Confirmada",
-  PAID: "Paga",
-  EXPIRED: "Expirada",
-  CANCELED: "Cancelada",
-  CANCELLED: "Cancelada",
-  REFUNDED: "Reembolsada",
+  HOLD: "Reservado",
+  CONFIRMED: "Confirmado",
+  CANCELED: "Cancelado",
+  CANCELLED: "Cancelado",
 };
-
-function normTone(v) {
-  return String(v || "")
-    .trim()
-    .toUpperCase();
-}
 
 export default function Badge({ tone = "PUBLIC", children }) {
-  const key = normTone(tone || children || "PUBLIC");
-  const cls = MAP[key] || "bg-zinc-50 text-zinc-700 border-zinc-200";
+  const key = String(tone || "")
+    .trim()
+    .toUpperCase();
 
-  const text =
-    typeof children === "string"
-      ? LABELS_PT[key] || children
-      : (children ?? LABELS_PT[key] ?? key);
+  // ✅ Se children for exatamente o status ("PAID", "PUBLIC"...),
+  // mostramos o LABEL PT-BR.
+  let content = LABEL[key] ?? key;
+
+  if (children !== undefined && children !== null) {
+    if (typeof children === "string") {
+      const ck = children.trim().toUpperCase();
+      content = ck && ck !== key ? children : content;
+    } else {
+      content = children;
+    }
+  }
 
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${cls}`}
+      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${
+        MAP[key] || "bg-zinc-50 text-zinc-700 border-zinc-200"
+      }`}
     >
-      {text}
+      {content}
     </span>
   );
 }
