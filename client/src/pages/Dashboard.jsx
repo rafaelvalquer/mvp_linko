@@ -25,13 +25,18 @@ function fmtDateTimeBR(iso) {
   return d.toLocaleString("pt-BR");
 }
 
-function pixToneClasses(st) {
-  const s = normStatus(st);
-  if (s === "EXPIRED" || s === "CANCELLED") return "text-red-700";
-  if (s === "REFUNDED") return "text-amber-800";
-  if (s === "PENDING") return "text-amber-900";
-  if (s === "PAID") return "text-emerald-800";
-  return "text-zinc-500";
+function fmtTimeBR(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("pt-BR", { timeStyle: "short" }).format(d);
+}
+
+function safeDate(v) {
+  if (!v) return null;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
 }
 
 function isSameLocalDay(a, b) {
@@ -44,11 +49,34 @@ function isSameLocalDay(a, b) {
   );
 }
 
-function safeDate(v) {
-  if (!v) return null;
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return null;
-  return d;
+function holdRemainingLabel(holdExpiresAt) {
+  const d = safeDate(holdExpiresAt);
+  if (!d) return null;
+  const ms = d.getTime() - Date.now();
+  const min = Math.floor(ms / 60000);
+  if (min <= 0) return "HOLD expirado";
+  if (min === 1) return "Expira em 1 min";
+  return `Expira em ${min} min`;
+}
+
+/** ========= Pix status UI helpers ========= */
+function pixToneClasses(st) {
+  const s = normStatus(st);
+  if (s === "EXPIRED" || s === "CANCELLED") return "text-red-700";
+  if (s === "REFUNDED") return "text-amber-800";
+  if (s === "PENDING") return "text-amber-900";
+  if (s === "PAID") return "text-emerald-800";
+  return "text-zinc-500";
+}
+
+function pixStatusLabel(st) {
+  const s = normStatus(st);
+  if (s === "PAID") return "Pago";
+  if (s === "PENDING") return "Pendente";
+  if (s === "EXPIRED") return "Expirado";
+  if (s === "CANCELLED" || s === "CANCELED") return "Cancelado";
+  if (s === "REFUNDED") return "Reembolsado";
+  return s || "—";
 }
 
 export default function Dashboard() {
@@ -56,10 +84,13 @@ export default function Dashboard() {
   const [bookingsBusy, setBookingsBusy] = useState(true);
   const [bookingsErr, setBookingsErr] = useState("");
   const [bookings, setBookings] = useState([]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
   const [copiedId, setCopiedId] = useState(null);
   const copiedTimerRef = useRef(null);
+
   const nav = useNavigate();
   const { signOut } = useAuth();
 
@@ -69,12 +100,46 @@ export default function Dashboard() {
     };
   }, []);
 
-  async function loadOffers() {
+  async function loadBookingsNext7Days() {
+    try {
+      setBookingsErr("");
+      setBookingsBusy(true);
+
+      const from = new Date();
+      from.setHours(0, 0, 0, 0);
+
+      const to = new Date(from);
+      to.setDate(to.getDate() + 7);
+      to.setHours(23, 59, 59, 999);
+
+      const d = await listBookings({
+        from: from.toISOString(),
+        to: to.toISOString(),
+        status: "HOLD,CONFIRMED",
+      });
+
+      setBookings(d.items || []);
+    } catch (e) {
+      if (e?.status === 401) {
+        signOut();
+        nav(`/login?next=${encodeURIComponent("/")}`, { replace: true });
+        return;
+      }
+      setBookingsErr(e?.message || "Falha ao carregar agenda.");
+    } finally {
+      setBookingsBusy(false);
+    }
+  }
+
+  async function load() {
     try {
       setError("");
       setLoading(true);
+
       const d = await api("/offers");
       setOffers(d.items || []);
+
+      loadBookingsNext7Days();
     } catch (e) {
       if (e?.status === 401) {
         signOut();
@@ -87,106 +152,8 @@ export default function Dashboard() {
     }
   }
 
-  function bookingStatusLabel(st) {
-    const s = normStatus(st);
-    if (s === "CONFIRMED") return "Confirmada";
-    if (s === "HOLD") return "Em espera";
-    if (s === "EXPIRED") return "Expirada";
-    if (s === "CANCELLED" || s === "CANCELED") return "Cancelada";
-    return s || "—";
-  }
-
-  function bookingTone(st) {
-    // mantém compat com seu Badge.jsx (que tem HOLD/CONFIRMED/EXPIRED/CANCELED)
-    const s = normStatus(st);
-    if (s === "CANCELLED") return "CANCELED";
-    return s || "DRAFT";
-  }
-
-  function fmtTimeBR(iso) {
-    if (!iso) return "";
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return "";
-    return d.toLocaleTimeString("pt-BR", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  }
-
-  function fmtDateBR(iso) {
-    if (!iso) return "";
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return "";
-    return d.toLocaleDateString("pt-BR");
-  }
-
-  function fmtRangeBR(startAt, endAt) {
-    const s = safeDate(startAt);
-    const e = safeDate(endAt);
-    if (!s || !e) return "";
-    if (isSameLocalDay(s, e)) {
-      return `${fmtDateBR(startAt)} • ${fmtTimeBR(startAt)}–${fmtTimeBR(endAt)}`;
-    }
-    return `${fmtDateTimeBR(startAt)} – ${fmtDateTimeBR(endAt)}`;
-  }
-
-  function pickOfferTitle(b) {
-    return b?.offer?.title || b?.offerTitle || b?.title || "Proposta";
-  }
-  function pickOfferId(b) {
-    return b?.offer?._id || b?.offerId || b?.offer?.id || "";
-  }
-  function pickPublicToken(b) {
-    return b?.offer?.publicToken || b?.publicToken || b?.offerPublicToken || "";
-  }
-
-  async function loadBookings() {
-    try {
-      setBookingsErr("");
-      setBookingsBusy(true);
-
-      const now = new Date();
-      const from = now.toISOString();
-      const to = new Date(
-        now.getTime() + 7 * 24 * 60 * 60 * 1000,
-      ).toISOString();
-
-      // backend ideal: status=HOLD,CONFIRMED (ou repetido), mas filtramos no front também por segurança
-      const d = await listBookings({ from, to, status: "HOLD,CONFIRMED" });
-      const items = d?.items || d?.bookings || [];
-
-      const arr = Array.isArray(items) ? items : [];
-      const filtered = arr
-        .filter((b) => {
-          const st = normStatus(b?.status);
-          return st === "HOLD" || st === "CONFIRMED";
-        })
-        .sort((a, b) => {
-          const as = safeDate(a?.startAt)?.getTime() || 0;
-          const bs = safeDate(b?.startAt)?.getTime() || 0;
-          return as - bs;
-        });
-
-      setBookings(filtered);
-    } catch (e) {
-      if (e?.status === 401) {
-        signOut();
-        nav(`/login?next=${encodeURIComponent("/")}`, { replace: true });
-        return;
-      }
-      setBookingsErr(e?.message || "Falha ao carregar reservas.");
-      setBookings([]);
-    } finally {
-      setBookingsBusy(false);
-    }
-  }
-
-  async function loadAll() {
-    await Promise.all([loadOffers(), loadBookings()]);
-  }
-
   useEffect(() => {
-    loadAll();
+    load();
   }, []);
 
   const fmtBRL = (cents) =>
@@ -198,22 +165,17 @@ export default function Dashboard() {
   const kpis = useMemo(() => {
     const total = offers.length;
 
-    // Volume: mantém seu comportamento atual (somatório de amountCents)
     const totalValueCents = offers.reduce(
       (acc, o) => acc + (o.amountCents || 0),
       0,
     );
 
     const PAID_SET = new Set(["PAID", "CONFIRMED"]);
-    const PIX_PENDING_SET = new Set(["PENDING"]);
-    const PIX_DONE_SET = new Set(["PAID"]);
-    const PIX_FAIL_SET = new Set(["EXPIRED", "CANCELLED", "REFUNDED"]);
     const BOOKED_SET = new Set(["BOOKED_HOLD", "HOLD", "CONFIRMED", "PAID"]);
 
     const paidOffers = offers.filter((o) => PAID_SET.has(normStatus(o.status)));
     const paidCount = paidOffers.length;
 
-    // Agendamentos: conta se tem bookingId/scheduledStartAt ou status de agendado
     const bookedOffers = offers.filter((o) => {
       const st = normStatus(o.status);
       return (
@@ -225,52 +187,19 @@ export default function Dashboard() {
     });
     const bookedCount = bookedOffers.length;
 
-    // Pagos hoje: conta e soma valores hoje (por paidAt; fallback: updatedAt)
     const now = new Date();
     const paidToday = paidOffers.filter((o) => {
       const dt = safeDate(o.paidAt) || safeDate(o.updatedAt);
       return dt ? isSameLocalDay(dt, now) : false;
     });
-    const paidTodayCount = paidToday.length;
 
-    // Valor pago hoje: fallback em amountCents, depois totalCents
+    const paidTodayCount = paidToday.length;
     const paidTodayValueCents = paidToday.reduce(
       (acc, o) => acc + (o.amountCents || o.totalCents || 0),
       0,
     );
 
-    const getValueCents = (o) => {
-      const v = Number(o?.amountCents ?? o?.totalCents ?? 0);
-      return Number.isFinite(v) ? v : 0;
-    };
-
-    // Pendentes (preferir Pix status; fallback status Offer)
-    const pendingOffers = offers.filter((o) => {
-      const valueCents = getValueCents(o);
-      if (valueCents <= 0) return false;
-
-      const pixSt = normStatus(o?.payment?.lastPixStatus);
-      if (pixSt) {
-        if (PIX_PENDING_SET.has(pixSt)) return true;
-        if (PIX_DONE_SET.has(pixSt)) return false;
-        if (PIX_FAIL_SET.has(pixSt)) return false;
-        // status desconhecido -> cai no fallback de status da offer
-      }
-
-      const st = normStatus(o?.status);
-      if (PAID_SET.has(st)) return false;
-      return st === "PUBLIC" || st === "SENT" || st === "DRAFT";
-    });
-
-    const pendingCount = pendingOffers.length;
-    const pendingValueCents = pendingOffers.reduce(
-      (acc, o) => acc + getValueCents(o),
-      0,
-    );
-
-    // Conversão: pagos / propostas (em %)
     const conversionPct = total > 0 ? Math.round((paidCount / total) * 100) : 0;
-
     const last5 = offers.slice(0, 5);
 
     return {
@@ -282,10 +211,12 @@ export default function Dashboard() {
       conversionPct,
       paidTodayCount,
       paidTodayValueCents,
-      pendingCount,
-      pendingValueCents,
     };
   }, [offers]);
+
+  const nextBookings = useMemo(() => {
+    return (bookings || []).slice(0, 6);
+  }, [bookings]);
 
   return (
     <Shell>
@@ -295,11 +226,7 @@ export default function Dashboard() {
           subtitle="Orçamento que vira contrato + cobrança + agenda em 1 clique."
           actions={
             <>
-              <Button
-                variant="secondary"
-                onClick={loadAll}
-                disabled={loading || bookingsBusy}
-              >
+              <Button variant="secondary" onClick={load} disabled={loading}>
                 Atualizar
               </Button>
               <Link to="/offers/new">
@@ -391,14 +318,16 @@ export default function Dashboard() {
                     {kpis.last5.map((o) => {
                       const publicUrl = `/p/${o.publicToken}`;
                       const payUrl = `${publicUrl}/pay`;
-                      const pixSt = normStatus(o?.payment?.lastPixStatus);
-                      const pixUpdatedAt = o?.payment?.lastPixUpdatedAt;
 
                       const offerSt = normStatus(o?.status);
                       const isPaidOffer =
                         offerSt === "PAID" || offerSt === "CONFIRMED";
 
                       const isCopied = copiedId === o._id;
+
+                      // ✅ Pix status voltou
+                      const pixSt = normStatus(o?.payment?.lastPixStatus);
+                      const pixUpdatedAt = o?.payment?.lastPixUpdatedAt;
 
                       return (
                         <div
@@ -429,9 +358,9 @@ export default function Dashboard() {
                               </div>
 
                               <div className="flex flex-wrap items-center gap-2">
-                                <Badge tone={o.status || "PUBLIC"}>
-                                  {o.status || "PUBLIC"}
-                                </Badge>
+                                {/* ✅ sem children -> Badge mostra label PT-BR */}
+                                <Badge tone={o.status || "PUBLIC"} />
+
                                 {pixSt ? (
                                   <div
                                     className={`text-[11px] ${pixToneClasses(
@@ -440,7 +369,7 @@ export default function Dashboard() {
                                   >
                                     Pix:{" "}
                                     <span className="font-semibold">
-                                      {pixSt}
+                                      {pixStatusLabel(pixSt)}
                                     </span>
                                     {pixUpdatedAt ? (
                                       <> • {fmtDateTimeBR(pixUpdatedAt)}</>
@@ -512,101 +441,110 @@ export default function Dashboard() {
             </Card>
           </div>
 
-          {/* Painéis laterais (MVP placeholders) */}
+          {/* Lateral */}
           <div className="col-span-12 lg:col-span-4 space-y-4">
             <Card>
               <CardHeader
                 title="Agenda (MVP)"
-                subtitle="Próximas reservas (7 dias) — HOLD e CONFIRMED."
-              />
-              <CardBody>
-                {bookingsBusy ? (
-                  <div className="space-y-2">
-                    <Skeleton className="h-10 w-full" />
-                    <Skeleton className="h-10 w-full" />
-                    <Skeleton className="h-10 w-full" />
+                subtitle="Próximas reservas (HOLD/CONFIRMED) do seu workspace."
+                right={
+                  <div className="text-xs text-zinc-500">
+                    <Link className="underline" to="/calendar">
+                      Abrir agenda
+                    </Link>
                   </div>
+                }
+              />
+              <CardBody className="space-y-3">
+                {bookingsBusy ? (
+                  <>
+                    <Skeleton className="h-14 w-full" />
+                    <Skeleton className="h-14 w-full" />
+                    <Skeleton className="h-14 w-full" />
+                  </>
                 ) : bookingsErr ? (
                   <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
                     {bookingsErr}{" "}
                     <button
                       className="ml-2 font-semibold underline"
-                      onClick={loadBookings}
+                      onClick={loadBookingsNext7Days}
                     >
-                      Tentar novamente
+                      Recarregar
                     </button>
                   </div>
-                ) : bookings.length === 0 ? (
+                ) : nextBookings.length === 0 ? (
                   <EmptyState
-                    title="Nenhuma reserva nos próximos 7 dias"
-                    description="Quando um cliente agendar (HOLD) ou confirmar (CONFIRMED), vai aparecer aqui."
+                    title="Nenhuma reserva nos próximos dias"
+                    description="Quando um cliente reservar um horário, aparecerá aqui."
+                    ctaLabel="Ver agenda"
+                    onCta={() => nav("/calendar")}
                   />
                 ) : (
-                  <div className="space-y-2">
-                    {bookings.map((b) => {
-                      const offerTitle = pickOfferTitle(b);
-                      const offerId = pickOfferId(b);
-                      const publicToken = pickPublicToken(b);
-                      const publicUrl = publicToken ? `/p/${publicToken}` : "";
+                  nextBookings.map((b) => {
+                    const offerTitle = b?.offer?.title || "—";
+                    const publicToken = b?.offer?.publicToken;
+                    const holdInfo =
+                      normStatus(b.status) === "HOLD"
+                        ? holdRemainingLabel(b.holdExpiresAt)
+                        : null;
 
-                      return (
-                        <div
-                          key={b._id || b.id}
-                          className="rounded-xl border bg-white p-3"
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="text-sm font-semibold text-zinc-900">
-                                {fmtRangeBR(b.startAt, b.endAt) || "—"}
-                              </div>
-                              <div className="mt-0.5 text-xs text-zinc-500 line-clamp-1">
-                                {offerTitle}
-                              </div>
+                    return (
+                      <div key={b._id} className="rounded-xl border p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-zinc-900">
+                              {fmtTimeBR(b.startAt)}–{fmtTimeBR(b.endAt)}
                             </div>
-
-                            <Badge tone={bookingTone(b.status)}>
-                              {bookingStatusLabel(b.status)}
-                            </Badge>
+                            <div className="mt-0.5 text-xs text-zinc-600">
+                              Cliente:{" "}
+                              <span className="font-medium">
+                                {b.customerName || "—"}
+                              </span>
+                              {b.customerWhatsApp
+                                ? ` • ${b.customerWhatsApp}`
+                                : ""}
+                            </div>
+                            <div className="mt-0.5 text-xs text-zinc-500 line-clamp-1">
+                              Serviço: {offerTitle}
+                            </div>
+                            {holdInfo ? (
+                              <div className="mt-1 text-[11px] text-amber-800">
+                                {holdInfo}
+                              </div>
+                            ) : null}
                           </div>
 
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {offerId ? (
-                              <Link to={`/offers/${offerId}`}>
-                                <Button variant="secondary" type="button">
-                                  Ver no painel
-                                </Button>
-                              </Link>
-                            ) : null}
-
-                            {publicUrl ? (
+                          <div className="flex flex-col items-end gap-2">
+                            <Badge tone={b.status} />
+                            {publicToken ? (
                               <Button
                                 variant="ghost"
                                 type="button"
                                 onClick={() =>
                                   window.open(
-                                    publicUrl,
+                                    `/p/${publicToken}`,
                                     "_blank",
                                     "noopener,noreferrer",
                                   )
                                 }
                               >
-                                Abrir link público
+                                Abrir proposta
                               </Button>
                             ) : null}
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
+                        <div className="mt-2 text-[11px] text-zinc-400">
+                          {fmtDateTimeBR(b.startAt)}
+                        </div>
+                      </div>
+                    );
+                  })
                 )}
               </CardBody>
             </Card>
 
             <Card>
-              <CardHeader
-                title="Caixa (MVP)"
-                subtitle="Resumo de pagos/pendentes/reembolsos."
-              />
+              <CardHeader title="Caixa (MVP)" subtitle="Resumo de pagos." />
               <CardBody className="space-y-3">
                 <div className="rounded-xl border bg-zinc-50 p-3">
                   <div className="text-xs font-semibold text-zinc-500">
@@ -614,17 +552,6 @@ export default function Dashboard() {
                   </div>
                   <div className="mt-1 text-lg font-semibold">
                     {loading ? "—" : fmtBRL(kpis.paidTodayValueCents)}
-                  </div>
-                </div>
-                <div className="rounded-xl border bg-zinc-50 p-3">
-                  <div className="text-xs font-semibold text-zinc-500">
-                    Pendentes
-                  </div>
-                  <div className="mt-1 text-lg font-semibold">
-                    {loading ? "—" : fmtBRL(kpis.pendingValueCents)}
-                  </div>
-                  <div className="mt-1 text-xs text-zinc-500">
-                    {loading ? "—" : `${kpis.pendingCount} propostas`}
                   </div>
                 </div>
               </CardBody>

@@ -1,107 +1,128 @@
 // server/src/routes/bookings.routes.js
 import express from "express";
 import mongoose from "mongoose";
-import Booking from "../models/Booking.js";
+
 import { ensureAuth, tenantFromUser } from "../middleware/auth.js";
+
+import Booking from "../models/Booking.js";
 
 const router = express.Router();
 
-function parseIso(s) {
-  if (!s) return null;
-  const d = new Date(String(s));
-  return Number.isNaN(d.getTime()) ? null : d;
-}
+router.use(ensureAuth);
+router.use(tenantFromUser);
 
-function parseStatusList(v) {
-  if (!v) return null;
-  const list = String(v)
-    .split(",")
-    .map((x) => x.trim().toUpperCase())
-    .filter(Boolean);
-  return list.length ? list : null;
-}
-
-router.get("/bookings", ensureAuth, tenantFromUser, async (req, res) => {
+/**
+ * GET /api/bookings?from=ISO&to=ISO&status=HOLD,CONFIRMED
+ */
+router.get("/bookings", async (req, res, next) => {
   try {
-    const from = parseIso(req.query.from);
-    const to = parseIso(req.query.to);
-    const statusList = parseStatusList(req.query.status);
+    const tenantId = req.tenantId;
+    if (!tenantId)
+      return res.status(401).json({ ok: false, error: "Unauthorized" });
 
-    const filter = { workspaceId: req.tenantId };
+    const from = String(req.query.from || "").trim();
+    const to = String(req.query.to || "").trim();
+    const statusRaw = String(req.query.status || "").trim();
 
-    if (statusList) filter.status = { $in: statusList };
+    const q = { workspaceId: tenantId };
 
     if (from || to) {
-      filter.startAt = {};
-      if (from) filter.startAt.$gte = from;
-      if (to) filter.startAt.$lt = to;
+      q.startAt = {};
+      if (from) {
+        const d = new Date(from);
+        if (!Number.isNaN(d.getTime())) q.startAt.$gte = d;
+      }
+      if (to) {
+        const d = new Date(to);
+        if (!Number.isNaN(d.getTime())) q.startAt.$lte = d;
+      }
+      if (!Object.keys(q.startAt).length) delete q.startAt;
     }
 
-    const docs = await Booking.find(filter)
+    if (statusRaw) {
+      const arr = statusRaw
+        .split(",")
+        .map((s) => s.trim().toUpperCase())
+        .filter(Boolean);
+      if (arr.length) q.status = { $in: arr };
+    }
+
+    const docs = await Booking.find(q)
       .sort({ startAt: 1 })
-      .limit(500)
-      .populate({
-        path: "offerId",
-        select:
-          "title customerName publicToken offerType totalCents amountCents status",
-      })
+      .populate("offerId", "_id title publicToken")
       .lean();
 
-    const items = docs.map((b) => ({
-      id: String(b._id),
-      offerId: b.offerId?._id ? String(b.offerId._id) : String(b.offerId),
-      offer: b.offerId?._id ? b.offerId : null,
+    const items = (docs || []).map((b) => ({
+      _id: b._id,
       startAt: b.startAt,
       endAt: b.endAt,
       status: b.status,
-      holdExpiresAt: b.holdExpiresAt,
-      payment: b.payment || null,
+      holdExpiresAt: b.holdExpiresAt || null,
       customerName: b.customerName || "",
       customerWhatsApp: b.customerWhatsApp || "",
-      createdAt: b.createdAt,
-      updatedAt: b.updatedAt,
+      offer: b.offerId
+        ? {
+            _id: b.offerId._id,
+            title: b.offerId.title,
+            publicToken: b.offerId.publicToken,
+          }
+        : null,
     }));
 
     return res.json({ ok: true, items });
   } catch (e) {
-    return res
-      .status(500)
-      .json({ ok: false, error: e?.message || "Falha ao listar bookings." });
+    next(e);
   }
 });
 
-router.patch("/bookings/:id", ensureAuth, tenantFromUser, async (req, res) => {
+/**
+ * PATCH /api/bookings/:id/cancel
+ * -> status CANCELLED (tenant-aware)
+ */
+router.patch("/bookings/:id/cancel", async (req, res, next) => {
   try {
-    const id = String(req.params.id || "");
-    if (!mongoose.isValidObjectId(id)) {
+    const tenantId = req.tenantId;
+    const { id } = req.params;
+
+    if (!tenantId)
+      return res.status(401).json({ ok: false, error: "Unauthorized" });
+    if (!mongoose.isValidObjectId(id))
       return res.status(400).json({ ok: false, error: "ID inválido." });
-    }
 
-    const nextStatus = String(req.body?.status || "")
-      .trim()
-      .toUpperCase();
-    if (nextStatus !== "CANCELLED") {
-      return res
-        .status(400)
-        .json({ ok: false, error: "Apenas CANCELLED é permitido no MVP." });
-    }
-
-    const r = await Booking.updateOne(
-      { _id: id, workspaceId: req.tenantId },
+    const doc = await Booking.findOneAndUpdate(
+      { _id: id, workspaceId: tenantId },
       { $set: { status: "CANCELLED" } },
-    );
+      { new: true },
+    )
+      .populate("offerId", "_id title publicToken")
+      .lean();
 
-    if (!r?.matchedCount) {
+    if (!doc)
       return res
         .status(404)
         .json({ ok: false, error: "Booking não encontrado." });
-    }
 
-    return res.json({ ok: true });
+    return res.json({
+      ok: true,
+      booking: {
+        _id: doc._id,
+        startAt: doc.startAt,
+        endAt: doc.endAt,
+        status: doc.status,
+        holdExpiresAt: doc.holdExpiresAt || null,
+        customerName: doc.customerName || "",
+        customerWhatsApp: doc.customerWhatsApp || "",
+        offer: doc.offerId
+          ? {
+              _id: doc.offerId._id,
+              title: doc.offerId.title,
+              publicToken: doc.offerId.publicToken,
+            }
+          : null,
+      },
+    });
   } catch (e) {
-    return res
-      .status(500)
-      .json({ ok: false, error: e?.message || "Falha ao atualizar booking." });
+    next(e);
   }
 });
 
