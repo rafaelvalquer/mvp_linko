@@ -2,9 +2,8 @@
 import express from "express";
 import mongoose from "mongoose";
 import { Offer } from "../models/Offer.js";
-import Booking from "../models/Booking.js";
+import * as BookingModule from "../models/Booking.js";
 
-import { acceptances, pixCharges } from "../mvpStore.js";
 import {
   abacateCreatePixQr,
   abacateCheckPix,
@@ -12,6 +11,18 @@ import {
 } from "../services/abacatepayClient.js";
 
 const router = express.Router();
+
+// ✅ garante que NÃO vai quebrar por "acceptances is not defined" / "pixCharges is not defined"
+const acceptances =
+  globalThis.__PAYLINK_ACCEPTANCES__ ||
+  (globalThis.__PAYLINK_ACCEPTANCES__ = new Map());
+
+const pixCharges =
+  globalThis.__PAYLINK_PIX_CHARGES__ ||
+  (globalThis.__PAYLINK_PIX_CHARGES__ = new Map());
+
+// ✅ compat: Booking pode ser export default OU named (export const Booking = ...)
+const Booking = BookingModule.default || BookingModule.Booking;
 
 const HOLD_MINUTES = 15;
 const PIX_EXPIRES_IN = Number(process.env.PIX_EXPIRES_IN || 3600); // segundos
@@ -86,6 +97,7 @@ function buildDaySlots(dateStr, durationMin = 60) {
   const dur = Number(durationMin) > 0 ? Number(durationMin) : 60;
 
   return times.map((hhmm) => {
+    // interpreta como horário LOCAL do servidor (ex.: -03:00) e converte para ISO (UTC)
     const start = new Date(`${dateStr}T${hhmm}:00`);
     const end = new Date(start.getTime() + dur * 60 * 1000);
     return {
@@ -119,7 +131,7 @@ function inferOfferType(offer) {
 
 /**
  * Busca offer por token público.
- * - withTenant=true: traz workspaceId/ownerUserId para derivar tenant do Booking
+ * - withTenant=true: traz workspaceId/ownerUserId para derivar escopo de agenda
  * - Respostas públicas SEMPRE sanitizadas (não vazam tenant).
  */
 async function findOfferByPublicToken(token, { withTenant = false } = {}) {
@@ -135,7 +147,6 @@ async function findOfferByPublicToken(token, { withTenant = false } = {}) {
 
 function sanitizeOfferPublic(offer) {
   if (!offer) return null;
-  // garante que não vaze tenant mesmo se veio com withTenant=true
   // eslint-disable-next-line no-unused-vars
   const { workspaceId, ownerUserId, __v, ...rest } = offer;
   return rest;
@@ -162,7 +173,6 @@ function isTerminalPixStatus(st) {
     s === "PAID" || s === "EXPIRED" || s === "CANCELLED" || s === "REFUNDED"
   );
 }
-// suporta retorno { data: {...} } ou direto {...}
 function pickPixData(abResult) {
   const d = abResult?.data;
   return d && d.id ? d : abResult;
@@ -183,17 +193,17 @@ function computeExpiresAtIso(pixData, fallbackExpiresInSec) {
 function upsertPixCharge(charge) {
   if (!pixCharges) return;
 
-  if (Array.isArray(pixCharges)) {
-    const i = pixCharges.findIndex((x) => x?.pixId === charge.pixId);
-    if (i >= 0) pixCharges[i] = { ...pixCharges[i], ...charge };
-    else pixCharges.push(charge);
-    return;
-  }
+  // Map
   if (typeof pixCharges.set === "function") {
-    pixCharges.set(charge.pixId, charge);
+    pixCharges.set(charge.pixId, {
+      ...(pixCharges.get(charge.pixId) || {}),
+      ...charge,
+    });
     return;
   }
-  pixCharges[charge.pixId] = charge;
+
+  // fallback object
+  pixCharges[charge.pixId] = { ...(pixCharges[charge.pixId] || {}), ...charge };
 }
 
 async function updateOfferPayment(offerId, patch) {
@@ -246,7 +256,9 @@ function toPublicBooking(b) {
   if (!b) return null;
   return {
     id: String(b._id),
-    status: b.status,
+    status: String(b.status || "")
+      .trim()
+      .toUpperCase(),
     startAt: b.startAt instanceof Date ? b.startAt.toISOString() : b.startAt,
     endAt: b.endAt instanceof Date ? b.endAt.toISOString() : b.endAt,
     holdExpiresAt:
@@ -256,6 +268,29 @@ function toPublicBooking(b) {
     customerName: b.customerName || "",
     customerWhatsApp: b.customerWhatsApp || "",
   };
+}
+
+function normalizeBookingStatusForSlots(st) {
+  const s = String(st || "")
+    .trim()
+    .toUpperCase();
+  // compat legado
+  if (s === "PAID") return "CONFIRMED";
+  if (s === "CANCELED") return "CANCELLED";
+  return s;
+}
+
+// ✅ escopo correto: bloquear por VENDEDOR (workspaceId + ownerUserId), não por offerId.
+// Isso impede outro cliente (outra offer) de reservar o mesmo horário.
+function bookingScopeFromOffer(offerRaw) {
+  const q = {};
+  if (offerRaw?.workspaceId) q.workspaceId = offerRaw.workspaceId;
+  if (offerRaw?.ownerUserId) q.ownerUserId = offerRaw.ownerUserId;
+
+  // fallback (legado): se não tiver tenant, mantém comportamento anterior
+  if (!q.workspaceId && !q.ownerUserId) q.offerId = offerRaw._id;
+
+  return q;
 }
 
 async function markAsPaid({ token, offerId, bookingId, pix }) {
@@ -278,7 +313,6 @@ async function markAsPaid({ token, offerId, bookingId, pix }) {
     ).catch(() => {});
   }
 
-  // rastro do pix no offer.payment.*
   await updateOfferPayment(offerId, {
     lastPixId: pix?.id,
     lastPixStatus: "PAID",
@@ -286,7 +320,7 @@ async function markAsPaid({ token, offerId, bookingId, pix }) {
     lastPixUpdatedAt: paidAt,
   });
 
-  // booking -> CONFIRMED (se existir)
+  // booking -> CONFIRMED
   if (bookingId && mongoose.isValidObjectId(bookingId)) {
     await updateBookingPayment(bookingId, {
       status: "CONFIRMED",
@@ -298,16 +332,6 @@ async function markAsPaid({ token, offerId, bookingId, pix }) {
       },
     });
   }
-
-  upsertPixCharge({
-    pixId: pix?.id,
-    bookingId: bookingId || null,
-    token,
-    status: "PAID",
-    paidAt: paidAtIso,
-    updatedAt: paidAtIso,
-    pix,
-  });
 
   return paidAtIso;
 }
@@ -338,7 +362,6 @@ router.get("/p/:token", async (req, res, next) => {
 
 /**
  * GET /p/:token/summary?bookingId=...
- * -> resumo final (somente leitura). Usado pelo /done
  */
 router.get("/p/:token/summary", async (req, res, next) => {
   try {
@@ -361,7 +384,6 @@ router.get("/p/:token/summary", async (req, res, next) => {
     const offerType = offerRaw?.offerType || inferOfferType(offerRaw);
     const amounts = computeAmountCents(offerRaw);
 
-    // booking: busca por _id (se veio) e valida offerId, senão pega o mais recente
     const now = new Date();
     let booking = null;
 
@@ -423,7 +445,7 @@ router.get("/p/:token/summary", async (req, res, next) => {
 router.post("/p/:token/accept", async (req, res, next) => {
   try {
     const { token } = req.params;
-    const { agreeTerms, ackDeposit, acceptedAt } = req.body || {};
+    const { agreeTerms, acceptedAt } = req.body || {};
 
     if (!token)
       return res.status(400).json({ ok: false, error: "Token inválido." });
@@ -437,13 +459,13 @@ router.post("/p/:token/accept", async (req, res, next) => {
         .json({ ok: false, error: "Proposta já concluída." });
     }
 
-    if (acceptances?.set) {
+    // opcional (não quebra)
+    try {
       acceptances.set(token, {
         agreeTerms: true,
-        ackDeposit: !!ackDeposit,
         acceptedAt: acceptedAt || nowIso(),
       });
-    }
+    } catch {}
 
     try {
       await Offer.updateOne(
@@ -462,6 +484,7 @@ router.post("/p/:token/accept", async (req, res, next) => {
 
 /**
  * GET /p/:token/slots?date=YYYY-MM-DD
+ * ✅ agora lê do Mongo e bloqueia horários ocupados por OUTRAS OFFERS do mesmo vendedor.
  */
 router.get("/p/:token/slots", async (req, res, next) => {
   try {
@@ -496,31 +519,45 @@ router.get("/p/:token/slots", async (req, res, next) => {
     const durationMin =
       Number(offerRaw?.durationMin) > 0 ? Number(offerRaw.durationMin) : 60;
 
-    const dayStart = new Date(`${date}T00:00:00`);
+    // Range do dia (LOCAL do servidor)
+    const dayStart = new Date(`${date}T00:00:00.000`);
     const dayEnd = new Date(`${date}T23:59:59.999`);
     const now = new Date();
 
-    // busca bookings ativos do dia (HOLD válido ou CONFIRMED)
+    const scope = bookingScopeFromOffer(offerRaw);
+
+    // Bookings ativos do dia (por vendedor):
+    // - CONFIRMED/PAID sempre
+    // - HOLD apenas se holdExpiresAt > now
     const activeBookings = await Booking.find({
-      offerId: offerRaw._id,
+      ...scope,
       startAt: { $lt: dayEnd },
       endAt: { $gt: dayStart },
       $or: [
-        { status: "CONFIRMED" },
+        { status: { $in: ["CONFIRMED", "PAID"] } }, // compat
         { status: "HOLD", holdExpiresAt: { $gt: now } },
       ],
     })
       .select("_id startAt endAt status holdExpiresAt")
       .lean();
 
-    const slots = buildDaySlots(date, durationMin).map((s) => {
-      const conflict = activeBookings.find((b) =>
-        overlaps(s.startAt, s.endAt, b.startAt, b.endAt),
-      );
-      return conflict ? { ...s, status: conflict.status } : s;
+    const slots = buildDaySlots(date, durationMin).map((slot) => {
+      let best = null; // CONFIRMED ganha de HOLD
+      for (const b of activeBookings) {
+        if (!overlaps(slot.startAt, slot.endAt, b.startAt, b.endAt)) continue;
+
+        const st = normalizeBookingStatusForSlots(b.status);
+        if (st === "CONFIRMED") {
+          best = "CONFIRMED";
+          break;
+        }
+        if (st === "HOLD") best = best || "HOLD";
+      }
+      return best ? { ...slot, status: best } : slot;
     });
 
-    return res.json({ ok: true, date, slots });
+    noStore(res);
+    return res.json({ ok: true, date, slots, now: now.toISOString() });
   } catch (e) {
     next(e);
   }
@@ -528,7 +565,7 @@ router.get("/p/:token/slots", async (req, res, next) => {
 
 /**
  * POST /p/:token/book
- * Body: { startAt, endAt, customerName, customerWhatsApp? }
+ * ✅ valida conflito no Mongo (mesma regra do /slots) e retorna 409 se ocupado.
  */
 router.post("/p/:token/book", async (req, res, next) => {
   try {
@@ -554,6 +591,16 @@ router.post("/p/:token/book", async (req, res, next) => {
       });
     }
 
+    const now = new Date();
+
+    // bloqueia passado (tolerância de 60s)
+    if (s.getTime() <= now.getTime() - 60 * 1000) {
+      return res.status(400).json({
+        ok: false,
+        error: "Horário no passado.",
+      });
+    }
+
     const offerRaw = await findOfferByPublicToken(token, { withTenant: true });
     if (!offerRaw)
       return res
@@ -570,8 +617,7 @@ router.post("/p/:token/book", async (req, res, next) => {
     }
 
     // tenant deriva da offer
-    const workspaceId =
-      offerRaw.workspaceId || process.env.LEGACY_WORKSPACE_ID || null;
+    const workspaceId = offerRaw.workspaceId || null;
     const ownerUserId = offerRaw.ownerUserId || null;
 
     if (!workspaceId || !ownerUserId) {
@@ -582,25 +628,25 @@ router.post("/p/:token/book", async (req, res, next) => {
       });
     }
 
-    const now = new Date();
+    const scope = bookingScopeFromOffer(offerRaw);
 
-    // conflito via Mongo (mesma offer)
+    // conflito via Mongo (por vendedor) — evita race condition
     const conflict = await Booking.findOne({
-      offerId: offerRaw._id,
+      ...scope,
       startAt: { $lt: e },
       endAt: { $gt: s },
       $or: [
-        { status: "CONFIRMED" },
+        { status: { $in: ["CONFIRMED", "PAID"] } }, // compat
         { status: "HOLD", holdExpiresAt: { $gt: now } },
       ],
     })
-      .select("_id")
+      .select("_id status startAt endAt")
       .lean();
 
-    if (conflict)
-      return res
-        .status(409)
-        .json({ ok: false, error: "Horário indisponível." });
+    if (conflict) {
+      noStore(res);
+      return res.status(409).json({ ok: false, error: "Horário indisponível" });
+    }
 
     const holdExpiresAt = new Date(Date.now() + HOLD_MINUTES * 60 * 1000);
 
@@ -622,7 +668,12 @@ router.post("/p/:token/book", async (req, res, next) => {
       },
     });
 
-    return res.json({ ok: true, booking: toPublicBooking(booking.toObject()) });
+    noStore(res);
+    return res.json({
+      ok: true,
+      booking: toPublicBooking(booking.toObject()),
+      now: now.toISOString(),
+    });
   } catch (e) {
     next(e);
   }
@@ -630,9 +681,7 @@ router.post("/p/:token/book", async (req, res, next) => {
 
 /**
  * POST /p/:token/pix/create
- * Body:
- *  - service: { bookingId, customer: { name, cellphone, email, taxId } }
- *  - product: { customer: { name, cellphone, email, taxId } }  (SEM bookingId)
+ * (mantido como estava no seu arquivo; apenas garantindo pixCharges definido)
  */
 router.post("/p/:token/pix/create", async (req, res, next) => {
   try {
@@ -663,7 +712,6 @@ router.post("/p/:token/pix/create", async (req, res, next) => {
         .json({ ok: false, error: "bookingId obrigatório." });
     }
 
-    // se já pago, trava
     if (isPaidStatus(offerRaw?.status)) {
       return res.status(409).json({
         ok: false,
@@ -673,7 +721,6 @@ router.post("/p/:token/pix/create", async (req, res, next) => {
       });
     }
 
-    // serviço: valida HOLD no Mongo
     let booking = null;
     if (!isProduct) {
       if (!mongoose.isValidObjectId(effectiveBookingId)) {
@@ -697,9 +744,6 @@ router.post("/p/:token/pix/create", async (req, res, next) => {
       }
     }
 
-    // idempotência:
-    // - serviço: reutiliza o pix do booking (payment.providerPaymentId) se não terminal
-    // - produto: reutiliza o lastPixId do offer.payment se não terminal
     const existingPixId = !isProduct
       ? booking?.payment?.providerPaymentId
       : offerRaw?.payment?.lastPixId;
@@ -755,7 +799,6 @@ router.post("/p/:token/pix/create", async (req, res, next) => {
             reused: true,
           });
         }
-        // se terminal, segue e cria outro
       }
     }
 
@@ -779,9 +822,6 @@ router.post("/p/:token/pix/create", async (req, res, next) => {
         .json({ ok: false, error: "Valor inválido para cobrança." });
     }
 
-    // expiração:
-    // - serviço: alinhada com HOLD restante
-    // - produto: PIX_EXPIRES_IN
     let expiresIn = Math.max(60, PIX_EXPIRES_IN);
 
     if (!isProduct) {
@@ -815,7 +855,6 @@ router.post("/p/:token/pix/create", async (req, res, next) => {
     const st = normalizePixStatus(pixDataRaw.status || "PENDING");
     const expiresAtIso = computeExpiresAtIso(pixDataRaw, expiresIn);
 
-    // persiste rastro do pix no offer
     await updateOfferPayment(offerRaw._id, {
       lastPixId: pixDataRaw.id,
       lastPixStatus: st,
@@ -823,7 +862,6 @@ router.post("/p/:token/pix/create", async (req, res, next) => {
       lastPixUpdatedAt: new Date(),
     });
 
-    // serviço: grava pix no booking.payment
     if (!isProduct) {
       await updateBookingPayment(String(booking._id), {
         payment: {
@@ -901,9 +939,6 @@ router.get("/p/:token/pix/status", async (req, res, next) => {
         "",
     ).trim();
 
-    // tenta achar booking:
-    // 1) pelo metadata.externalId (service)
-    // 2) pelo payment.providerPaymentId (fallback)
     let bookingId = null;
 
     if (externalId && mongoose.isValidObjectId(externalId)) {

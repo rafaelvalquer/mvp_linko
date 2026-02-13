@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../app/api.js";
 import Button from "../components/appui/Button.jsx";
@@ -26,6 +26,19 @@ function fmtTime(iso) {
   return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 
+function normStatus(s) {
+  return String(s || "")
+    .trim()
+    .toUpperCase();
+}
+
+function safeDate(v) {
+  if (!v) return null;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
+}
+
 export default function PublicSchedule() {
   const { token } = useParams();
   const navigate = useNavigate();
@@ -35,6 +48,7 @@ export default function PublicSchedule() {
 
   const [date, setDate] = useState(toDateInputValue());
   const [slots, setSlots] = useState([]);
+  const [slotsNow, setSlotsNow] = useState(null);
   const [slotsErr, setSlotsErr] = useState("");
   const [loadingSlots, setLoadingSlots] = useState(false);
 
@@ -93,6 +107,32 @@ export default function PublicSchedule() {
     };
   }, [offer]);
 
+  const now = safeDate(slotsNow) || new Date();
+  const todayStr = toDateInputValue(new Date());
+  const isToday = date === todayStr;
+  const pastTolMs = 90_000; // tolerância (90s)
+
+  const getSlotUi = useCallback(
+    (s) => {
+      const st = normStatus(s?.status);
+      const start = safeDate(s?.startAt);
+      const isPast =
+        isToday && start ? start.getTime() <= now.getTime() - pastTolMs : false;
+      const disabled = st !== "FREE" || isPast;
+      const label = isPast
+        ? "Horário passado"
+        : st === "HOLD"
+          ? "Reservado"
+          : st === "CONFIRMED"
+            ? "Confirmado"
+            : st === "FREE"
+              ? "Livre"
+              : "Indisponível";
+      return { st, isPast, disabled, label };
+    },
+    [isToday, now, pastTolMs],
+  );
+
   // carrega slots quando muda a data
   useEffect(() => {
     if (!offer) return;
@@ -104,6 +144,7 @@ export default function PublicSchedule() {
     setSlotsErr("");
     api(`/p/${token}/slots?date=${encodeURIComponent(date)}`)
       .then((d) => {
+        setSlotsNow(d?.now || null);
         setSlots(Array.isArray(d.slots) ? d.slots : []);
       })
       .catch((e) => {
@@ -113,8 +154,23 @@ export default function PublicSchedule() {
       .finally(() => setLoadingSlots(false));
   }, [token, date, offer]);
 
+  // impede seleção fantasma: slot deixou de ser FREE ou virou passado
+  useEffect(() => {
+    if (!selected) return;
+    const cur = slots.find(
+      (s) => s?.startAt === selected?.startAt && s?.endAt === selected?.endAt,
+    );
+    if (!cur) {
+      setSelected(null);
+      return;
+    }
+    if (getSlotUi(cur).disabled) setSelected(null);
+  }, [slots, slotsNow, date, selected, getSlotUi]);
+
   async function confirmBooking() {
-    if (!selected || selected.status !== "FREE") return;
+    if (!selected) return;
+    const selUi = getSlotUi(selected);
+    if (selUi.disabled) return;
 
     setBusy(true);
     setSlotsErr("");
@@ -130,9 +186,33 @@ export default function PublicSchedule() {
       });
       if (!res?.ok) throw new Error(res?.error || "Falha ao criar reserva.");
       setBooking(res.booking);
+      // reflete HOLD imediatamente
+      try {
+        const d = await api(
+          `/p/${token}/slots?date=${encodeURIComponent(date)}`,
+        );
+        setSlotsNow(d?.now || null);
+        setSlots(Array.isArray(d.slots) ? d.slots : []);
+      } catch {}
     } catch (e) {
       setBooking(null);
-      setSlotsErr(e?.message || "Falha ao criar reserva.");
+
+      const msg = e?.message || "Falha ao criar reserva.";
+
+      // quando o backend retornar 409 "Horário indisponível."
+      if (/indisponível/i.test(msg)) {
+        setSlotsErr("Horário acabou de ser reservado. Escolha outro.");
+        setSelected(null);
+        try {
+          const d = await api(
+            `/p/${token}/slots?date=${encodeURIComponent(date)}`,
+          );
+          setSlotsNow(d?.now || null);
+          setSlots(Array.isArray(d.slots) ? d.slots : []);
+        } catch {}
+      } else {
+        setSlotsErr(msg);
+      }
     } finally {
       setBusy(false);
     }
@@ -283,6 +363,12 @@ export default function PublicSchedule() {
             </div>
           ) : null}
 
+          {isToday ? (
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              Horários passados ficam indisponíveis automaticamente.
+            </div>
+          ) : null}
+
           {loadingSlots ? (
             <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
               {Array.from({ length: 8 }).map((_, i) => (
@@ -296,14 +382,18 @@ export default function PublicSchedule() {
           ) : (
             <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
               {slots.map((s) => {
-                const disabled = s.status !== "FREE";
+                const ui = getSlotUi(s);
+                const disabled = ui.disabled;
                 const isSel = selected?.startAt === s.startAt;
                 return (
                   <button
                     key={s.startAt}
                     type="button"
-                    disabled={disabled}
-                    onClick={() => setSelected(s)}
+                    disabled={disabled || busy || !!booking}
+                    onClick={() => {
+                      if (disabled || busy || booking) return;
+                      setSelected(s);
+                    }}
                     className={[
                       "rounded-xl border px-3 py-2 text-sm font-semibold transition",
                       disabled
@@ -316,13 +406,7 @@ export default function PublicSchedule() {
                     aria-pressed={isSel}
                   >
                     {fmtTime(s.startAt)}
-                    <div className="text-[11px] font-normal text-zinc-500">
-                      {disabled
-                        ? s.status === "HOLD"
-                          ? "Reservado"
-                          : "Indisponível"
-                        : "Livre"}
-                    </div>
+                    <div className="text-xs">{ui.label}</div>
                   </button>
                 );
               })}
@@ -346,7 +430,7 @@ export default function PublicSchedule() {
             <Button
               type="button"
               disabled={
-                !selected || selected.status !== "FREE" || busy || !!booking
+                !selected || getSlotUi(selected).disabled || busy || !!booking
               }
               onClick={confirmBooking}
             >
