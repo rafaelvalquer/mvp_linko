@@ -345,6 +345,9 @@ router.get("/p/:token", async (req, res, next) => {
     if (!token)
       return res.status(400).json({ ok: false, error: "Token inválido." });
 
+    // mantém consistência ao expirar HOLDs antigos
+    await expireOldHolds();
+
     const offerRaw = await findOfferByPublicToken(token, { withTenant: true });
     if (!offerRaw)
       return res
@@ -354,7 +357,33 @@ router.get("/p/:token", async (req, res, next) => {
     const offer = sanitizeOfferPublic(offerRaw);
     const locked = isPaidStatus(offerRaw?.status);
 
-    return res.json({ ok: true, offer, locked, doneOnly: locked });
+    // ✅ se já existir reserva (HOLD válida / CONFIRMED), devolve para o front não depender de bookingId na URL
+    const offerType = inferOfferType(offerRaw);
+    const now = new Date();
+    let booking = null;
+    if (offerType === "service") {
+      booking =
+        (await Booking.findOne({ offerId: offerRaw._id, status: "CONFIRMED" })
+          .sort({ startAt: -1 })
+          .lean()
+          .catch(() => null)) ||
+        (await Booking.findOne({
+          offerId: offerRaw._id,
+          status: "HOLD",
+          holdExpiresAt: { $gt: now },
+        })
+          .sort({ startAt: -1 })
+          .lean()
+          .catch(() => null));
+    }
+
+    return res.json({
+      ok: true,
+      offer,
+      locked,
+      doneOnly: locked,
+      booking: booking ? toPublicBooking(booking) : null,
+    });
   } catch (e) {
     next(e);
   }
@@ -689,22 +718,32 @@ router.post("/p/:token/pix/create", async (req, res, next) => {
 
     const { token } = req.params;
     const { bookingId, customer } = req.body || {};
-
     if (!token)
       return res.status(400).json({ ok: false, error: "Token inválido." });
-
     const offerRaw = await findOfferByPublicToken(token, { withTenant: true });
     if (!offerRaw)
       return res
         .status(404)
         .json({ ok: false, error: "Proposta não encontrada." });
-
     const offerType = inferOfferType(offerRaw);
     const isProduct = offerType === "product";
+    // ✅ para SERVICE: se não vier bookingId, tenta reaproveitar um HOLD válido existente
+    let effectiveBookingId = String(bookingId || "").trim();
+    let booking = null;
+    if (!isProduct && !effectiveBookingId) {
+      booking = await Booking.findOne({
+        offerId: offerRaw._id,
+        status: "HOLD",
+        holdExpiresAt: { $gt: new Date() },
+      })
+        .sort({ startAt: -1 })
+        .lean()
+        .catch(() => null);
+      if (booking?._id) effectiveBookingId = String(booking._id);
+    }
 
-    const effectiveBookingId = String(
-      (bookingId && String(bookingId).trim()) || (isProduct ? token : ""),
-    ).trim();
+    // para PRODUCT, mantém o comportamento atual (bookingId "virtual")
+    if (isProduct) effectiveBookingId = token;
 
     if (!effectiveBookingId) {
       return res
@@ -721,7 +760,6 @@ router.post("/p/:token/pix/create", async (req, res, next) => {
       });
     }
 
-    let booking = null;
     if (!isProduct) {
       if (!mongoose.isValidObjectId(effectiveBookingId)) {
         return res
@@ -729,12 +767,16 @@ router.post("/p/:token/pix/create", async (req, res, next) => {
           .json({ ok: false, error: "bookingId inválido." });
       }
 
-      booking = await Booking.findOne({
-        _id: effectiveBookingId,
-        offerId: offerRaw._id,
-        status: "HOLD",
-        holdExpiresAt: { $gt: new Date() },
-      }).lean();
+      booking =
+        booking ||
+        (await Booking.findOne({
+          _id: effectiveBookingId,
+          offerId: offerRaw._id,
+          status: "HOLD",
+          holdExpiresAt: { $gt: new Date() },
+        })
+          .lean()
+          .catch(() => null));
 
       if (!booking) {
         return res.status(409).json({

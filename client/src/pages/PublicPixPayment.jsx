@@ -100,7 +100,8 @@ export default function PublicPixPayment() {
   const navigate = useNavigate();
   const [search] = useSearchParams();
 
-  const bookingId = search.get("bookingId") || "";
+  const bookingIdFromUrl = search.get("bookingId") || "";
+  const [bookingId, setBookingId] = useState(() => bookingIdFromUrl);
 
   const [offer, setOffer] = useState(null);
   const [offerErr, setOfferErr] = useState("");
@@ -197,7 +198,7 @@ export default function PublicPixPayment() {
     };
   }, [offer]);
 
-  // Load offer (e decide se bookingId é obrigatório)
+  // Load offer (e resolve bookingId para SERVICE sem depender de querystring)
   useEffect(() => {
     setLoadingOffer(true);
     setOfferErr("");
@@ -212,6 +213,11 @@ export default function PublicPixPayment() {
         const o = d.offer || null;
         setOffer(o);
 
+        // ✅ backend pode devolver booking existente para SERVICE
+        const bookingIdFromApi = d?.booking?.id ? String(d.booking.id) : "";
+        const effectiveBookingId = bookingId || bookingIdFromApi;
+        if (!bookingId && bookingIdFromApi) setBookingId(bookingIdFromApi);
+
         setName(o?.customerName || "");
         setCellphone(o?.customerWhatsApp || o?.customerCellphone || "");
 
@@ -223,17 +229,19 @@ export default function PublicPixPayment() {
           : "";
         const isProduct = rawType === "product" || hasItems;
 
-        // ✅ Somente serviço exige bookingId (produto não precisa agendar)
-        if (!isProduct && !bookingId) {
+        if (!isProduct && !effectiveBookingId) {
           setOfferErr(
-            "bookingId ausente na URL. Para serviços, volte e crie o agendamento novamente.",
+            "Nenhuma reserva ativa encontrada para este serviço. Volte e faça o agendamento novamente.",
           );
           return;
         }
 
         const st = normalizeStatus(o?.status);
         if (st === "PAID" || st === "CONFIRMED") {
-          navigate(doneUrl, { replace: true });
+          const q = effectiveBookingId
+            ? `?bookingId=${encodeURIComponent(effectiveBookingId)}`
+            : "";
+          navigate(`/p/${token}/done${q}`, { replace: true });
           return;
         }
       })
@@ -291,16 +299,8 @@ export default function PublicPixPayment() {
   );
 
   async function createPix() {
-    setPixErr("");
-
-    // ✅ Para serviço, bookingId é obrigatório. Para produto, não.
-    if (view.requiresBooking && !bookingId) {
-      setPixErr("bookingId ausente para serviço.");
-      return;
-    }
-
     const payload = {
-      ...(view.requiresBooking ? { bookingId } : {}),
+      ...(view.requiresBooking && bookingId ? { bookingId } : {}),
       customer: {
         name: String(name || "").trim(),
         cellphone: onlyDigits(cellphone),

@@ -317,7 +317,16 @@ export default function Dashboard() {
                   <div className="p-4 sm:p-5 space-y-3">
                     {kpis.last5.map((o) => {
                       const publicUrl = `/p/${o.publicToken}`;
-                      const payUrl = `${publicUrl}/pay`;
+                      const items = Array.isArray(o?.items) ? o.items : [];
+                      const rawType = String(o?.offerType || "")
+                        .trim()
+                        .toLowerCase();
+                      const isProduct =
+                        rawType === "product" || items.length > 0;
+                      const payUrl =
+                        !isProduct && o?.bookingId
+                          ? `${publicUrl}/pay?bookingId=${encodeURIComponent(o.bookingId)}`
+                          : `${publicUrl}/pay`;
 
                       const offerSt = normStatus(o?.status);
                       const isPaidOffer =
