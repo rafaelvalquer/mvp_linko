@@ -5,6 +5,9 @@ import PageHeader from "../components/appui/PageHeader.jsx";
 import Card, { CardBody, CardHeader } from "../components/appui/Card.jsx";
 import Button from "../components/appui/Button.jsx";
 import { Input, Textarea } from "../components/appui/Input.jsx";
+import { useAuth } from "../app/AuthContext.jsx";
+import { listClients } from "../app/clientsApi.js";
+import { listProducts } from "../app/productsApi.js";
 
 function parseMoneyToCents(raw) {
   const s0 = String(raw ?? "").trim();
@@ -43,6 +46,15 @@ function parseMoneyToCents(raw) {
   return Math.round(num * 100);
 }
 
+function centsToMoneyInput(cents) {
+  const v = Number.isFinite(cents) ? cents : 0;
+  return (v / 100).toFixed(2).replace(".", ",");
+}
+
+function onlyDigits(s) {
+  return String(s || "").replace(/\D+/g, "");
+}
+
 function formatBRL(cents) {
   const v = Number.isFinite(cents) ? cents : 0;
   return new Intl.NumberFormat("pt-BR", {
@@ -59,7 +71,16 @@ function clampInt(n, min, max) {
 }
 
 export default function NewOffer() {
+  const { user, perms } = useAuth();
+  const plan = String(
+    perms?.plan || user?.plan || user?.workspace?.plan || "free",
+  ).toLowerCase();
+  const isPremium = plan === "premium";
+
   const [form, setForm] = useState({
+    policyEnabled: false,
+    policyText: "",
+
     customerName: "",
     customerWhatsApp: "",
 
@@ -106,6 +127,17 @@ export default function NewOffer() {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // Premium: auto-preencher cliente/produto a partir de cadastros
+  const [customerDoc, setCustomerDoc] = useState("");
+  const [clientHits, setClientHits] = useState([]);
+  const [clientLoading, setClientLoading] = useState(false);
+  const [clientOpen, setClientOpen] = useState(false);
+
+  const [activeProd, setActiveProd] = useState(null); // { idx, mode: "id"|"name" }
+  const [prodHits, setProdHits] = useState([]);
+  const [prodLoading, setProdLoading] = useState(false);
+  const [prodOpen, setProdOpen] = useState(false);
+
   const resultRef = useRef(null);
 
   useEffect(() => {
@@ -116,6 +148,109 @@ export default function NewOffer() {
       });
     }
   }, [result]);
+
+  // =========================
+  // Premium: auto-preencher Cliente por CPF/CNPJ
+  // =========================
+  useEffect(() => {
+    if (!isPremium) return;
+
+    const q = customerDoc.trim();
+    if (onlyDigits(q).length < 6) {
+      setClientHits([]);
+      return;
+    }
+
+    const t = setTimeout(async () => {
+      setClientLoading(true);
+      try {
+        const d = await listClients({ q });
+        const items = Array.isArray(d?.items)
+          ? d.items
+          : Array.isArray(d?.clients)
+            ? d.clients
+            : [];
+        setClientHits(items);
+
+        // match exato por CPF/CNPJ -> auto-preenche
+        const qDigits = onlyDigits(q);
+        const exact = items.find((c) => {
+          const doc = c?.cpfCnpj || c?.cpf_cnpj || c?.doc || c?.document || "";
+          return onlyDigits(doc) && onlyDigits(doc) === qDigits;
+        });
+        if (exact) {
+          const name =
+            exact?.name || exact?.fullName || exact?.customerName || "";
+          const phone =
+            exact?.phone || exact?.whatsapp || exact?.customerWhatsApp || "";
+          setForm((prev) => ({
+            ...prev,
+            customerName: name || prev.customerName,
+            customerWhatsApp: phone || prev.customerWhatsApp,
+          }));
+        }
+      } catch {
+        setClientHits([]);
+      } finally {
+        setClientLoading(false);
+      }
+    }, 250);
+
+    return () => clearTimeout(t);
+  }, [isPremium, customerDoc]);
+
+  // =========================
+  // Premium: sugestões / auto-preencher Produto por ID ou Nome
+  // =========================
+  useEffect(() => {
+    if (!isPremium) return;
+    if (!activeProd?.idx && activeProd?.idx !== 0) return;
+
+    const idx = activeProd.idx;
+    const mode = activeProd.mode;
+
+    const items = Array.isArray(form.items) ? form.items : [];
+    const it = items[idx];
+    if (!it) return;
+
+    const qRaw = mode === "id" ? it.productId : it.description;
+    const q = String(qRaw || "").trim();
+
+    if ((mode === "id" && q.length < 2) || (mode === "name" && q.length < 3)) {
+      setProdHits([]);
+      return;
+    }
+
+    const t = setTimeout(async () => {
+      setProdLoading(true);
+      try {
+        const d = await listProducts({ q });
+        const list = Array.isArray(d?.items)
+          ? d.items
+          : Array.isArray(d?.products)
+            ? d.products
+            : [];
+        setProdHits(list);
+
+        // buscando por ID: match exato -> auto-preenche
+        if (mode === "id") {
+          const qn = q.toLowerCase();
+          const exact = list.find(
+            (p) => String(p?.productId || p?.id || "").toLowerCase() === qn,
+          );
+          if (exact) {
+            pickProductForLine(idx, exact);
+          }
+        }
+      } catch {
+        setProdHits([]);
+      } finally {
+        setProdLoading(false);
+      }
+    }, 250);
+
+    return () => clearTimeout(t);
+  }, [isPremium, activeProd, form.items]);
 
   const calc = useMemo(() => {
     const items = Array.isArray(form.items) ? form.items : [];
@@ -204,13 +339,38 @@ export default function NewOffer() {
   }
 
   function addItem() {
-    setForm((p) => ({
-      ...p,
+    setForm((prev) => ({
+      ...prev,
       items: [
-        ...(p.items || []),
-        { description: "", qty: 1, unitPrice: "0,00" },
+        ...(prev.items || []),
+        { productId: "", description: "", qty: 1, unitPrice: "0,00" },
       ],
     }));
+  }
+
+  function pickProductForLine(idx, product) {
+    const pid = product?.productId || product?.id || "";
+    const name = product?.name || product?.title || product?.description || "";
+    const priceCents = Number(product?.priceCents) || 0;
+
+    setForm((prev) => {
+      const items = Array.isArray(prev.items) ? [...prev.items] : [];
+      const cur = items[idx] || {
+        productId: "",
+        description: "",
+        qty: 1,
+        unitPrice: "0,00",
+      };
+      items[idx] = {
+        ...cur,
+        productId: String(pid || cur.productId || ""),
+        description: String(name || cur.description || ""),
+        unitPrice: centsToMoneyInput(priceCents),
+      };
+      return { ...prev, items };
+    });
+
+    setProdOpen(false);
   }
 
   function removeItem(idx) {
@@ -406,7 +566,12 @@ export default function NewOffer() {
               title="Cliente"
               subtitle="Dados básicos para identificação e confirmação."
             />
-            <CardBody className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <CardBody
+              className={[
+                "grid grid-cols-1 gap-3",
+                isPremium ? "sm:grid-cols-3" : "sm:grid-cols-2",
+              ].join(" ")}
+            >
               <div>
                 <label className="text-xs font-semibold text-zinc-600">
                   Nome
@@ -416,9 +581,103 @@ export default function NewOffer() {
                   onChange={(e) =>
                     setForm({ ...form, customerName: e.target.value })
                   }
-                  placeholder="Nome do cliente"
+                  placeholder="Ex.: João Silva"
                 />
               </div>
+
+              {isPremium ? (
+                <div className="relative">
+                  <label className="text-xs font-semibold text-zinc-600">
+                    CPF/CNPJ (Premium)
+                  </label>
+                  <Input
+                    value={customerDoc}
+                    onChange={(e) => {
+                      setCustomerDoc(e.target.value);
+                      setClientOpen(true);
+                    }}
+                    onFocus={() => setClientOpen(true)}
+                    onBlur={() => setTimeout(() => setClientOpen(false), 120)}
+                    placeholder="000.000.000-00 ou 00.000.000/0000-00"
+                  />
+
+                  {clientOpen ? (
+                    <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-lg">
+                      <div className="px-3 py-2 text-xs text-zinc-500 border-b border-zinc-100 flex items-center justify-between">
+                        <span>Clientes encontrados</span>
+                        {clientLoading ? (
+                          <span className="animate-pulse">Buscando...</span>
+                        ) : null}
+                      </div>
+                      <div className="max-h-56 overflow-auto">
+                        {(clientHits || []).length ? (
+                          (clientHits || []).slice(0, 20).map((c) => {
+                            const doc =
+                              c?.cpfCnpj ||
+                              c?.cpf_cnpj ||
+                              c?.doc ||
+                              c?.document ||
+                              "";
+                            const phone =
+                              c?.phone ||
+                              c?.whatsapp ||
+                              c?.customerWhatsApp ||
+                              "";
+                            const name =
+                              c?.name || c?.fullName || c?.customerName || "";
+                            const key =
+                              c?._id || c?.id || `${name}-${doc}-${phone}`;
+                            return (
+                              <button
+                                key={key}
+                                type="button"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => {
+                                  setForm((prev) => ({
+                                    ...prev,
+                                    customerName: name || prev.customerName,
+                                    customerWhatsApp:
+                                      phone || prev.customerWhatsApp,
+                                  }));
+                                  setCustomerDoc(
+                                    String(doc || customerDoc || ""),
+                                  );
+                                  setClientOpen(false);
+                                }}
+                                className="w-full px-3 py-2 text-left hover:bg-zinc-50"
+                              >
+                                <div className="text-sm font-medium text-zinc-900 truncate">
+                                  {name || "—"}
+                                </div>
+                                <div className="text-xs text-zinc-500 flex gap-2">
+                                  <span className="font-mono">
+                                    {doc || "sem doc"}
+                                  </span>
+                                  {phone ? (
+                                    <span className="truncate">{phone}</span>
+                                  ) : null}
+                                </div>
+                              </button>
+                            );
+                          })
+                        ) : (
+                          <div className="px-3 py-3 text-sm text-zinc-500">
+                            {clientLoading
+                              ? "Buscando clientes..."
+                              : "Nenhum cliente encontrado."}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="mt-1 text-[11px] text-zinc-500">
+                    Ao digitar um CPF/CNPJ cadastrado, o nome e WhatsApp serão
+                    preenchidos.
+                  </div>
+                </div>
+              ) : null}
+
               <div>
                 <label className="text-xs font-semibold text-zinc-600">
                   WhatsApp (opcional)
@@ -428,7 +687,7 @@ export default function NewOffer() {
                   onChange={(e) =>
                     setForm({ ...form, customerWhatsApp: e.target.value })
                   }
-                  placeholder="+55 11 99999-0000"
+                  placeholder="Ex.: 11 99999-9999"
                 />
               </div>
             </CardBody>
@@ -510,76 +769,279 @@ export default function NewOffer() {
                 subtitle="Adicione itens com quantidade e valor unitário."
               />
               <CardBody className="space-y-3">
-                <div className="overflow-auto rounded-xl border">
-                  <div className="min-w-[820px]">
-                    <div className="grid grid-cols-12 gap-2 border-b bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-600">
-                      <div className="col-span-6">Descrição</div>
-                      <div className="col-span-2">Qtd</div>
-                      <div className="col-span-2">Vlr unit.</div>
-                      <div className="col-span-2">Total</div>
-                    </div>
+                {/* antes era: <div className="overflow-auto rounded-xl border"> */}
+                <div className="rounded-xl border">
+                  {/* permite scroll horizontal sem cortar o dropdown na vertical */}
+                  <div className="overflow-x-auto overflow-y-visible">
+                    {/* dá “respiro” extra para o dropdown */}
+                    <div className="min-w-[820px] overflow-visible pb-10">
+                      <div className="grid grid-cols-12 gap-2 border-b bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-600">
+                        <div className="col-span-6">Descrição</div>
+                        <div className="col-span-2">Qtd</div>
+                        <div className="col-span-2">Vlr unit.</div>
+                        <div className="col-span-2">Total</div>
+                      </div>
 
-                    <div className="divide-y">
-                      {(form.items || []).map((it, idx) => {
-                        const line = calc.lines[idx];
-                        const lineTotal = Number.isFinite(line?.lineTotalCents)
-                          ? formatBRL(line.lineTotalCents)
-                          : "—";
+                      <div className="divide-y">
+                        {(form.items || []).map((it, idx) => {
+                          const line = calc.lines[idx];
+                          const lineTotal = Number.isFinite(
+                            line?.lineTotalCents,
+                          )
+                            ? formatBRL(line.lineTotalCents)
+                            : "—";
 
-                        return (
-                          <div
-                            key={idx}
-                            className="grid grid-cols-12 gap-2 px-3 py-2"
-                          >
-                            <div className="col-span-6">
-                              <Input
-                                value={it.description}
-                                onChange={(e) =>
-                                  updateItem(idx, {
-                                    description: e.target.value,
-                                  })
-                                }
-                                placeholder="Ex.: Parafuso inox 10mm"
-                              />
-                            </div>
-                            <div className="col-span-2">
-                              <Input
-                                type="number"
-                                min={1}
-                                value={it.qty}
-                                onChange={(e) =>
-                                  updateItem(idx, {
-                                    qty: clampInt(e.target.value, 1),
-                                  })
-                                }
-                              />
-                            </div>
-                            <div className="col-span-2">
-                              <Input
-                                value={it.unitPrice}
-                                onChange={(e) =>
-                                  updateItem(idx, { unitPrice: e.target.value })
-                                }
-                                placeholder="10,50"
-                              />
-                            </div>
-                            <div className="col-span-2 flex items-center justify-between gap-2">
-                              <div className="text-sm font-semibold text-zinc-900">
-                                {lineTotal}
-                              </div>
-                              <button
-                                type="button"
-                                className="rounded-lg px-2 py-1 text-xs font-semibold text-zinc-600 hover:bg-zinc-100"
-                                onClick={() => removeItem(idx)}
-                                aria-label={`Remover item ${idx + 1}`}
-                                title="Remover"
+                          return (
+                            <div
+                              key={idx}
+                              className="grid grid-cols-12 gap-2 px-3 py-2"
+                            >
+                              {isPremium ? (
+                                <div className="col-span-12 sm:col-span-2 relative">
+                                  <Input
+                                    value={it.productId || ""}
+                                    onChange={(e) =>
+                                      updateItem(idx, {
+                                        productId: e.target.value,
+                                      })
+                                    }
+                                    onFocus={() => {
+                                      setActiveProd({ idx, mode: "id" });
+                                      setProdOpen(true);
+                                    }}
+                                    onBlur={() =>
+                                      setTimeout(() => setProdOpen(false), 120)
+                                    }
+                                    placeholder="ID"
+                                  />
+
+                                  {prodOpen &&
+                                  activeProd?.idx === idx &&
+                                  activeProd?.mode === "id" ? (
+                                    <div className="absolute z-[80] mt-1 w-[520px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl">
+                                      <div className="px-3 py-2 text-xs text-zinc-500 border-b border-zinc-100 flex items-center justify-between">
+                                        <span>Produtos</span>
+                                        {prodLoading ? (
+                                          <span className="animate-pulse">
+                                            Buscando...
+                                          </span>
+                                        ) : null}
+                                      </div>
+                                      <div className="max-h-80 overflow-auto">
+                                        {(prodHits || []).length ? (
+                                          (prodHits || [])
+                                            .slice(0, 20)
+                                            .map((p) => {
+                                              const pid =
+                                                p?.productId || p?.id || "";
+                                              const name =
+                                                p?.name ||
+                                                p?.title ||
+                                                p?.description ||
+                                                "—";
+                                              const key =
+                                                p?._id ||
+                                                p?.id ||
+                                                `${pid}-${name}`;
+                                              return (
+                                                <button
+                                                  key={key}
+                                                  type="button"
+                                                  onMouseDown={(e) =>
+                                                    e.preventDefault()
+                                                  }
+                                                  onClick={() =>
+                                                    pickProductForLine(idx, p)
+                                                  }
+                                                  className="w-full px-3 py-2 text-left hover:bg-zinc-50"
+                                                >
+                                                  <div className="text-sm font-semibold text-zinc-900 whitespace-normal break-words">
+                                                    {pid ? (
+                                                      <span className="font-mono mr-2 text-zinc-600">
+                                                        {pid}
+                                                      </span>
+                                                    ) : null}
+                                                    {name}
+                                                  </div>
+                                                  <div className="text-xs text-zinc-500">
+                                                    {formatBRL(
+                                                      Number(p?.priceCents) ||
+                                                        0,
+                                                    )}
+                                                  </div>
+                                                </button>
+                                              );
+                                            })
+                                        ) : (
+                                          <div className="px-3 py-3 text-sm text-zinc-500">
+                                            {prodLoading
+                                              ? "Buscando produtos..."
+                                              : "Nenhum produto encontrado."}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              ) : null}
+
+                              <div
+                                className={[
+                                  "col-span-12 relative",
+                                  isPremium ? "sm:col-span-4" : "sm:col-span-6",
+                                ].join(" ")}
                               >
-                                Remover
-                              </button>
+                                <Input
+                                  value={it.description}
+                                  onChange={(e) =>
+                                    updateItem(idx, {
+                                      description: e.target.value,
+                                    })
+                                  }
+                                  onFocus={() => {
+                                    if (isPremium) {
+                                      setActiveProd({ idx, mode: "name" });
+                                      setProdOpen(true);
+                                    }
+                                  }}
+                                  onBlur={() =>
+                                    setTimeout(() => setProdOpen(false), 120)
+                                  }
+                                  placeholder="Ex.: Parafuso inox 10mm"
+                                />
+
+                                {isPremium &&
+                                prodOpen &&
+                                activeProd?.idx === idx &&
+                                activeProd?.mode === "name" ? (
+                                  <div className="absolute z-[80] mt-1 w-full min-w-[520px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl">
+                                    <div className="px-3 py-2 text-xs text-zinc-500 border-b border-zinc-100 flex items-center justify-between">
+                                      <span>Produtos</span>
+                                      {prodLoading ? (
+                                        <span className="animate-pulse">
+                                          Buscando...
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                    <div className="max-h-80 overflow-auto">
+                                      {(prodHits || []).length ? (
+                                        (prodHits || [])
+                                          .slice(0, 20)
+                                          .map((p) => {
+                                            const pid =
+                                              p?.productId || p?.id || "";
+                                            const name =
+                                              p?.name ||
+                                              p?.title ||
+                                              p?.description ||
+                                              "—";
+                                            const key =
+                                              p?._id ||
+                                              p?.id ||
+                                              `${pid}-${name}`;
+                                            return (
+                                              <button
+                                                key={key}
+                                                type="button"
+                                                onMouseDown={(e) =>
+                                                  e.preventDefault()
+                                                }
+                                                onClick={() =>
+                                                  pickProductForLine(idx, p)
+                                                }
+                                                className="w-full px-3 py-2 text-left hover:bg-zinc-50"
+                                              >
+                                                <div className="text-sm font-semibold text-zinc-900 whitespace-normal break-words">
+                                                  {name}
+                                                </div>
+
+                                                <div className="text-xs text-zinc-500 flex gap-2">
+                                                  {pid ? (
+                                                    <span className="font-mono">
+                                                      {pid}
+                                                    </span>
+                                                  ) : null}
+                                                  <span>
+                                                    {formatBRL(
+                                                      Number(p?.priceCents) ||
+                                                        0,
+                                                    )}
+                                                  </span>
+                                                </div>
+                                              </button>
+                                            );
+                                          })
+                                      ) : (
+                                        <div className="px-3 py-3 text-sm text-zinc-500">
+                                          {prodLoading
+                                            ? "Buscando produtos..."
+                                            : "Nenhum produto encontrado."}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                ) : null}
+                              </div>
+
+                              <div className="col-span-2">
+                                <Input
+                                  type="number"
+                                  min={1}
+                                  value={it.qty}
+                                  onChange={(e) =>
+                                    updateItem(idx, {
+                                      qty: clampInt(e.target.value, 1),
+                                    })
+                                  }
+                                />
+                              </div>
+                              <div className="col-span-2">
+                                <Input
+                                  value={it.unitPrice}
+                                  onChange={(e) =>
+                                    updateItem(idx, {
+                                      unitPrice: e.target.value,
+                                    })
+                                  }
+                                  placeholder="10,50"
+                                />
+                              </div>
+                              <div className="col-span-2 flex items-center justify-between gap-2">
+                                <div className="text-sm font-semibold text-zinc-900">
+                                  {lineTotal}
+                                </div>
+                                <button
+                                  type="button"
+                                  className="rounded-lg px-2 py-1 text-xs font-semibold text-zinc-600 hover:bg-zinc-100"
+                                  onClick={() => removeItem(idx)}
+                                  aria-label={`Remover item ${idx + 1}`}
+                                  title="Remover"
+                                >
+                                  Remover
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                        <div
+                          aria-hidden="true"
+                          className="grid grid-cols-12 gap-2 px-3 py-3 pointer-events-none"
+                        >
+                          {isPremium ? (
+                            <div className="col-span-12 sm:col-span-2 h-10" />
+                          ) : null}
+
+                          <div
+                            className={[
+                              "col-span-12 h-10",
+                              isPremium ? "sm:col-span-4" : "sm:col-span-6",
+                            ].join(" ")}
+                          />
+                          <div className="col-span-2 h-10" />
+                          <div className="col-span-2 h-10" />
+                          <div className="col-span-2 h-10" />
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
