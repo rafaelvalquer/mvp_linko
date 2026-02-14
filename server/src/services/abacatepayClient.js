@@ -3,8 +3,6 @@ const BASE_URL =
   process.env.ABACATEPAY_BASE_URL || "https://api.abacatepay.com";
 const TOKEN = process.env.ABACATEPAY_TOKEN || "";
 
-console.log(TOKEN);
-
 function mustAuth() {
   if (!TOKEN) {
     const e = new Error(
@@ -59,6 +57,44 @@ export async function abacateCreatePixQr({
 export async function abacateCheckPix({ pixId }) {
   const q = new URLSearchParams({ id: pixId }).toString();
   return request(`/v1/pixQrCode/check?${q}`, { method: "GET" });
+}
+
+export async function abacateCreateWithdraw({
+  externalId,
+  amount,
+  pix,
+  description,
+}) {
+  // Prefer the path requested (/withdraw/*), fallback to /v1/withdraw/* if needed.
+  const body = {
+    externalId,
+    method: "PIX",
+    amount,
+    pix,
+    description,
+  };
+
+  try {
+    return await request("/withdraw/create", { method: "POST", body });
+  } catch (err) {
+    if (err?.status === 404) {
+      return request("/v1/withdraw/create", { method: "POST", body });
+    }
+    throw err;
+  }
+}
+
+export async function abacateGetWithdraw({ externalId }) {
+  const q = new URLSearchParams({ externalId }).toString();
+
+  try {
+    return await request(`/withdraw/get?${q}`, { method: "GET" });
+  } catch (err) {
+    if (err?.status === 404) {
+      return request(`/v1/withdraw/get?${q}`, { method: "GET" });
+    }
+    throw err;
+  }
 }
 
 export async function abacateSimulatePixPayment({ pixId }) {

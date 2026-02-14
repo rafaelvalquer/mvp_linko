@@ -2,6 +2,7 @@
 import Shell from "../components/layout/Shell.jsx";
 import { api } from "../app/api.js";
 import { listBookings } from "../app/bookingsApi.js";
+import { listWithdraws } from "../app/withdrawApi.js";
 import { useEffect, useMemo, useRef, useState } from "react";
 import PageHeader from "../components/appui/PageHeader.jsx";
 import Card, { CardBody, CardHeader } from "../components/appui/Card.jsx";
@@ -11,6 +12,7 @@ import Badge from "../components/appui/Badge.jsx";
 import EmptyState from "../components/appui/EmptyState.jsx";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../app/AuthContext.jsx";
+import WithdrawModal from "../components/WithdrawModal.jsx";
 
 function normStatus(s) {
   return String(s || "")
@@ -85,6 +87,11 @@ export default function Dashboard() {
   const [bookingsErr, setBookingsErr] = useState("");
   const [bookings, setBookings] = useState([]);
 
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [withdrawsBusy, setWithdrawsBusy] = useState(true);
+  const [withdrawsErr, setWithdrawsErr] = useState("");
+  const [withdraws, setWithdraws] = useState([]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -131,6 +138,25 @@ export default function Dashboard() {
     }
   }
 
+  async function loadWithdrawsLatest() {
+    try {
+      setWithdrawsErr("");
+      setWithdrawsBusy(true);
+
+      const d = await listWithdraws({ limit: 10 });
+      setWithdraws(d.items || []);
+    } catch (e) {
+      if (e?.status === 401) {
+        signOut();
+        nav(`/login?next=${encodeURIComponent("/")}`, { replace: true });
+        return;
+      }
+      setWithdrawsErr(e?.message || "Falha ao carregar saques.");
+    } finally {
+      setWithdrawsBusy(false);
+    }
+  }
+
   async function load() {
     try {
       setError("");
@@ -140,6 +166,7 @@ export default function Dashboard() {
       setOffers(d.items || []);
 
       loadBookingsNext7Days();
+      loadWithdrawsLatest();
     } catch (e) {
       if (e?.status === 401) {
         signOut();
@@ -229,6 +256,15 @@ export default function Dashboard() {
               <Button variant="secondary" onClick={load} disabled={loading}>
                 Atualizar
               </Button>
+
+              <Button
+                variant="secondary"
+                type="button"
+                onClick={() => setWithdrawOpen(true)}
+              >
+                Saque
+              </Button>
+
               <Link to="/offers/new">
                 <Button>Nova proposta</Button>
               </Link>
@@ -553,6 +589,82 @@ export default function Dashboard() {
             </Card>
 
             <Card>
+              <CardHeader
+                title="Saques"
+                subtitle="Últimos saques via Pix (multi-tenant)."
+                right={
+                  <div className="text-xs text-zinc-500">
+                    {withdraws.length ? `${withdraws.length} itens` : ""}
+                  </div>
+                }
+              />
+              <CardBody className="space-y-3">
+                {withdrawsBusy ? (
+                  <>
+                    <Skeleton className="h-14 w-full" />
+                    <Skeleton className="h-14 w-full" />
+                    <Skeleton className="h-14 w-full" />
+                  </>
+                ) : withdrawsErr ? (
+                  <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                    {withdrawsErr}{" "}
+                    <button
+                      className="ml-2 font-semibold underline"
+                      onClick={loadWithdrawsLatest}
+                    >
+                      Recarregar
+                    </button>
+                  </div>
+                ) : withdraws.length === 0 ? (
+                  <EmptyState
+                    title="Nenhum saque ainda"
+                    description="Use o botão Saque para transferir via Pix."
+                    ctaLabel="Fazer saque"
+                    onCta={() => setWithdrawOpen(true)}
+                  />
+                ) : (
+                  withdraws.slice(0, 5).map((w) => (
+                    <div key={w.externalId} className="rounded-xl border p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-zinc-900">
+                            {fmtBRL(w.netAmountCents || 0)}
+                          </div>
+                          <div className="mt-0.5 text-xs text-zinc-500">
+                            {fmtDateTimeBR(w.createdAt)}
+                          </div>
+                          <div className="mt-1 text-[11px] text-zinc-500">
+                            Taxa: {fmtBRL(w.feeCents || 0)} • Bruto:{" "}
+                            {fmtBRL(w.grossAmountCents || 0)}
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col items-end gap-2">
+                          <Badge tone={w.status} />
+                          {w.receiptUrl &&
+                          normStatus(w.status) === "COMPLETE" ? (
+                            <Button
+                              variant="ghost"
+                              type="button"
+                              onClick={() =>
+                                window.open(
+                                  w.receiptUrl,
+                                  "_blank",
+                                  "noopener,noreferrer",
+                                )
+                              }
+                            >
+                              Comprovante
+                            </Button>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </CardBody>
+            </Card>
+            <Card>
               <CardHeader title="Caixa (MVP)" subtitle="Resumo de pagos." />
               <CardBody className="space-y-3">
                 <div className="rounded-xl border bg-zinc-50 p-3">
@@ -568,6 +680,11 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+      <WithdrawModal
+        open={withdrawOpen}
+        onClose={() => setWithdrawOpen(false)}
+        onCreated={() => loadWithdrawsLatest()}
+      />
     </Shell>
   );
 }
