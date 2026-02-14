@@ -12,6 +12,8 @@ import { authOptional } from "./middleware/auth.js";
 import bookingsRoutes from "./routes/bookings.routes.js";
 import withdrawRoutes from "./routes/withdraws.routes.js";
 import productsRoutes from "./routes/products.routes.js";
+import clientsRoutes from "./routes/clients.routes.js";
+
 import path from "path";
 
 export function createApp() {
@@ -40,6 +42,7 @@ export function createApp() {
   app.use("/api", withdrawRoutes);
   app.use("/api", webhooksAbacatepayRoutes);
   app.use("/api", productsRoutes);
+  app.use("/api", clientsRoutes);
 
   app.use((err, _req, res, _next) => {
     console.error(err);
