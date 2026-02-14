@@ -35,6 +35,7 @@ export function createApp() {
   app.use("/api", bookingsRoutes);
   app.use("/api", withdrawRoutes);
   app.use("/api", webhooksAbacatepayRoutes);
+  app.use("/api", authRoutes);
 
   app.use((err, _req, res, _next) => {
     console.error(err);

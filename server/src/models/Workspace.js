@@ -20,6 +20,14 @@ const WorkspaceSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+
+    // ✅ Plano do workspace (tenant)
+    plan: {
+      type: String,
+      enum: ["free", "premium"],
+      default: "free",
+      index: true,
+    },
   },
   { timestamps: true },
 );

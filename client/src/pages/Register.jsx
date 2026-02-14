@@ -8,6 +8,7 @@ export default function Register() {
   const { user, signUp } = useAuth();
   const [name, setName] = useState("");
   const [workspaceName, setWorkspaceName] = useState("");
+  const [plan, setPlan] = useState("free"); // ✅ novo: plano escolhido
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -29,6 +30,7 @@ export default function Register() {
         email,
         password,
         workspaceName: workspaceName || undefined,
+        plan, // ✅ envia free|premium para o backend
       });
       nav(next, { replace: true });
     } catch (err) {
@@ -72,6 +74,20 @@ export default function Register() {
               onChange={(e) => setWorkspaceName(e.target.value)}
               placeholder="Ex.: Minha Empresa"
             />
+          </div>
+          <div>
+            <label className="text-sm text-zinc-700">Plano</label>
+            <select
+              className="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 outline-none focus:ring-2 focus:ring-zinc-300 bg-white"
+              value={plan}
+              onChange={(e) => setPlan(e.target.value)}
+            >
+              <option value="free">Free (acesso básico)</option>
+              <option value="premium">Premium (acesso completo)</option>
+            </select>
+            <div className="mt-1 text-xs text-zinc-500">
+              Você poderá alterar o plano depois nas configurações.
+            </div>
           </div>
           <div>
             <label className="text-sm text-zinc-700">Email</label>

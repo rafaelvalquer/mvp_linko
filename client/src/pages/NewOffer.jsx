@@ -1,5 +1,5 @@
 import Shell from "../components/layout/Shell.jsx";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { api } from "../app/api.js";
 import PageHeader from "../components/appui/PageHeader.jsx";
 import Card, { CardBody, CardHeader } from "../components/appui/Card.jsx";
@@ -105,6 +105,17 @@ export default function NewOffer() {
   const [result, setResult] = useState(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const resultRef = useRef(null);
+
+  useEffect(() => {
+    if (result && resultRef.current) {
+      resultRef.current.scrollIntoView({
+        behavior: "smooth", // Deslize suave
+        block: "start", // Alinha no topo da tela
+      });
+    }
+  }, [result]);
 
   const calc = useMemo(() => {
     const items = Array.isArray(form.items) ? form.items : [];
@@ -302,7 +313,9 @@ export default function NewOffer() {
 
         // ✅ condições (com flags + valores)
         validityEnabled: !!form.validityEnabled,
-        validityDays: form.validityEnabled ? clampInt(form.validityDays, 1) : null,
+        validityDays: form.validityEnabled
+          ? clampInt(form.validityDays, 1)
+          : null,
 
         deliveryEnabled: !!form.deliveryEnabled,
         deliveryText: form.deliveryEnabled
@@ -321,10 +334,14 @@ export default function NewOffer() {
 
         discountEnabled: !!form.discountEnabled,
         discountType: form.discountEnabled ? form.discountType : null,
-        discountValue: form.discountEnabled ? String(form.discountValue || "") : null,
+        discountValue: form.discountEnabled
+          ? String(form.discountValue || "")
+          : null,
 
         freightEnabled: !!form.freightEnabled,
-        freightValue: form.freightEnabled ? String(form.freightValue || "") : null,
+        freightValue: form.freightEnabled
+          ? String(form.freightValue || "")
+          : null,
 
         discount: form.discountEnabled
           ? {
@@ -1001,7 +1018,6 @@ export default function NewOffer() {
                   </div>
                 )}
               </div>
-
             </CardBody>
           </Card>
 
@@ -1030,52 +1046,57 @@ export default function NewOffer() {
             </Button>
           </div>
 
+          {/* Adicionamos a div com o ref para o scroll encontrar este lugar */}
           {result?.offer ? (
-            <Card>
-              <CardHeader
-                title="Link gerado"
-                subtitle="Envie para o cliente e acompanhe o status no painel."
-              />
-              <CardBody className="space-y-3">
-                <div className="rounded-xl border bg-zinc-50 p-3 text-sm">
-                  <div className="text-xs font-semibold text-zinc-500">
-                    Link público
+            <div ref={resultRef} className="pt-4">
+              <Card className="border-emerald-200 bg-emerald-50/50">
+                <CardHeader
+                  title="Link gerado com sucesso!"
+                  subtitle="Envie para o cliente e acompanhe o status no painel."
+                />
+                <CardBody className="space-y-3">
+                  <div className="rounded-xl border border-emerald-200 bg-white p-3 text-sm shadow-sm">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-600">
+                      Link da Proposta
+                    </div>
+                    <div className="mt-1 font-mono text-sm text-zinc-900 break-all">
+                      {window.location.origin}/p/{result.offer.publicToken}
+                    </div>
                   </div>
-                  <div className="mt-1 font-mono text-sm text-zinc-900">
-                    /p/{result.offer.publicToken}
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="secondary"
+                      type="button"
+                      onClick={async () => {
+                        const url =
+                          window.location.origin +
+                          `/p/${result.offer.publicToken}`;
+                        try {
+                          await navigator.clipboard.writeText(url);
+                          alert("Link copiado!"); // Opcional: feedback visual
+                        } catch {}
+                      }}
+                    >
+                      Copiar link
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      type="button"
+                      onClick={() =>
+                        window.open(
+                          `/p/${result.offer.publicToken}`,
+                          "_blank",
+                          "noopener,noreferrer",
+                        )
+                      }
+                    >
+                      Visualizar Proposta
+                    </Button>
                   </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="secondary"
-                    type="button"
-                    onClick={async () => {
-                      const url =
-                        window.location.origin +
-                        `/p/${result.offer.publicToken}`;
-                      try {
-                        await navigator.clipboard.writeText(url);
-                      } catch {}
-                    }}
-                  >
-                    Copiar link
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    type="button"
-                    onClick={() =>
-                      window.open(
-                        `/p/${result.offer.publicToken}`,
-                        "_blank",
-                        "noopener,noreferrer",
-                      )
-                    }
-                  >
-                    Abrir link público
-                  </Button>
-                </div>
-              </CardBody>
-            </Card>
+                </CardBody>
+              </Card>
+            </div>
           ) : null}
         </form>
       </div>

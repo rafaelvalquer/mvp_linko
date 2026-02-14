@@ -8,9 +8,12 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { env } from "../config/env.js";
 import { User } from "../models/User.js";
 import { Workspace } from "../models/Workspace.js";
-import { ensureAuth } from "../middleware/auth.js";
+import { authOptional, ensureAuth } from "../middleware/auth.js";
 
 const r = Router();
+
+// ✅ popula req.user quando houver Bearer token (necessário para /auth/me)
+r.use(authOptional);
 
 function normEmail(v) {
   return String(v || "")
@@ -39,6 +42,13 @@ async function uniqueWorkspaceSlug(base) {
   return undefined;
 }
 
+function normPlan(v) {
+  const p = String(v || "free")
+    .trim()
+    .toLowerCase();
+  return p === "premium" ? "premium" : "free";
+}
+
 function signToken(user) {
   return jwt.sign(
     {
@@ -61,6 +71,9 @@ r.post(
       String(req.body?.workspaceName || "").trim() ||
       (name ? `${name}` : "Meu Workspace");
 
+    // ✅ plano escolhido no cadastro
+    const plan = normPlan(req.body?.plan);
+
     if (!email)
       return res.status(400).json({ ok: false, error: "email required" });
     if (!password || password.length < 6)
@@ -72,21 +85,23 @@ r.post(
 
     const session = await mongoose.startSession();
     let userDoc;
+    let wsSlug;
 
     await session.withTransaction(async () => {
       const userId = new mongoose.Types.ObjectId();
       const workspaceId = new mongoose.Types.ObjectId();
 
       const passwordHash = await bcrypt.hash(password, 10);
-      const slug = await uniqueWorkspaceSlug(workspaceName);
+      wsSlug = await uniqueWorkspaceSlug(workspaceName);
 
       await Workspace.create(
         [
           {
             _id: workspaceId,
             name: workspaceName,
-            slug,
+            slug: wsSlug,
             ownerUserId: userId,
+            plan, // ✅ salva plano no workspace
           },
         ],
         { session },
@@ -124,6 +139,12 @@ r.post(
         role: userDoc.role,
         status: userDoc.status,
       },
+      workspace: {
+        _id: userDoc.workspaceId,
+        name: workspaceName,
+        slug: wsSlug,
+        plan,
+      },
     });
   }),
 );
@@ -146,6 +167,8 @@ r.post(
     if (!ok)
       return res.status(401).json({ ok: false, error: "invalid credentials" });
 
+    const ws = await Workspace.findById(user.workspaceId).lean();
+
     const token = signToken(user);
     return res.json({
       ok: true,
@@ -158,6 +181,9 @@ r.post(
         role: user.role,
         status: user.status,
       },
+      workspace: ws
+        ? { _id: ws._id, name: ws.name, slug: ws.slug, plan: ws.plan }
+        : null,
     });
   }),
 );
@@ -166,6 +192,8 @@ r.get(
   "/auth/me",
   ensureAuth,
   asyncHandler(async (req, res) => {
+    const ws = await Workspace.findById(req.user.workspaceId).lean();
+
     return res.json({
       ok: true,
       user: {
@@ -176,6 +204,9 @@ r.get(
         role: req.user.role,
         status: req.user.status,
       },
+      workspace: ws
+        ? { _id: ws._id, name: ws.name, slug: ws.slug, plan: ws.plan }
+        : null,
     });
   }),
 );
