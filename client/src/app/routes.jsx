@@ -7,6 +7,8 @@ import Calendar from "../pages/Calendar.jsx";
 import Login from "../pages/Login.jsx";
 import Register from "../pages/Register.jsx";
 import RequireAuth from "../components/auth/RequireAuth.jsx";
+import Products from "../pages/Products.jsx";
+import ProductDetails from "../pages/ProductDetails.jsx";
 
 import PublicOffer from "../pages/PublicOffer.jsx";
 import PublicSchedule from "../pages/PublicSchedule.jsx";
@@ -51,6 +53,10 @@ export const router = createBrowserRouter(
         </RequireAuth>
       ),
     },
+
+    // SUA LOJA (ex.: premium)
+    { path: "/store/products", element: <Products /> },
+    { path: "/store/products/:id", element: <ProductDetails /> },
 
     // PÚBLICO (guard redireciona para /done quando já estiver pago)
     {

@@ -11,6 +11,8 @@ import authRoutes from "./routes/auth.routes.js";
 import { authOptional } from "./middleware/auth.js";
 import bookingsRoutes from "./routes/bookings.routes.js";
 import withdrawRoutes from "./routes/withdraws.routes.js";
+import productsRoutes from "./routes/products.routes.js";
+import path from "path";
 
 export function createApp() {
   const app = express();
@@ -24,6 +26,8 @@ export function createApp() {
       },
     }),
   );
+  // arquivos estáticos (imagens de produtos)
+  app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
 
   // Se tiver Bearer token válido, popula req.user (senão segue)
   app.use(authOptional);
@@ -35,7 +39,7 @@ export function createApp() {
   app.use("/api", bookingsRoutes);
   app.use("/api", withdrawRoutes);
   app.use("/api", webhooksAbacatepayRoutes);
-  app.use("/api", authRoutes);
+  app.use("/api", productsRoutes);
 
   app.use((err, _req, res, _next) => {
     console.error(err);
