@@ -76,6 +76,25 @@ const Icons = {
       <path d="M22 7v3a2 2 0 0 1-2 2v0a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12v0a2 2 0 0 1-2-2V7" />
     </svg>
   ),
+  Withdraws: () => (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {/* seta para baixo + linha (saque/retirada) */}
+      <path d="M12 3v10" />
+      <path d="m8 11 4 4 4-4" />
+      <path d="M5 21h14" />
+    </svg>
+  ),
+
   ChevronDown: ({ className }) => (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -245,6 +264,10 @@ export default function Sidebar() {
           </div>
         )}
       </nav>
+
+      <Item to="/withdraws" icon={Icons.Withdraws}>
+        Saques
+      </Item>
 
       {/* Footer Link Público */}
       <div className="mt-auto pt-4 border-t border-zinc-50">

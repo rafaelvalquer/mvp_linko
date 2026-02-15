@@ -58,15 +58,17 @@ export async function createWithdraw({
 }
 
 export async function getWithdraw(externalId) {
-  const q = new URLSearchParams({ externalId }).toString();
-  return api(`/withdraw/get?${q}`, {
-    headers: withAuthHeaders(),
-  });
+  const d = await api(
+    `/withdraw/get?externalId=${encodeURIComponent(externalId)}`,
+    { method: "GET", cache: "no-store" },
+  );
+  return d?.withdraw || null;
 }
 
 export async function listWithdraws({ limit = 20 } = {}) {
-  const q = new URLSearchParams({ limit: String(limit) }).toString();
-  return api(`/withdraw/list?${q}`, {
-    headers: withAuthHeaders(),
+  const d = await api(`/withdraw/list?limit=${encodeURIComponent(limit)}`, {
+    method: "GET",
+    cache: "no-store",
   });
+  return Array.isArray(d?.items) ? d.items : [];
 }

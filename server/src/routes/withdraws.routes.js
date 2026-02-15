@@ -80,6 +80,34 @@ function toPublicWithdraw(doc) {
   };
 }
 
+function toPublicWithdrawDetail(doc, { includeGateway = false } = {}) {
+  const base = {
+    externalId: doc.externalId,
+    status: doc.status,
+    method: doc.method,
+    grossAmountCents: doc.grossAmountCents,
+    feePct: doc.feePct,
+    feeCents: doc.feeCents,
+    netAmountCents: doc.netAmountCents,
+    receiptUrl: doc.receiptUrl || "",
+    provider: doc.provider,
+    providerTransactionId: doc.providerTransactionId || "",
+    devMode: !!doc.devMode,
+    description: doc.description,
+    pix: {
+      type: doc?.pix?.type,
+      key: doc?.pix?.key,
+      // compat (se existir no banco)
+      description: doc?.pix?.description,
+    },
+    createdAt: doc.createdAt,
+    updatedAt: doc.updatedAt,
+  };
+
+  if (includeGateway) base.gateway = doc.gateway;
+  return base;
+}
+
 function makeExternalId(workspaceId) {
   const rand = crypto.randomBytes(4).toString("hex");
   return `withdraw_${workspaceId}_${Date.now()}_${rand}`;
@@ -259,7 +287,19 @@ router.post("/withdraw/create", async (req, res, next) => {
       ownerUserId,
     }).lean();
 
-    return res.json({ ok: true, withdraw: toPublicWithdraw(fresh) });
+    const isAdmin =
+      !!req.user?.isAdmin ||
+      req.user?.role === "admin" ||
+      !!req.user?.perms?.admin ||
+      req.user?.admin === true;
+
+    // gateway/debug apenas para admin ou quando o saque foi criado em devMode
+    const includeGateway = isAdmin || fresh?.devMode === true;
+
+    return res.json({
+      ok: true,
+      withdraw: toPublicWithdrawDetail(fresh, { includeGateway }),
+    });
   } catch (e) {
     if (e?.code === 11000) {
       return res.status(409).json({

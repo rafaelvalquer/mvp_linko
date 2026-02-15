@@ -1,3 +1,4 @@
+//src/app/routes.jsx
 import { createBrowserRouter } from "react-router-dom";
 
 import Dashboard from "../pages/Dashboard.jsx";
@@ -16,6 +17,7 @@ import PublicSchedule from "../pages/PublicSchedule.jsx";
 import PublicPixPayment from "../pages/PublicPixPayment.jsx";
 import PublicOfferDone from "../pages/PublicOfferDone.jsx";
 import PublicPaidGuard from "../pages/PublicPaidGuard.jsx";
+import Withdraws from "../pages/Withdraws.jsx";
 
 export const router = createBrowserRouter(
   [
@@ -54,6 +56,8 @@ export const router = createBrowserRouter(
         </RequireAuth>
       ),
     },
+
+    { path: "/withdraws", element: <Withdraws /> },
 
     // SUA LOJA (ex.: premium)
     { path: "/store/products", element: <Products /> },
