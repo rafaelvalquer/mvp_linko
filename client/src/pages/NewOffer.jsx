@@ -1393,92 +1393,138 @@ export default function NewOffer() {
               title="Pagamento"
               subtitle="Valor e sinal (se aplicável)."
             />
-            <CardBody className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {/* Valor */}
-              <div>
-                <label className="text-xs font-semibold text-zinc-600">
-                  {isProduct ? "Total do orçamento" : "Valor"}
-                </label>
+            <CardBody className="grid grid-cols-1 gap-4 sm:grid-cols-12">
+              {/* Coluna: Valor */}
+              <div className="sm:col-span-6">
+                <div className="h-full rounded-2xl border bg-white p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-xs font-semibold text-zinc-600">
+                        {isProduct ? "Total do orçamento" : "Valor"}
+                      </div>
+                      <div className="mt-1 text-xs text-zinc-500">
+                        {isProduct
+                          ? "Calculado automaticamente pelos itens."
+                          : "Digite o valor do serviço."}
+                      </div>
+                    </div>
 
-                {isProduct ? (
-                  <Input value={formatBRL(calc.totalCents)} readOnly disabled />
-                ) : (
-                  <Input
-                    value={form.amount}
-                    onChange={(e) =>
-                      setForm({ ...form, amount: e.target.value })
-                    }
-                    placeholder="150,00"
-                  />
-                )}
-
-                {!isProduct ? (
-                  <div className="mt-1 text-xs text-zinc-500">
-                    Total:{" "}
-                    <span className="font-semibold">
+                    {/* Badge do total (sempre visível) */}
+                    <div className="rounded-full border bg-zinc-50 px-3 py-1 text-xs font-semibold text-zinc-700">
                       {formatBRL(calc.totalCents)}
-                    </span>
-                  </div>
-                ) : null}
-              </div>
-
-              {/* Sinal toggle + pct */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between rounded-xl border p-3">
-                  <div>
-                    <div className="text-xs font-semibold text-zinc-600">
-                      Cobrar sinal?
-                    </div>
-                    <div className="text-xs text-zinc-500">
-                      Habilite para coletar % do total.
                     </div>
                   </div>
-                  <input
-                    type="checkbox"
-                    checked={form.depositEnabled}
-                    onChange={(e) =>
-                      setForm({ ...form, depositEnabled: e.target.checked })
-                    }
-                    aria-label="Cobrar sinal"
-                  />
-                </div>
 
-                {form.depositEnabled ? (
-                  <div>
-                    <label className="text-xs font-semibold text-zinc-600">
-                      Sinal (%)
-                    </label>
-                    <Input
-                      type="number"
-                      min={0}
-                      max={100}
-                      value={form.depositPct}
-                      onChange={(e) =>
-                        setForm({
-                          ...form,
-                          depositPct: clampInt(e.target.value, 0, 100),
-                        })
-                      }
-                    />
-                    <div className="mt-1 text-xs text-zinc-500">
-                      Sinal:{" "}
-                      <span className="font-semibold">
-                        {formatBRL(calc.depositCents)}
-                      </span>{" "}
-                      • Restante:{" "}
-                      <span className="font-semibold">
-                        {formatBRL(calc.remainingCents)}
+                  <div className="mt-3">
+                    {isProduct ? (
+                      <Input
+                        value={formatBRL(calc.totalCents)}
+                        readOnly
+                        disabled
+                      />
+                    ) : (
+                      <Input
+                        value={form.amount}
+                        onChange={(e) =>
+                          setForm({ ...form, amount: e.target.value })
+                        }
+                        placeholder="150,00"
+                      />
+                    )}
+                  </div>
+
+                  {!isProduct ? (
+                    <div className="mt-2 text-xs text-zinc-500">
+                      Total:{" "}
+                      <span className="font-semibold text-zinc-900">
+                        {formatBRL(calc.totalCents)}
                       </span>
                     </div>
+                  ) : null}
+                </div>
+              </div>
+
+              {/* Coluna: Sinal */}
+              <div className="sm:col-span-6">
+                <div className="h-full rounded-2xl border bg-white p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-xs font-semibold text-zinc-600">
+                        Cobrar sinal?
+                      </div>
+                      <div className="mt-0.5 text-xs text-zinc-500">
+                        Se ativado, cobra uma porcentagem agora e o restante
+                        depois.
+                      </div>
+                    </div>
+
+                    {/* Toggle moderno */}
+                    <label className="relative inline-flex cursor-pointer items-center">
+                      <input
+                        type="checkbox"
+                        className="peer sr-only"
+                        checked={!!form.depositEnabled}
+                        onChange={(e) =>
+                          setForm({ ...form, depositEnabled: e.target.checked })
+                        }
+                        aria-label="Cobrar sinal"
+                      />
+                      <div className="h-6 w-11 rounded-full bg-zinc-200 ring-1 ring-zinc-300 transition peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-emerald-500 peer-checked:bg-emerald-600">
+                        <div className="h-5 w-5 translate-x-0.5 translate-y-0.5 rounded-full bg-white shadow-sm transition peer-checked:translate-x-5" />
+                      </div>
+                    </label>
                   </div>
-                ) : (
-                  <div className="text-xs text-zinc-500">
-                    Sinal desativado. Total à vista:{" "}
-                    <span className="font-semibold">
-                      {formatBRL(calc.totalCents)}
-                    </span>
-                  </div>
-                )}
+
+                  {form.depositEnabled ? (
+                    <>
+                      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3 sm:items-end">
+                        <div className="sm:col-span-1">
+                          <label className="text-xs font-semibold text-zinc-600">
+                            Sinal (%)
+                          </label>
+                          <Input
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={form.depositPct}
+                            onChange={(e) =>
+                              setForm({
+                                ...form,
+                                depositPct: clampInt(e.target.value, 0, 100),
+                              })
+                            }
+                          />
+                        </div>
+
+                        <div className="sm:col-span-2">
+                          <div className="rounded-xl border bg-zinc-50 p-3">
+                            <div className="flex flex-wrap items-center gap-2 text-xs">
+                              <span className="rounded-full border bg-white px-2 py-1 text-zinc-700">
+                                Sinal:{" "}
+                                <span className="font-semibold text-zinc-900">
+                                  {formatBRL(calc.depositCents)}
+                                </span>
+                              </span>
+                              <span className="rounded-full border bg-white px-2 py-1 text-zinc-700">
+                                Restante:{" "}
+                                <span className="font-semibold text-zinc-900">
+                                  {formatBRL(calc.remainingCents)}
+                                </span>
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="mt-4 rounded-xl border bg-zinc-50 p-3 text-xs text-zinc-600">
+                      Sinal desativado. Total à vista:{" "}
+                      <span className="font-semibold text-zinc-900">
+                        {formatBRL(calc.totalCents)}
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
             </CardBody>
           </Card>
