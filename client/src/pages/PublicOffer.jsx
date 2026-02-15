@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../app/api.js";
 import Button from "../components/appui/Button.jsx";
+import { motion, useReducedMotion } from "framer-motion";
 
 /* =========================
    Helpers
@@ -111,6 +112,211 @@ function SectionCard({ title, subtitle, children }) {
       </div>
       <div className="mt-4">{children}</div>
     </div>
+  );
+}
+
+function NextSteps({ offerType, depositEnabled }) {
+  const reduce = useReducedMotion();
+
+  const steps = useMemo(() => {
+    const step3 =
+      offerType === "service"
+        ? {
+            tone: "blue",
+            icon: "🗓️",
+            title: "Escolha um horário",
+            desc: "Selecione um horário disponível para agendar.",
+          }
+        : {
+            tone: "violet",
+            icon: "📦",
+            title: "Receba instruções",
+            desc: "Você recebe as instruções de produção/entrega (se aplicável).",
+          };
+
+    return [
+      {
+        tone: "emerald",
+        icon: "🧾",
+        title: "Revise a proposta",
+        desc: "Confira detalhes e valores acima.",
+      },
+      {
+        tone: "amber",
+        icon: "✅",
+        title: "Confirme o aceite",
+        desc: "Aprove e siga para a próxima etapa.",
+      },
+      step3,
+      {
+        tone: "rose",
+        icon: "⚡",
+        title: "Pague via Pix",
+        desc: depositEnabled
+          ? "Pague o sinal (ou conforme combinado) e finalize."
+          : "Pague o total via Pix e finalize.",
+        attention: true,
+      },
+    ];
+  }, [offerType, depositEnabled]);
+
+  const tones = {
+    emerald: {
+      ring: "ring-emerald-200/70",
+      bg: "from-emerald-50 via-white to-emerald-50",
+      pill: "bg-emerald-600 text-white",
+      bar: "bg-emerald-500",
+      text: "text-emerald-700",
+    },
+    amber: {
+      ring: "ring-amber-200/70",
+      bg: "from-amber-50 via-white to-amber-50",
+      pill: "bg-amber-600 text-white",
+      bar: "bg-amber-500",
+      text: "text-amber-700",
+    },
+    blue: {
+      ring: "ring-blue-200/70",
+      bg: "from-blue-50 via-white to-blue-50",
+      pill: "bg-blue-600 text-white",
+      bar: "bg-blue-500",
+      text: "text-blue-700",
+    },
+    violet: {
+      ring: "ring-violet-200/70",
+      bg: "from-violet-50 via-white to-violet-50",
+      pill: "bg-violet-600 text-white",
+      bar: "bg-violet-500",
+      text: "text-violet-700",
+    },
+    rose: {
+      ring: "ring-rose-200/70",
+      bg: "from-rose-50 via-white to-rose-50",
+      pill: "bg-rose-600 text-white",
+      bar: "bg-rose-500",
+      text: "text-rose-700",
+    },
+  };
+
+  const container = {
+    hidden: { opacity: 0, y: 10 },
+    show: {
+      opacity: 1,
+      y: 0,
+      transition: reduce
+        ? { duration: 0 }
+        : { duration: 0.35, staggerChildren: 0.08 },
+    },
+  };
+
+  const item = {
+    hidden: { opacity: 0, y: 10, scale: 0.98 },
+    show: {
+      opacity: 1,
+      y: 0,
+      scale: 1,
+      transition: reduce ? { duration: 0 } : { duration: 0.28 },
+    },
+  };
+
+  return (
+    <motion.ol
+      variants={container}
+      initial="hidden"
+      animate="show"
+      className="grid gap-3 sm:grid-cols-2"
+    >
+      {steps.map((s, i) => {
+        const t = tones[s.tone] || tones.emerald;
+
+        // “tremidinha” só no hover/focus (sem ficar tremendo o tempo todo)
+        const hoverAnim = reduce
+          ? undefined
+          : {
+              y: -2,
+              rotate: [0, -0.7, 0.7, -0.4, 0],
+              x: [0, -1, 1, -1, 0],
+              transition: { duration: 0.35 },
+            };
+
+        // destaque sutil contínuo só no último passo (Pix)
+        const attentionAnim =
+          !reduce && s.attention
+            ? {
+                boxShadow: [
+                  "0 0 0 0 rgba(244,63,94,0.0)",
+                  "0 0 0 6px rgba(244,63,94,0.10)",
+                  "0 0 0 0 rgba(244,63,94,0.0)",
+                ],
+              }
+            : undefined;
+
+        const attentionTransition =
+          !reduce && s.attention
+            ? { duration: 1.6, repeat: Infinity, repeatDelay: 2.2 }
+            : undefined;
+
+        return (
+          <motion.li
+            key={i}
+            variants={item}
+            whileHover={hoverAnim}
+            whileFocus={hoverAnim}
+            animate={attentionAnim}
+            transition={attentionTransition}
+            className={[
+              "relative overflow-hidden rounded-2xl border bg-white p-4",
+              "ring-1",
+              t.ring,
+              "shadow-sm",
+            ].join(" ")}
+          >
+            {/* fundo com gradiente leve */}
+            <div
+              className={[
+                "pointer-events-none absolute inset-0 opacity-70",
+                "bg-gradient-to-br",
+                t.bg,
+              ].join(" ")}
+            />
+            {/* barra lateral */}
+            <div
+              className={["absolute left-0 top-0 h-full w-1.5", t.bar].join(
+                " ",
+              )}
+            />
+
+            <div className="relative flex items-start gap-3">
+              <div
+                className={[
+                  "flex h-10 w-10 items-center justify-center rounded-2xl",
+                  t.pill,
+                  "shadow-sm",
+                ].join(" ")}
+                aria-hidden="true"
+              >
+                <span className="text-base">{s.icon}</span>
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className={["text-xs font-bold", t.text].join(" ")}>
+                    PASSO {i + 1}
+                  </span>
+                  <span className="text-xs text-zinc-400">•</span>
+                  <span className="text-xs text-zinc-500">Próxima ação</span>
+                </div>
+
+                <div className="mt-1 text-sm font-semibold text-zinc-900">
+                  {s.title}
+                </div>
+                <div className="mt-1 text-sm text-zinc-700">{s.desc}</div>
+              </div>
+            </div>
+          </motion.li>
+        );
+      })}
+    </motion.ol>
   );
 }
 
@@ -966,35 +1172,10 @@ export default function PublicOffer() {
 
         {/* Próximos passos */}
         <SectionCard title="Próximos passos" subtitle="Rápido, sem enrolação.">
-          <ol className="grid gap-2 text-sm text-zinc-800">
-            <li className="rounded-xl border bg-white p-3">
-              <span className="font-semibold">1) </span>Revise os detalhes e
-              valores acima.
-            </li>
-            <li className="rounded-xl border bg-white p-3">
-              <span className="font-semibold">2) </span>Confirme o aceite desta
-              proposta.
-            </li>
-            {view.offerType === "service" ? (
-              <li className="rounded-xl border bg-white p-3">
-                <span className="font-semibold">3) </span>Escolha um horário
-                disponível para agendar.
-              </li>
-            ) : (
-              <li className="rounded-xl border bg-white p-3">
-                <span className="font-semibold">3) </span>Você recebe as
-                instruções de produção/entrega (se aplicável).
-              </li>
-            )}
-            <li className="rounded-xl border bg-white p-3">
-              <span className="font-semibold">4) </span>
-              Pague via Pix{" "}
-              {view.depositEnabled
-                ? "(sinal ou conforme combinado)"
-                : "(total)"}{" "}
-              e finalize.
-            </li>
-          </ol>
+          <NextSteps
+            offerType={view.offerType}
+            depositEnabled={view.depositEnabled}
+          />
         </SectionCard>
 
         {/* Confirmação + CTA */}
