@@ -5,6 +5,10 @@ import { env } from "./src/config/env.js";
 await connectMongo();
 
 const app = createApp();
-app.listen(env.port, () =>
-  console.log(`server on http://localhost:${env.port}`),
-);
+
+// Render injeta process.env.PORT. Use ele em produção.
+const port = Number(process.env.PORT || env.port || 8011);
+
+app.listen(port, "0.0.0.0", () => {
+  console.log(`server listening on port ${port}`);
+});
