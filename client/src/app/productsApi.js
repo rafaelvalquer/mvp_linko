@@ -4,7 +4,7 @@ const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8011/api";
 function getServerOrigin() {
   return API_BASE.replace(/\/api\/?$/i, "");
 }
-
+console.log(API_BASE);
 function normalizeToken(t) {
   const s = String(t || "").trim();
   if (!s) return null;
