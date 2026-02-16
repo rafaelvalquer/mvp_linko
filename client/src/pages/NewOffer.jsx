@@ -83,6 +83,9 @@ export default function NewOffer() {
 
     customerName: "",
     customerWhatsApp: "",
+    customerId: null,
+    customerEmail: "",
+    customerDoc: "", // SOMENTE dígitos
 
     // type
     offerType: "service", // "service" | "product"
@@ -179,14 +182,30 @@ export default function NewOffer() {
           return onlyDigits(doc) && onlyDigits(doc) === qDigits;
         });
         if (exact) {
+          const id = String(exact?._id || exact?.id || "") || null;
+
           const name =
             exact?.name || exact?.fullName || exact?.customerName || "";
           const phone =
             exact?.phone || exact?.whatsapp || exact?.customerWhatsApp || "";
+          const email = exact?.email || "";
+          const docRaw =
+            exact?.cpfCnpjDigits ||
+            exact?.cpfCnpj ||
+            exact?.cpf_cnpj ||
+            exact?.doc ||
+            exact?.document ||
+            "";
+
           setForm((prev) => ({
             ...prev,
+            customerId: id,
             customerName: name || prev.customerName,
             customerWhatsApp: phone || prev.customerWhatsApp,
+            customerEmail: String(email || prev.customerEmail || "").trim(),
+            customerDoc: onlyDigits(
+              docRaw || customerDoc || prev.customerDoc || "",
+            ),
           }));
         }
       } catch {
@@ -441,6 +460,11 @@ export default function NewOffer() {
         customerName: form.customerName,
         customerWhatsApp: form.customerWhatsApp,
 
+        // ✅ envia snapshot + vínculo
+        customerId: isPremium ? form.customerId || null : null,
+        customerEmail: isPremium ? String(form.customerEmail || "").trim() : "",
+        customerDoc: isPremium ? onlyDigits(form.customerDoc) : "",
+
         offerType: form.offerType,
 
         // keep compatibility
@@ -593,8 +617,13 @@ export default function NewOffer() {
                   <Input
                     value={customerDoc}
                     onChange={(e) => {
-                      setCustomerDoc(e.target.value);
+                      const v = e.target.value;
+                      setCustomerDoc(v);
                       setClientOpen(true);
+                      setForm((prev) => ({
+                        ...prev,
+                        customerDoc: onlyDigits(v), // agora v existe
+                      }));
                     }}
                     onFocus={() => setClientOpen(true)}
                     onBlur={() => setTimeout(() => setClientOpen(false), 120)}
@@ -633,12 +662,44 @@ export default function NewOffer() {
                                 type="button"
                                 onMouseDown={(e) => e.preventDefault()}
                                 onClick={() => {
+                                  const id =
+                                    String(c?._id || c?.id || "") || null;
+                                  const doc =
+                                    c?.cpfCnpjDigits ||
+                                    c?.cpfCnpj ||
+                                    c?.cpf_cnpj ||
+                                    c?.doc ||
+                                    c?.document ||
+                                    "";
+                                  const phone =
+                                    c?.phone ||
+                                    c?.whatsapp ||
+                                    c?.customerWhatsApp ||
+                                    "";
+                                  const name =
+                                    c?.name ||
+                                    c?.fullName ||
+                                    c?.customerName ||
+                                    "";
+                                  const email = c?.email || "";
+
                                   setForm((prev) => ({
                                     ...prev,
+                                    customerId: id,
                                     customerName: name || prev.customerName,
                                     customerWhatsApp:
                                       phone || prev.customerWhatsApp,
+                                    customerEmail: String(
+                                      email || prev.customerEmail || "",
+                                    ).trim(),
+                                    customerDoc: onlyDigits(
+                                      doc ||
+                                        customerDoc ||
+                                        prev.customerDoc ||
+                                        "",
+                                    ),
                                   }));
+
                                   setCustomerDoc(
                                     String(doc || customerDoc || ""),
                                   );

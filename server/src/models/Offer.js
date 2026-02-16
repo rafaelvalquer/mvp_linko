@@ -33,9 +33,19 @@ const OfferSchema = new mongoose.Schema(
       index: true,
     },
 
+    // ✅ Cliente (snapshot para página pública)
+    customerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Client",
+      default: null,
+      index: true,
+    },
+
+    customerEmail: { type: String, trim: true, default: "" },
+    customerDoc: { type: String, trim: true, default: "" }, // salvar só dígitos
+    customerWhatsApp: { type: String, trim: true, default: "" },
     // Identificação
     customerName: { type: String, required: true, trim: true },
-    customerWhatsApp: { type: String, default: "", trim: true },
 
     // Público
     publicToken: { type: String, required: true, unique: true, index: true },

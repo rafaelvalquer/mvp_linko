@@ -112,6 +112,12 @@ export default function PublicPixPayment() {
   const [email, setEmail] = useState("");
   const [taxId, setTaxId] = useState("");
 
+  // ✅ Dirty-guard (não sobrescrever edição do usuário)
+  const emailDirtyRef = useRef(false);
+  const taxDirtyRef = useRef(false);
+  const [prefillHint, setPrefillHint] = useState(false);
+  const prefilledOnceRef = useRef(false);
+
   const [busy, setBusy] = useState(false);
   const [pixErr, setPixErr] = useState("");
 
@@ -203,6 +209,8 @@ export default function PublicPixPayment() {
     setLoadingOffer(true);
     setOfferErr("");
     setPixErr("");
+    setPrefillHint(false);
+    prefilledOnceRef.current = false;
     paidOnceRef.current = false;
     setLocked(false);
     setShowPaidModal(false);
@@ -220,6 +228,41 @@ export default function PublicPixPayment() {
 
         setName(o?.customerName || "");
         setCellphone(o?.customerWhatsApp || o?.customerCellphone || "");
+
+        // ✅ Prefill (não sobrescreve se usuário já digitou)
+        const snapEmail = String(o?.customerEmail || "").trim();
+        const snapDoc = String(o?.customerDoc || "").trim();
+
+        if (!emailDirtyRef.current) {
+          setEmail((prev) => {
+            if (String(prev || "").trim()) return prev;
+            if (snapEmail) {
+              setPrefillHint(true);
+              return snapEmail;
+            }
+            return prev;
+          });
+        }
+
+        if (!taxDirtyRef.current) {
+          setTaxId((prev) => {
+            if (String(prev || "").trim()) return prev;
+            if (snapDoc) {
+              setPrefillHint(true);
+              return snapDoc; // pode vir só dígitos; usuário pode editar/formatar
+            }
+            return prev;
+          });
+        }
+
+        // evita “piscar” de hint em re-renders
+        if (
+          !prefilledOnceRef.current &&
+          (isNonEmpty(snapEmail) || isNonEmpty(snapDoc))
+        ) {
+          prefilledOnceRef.current = true;
+          setPrefillHint(true);
+        }
 
         // infer product/service aqui também (para validar bookingId)
         const items = Array.isArray(o?.items) ? o.items : [];
@@ -593,6 +636,12 @@ export default function PublicPixPayment() {
               Email e CPF/CNPJ são obrigatórios para gerar o Pix.
             </div>
 
+            {prefillHint ? (
+              <div className="mt-2 text-[11px] text-zinc-500">
+                Pré-preenchido com dados do cliente.
+              </div>
+            ) : null}
+
             <div className="mt-4 grid gap-3">
               <div>
                 <div className="text-xs font-semibold text-zinc-600">Nome</div>
@@ -621,7 +670,10 @@ export default function PublicPixPayment() {
                   </div>
                   <Input
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => {
+                      emailDirtyRef.current = true;
+                      setEmail(e.target.value);
+                    }}
                     placeholder="[email protected]"
                   />
                 </div>
@@ -631,7 +683,10 @@ export default function PublicPixPayment() {
                   </div>
                   <Input
                     value={taxId}
-                    onChange={(e) => setTaxId(e.target.value)}
+                    onChange={(e) => {
+                      taxDirtyRef.current = true;
+                      setTaxId(e.target.value);
+                    }}
                     placeholder="Somente números"
                   />
                 </div>
@@ -710,7 +765,7 @@ export default function PublicPixPayment() {
                       </Button>
                     ) : null}
 
-                    {/*                    
+                    {/* AJUSTAR ANTES                 
                     {import.meta.env.DEV && !locked ? (
                       <Button
                         type="button"

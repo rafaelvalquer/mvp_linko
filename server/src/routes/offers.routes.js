@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { Offer } from "../models/Offer.js";
 import { ensureAuth, tenantFromUser } from "../middleware/auth.js";
+import { Client } from "../models/Client.js";
 
 const r = Router();
 
@@ -12,6 +13,10 @@ const HAS_OWNER = !!Offer?.schema?.path?.("ownerUserId");
 
 function isNonEmpty(s) {
   return String(s || "").trim().length > 0;
+}
+
+function onlyDigits(v) {
+  return String(v || "").replace(/\D+/g, "");
 }
 
 function clampInt(n, min, max) {
@@ -61,10 +66,32 @@ function normalizeItems(raw) {
     .filter((it) => isNonEmpty(it.description));
 }
 
-async function createOfferLocal(body, ctx) {
+async function createOfferLocal({ tenantId, userId, body }) {
   const b = body || {};
-  const tenantId = ctx?.tenantId;
-  const userId = ctx?.userId;
+  // ✅ Cliente (snapshot)
+  let customerId = b.customerId || null;
+  let customerName = String(b.customerName || "").trim();
+  let customerEmail = String(b.customerEmail || "").trim();
+  let customerDoc = onlyDigits(b.customerDoc);
+  let customerWhatsApp = String(b.customerWhatsApp || "").trim();
+
+  if (customerId) {
+    const c = await Client.findOne({
+      _id: customerId,
+      workspaceId: tenantId,
+    }).lean();
+    if (!c) {
+      const err = new Error("Cliente não encontrado neste workspace");
+      err.statusCode = 400;
+      throw err;
+    }
+    customerId = c._id;
+
+    customerName = String(c.name || customerName || "").trim();
+    customerEmail = String(c.email || customerEmail || "").trim();
+    customerDoc = onlyDigits(c.cpfCnpjDigits || c.cpfCnpj || customerDoc || "");
+    customerWhatsApp = String(c.phone || customerWhatsApp || "").trim();
+  }
 
   const offerTypeRaw = String(b.offerType || "service")
     .trim()
@@ -86,7 +113,7 @@ async function createOfferLocal(body, ctx) {
   const description = isNonEmpty(b.description) ? String(b.description) : "";
 
   // Totais
-  const amountCents = Number(b.amountCents);
+  const amountCents = Number(b.amountCents ?? b.totalCents);
   const subtotalCents = Number.isFinite(Number(b.subtotalCents))
     ? Number(b.subtotalCents)
     : null;
@@ -101,7 +128,7 @@ async function createOfferLocal(body, ctx) {
     : amountCents;
 
   const depositEnabled = b.depositEnabled !== false && Number(b.depositPct) > 0;
-  const depositPct = depositEnabled ? clampInt(b.depositPct, 0, 100) : 0;
+  const depositPct = depositEnabled ? clampInt(b.depositPct, 1, 100) : 0;
 
   // ✅ Condições (opcional) — sempre persistir flags + valor
   const durationEnabled =
@@ -151,18 +178,15 @@ async function createOfferLocal(body, ctx) {
   // Items (product)
   const items = offerType === "product" ? normalizeItems(b.items) : [];
 
-  const extra = {};
-  if (HAS_TENANT && ctx?.tenantId) extra.workspaceId = ctx.tenantId;
-  if (HAS_OWNER && ctx?.userId) extra.ownerUserId = ctx.userId;
+  const doc = {
+    ...(HAS_TENANT ? { workspaceId: tenantId } : {}),
+    ...(HAS_OWNER ? { ownerUserId: userId } : {}),
 
-  const offer = await Offer.create({
-    ...extra,
-    workspaceId: tenantId,
-    ownerUserId: userId,
-    customerName: String(b.customerName || "").trim(),
-    customerWhatsApp: isNonEmpty(b.customerWhatsApp)
-      ? String(b.customerWhatsApp).trim()
-      : "",
+    customerId: customerId || null,
+    customerName,
+    customerEmail,
+    customerDoc,
+    customerWhatsApp,
 
     offerType,
     title,
@@ -176,7 +200,7 @@ async function createOfferLocal(body, ctx) {
     freightCents,
     totalCents,
 
-    depositEnabled: !!b.depositEnabled,
+    depositEnabled,
     depositPct,
 
     durationEnabled,
@@ -200,7 +224,9 @@ async function createOfferLocal(body, ctx) {
     publicToken,
     expiresAt,
     status: "PUBLIC",
-  });
+  };
+
+  const offer = await Offer.create(doc);
 
   return offer;
 }
@@ -209,8 +235,13 @@ r.use(ensureAuth, tenantFromUser);
 
 r.get(
   "/offers",
+  ensureAuth,
+  tenantFromUser,
   asyncHandler(async (req, res) => {
-    const q = HAS_TENANT ? { workspaceId: req.tenantId } : {};
+    const tenantId = req.tenantId;
+    const userId = req.user?._id;
+    const q = { workspaceId: tenantId };
+    if (userId) q.ownerUserId = userId;
     const items = await Offer.find(q).sort({ createdAt: -1 }).limit(200);
     res.json({ ok: true, items });
   }),
@@ -219,13 +250,20 @@ r.get(
 r.post(
   "/offers",
   asyncHandler(async (req, res) => {
-    const { customerName, title, amountCents, offerType } = req.body || {};
+    const {
+      customerName,
+      customerId,
+      title,
+      amountCents,
+      totalCents,
+      offerType,
+    } = req.body || {};
 
     // Validações mínimas (mantém compatibilidade)
-    if (!isNonEmpty(customerName)) {
+    if (!isNonEmpty(customerName) && !isNonEmpty(customerId)) {
       return res.status(400).json({
         ok: false,
-        error: "customerName required",
+        error: "customerName or customerId required",
       });
     }
 
@@ -235,13 +273,15 @@ r.post(
       return res.status(400).json({ ok: false, error: "title required" });
     }
 
-    if (!Number.isFinite(Number(amountCents)) || Number(amountCents) <= 0) {
+    const cents = Number(totalCents ?? amountCents);
+    if (!Number.isFinite(cents) || cents <= 0) {
       return res.status(400).json({ ok: false, error: "amountCents invalid" });
     }
 
-    const offer = await createOfferLocal(req.body, {
+    const offer = await createOfferLocal({
       tenantId: req.tenantId,
       userId: req.user?._id,
+      body: req.body,
     });
     res.json({ ok: true, offer, publicUrl: `/p/${offer.publicToken}` });
   }),

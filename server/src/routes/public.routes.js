@@ -2,6 +2,7 @@
 import express from "express";
 import mongoose from "mongoose";
 import { Offer } from "../models/Offer.js";
+import { Client } from "../models/Client.js";
 import * as BookingModule from "../models/Booking.js";
 
 import {
@@ -354,7 +355,67 @@ router.get("/p/:token", async (req, res, next) => {
         .status(404)
         .json({ ok: false, error: "Proposta não encontrada." });
 
-    const offer = sanitizeOfferPublic(offerRaw);
+    // ✅ sem cache (evita 304 e dados "travados")
+    noStore(res);
+
+    // ✅ fallback/backfill para ofertas antigas sem snapshot
+    let offerForPublic = offerRaw;
+    const missingEmail = !String(offerRaw?.customerEmail || "").trim();
+    const missingDoc = !String(offerRaw?.customerDoc || "").trim();
+    if ((missingEmail || missingDoc) && offerRaw?.workspaceId) {
+      const docDigits = onlyDigits(offerRaw?.customerDoc);
+      const waDigits = onlyDigits(offerRaw?.customerWhatsApp);
+
+      let c = null;
+      if (
+        offerRaw?.customerId &&
+        mongoose.isValidObjectId(offerRaw.customerId)
+      ) {
+        c = await Client.findOne({
+          _id: offerRaw.customerId,
+          workspaceId: offerRaw.workspaceId,
+        }).lean();
+      }
+      if (!c && docDigits) {
+        c = await Client.findOne({
+          workspaceId: offerRaw.workspaceId,
+          $or: [{ cpfCnpjDigits: docDigits }, { cpfCnpj: docDigits }],
+        }).lean();
+      }
+      if (!c && waDigits) {
+        c = await Client.findOne({
+          workspaceId: offerRaw.workspaceId,
+          $or: [{ whatsApp: waDigits }, { whatsapp: waDigits }],
+        }).lean();
+      }
+
+      if (c) {
+        const patch = {};
+        if (!offerRaw.customerId) patch.customerId = c._id;
+        if (missingEmail) patch.customerEmail = String(c.email || "").trim();
+        if (missingDoc)
+          patch.customerDoc = onlyDigits(c.cpfCnpjDigits || c.cpfCnpj || "");
+        if (!String(offerRaw.customerName || "").trim())
+          patch.customerName = String(c.name || "").trim();
+        if (!String(offerRaw.customerWhatsApp || "").trim()) {
+          patch.customerWhatsApp = String(
+            c.whatsApp || c.whatsapp || "",
+          ).trim();
+        }
+
+        // opcional: persistir para não depender sempre de lookup
+        if (Object.keys(patch).length) {
+          await Offer.updateOne(
+            { _id: offerRaw._id },
+            { $set: patch },
+            { strict: false },
+          ).catch(() => {});
+          offerForPublic = { ...offerRaw, ...patch };
+        }
+      }
+    }
+
+    const offer = sanitizeOfferPublic(offerForPublic);
     const locked = isPaidStatus(offerRaw?.status);
 
     // ✅ se já existir reserva (HOLD válida / CONFIRMED), devolve para o front não depender de bookingId na URL
@@ -377,6 +438,7 @@ router.get("/p/:token", async (req, res, next) => {
           .catch(() => null));
     }
 
+    noStore(res);
     return res.json({
       ok: true,
       offer,
