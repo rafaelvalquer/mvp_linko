@@ -699,7 +699,8 @@ export default function PublicPixPayment() {
                       Copiar código Pix
                     </Button>
 
-                    {import.meta.env.DEV && !locked ? (
+                    {import.meta.env.VITE_SHOW_DEV_SIMULATE === "1" &&
+                    !locked ? (
                       <Button
                         type="button"
                         variant="secondary"
@@ -708,6 +709,18 @@ export default function PublicPixPayment() {
                         Simular pagamento (DEV)
                       </Button>
                     ) : null}
+
+                    {/*                    
+                    {import.meta.env.DEV && !locked ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={devSimulate}
+                      >
+                        Simular pagamento (DEV)
+                      </Button>
+                    ) : null} 
+                     */}
                   </div>
                 </div>
               </div>
