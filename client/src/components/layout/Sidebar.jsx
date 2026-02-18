@@ -95,6 +95,16 @@ const Icons = {
     </svg>
   ),
 
+  // ✅ Ícone de "Configurações" sem SVG (evita corte/risco)
+  Settings: () => (
+    <span
+      aria-hidden="true"
+      className="inline-flex h-[18px] w-[18px] items-center justify-center text-[16px] leading-none text-current"
+    >
+      ⚙
+    </span>
+  ),
+
   ChevronDown: ({ className }) => (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -263,6 +273,13 @@ export default function Sidebar() {
             </div>
           </div>
         )}
+
+        {/* ✅ Configurações da Agenda (item simples, sem mexer em perms.store) */}
+        <div className="pt-2">
+          <Item to="/settings/agenda" icon={Icons.Settings}>
+            Configurações da Agenda
+          </Item>
+        </div>
       </nav>
 
       <Item to="/withdraws" icon={Icons.Withdraws}>

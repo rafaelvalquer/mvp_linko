@@ -168,7 +168,7 @@ export default function Calendar() {
                 Amanhã
               </Button>
 
-              {/* Configurações da agenda */}
+              {/* Configurações da agenda (sem SVG) */}
               <Button
                 variant="ghost"
                 type="button"
@@ -176,30 +176,12 @@ export default function Calendar() {
                 onClick={() => nav("/settings/agenda")}
               >
                 <span className="inline-flex items-center gap-2">
-                  {/* Ícone engrenagem (inline SVG para não depender de lib) */}
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="opacity-80"
+                  <span
+                    aria-hidden="true"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 bg-white text-[16px] leading-none text-zinc-700"
                   >
-                    <path
-                      d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                    <path
-                      d="M19.4 15a7.9 7.9 0 0 0 .1-1 7.9 7.9 0 0 0-.1-1l2-1.6-2-3.4-2.4 1a7.6 7.6 0 0 0-1.7-1l-.3-2.6H9l-.3 2.6a7.6 7.6 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.6a7.9 7.9 0 0 0-.1 1c0 .3 0 .7.1 1l-2 1.6 2 3.4 2.4-1c.5.4 1.1.7 1.7 1l.3 2.6h6l.3-2.6c.6-.3 1.2-.6 1.7-1l2.4 1 2-3.4-2-1.6Z"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
+                    ⚙️
+                  </span>
                   <span className="hidden sm:inline">Configurações</span>
                 </span>
               </Button>
@@ -338,7 +320,6 @@ export default function Calendar() {
                         </div>
 
                         <div className="flex flex-col items-end gap-2">
-                          {/* sem children -> Badge traduz */}
                           <Badge tone={st} />
 
                           <div className="flex flex-wrap gap-2">
@@ -373,9 +354,7 @@ export default function Calendar() {
                                   if (e?.status === 401) {
                                     signOut();
                                     nav(
-                                      `/login?next=${encodeURIComponent(
-                                        "/calendar",
-                                      )}`,
+                                      `/login?next=${encodeURIComponent("/calendar")}`,
                                       { replace: true },
                                     );
                                     return;
