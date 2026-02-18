@@ -11,6 +11,8 @@ import {
   abacateSimulatePixPayment,
 } from "../services/abacatepayClient.js";
 
+import { notifySellerPixPaid } from "../services/resendEmail.js";
+
 const router = express.Router();
 
 // ✅ garante que NÃO vai quebrar por "acceptances is not defined" / "pixCharges is not defined"
@@ -294,9 +296,32 @@ function bookingScopeFromOffer(offerRaw) {
   return q;
 }
 
-async function markAsPaid({ token, offerId, bookingId, pix }) {
+async function markAsPaid({
+  token,
+  offerId,
+  bookingId,
+  pix,
+  offerRaw,
+  paidAmountCents,
+}) {
   const paidAt = new Date();
   const paidAtIso = paidAt.toISOString();
+
+  // valor efetivamente pago (sinal/total) para persistência + e-mail
+  let paidCents = Number(paidAmountCents);
+  if (!Number.isFinite(paidCents) || paidCents <= 0) {
+    try {
+      const offerForAmount =
+        offerRaw ||
+        (await Offer.findById(offerId)
+          .lean()
+          .catch(() => null));
+      const amounts = computeAmountCents(offerForAmount);
+      paidCents = Number(amounts?.amountCents) || 0;
+    } catch {
+      paidCents = 0;
+    }
+  }
 
   // offer -> PAID + trava pública
   if (offerId) {
@@ -305,7 +330,8 @@ async function markAsPaid({ token, offerId, bookingId, pix }) {
       {
         $set: {
           status: "PAID",
-          paidAt: paidAtIso,
+          paidAt: paidAt,
+          paidAmountCents: paidCents || null,
           publicDoneOnly: true,
           publicLockedAt: paidAtIso,
         },
@@ -332,6 +358,32 @@ async function markAsPaid({ token, offerId, bookingId, pix }) {
         paidAt,
       },
     });
+  }
+  // ✅ notificação por e-mail (não quebra o fluxo se falhar)
+  try {
+    const offerForEmail =
+      offerRaw ||
+      (await Offer.findById(offerId)
+        .lean()
+        .catch(() => null));
+    if (offerForEmail && !offerForEmail.paymentNotifiedAt) {
+      const bookingForEmail =
+        bookingId && mongoose.isValidObjectId(bookingId)
+          ? await Booking.findById(bookingId)
+              .lean()
+              .catch(() => null)
+          : null;
+      await notifySellerPixPaid({
+        offerId: String(offerId),
+        offer: offerForEmail,
+        booking: bookingForEmail,
+        pixId: String(pix?.id || "").trim(),
+        paidAt,
+        paidAmountCents: paidCents || null,
+      });
+    }
+  } catch (err) {
+    console.error("[pix] failed to send paid email", err);
   }
 
   return paidAtIso;
@@ -884,6 +936,8 @@ router.post("/p/:token/pix/create", async (req, res, next) => {
             offerId: offerRaw._id,
             bookingId: isProduct ? null : String(booking._id),
             pix: { ...pixDataRaw, status: st, expiresAt: expiresAtIso },
+            offerRaw,
+            paidAmountCents: computeAmountCents(offerRaw).amountCents,
           });
           noStore(res);
           return res.json({
@@ -1068,6 +1122,8 @@ router.get("/p/:token/pix/status", async (req, res, next) => {
         offerId: offerRaw._id,
         bookingId,
         pix: { ...pixDataRaw, status: st, expiresAt: expiresAtIso },
+        offerRaw,
+        paidAmountCents: computeAmountCents(offerRaw).amountCents,
       });
     } else {
       locked = isPaidStatus(offerRaw?.status);

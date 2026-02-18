@@ -68,6 +68,11 @@ function normalizeItems(raw) {
 
 async function createOfferLocal({ tenantId, userId, body }) {
   const b = body || {};
+  // ✅ Vendedor (persistido para notificações)
+  let sellerEmail = String(b.sellerEmail || "")
+    .trim()
+    .toLowerCase();
+  let sellerName = String(b.sellerName || "").trim();
   // ✅ Cliente (snapshot)
   let customerId = b.customerId || null;
   let customerName = String(b.customerName || "").trim();
@@ -181,6 +186,10 @@ async function createOfferLocal({ tenantId, userId, body }) {
   const doc = {
     ...(HAS_TENANT ? { workspaceId: tenantId } : {}),
     ...(HAS_OWNER ? { ownerUserId: userId } : {}),
+
+    // notificações de pagamento (Resend)
+    sellerEmail: sellerEmail || null,
+    sellerName: sellerName || null,
 
     customerId: customerId || null,
     customerName,

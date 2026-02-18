@@ -456,7 +456,22 @@ export default function NewOffer() {
       }
 
       // build payload (send only enabled optional fields)
+      const sellerEmail = String(
+        user?.email || user?.mail || user?.loginEmail || user?.username || "",
+      )
+        .trim()
+        .toLowerCase();
+      const sellerName = String(
+        user?.name ||
+          user?.fullName ||
+          user?.displayName ||
+          user?.username ||
+          "",
+      ).trim();
+
       const payload = {
+        sellerEmail,
+        sellerName,
         customerName: form.customerName,
         customerWhatsApp: form.customerWhatsApp,
 
