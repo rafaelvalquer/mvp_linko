@@ -18,6 +18,7 @@ import PublicPixPayment from "../pages/PublicPixPayment.jsx";
 import PublicOfferDone from "../pages/PublicOfferDone.jsx";
 import PublicPaidGuard from "../pages/PublicPaidGuard.jsx";
 import Withdraws from "../pages/Withdraws.jsx";
+import SettingsAgenda from "../pages/SettingsAgenda.jsx";
 
 export const router = createBrowserRouter(
   [
@@ -53,6 +54,14 @@ export const router = createBrowserRouter(
       element: (
         <RequireAuth>
           <Calendar />
+        </RequireAuth>
+      ),
+    },
+    {
+      path: "/settings/agenda",
+      element: (
+        <RequireAuth>
+          <SettingsAgenda />
         </RequireAuth>
       ),
     },

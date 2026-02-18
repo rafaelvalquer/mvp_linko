@@ -4,6 +4,13 @@ import mongoose from "mongoose";
 import { Offer } from "../models/Offer.js";
 import { Client } from "../models/Client.js";
 import * as BookingModule from "../models/Booking.js";
+import { AppSettings } from "../models/AppSettings.js";
+import {
+  DEFAULT_AGENDA,
+  resolveAgendaForDate,
+  dayRangeInTZ,
+  buildSlotsForDate,
+} from "../services/agendaSettings.js";
 
 import {
   abacateCreatePixQr,
@@ -96,7 +103,16 @@ function shortDesc(s, max = 37) {
 }
 
 function buildDaySlots(dateStr, durationMin = 60) {
-  const times = ["09:00", "10:00", "14:00", "16:00", "18:00"];
+  const times = [
+    "09:00",
+    "10:00",
+    "11:00",
+    "14:00",
+    "15:00",
+    "16:00",
+    "17:00",
+    "18:00",
+  ];
   const dur = Number(durationMin) > 0 ? Number(durationMin) : 60;
 
   return times.map((hhmm) => {
@@ -663,8 +679,28 @@ router.get("/p/:token/slots", async (req, res, next) => {
       Number(offerRaw?.durationMin) > 0 ? Number(offerRaw.durationMin) : 60;
 
     // Range do dia (LOCAL do servidor)
-    const dayStart = new Date(`${date}T00:00:00.000`);
-    const dayEnd = new Date(`${date}T23:59:59.999`);
+    // Carrega configurações do DONO da offer (tenant via offer)
+    let agenda = DEFAULT_AGENDA;
+    try {
+      if (offerRaw?.workspaceId && offerRaw?.ownerUserId) {
+        const s = await AppSettings.findOne({
+          workspaceId: offerRaw.workspaceId,
+          ownerUserId: offerRaw.ownerUserId,
+        })
+          .select("agenda")
+          .lean();
+        if (s?.agenda) agenda = { ...DEFAULT_AGENDA, ...s.agenda };
+      }
+    } catch (e) {
+      console.warn("[agenda] failed to load settings:", e?.message || e);
+      agenda = DEFAULT_AGENDA;
+    }
+
+    const tz =
+      agenda?.timezone || DEFAULT_AGENDA.timezone || "America/Sao_Paulo";
+
+    // Range do dia no timezone configurado (não depende do timezone do server)
+    const { dayStart, dayEnd } = dayRangeInTZ(date, tz);
     const now = new Date();
 
     const scope = bookingScopeFromOffer(offerRaw);
@@ -684,7 +720,17 @@ router.get("/p/:token/slots", async (req, res, next) => {
       .select("_id startAt endAt status holdExpiresAt")
       .lean();
 
-    const slots = buildDaySlots(date, durationMin).map((slot) => {
+    const resolved = resolveAgendaForDate(agenda, date, { durationMin });
+
+    // slots base (FREE) vindos da configuração + fallback compatível (DEFAULT_AGENDA)
+    // Se settings inexistente/incompleto => resolveAgendaForDate cai no defaultSlots.
+    const baseSlots =
+      resolved?.slots?.length > 0
+        ? buildSlotsForDate(date, resolved.slots, durationMin, tz)
+        : [];
+
+    // (compat) se não houver slots por configuração, mantém resposta com slots vazios
+    const slots = baseSlots.map((slot) => {
       let best = null; // CONFIRMED ganha de HOLD
       for (const b of activeBookings) {
         if (!overlaps(slot.startAt, slot.endAt, b.startAt, b.endAt)) continue;
