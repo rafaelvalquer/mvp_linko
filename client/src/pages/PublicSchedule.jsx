@@ -3,6 +3,10 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../app/api.js";
 import Button from "../components/appui/Button.jsx";
 import { Input } from "../components/appui/Input.jsx";
+import {
+  isQuotaExceededError,
+  quotaExceededMessage,
+} from "../utils/planQuota.js";
 
 function fmtBRL(cents) {
   const v = Number.isFinite(cents) ? cents : 0;
@@ -52,7 +56,7 @@ export default function PublicSchedule() {
   const [slotsErr, setSlotsErr] = useState("");
   const [loadingSlots, setLoadingSlots] = useState(false);
 
-  const [selected, setSelected] = useState(null); // { startAt, endAt, status }
+  const [selected, setSelected] = useState(null);
   const [busy, setBusy] = useState(false);
   const [booking, setBooking] = useState(null);
 
@@ -196,6 +200,11 @@ export default function PublicSchedule() {
       } catch {}
     } catch (e) {
       setBooking(null);
+
+      if (isQuotaExceededError(e)) {
+        setSlotsErr(quotaExceededMessage("public"));
+        return;
+      }
 
       const msg = e?.message || "Falha ao criar reserva.";
 

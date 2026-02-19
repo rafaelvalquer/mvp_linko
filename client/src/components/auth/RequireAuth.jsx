@@ -1,18 +1,22 @@
-//src/components/auth/RequireAuth.jsx
-
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../../app/AuthContext.jsx";
 
 export default function RequireAuth({ children }) {
-  const { token, user, loading } = useAuth();
-  const location = useLocation();
+  const { user, loadingMe } = useAuth();
+  const loc = useLocation();
 
-  if (loading) return null;
+  // ✅ Se já existe user, nunca “derrube” a tela para loading (evita loop)
+  if (loadingMe && !user) {
+    return (
+      <div className="min-h-[50vh] flex items-center justify-center text-sm text-zinc-500">
+        Carregando…
+      </div>
+    );
+  }
 
-  const isAuthed = !!token && !!user;
-  if (!isAuthed) {
-    const next = encodeURIComponent(location.pathname + location.search);
-    return <Navigate to={`/login?next=${next}`} replace />;
+  if (!user) {
+    const next = loc.pathname + loc.search;
+    return <Navigate to={`/login?next=${encodeURIComponent(next)}`} replace />;
   }
 
   return children;

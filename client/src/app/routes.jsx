@@ -69,12 +69,41 @@ export const router = createBrowserRouter(
       ),
     },
 
-    { path: "/withdraws", element: <Withdraws /> },
+    // ✅ Saques devem ser área logada
+    {
+      path: "/withdraws",
+      element: (
+        <RequireAuth>
+          <Withdraws />
+        </RequireAuth>
+      ),
+    },
 
-    // SUA LOJA (ex.: premium)
-    { path: "/store/products", element: <Products /> },
-    { path: "/store/products/:id", element: <ProductDetails /> },
-    { path: "/store/customers", element: <Clients /> },
+    // ✅ Sua Loja deve ser área logada
+    {
+      path: "/store/products",
+      element: (
+        <RequireAuth>
+          <Products />
+        </RequireAuth>
+      ),
+    },
+    {
+      path: "/store/products/:id",
+      element: (
+        <RequireAuth>
+          <ProductDetails />
+        </RequireAuth>
+      ),
+    },
+    {
+      path: "/store/customers",
+      element: (
+        <RequireAuth>
+          <Clients />
+        </RequireAuth>
+      ),
+    },
 
     // PÚBLICO (guard redireciona para /done quando já estiver pago)
     {

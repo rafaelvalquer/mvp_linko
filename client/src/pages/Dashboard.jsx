@@ -13,6 +13,8 @@ import Badge from "../components/appui/Badge.jsx";
 import EmptyState from "../components/appui/EmptyState.jsx";
 import { useAuth } from "../app/AuthContext.jsx";
 import WithdrawModal from "../components/WithdrawModal.jsx";
+import QuotaBadge from "../components/QuotaBadge.jsx";
+import { quotaPercent } from "../utils/planQuota.js";
 
 /** ========= ICON COMPONENTS (SVG INLINE) ========= */
 const Icons = {
@@ -179,29 +181,27 @@ const normStatus = (s) =>
   String(s || "")
     .trim()
     .toUpperCase();
+
 const fmtBRL = (cents) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
     (cents || 0) / 100,
   );
+
 const fmtDateTimeBR = (iso) =>
   iso ? new Date(iso).toLocaleString("pt-BR") : "";
+
 const fmtTimeBR = (iso) =>
   iso
     ? new Intl.DateTimeFormat("pt-BR", { timeStyle: "short" }).format(
         new Date(iso),
       )
     : "";
+
 const safeDate = (v) => {
   if (!v) return null;
   const d = new Date(v);
   return isNaN(d.getTime()) ? null : d;
 };
-const isSameLocalDay = (a, b) =>
-  a &&
-  b &&
-  a.getFullYear() === b.getFullYear() &&
-  a.getMonth() === b.getMonth() &&
-  a.getDate() === b.getDate();
 
 function holdRemainingLabel(holdExpiresAt) {
   const d = safeDate(holdExpiresAt);
@@ -209,15 +209,6 @@ function holdRemainingLabel(holdExpiresAt) {
   const ms = d.getTime() - Date.now();
   const min = Math.floor(ms / 60000);
   return min <= 0 ? "HOLD expirado" : `Expira em ${min} min`;
-}
-
-function pixToneClasses(st) {
-  const s = normStatus(st);
-  if (["EXPIRED", "CANCELLED", "CANCELED"].includes(s))
-    return "text-red-600 bg-red-50";
-  if (s === "PAID") return "text-emerald-700 bg-emerald-50";
-  if (s === "PENDING") return "text-amber-700 bg-amber-50";
-  return "text-zinc-500 bg-zinc-50";
 }
 
 /** ========= SUB-COMPONENTS ========= */
@@ -277,9 +268,9 @@ export default function Dashboard() {
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [showToast, setShowToast] = useState(false);
   const [lastUpdate, setLastUpdate] = useState("");
+  const { signOut, workspace, loadingMe } = useAuth();
 
   const nav = useNavigate();
-  const { signOut } = useAuth();
   const toastTimerRef = useRef(null);
 
   const handleCopy = async (url) => {
@@ -350,6 +341,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const kpis = useMemo(() => {
@@ -358,45 +350,65 @@ export default function Dashboard() {
     const paidOffers = offers.filter((o) =>
       ["PAID", "CONFIRMED"].includes(normStatus(o.status)),
     );
-    const bookedCount = offers.filter(
-      (o) =>
-        o.bookingId ||
-        ["HOLD", "CONFIRMED", "PAID"].includes(normStatus(o.status)),
+    const paidCount = paidOffers.length;
+    const conversion = total ? Math.round((paidCount / total) * 100) : 0;
+
+    const bookedCount = bookings.filter((b) =>
+      ["HOLD", "CONFIRMED"].includes(normStatus(b.status)),
     ).length;
 
-    const now = new Date();
-    const paidToday = paidOffers.filter((o) =>
-      isSameLocalDay(safeDate(o.paidAt) || safeDate(o.updatedAt), now),
-    );
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const paidToday = paidOffers.filter((o) => {
+      const d = safeDate(o?.paidAt || o?.updatedAt || o?.createdAt);
+      if (!d) return false;
+      const t = new Date(d);
+      t.setHours(0, 0, 0, 0);
+      return t.getTime() === today.getTime();
+    });
+
+    const paidTodayCount = paidToday.length;
     const paidTodayValue = paidToday.reduce(
-      (acc, o) => acc + (o.amountCents || o.totalCents || 0),
+      (acc, o) => acc + (o.amountCents || 0),
       0,
     );
 
     return {
       total,
       totalValue,
-      paidCount: paidOffers.length,
+      paidCount,
+      conversion,
       bookedCount,
-      conversion: total > 0 ? Math.round((paidOffers.length / total) * 100) : 0,
-      paidTodayCount: paidToday.length,
+      paidTodayCount,
       paidTodayValue,
       last5: offers.slice(0, 5),
     };
-  }, [offers]);
+  }, [offers, bookings]);
+
+  const quota = useMemo(() => {
+    const limit = Number(workspace?.pixMonthlyLimit);
+    const used = Number(workspace?.pixUsedThisCycle);
+    const remaining = Number(workspace?.pixRemaining);
+
+    return {
+      cycleKey: workspace?.cycleKey || "",
+      limit: Number.isFinite(limit) ? limit : 0,
+      used: Number.isFinite(used) ? used : 0,
+      remaining: Number.isFinite(remaining) ? remaining : 0,
+      pct: quotaPercent(used, limit),
+    };
+  }, [workspace]);
 
   return (
     <Shell>
-      <div className="max-w-[1400px] mx-auto space-y-8 pb-12">
-        {/* HEADER SECTION */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-          <div className="space-y-1">
-            <h1 className="text-3xl font-bold text-zinc-900 tracking-tight transition-all">
-              Dashboard
-            </h1>
-            <p className="text-zinc-500 text-sm max-w-md">
-              Bem-vindo de volta. Aqui está um resumo da sua operação hoje.
-            </p>
+      <div className="mx-auto max-w-7xl px-4 py-6 space-y-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <PageHeader
+              title="Dashboard"
+              subtitle="Resumo rápido das suas propostas, agendamentos e saques."
+            />
             {lastUpdate && (
               <p className="text-[10px] font-medium text-zinc-400 uppercase tracking-widest pt-1">
                 Última atualização: {lastUpdate}
@@ -440,6 +452,82 @@ export default function Dashboard() {
             </button>
           </div>
         )}
+
+        {/* ✅ COTA PIX DO MÊS */}
+        <Card className="border-none shadow-sm ring-1 ring-zinc-200 overflow-hidden">
+          <CardHeader
+            title="Cota Pix do mês"
+            subtitle={
+              quota.cycleKey ? `Ciclo: ${quota.cycleKey}` : "Ciclo atual"
+            }
+            right={
+              <QuotaBadge
+                plan={workspace?.plan}
+                remaining={workspace?.pixRemaining}
+                limit={workspace?.pixMonthlyLimit}
+                used={workspace?.pixUsedThisCycle}
+                cycleKey={workspace?.cycleKey}
+                loading={loadingMe}
+                compact
+              />
+            }
+          />
+          <CardBody className="p-5">
+            {loadingMe ? (
+              <Skeleton className="h-14 w-full rounded-xl" />
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border bg-zinc-50 p-4">
+                  <div className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">
+                    Restantes
+                  </div>
+                  <div className="mt-1 text-2xl font-bold text-zinc-900">
+                    {quota.remaining}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border bg-zinc-50 p-4">
+                  <div className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">
+                    Usados
+                  </div>
+                  <div className="mt-1 text-2xl font-bold text-zinc-900">
+                    {quota.used}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border bg-zinc-50 p-4">
+                  <div className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">
+                    Limite
+                  </div>
+                  <div className="mt-1 text-2xl font-bold text-zinc-900">
+                    {quota.limit}
+                  </div>
+                </div>
+
+                <div className="sm:col-span-3">
+                  <div className="flex items-center justify-between text-xs text-zinc-600">
+                    <span>Uso do ciclo</span>
+                    <span className="font-semibold text-zinc-900">
+                      {quota.pct}%
+                    </span>
+                  </div>
+                  <div className="mt-2 h-2 w-full rounded-full bg-zinc-100">
+                    <div
+                      className="h-2 rounded-full bg-emerald-500"
+                      style={{ width: `${quota.pct}%` }}
+                    />
+                  </div>
+                  {quota.remaining === 0 ? (
+                    <div className="mt-2 text-xs text-amber-700">
+                      Sua cota do mês acabou. Faça upgrade do plano para liberar
+                      mais Pix.
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            )}
+          </CardBody>
+        </Card>
 
         {/* KPI GRID */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
@@ -516,68 +604,54 @@ export default function Dashboard() {
                       const isPaid = ["PAID", "CONFIRMED"].includes(
                         normStatus(o.status),
                       );
-                      const pixSt = normStatus(o?.payment?.lastPixStatus);
 
                       return (
-                        <div
-                          key={o._id}
-                          className="group p-4 sm:p-5 hover:bg-zinc-50/50 transition-colors"
-                        >
-                          <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="text-sm font-bold text-zinc-900 truncate">
-                                  {o.customerName}
-                                </span>
-                                <Badge tone={o.status || "PUBLIC"} size="xs" />
-                              </div>
-                              <h4 className="text-xs font-medium text-zinc-500 line-clamp-1 mb-2">
-                                {o.title}
-                              </h4>
-                              {pixSt && (
-                                <div
-                                  className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${pixToneClasses(pixSt)}`}
-                                >
-                                  Pix: {pixSt}{" "}
-                                  {o?.payment?.lastPixUpdatedAt &&
-                                    `• ${fmtTimeBR(o.payment.lastPixUpdatedAt)}`}
+                        <div key={o._id} className="p-5 hover:bg-zinc-50">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <div className="text-sm font-semibold text-zinc-900 truncate">
+                                  {o.title || "Proposta"}
                                 </div>
-                              )}
+                                <Badge
+                                  tone={normStatus(o.status)}
+                                  size="xs"
+                                  className="shrink-0"
+                                />
+                              </div>
+                              <div className="mt-1 text-xs text-zinc-500">
+                                {fmtBRL(o.amountCents)} •{" "}
+                                {o.customerName || "Cliente"}
+                              </div>
+
+                              <div className="mt-2 flex items-center gap-2">
+                                <code className="rounded-lg border bg-white px-2 py-1 text-[11px] text-zinc-700">
+                                  {publicUrl}
+                                </code>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopy(publicUrl)}
+                                  className="rounded-lg border bg-white px-2 py-1 text-[11px] font-semibold text-zinc-700 hover:bg-zinc-50"
+                                >
+                                  Copiar
+                                </button>
+                              </div>
+
+                              {isPaid ? (
+                                <div className="mt-2 text-[11px] font-semibold text-emerald-700">
+                                  Pago/Confirmado
+                                </div>
+                              ) : null}
                             </div>
 
-                            <div className="flex flex-col items-end gap-3 w-full sm:w-auto">
-                              <span className="text-sm font-bold text-zinc-900">
-                                {fmtBRL(o.amountCents || o.totalCents || 0)}
-                              </span>
-                              <div className="flex items-center gap-2">
-                                <button
-                                  onClick={() => handleCopy(publicUrl)}
-                                  className="p-2 text-zinc-500 hover:text-zinc-900 hover:bg-white border border-transparent hover:border-zinc-200 rounded-lg transition-all"
-                                  title="Copiar link"
-                                >
-                                  <Icons.Copy />
-                                </button>
-                                <button
-                                  onClick={() =>
-                                    window.open(publicUrl, "_blank")
-                                  }
-                                  className="p-2 text-zinc-500 hover:text-zinc-900 hover:bg-white border border-transparent hover:border-zinc-200 rounded-lg transition-all"
-                                  title="Abrir página"
-                                >
-                                  <Icons.External />
-                                </button>
-                                {!isPaid && (
-                                  <Button
-                                    variant="secondary"
-                                    size="xs"
-                                    onClick={() =>
-                                      window.open(`${publicUrl}/pay`, "_blank")
-                                    }
-                                  >
-                                    Checkout
-                                  </Button>
-                                )}
-                              </div>
+                            <div className="text-right shrink-0">
+                              <Link
+                                to={publicUrl}
+                                target="_blank"
+                                className="text-[11px] font-bold text-emerald-600 hover:underline"
+                              >
+                                ABRIR
+                              </Link>
                             </div>
                           </div>
                         </div>
@@ -589,12 +663,13 @@ export default function Dashboard() {
             </Card>
           </div>
 
-          {/* SIDEBAR: AGENDA & WITHDRAWS */}
+          {/* RIGHT COLUMN */}
           <div className="col-span-12 lg:col-span-4 space-y-6">
             {/* AGENDA */}
             <Card className="border-none shadow-sm ring-1 ring-zinc-200">
               <CardHeader
-                title="Agenda Próxima"
+                title="Agenda (7 dias)"
+                subtitle={bookingsErr || "Reservas e confirmações"}
                 right={
                   <Link
                     to="/calendar"
@@ -641,7 +716,10 @@ export default function Dashboard() {
 
             {/* WITHDRAWS */}
             <Card className="border-none shadow-sm ring-1 ring-zinc-200">
-              <CardHeader title="Últimos Saques" />
+              <CardHeader
+                title="Últimos Saques"
+                subtitle={withdrawsErr || ""}
+              />
               <CardBody className="p-0">
                 {withdrawsBusy ? (
                   <div className="p-5">

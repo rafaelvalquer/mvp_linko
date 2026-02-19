@@ -1,5 +1,5 @@
 // src/app/AuthContext.jsx
-import {
+import React, {
   createContext,
   useCallback,
   useContext,
@@ -8,114 +8,181 @@ import {
   useState,
 } from "react";
 import * as authApi from "./authApi.js";
+import { getMonthlyLimit, normalizePlan } from "../utils/planQuota.js";
 
 const AuthCtx = createContext(null);
-const TOKEN_KEY = "auth_token";
 
-function derivePerms(workspace) {
-  const plan = workspace?.plan || "free";
+function getToken() {
+  try {
+    return localStorage.getItem("auth_token") || "";
+  } catch {
+    return "";
+  }
+}
+
+function setToken(token) {
+  try {
+    if (!token) localStorage.removeItem("auth_token");
+    else localStorage.setItem("auth_token", token);
+  } catch {}
+}
+
+function normalizeWorkspace(wsRaw) {
+  const ws = wsRaw && typeof wsRaw === "object" ? wsRaw : null;
+  if (!ws) return null;
+
+  const plan = normalizePlan(ws.plan);
+  const limit = getMonthlyLimit(plan, ws.pixMonthlyLimit);
+
+  const used = Number(ws.pixUsedThisCycle);
+  const remaining = Number(ws.pixRemaining);
+
+  const pixUsedThisCycle = Number.isFinite(used) ? used : 0;
+  const pixRemaining = Number.isFinite(remaining)
+    ? remaining
+    : Math.max(0, limit - pixUsedThisCycle);
+
   return {
+    ...ws,
     plan,
-    isPremium: plan === "premium",
-    store: plan === "premium", // ✅ Sua Loja
+    pixMonthlyLimit: limit,
+    pixUsedThisCycle,
+    pixRemaining,
+    cycleKey: ws.cycleKey || "",
   };
 }
 
 export function AuthProvider({ children }) {
-  const [token, setToken] = useState(() =>
-    typeof window !== "undefined" ? localStorage.getItem(TOKEN_KEY) || "" : "",
-  );
+  const [loadingMe, setLoadingMe] = useState(true);
   const [user, setUser] = useState(null);
   const [workspace, setWorkspace] = useState(null);
-  const [loading, setLoading] = useState(true);
 
   const signOut = useCallback(() => {
-    if (typeof window !== "undefined") localStorage.removeItem(TOKEN_KEY);
     setToken("");
     setUser(null);
     setWorkspace(null);
+    setLoadingMe(false);
   }, []);
 
-  const refreshMe = useCallback(async () => {
-    if (!token) {
+  const refreshWorkspace = useCallback(async () => {
+    const t = getToken();
+    if (!t) {
+      setLoadingMe(false);
       setUser(null);
       setWorkspace(null);
-      setLoading(false);
-      return;
+      return null;
     }
 
-    setLoading(true);
+    setLoadingMe(true);
     try {
       const d = await authApi.me();
+      const ws = normalizeWorkspace(d?.workspace || d?.user?.workspace);
       setUser(d?.user || null);
-      setWorkspace(d?.workspace || null);
+      setWorkspace(ws);
+      return ws;
     } catch (e) {
       if (e?.status === 401) signOut();
-      setUser(null);
-      setWorkspace(null);
+      return null;
     } finally {
-      setLoading(false);
+      setLoadingMe(false);
     }
-  }, [token, signOut]);
-
-  useEffect(() => {
-    refreshMe();
-  }, [refreshMe]);
+  }, [signOut]);
 
   const signIn = useCallback(
     async ({ email, password }) => {
       const d = await authApi.login({ email, password });
-      if (typeof window !== "undefined")
-        localStorage.setItem(TOKEN_KEY, d.token);
-      setToken(d.token);
-      await refreshMe();
+
+      const token =
+        d?.token ||
+        d?.accessToken ||
+        d?.authToken ||
+        d?.auth_token ||
+        d?.jwt ||
+        "";
+
+      if (token) setToken(token);
+
+      const ws = normalizeWorkspace(d?.workspace || d?.user?.workspace);
+      setUser(d?.user || null);
+      setWorkspace(ws);
+      setLoadingMe(false);
+
+      // se login não vier completo, busca /me
+      if (!ws) await refreshWorkspace();
       return d;
     },
-    [refreshMe],
+    [refreshWorkspace],
   );
 
+  // ✅ ADD: signUp para o Register.jsx
   const signUp = useCallback(
-    async ({ name, email, password, workspaceName, plan }) => {
+    async ({ name, email, password, workspaceName, plan, pixMonthlyLimit }) => {
       const d = await authApi.register({
         name,
         email,
         password,
         workspaceName,
-        plan, // ✅ free | premium
+        plan,
+        pixMonthlyLimit,
       });
-      if (typeof window !== "undefined")
-        localStorage.setItem(TOKEN_KEY, d.token);
-      setToken(d.token);
-      await refreshMe();
+
+      const token =
+        d?.token ||
+        d?.accessToken ||
+        d?.authToken ||
+        d?.auth_token ||
+        d?.jwt ||
+        "";
+
+      if (token) setToken(token);
+
+      const ws = normalizeWorkspace(d?.workspace || d?.user?.workspace);
+      setUser(d?.user || null);
+      setWorkspace(ws);
+      setLoadingMe(false);
+
+      if (!ws) await refreshWorkspace();
       return d;
     },
-    [refreshMe],
+    [refreshWorkspace],
   );
 
-  const perms = useMemo(() => derivePerms(workspace), [workspace]);
+  // boot: se houver token, carrega /me
+  useEffect(() => {
+    refreshWorkspace();
+  }, [refreshWorkspace]);
+
+  const perms = useMemo(() => {
+    const plan = workspace?.plan || "start";
+    const store =
+      plan === "pro" || plan === "business" || plan === "enterprise";
+    return {
+      plan,
+      store,
+      workspaceId: workspace?._id || workspace?.id || null,
+    };
+  }, [workspace]);
 
   const value = useMemo(
     () => ({
+      loadingMe,
       user,
       workspace,
       perms,
-      token,
-      loading,
       signIn,
-      signUp,
+      signUp, // ✅ exporta
       signOut,
-      refreshMe,
+      refreshWorkspace,
     }),
     [
+      loadingMe,
       user,
       workspace,
       perms,
-      token,
-      loading,
       signIn,
       signUp,
       signOut,
-      refreshMe,
+      refreshWorkspace,
     ],
   );
 
@@ -123,7 +190,7 @@ export function AuthProvider({ children }) {
 }
 
 export function useAuth() {
-  const v = useContext(AuthCtx);
-  if (!v) throw new Error("useAuth must be used within AuthProvider");
-  return v;
+  const ctx = useContext(AuthCtx);
+  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
+  return ctx;
 }

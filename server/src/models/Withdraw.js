@@ -32,8 +32,11 @@ const WithdrawSchema = new mongoose.Schema(
     method: { type: String, enum: ["PIX"], required: true, default: "PIX" },
 
     grossAmountCents: { type: Number, required: true },
-    feePct: { type: Number, required: true }, // ex.: 3.5
-    feeCents: { type: Number, required: true },
+
+    // ✅ compat: permanece, mas novos registros sempre 0
+    feePct: { type: Number, required: true, default: 0 },
+    feeCents: { type: Number, required: true, default: 0 },
+
     netAmountCents: { type: Number, required: true }, // enviado ao gateway
 
     pix: { type: PixSchema, required: true },

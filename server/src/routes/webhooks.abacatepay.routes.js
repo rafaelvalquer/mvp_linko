@@ -7,6 +7,7 @@ import { Offer } from "../models/Offer.js";
 import * as BookingModule from "../models/Booking.js";
 import Withdraw from "../models/Withdraw.js";
 import WebhookEvent from "../models/WebhookEvent.js";
+import { debitPix } from "../utils/pixQuota.js";
 
 const Booking = BookingModule.Booking || BookingModule.default;
 
@@ -257,6 +258,21 @@ async function handleBillingPaid(event) {
   // Só marca como pago se estiver PAID no check
   if (pix.status === "PAID") {
     await markAsPaidFromWebhook({ offer, booking, pix });
+
+    // ✅ Pix quota: debita 1 por Pix pago (idempotente e atômico)
+    try {
+      const wsId = offer?.workspaceId ? String(offer.workspaceId) : "";
+      const paymentId = String(pix?.id || "").trim();
+      if (wsId && paymentId) {
+        await debitPix(wsId, paymentId);
+      }
+    } catch (err) {
+      console.warn(
+        "[abacatepay webhook] quota debit failed",
+        err?.message || err,
+      );
+    }
+
     return { ok: true, mapped: true, markedPaid: true };
   }
 

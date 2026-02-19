@@ -4,6 +4,10 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../app/api.js";
 import Button from "../components/appui/Button.jsx";
 import { Input } from "../components/appui/Input.jsx";
+import {
+  isQuotaExceededError,
+  quotaExceededMessage,
+} from "../utils/planQuota.js";
 
 function fmtBRL(cents) {
   const v = Number.isFinite(cents) ? cents : 0;
@@ -120,8 +124,9 @@ export default function PublicPixPayment() {
 
   const [busy, setBusy] = useState(false);
   const [pixErr, setPixErr] = useState("");
+  const [quotaBlocked, setQuotaBlocked] = useState(false);
 
-  const [pix, setPix] = useState(null); // {id,status,brCode,brCodeBase64,expiresAt,amountCents}
+  const [pix, setPix] = useState(null);
   const pollRef = useRef(null);
   const expireTimerRef = useRef(null);
 
@@ -209,6 +214,7 @@ export default function PublicPixPayment() {
     setLoadingOffer(true);
     setOfferErr("");
     setPixErr("");
+    setQuotaBlocked(false);
     setPrefillHint(false);
     prefilledOnceRef.current = false;
     paidOnceRef.current = false;
@@ -249,7 +255,7 @@ export default function PublicPixPayment() {
             if (String(prev || "").trim()) return prev;
             if (snapDoc) {
               setPrefillHint(true);
-              return snapDoc; // pode vir só dígitos; usuário pode editar/formatar
+              return snapDoc;
             }
             return prev;
           });
@@ -293,7 +299,7 @@ export default function PublicPixPayment() {
         setOffer(null);
       })
       .finally(() => setLoadingOffer(false));
-  }, [token, bookingId, doneUrl, navigate]);
+  }, [token, bookingId, navigate]);
 
   useEffect(() => {
     return () => {
@@ -342,6 +348,11 @@ export default function PublicPixPayment() {
   );
 
   async function createPix() {
+    if (quotaBlocked) {
+      setPixErr(quotaExceededMessage("public"));
+      return;
+    }
+
     const payload = {
       ...(view.requiresBooking && bookingId ? { bookingId } : {}),
       customer: {
@@ -382,7 +393,13 @@ export default function PublicPixPayment() {
       }
     } catch (e) {
       setPix(null);
-      setPixErr(e?.message || "Falha ao gerar Pix.");
+
+      if (isQuotaExceededError(e)) {
+        setQuotaBlocked(true);
+        setPixErr(quotaExceededMessage("public"));
+      } else {
+        setPixErr(e?.message || "Falha ao gerar Pix.");
+      }
     } finally {
       setBusy(false);
     }
@@ -447,13 +464,9 @@ export default function PublicPixPayment() {
             if (isTerminalPixStatus(s)) {
               stopPolling();
             }
-          } catch {
-            // mantém polling silencioso (rede instável)
-          }
+          } catch {}
         }, 3000);
-      } catch {
-        // mantém UI
-      }
+      } catch {}
     })();
 
     return () => {
@@ -548,9 +561,7 @@ export default function PublicPixPayment() {
         <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3">
           <div>
             <div className="text-sm font-semibold text-zinc-900">PayLink</div>
-            <div className="text-xs text-zinc-500">
-              Pagamento Pix • AbacatePay
-            </div>
+            <div className="text-xs text-zinc-500">Pagamento Pix</div>
           </div>
 
           <Button
@@ -702,7 +713,11 @@ export default function PublicPixPayment() {
                 <div className="text-xs text-zinc-500">
                   Gera o QR Code e acompanha o status.
                 </div>
-                <Button type="button" onClick={createPix} disabled={busy}>
+                <Button
+                  type="button"
+                  onClick={createPix}
+                  disabled={busy || quotaBlocked}
+                >
                   {busy ? "Gerando…" : "Gerar Pix"}
                 </Button>
               </div>

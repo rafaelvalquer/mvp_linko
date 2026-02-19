@@ -23,10 +23,12 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/**
+ * ✅ Regra nova: não existe mais comissão do produto.
+ * Mantemos o campo por compatibilidade, mas sempre 0.
+ */
 function getCommissionPct() {
-  const raw = Number(process.env.APP_COMMISSION_PCT ?? 3.5);
-  if (!Number.isFinite(raw) || raw < 0) return 3.5;
-  return raw;
+  return 0;
 }
 
 function getOwnerUserId(req) {
@@ -97,7 +99,6 @@ function toPublicWithdrawDetail(doc, { includeGateway = false } = {}) {
     pix: {
       type: doc?.pix?.type,
       key: doc?.pix?.key,
-      // compat (se existir no banco)
       description: doc?.pix?.description,
     },
     createdAt: doc.createdAt,
@@ -115,7 +116,6 @@ function makeExternalId(workspaceId) {
 
 /**
  * GET /api/withdraw/config
- * -> fonte para UI (fee/min)
  */
 router.get("/withdraw/config", async (_req, res) => {
   res.set(
@@ -126,7 +126,7 @@ router.get("/withdraw/config", async (_req, res) => {
   res.set("Expires", "0");
   return res.json({
     ok: true,
-    feePct: getCommissionPct(),
+    feePct: 0,
     minNetCents: MIN_NET_CENTS,
   });
 });
@@ -167,10 +167,10 @@ router.post("/withdraw/create", async (req, res, next) => {
         .json({ ok: false, error: "grossAmountCents inválido." });
     }
 
-    const feePct = getCommissionPct();
+    const feePct = getCommissionPct(); // sempre 0
     const grossCents = Math.round(grossAmountCents);
-    const feeCents = Math.round(grossCents * (feePct / 100));
-    const netCents = grossCents - feeCents;
+    const feeCents = 0;
+    const netCents = grossCents;
 
     if (netCents < MIN_NET_CENTS) {
       return res.status(400).json({

@@ -19,6 +19,7 @@ import {
 } from "../services/abacatepayClient.js";
 
 import { notifySellerPixPaid } from "../services/resendEmail.js";
+import { assertPixQuotaAvailable, debitPix } from "../utils/pixQuota.js";
 
 const router = express.Router();
 
@@ -400,6 +401,17 @@ async function markAsPaid({
     }
   } catch (err) {
     console.error("[pix] failed to send paid email", err);
+  }
+
+  // ✅ Pix quota: debita 1 por Pix pago (idempotente e atômico)
+  try {
+    const wsId = offerRaw?.workspaceId ? String(offerRaw.workspaceId) : "";
+    const paymentId = String(pix?.id || "").trim();
+    if (wsId && paymentId) {
+      await debitPix(wsId, paymentId);
+    }
+  } catch (err) {
+    console.warn("[pix] quota debit failed", err?.message || err);
   }
 
   return paidAtIso;
@@ -1039,6 +1051,25 @@ router.post("/p/:token/pix/create", async (req, res, next) => {
         Math.max(60, remainingHoldSec),
         Math.max(60, PIX_EXPIRES_IN),
       );
+    }
+
+    // ✅ quota pré-check (antes de criar NOVA cobrança Pix)
+    if (!offerRaw?.workspaceId) {
+      return res
+        .status(500)
+        .json({ ok: false, error: "Oferta sem workspaceId (tenant)." });
+    }
+
+    try {
+      await assertPixQuotaAvailable(String(offerRaw.workspaceId));
+    } catch (err) {
+      const status = Number(err?.status) || 402;
+      return res.status(status).json({
+        ok: false,
+        error:
+          err?.message ||
+          "Sua cota de Pix do mês acabou. Faça upgrade do plano.",
+      });
     }
 
     const metadata = { externalId: String(effectiveBookingId) };

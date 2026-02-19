@@ -10,6 +10,15 @@ import { User } from "../models/User.js";
 import { Workspace } from "../models/Workspace.js";
 import { authOptional, ensureAuth } from "../middleware/auth.js";
 
+import {
+  normalizePlan,
+  limitForPlan,
+  cycleKeySP,
+  ensureWorkspaceCycle,
+  summarizeWorkspaceQuota,
+  ensurePixMonthlyLimit,
+} from "../utils/pixQuota.js";
+
 const r = Router();
 
 // ✅ popula req.user quando houver Bearer token (necessário para /auth/me)
@@ -42,13 +51,6 @@ async function uniqueWorkspaceSlug(base) {
   return undefined;
 }
 
-function normPlan(v) {
-  const p = String(v || "free")
-    .trim()
-    .toLowerCase();
-  return p === "premium" ? "premium" : "free";
-}
-
 function signToken(user) {
   return jwt.sign(
     {
@@ -71,13 +73,26 @@ r.post(
       String(req.body?.workspaceName || "").trim() ||
       (name ? `${name}` : "Meu Workspace");
 
-    // ✅ plano escolhido no cadastro
-    const plan = normPlan(req.body?.plan);
+    // ✅ novo plano (com compat)
+    const plan = normalizePlan(req.body?.plan);
+
+    // enterprise pode mandar limite configurável (>0)
+    const enterpriseLimit = Number(req.body?.pixMonthlyLimit);
+    const pixMonthlyLimit = limitForPlan(plan, enterpriseLimit);
 
     if (!email)
       return res.status(400).json({ ok: false, error: "email required" });
     if (!password || password.length < 6)
       return res.status(400).json({ ok: false, error: "password min 6 chars" });
+
+    if (plan === "enterprise") {
+      if (!Number.isFinite(pixMonthlyLimit) || pixMonthlyLimit <= 0) {
+        return res.status(400).json({
+          ok: false,
+          error: "enterprise requer pixMonthlyLimit > 0",
+        });
+      }
+    }
 
     const exists = await User.exists({ email });
     if (exists)
@@ -86,10 +101,11 @@ r.post(
     const session = await mongoose.startSession();
     let userDoc;
     let wsSlug;
+    let workspaceId;
 
     await session.withTransaction(async () => {
       const userId = new mongoose.Types.ObjectId();
-      const workspaceId = new mongoose.Types.ObjectId();
+      workspaceId = new mongoose.Types.ObjectId();
 
       const passwordHash = await bcrypt.hash(password, 10);
       wsSlug = await uniqueWorkspaceSlug(workspaceName);
@@ -101,7 +117,9 @@ r.post(
             name: workspaceName,
             slug: wsSlug,
             ownerUserId: userId,
-            plan, // ✅ salva plano no workspace
+            plan,
+            pixMonthlyLimit,
+            pixUsage: { cycleKey: cycleKeySP(), used: 0 },
           },
         ],
         { session },
@@ -127,6 +145,9 @@ r.post(
 
     session.endSession();
 
+    const ws = await Workspace.findById(workspaceId).lean();
+    const quota = ws ? summarizeWorkspaceQuota(ws) : null;
+
     const token = signToken(userDoc);
     return res.json({
       ok: true,
@@ -139,12 +160,18 @@ r.post(
         role: userDoc.role,
         status: userDoc.status,
       },
-      workspace: {
-        _id: userDoc.workspaceId,
-        name: workspaceName,
-        slug: wsSlug,
-        plan,
-      },
+      workspace: ws
+        ? {
+            _id: ws._id,
+            name: ws.name,
+            slug: ws.slug,
+            plan: normalizePlan(ws.plan),
+            pixMonthlyLimit: quota?.limit ?? ws.pixMonthlyLimit,
+            cycleKey: quota?.cycleKey ?? "",
+            pixUsedThisCycle: quota?.used ?? 0,
+            pixRemaining: quota?.remaining ?? 0,
+          }
+        : null,
     });
   }),
 );
@@ -167,7 +194,12 @@ r.post(
     if (!ok)
       return res.status(401).json({ ok: false, error: "invalid credentials" });
 
+    // ✅ garante ciclo correto e limite preenchido
+    await ensureWorkspaceCycle(user.workspaceId);
+    await ensurePixMonthlyLimit(user.workspaceId);
+
     const ws = await Workspace.findById(user.workspaceId).lean();
+    const quota = ws ? summarizeWorkspaceQuota(ws) : null;
 
     const token = signToken(user);
     return res.json({
@@ -182,7 +214,16 @@ r.post(
         status: user.status,
       },
       workspace: ws
-        ? { _id: ws._id, name: ws.name, slug: ws.slug, plan: ws.plan }
+        ? {
+            _id: ws._id,
+            name: ws.name,
+            slug: ws.slug,
+            plan: normalizePlan(ws.plan),
+            pixMonthlyLimit: quota?.limit ?? ws.pixMonthlyLimit,
+            cycleKey: quota?.cycleKey ?? "",
+            pixUsedThisCycle: quota?.used ?? 0,
+            pixRemaining: quota?.remaining ?? 0,
+          }
         : null,
     });
   }),
@@ -192,7 +233,11 @@ r.get(
   "/auth/me",
   ensureAuth,
   asyncHandler(async (req, res) => {
+    await ensureWorkspaceCycle(req.user.workspaceId);
+    await ensurePixMonthlyLimit(req.user.workspaceId);
+
     const ws = await Workspace.findById(req.user.workspaceId).lean();
+    const quota = ws ? summarizeWorkspaceQuota(ws) : null;
 
     return res.json({
       ok: true,
@@ -205,7 +250,16 @@ r.get(
         status: req.user.status,
       },
       workspace: ws
-        ? { _id: ws._id, name: ws.name, slug: ws.slug, plan: ws.plan }
+        ? {
+            _id: ws._id,
+            name: ws.name,
+            slug: ws.slug,
+            plan: normalizePlan(ws.plan),
+            pixMonthlyLimit: quota?.limit ?? ws.pixMonthlyLimit,
+            cycleKey: quota?.cycleKey ?? "",
+            pixUsedThisCycle: quota?.used ?? 0,
+            pixRemaining: quota?.remaining ?? 0,
+          }
         : null,
     });
   }),
