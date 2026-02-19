@@ -302,8 +302,10 @@ router.post("/webhooks/abacatepay", async (req, res, next) => {
 
     // 1) Secret na URL
     const webhookSecret = req.query.webhookSecret;
-    const expectedSecret =
-      process.env.WEBHOOK_SECRET || process.env.ABACATEPAY_WEBHOOK_SECRET;
+    const expectedSecret = process.env.ABACATEPAY_WEBHOOK_SECRET;
+
+    console.log("meu env. " + expectedSecret);
+    console.log("o que vem na url + " + webhookSecret);
 
     if (expectedSecret && webhookSecret !== expectedSecret) {
       console.log("[abacatepay webhook] rejected: invalid secret", {
