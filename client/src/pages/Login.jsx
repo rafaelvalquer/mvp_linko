@@ -13,9 +13,9 @@ export default function Login() {
 
   const nav = useNavigate();
   const loc = useLocation();
-  const next = new URLSearchParams(loc.search).get("next") || "/";
+  const next = new URLSearchParams(loc.search).get("next") || "/dashboard";
 
-  if (user) return <Navigate to="/" replace />;
+  if (user) return <Navigate to="/dashboard" replace />;
 
   async function onSubmit(e) {
     e.preventDefault();

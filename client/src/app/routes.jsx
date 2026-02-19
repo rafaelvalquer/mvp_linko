@@ -1,6 +1,8 @@
 //src/app/routes.jsx
 import { createBrowserRouter } from "react-router-dom";
 
+import Home from "../pages/Home.jsx";
+
 import Dashboard from "../pages/Dashboard.jsx";
 import Offers from "../pages/Offers.jsx";
 import NewOffer from "../pages/NewOffer.jsx";
@@ -24,9 +26,10 @@ export const router = createBrowserRouter(
   [
     { path: "/login", element: <Login /> },
     { path: "/register", element: <Register /> },
+    { path: "/", element: <Home /> },
 
     {
-      path: "/",
+      path: "/dashboard",
       element: (
         <RequireAuth>
           <Dashboard />
