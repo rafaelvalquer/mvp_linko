@@ -66,6 +66,8 @@ export function createApp() {
   // arquivos estáticos (imagens de produtos)
   app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
 
+  app.use("/api", webhooksAbacatepayRoutes);
+
   // Se tiver Bearer token válido, popula req.user (senão segue)
   app.use(authOptional);
 
@@ -75,7 +77,7 @@ export function createApp() {
   app.use("/api", publicRoutes);
   app.use("/api", bookingsRoutes);
   app.use("/api", withdrawRoutes);
-  app.use("/api", webhooksAbacatepayRoutes);
+
   app.use("/api", productsRoutes);
   app.use("/api", clientsRoutes);
   app.use("/api", settingsRoutes);
