@@ -191,7 +191,7 @@ export default function Sidebar() {
       </div>
 
       <nav className="space-y-1">
-        <Item to="/" icon={Icons.Dashboard}>
+        <Item to="/dashboard" icon={Icons.Dashboard}>
           Dashboard
         </Item>
 
