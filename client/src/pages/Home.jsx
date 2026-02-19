@@ -30,6 +30,7 @@ import {
 
 import AnimatedSection from "../components/marketing/AnimatedSection";
 import HeroPreview from "../components/marketing/HeroPreview";
+import brandLogo from "../assets/brand.png";
 
 const Logo = ({ className }) => (
   <svg
@@ -282,13 +283,18 @@ export default function Home() {
               className="flex items-center gap-2 group"
               aria-label="LuminorPay"
             >
-              <Logo className="h-9 w-9 transition-transform group-hover:scale-110" />
+              <img
+                src={brandLogo}
+                alt="LuminorPay"
+                className="h-9 w-9 rounded-xl object-contain transition-transform group-hover:scale-110"
+                loading="eager"
+                draggable="false"
+              />
               <span className="text-xl font-black tracking-tighter">
                 Luminor<span className="text-emerald-500">Pay</span>
               </span>
             </Link>
           </div>
-
           {/* Center: Nav links (desktop) */}
           <div className="hidden lg:flex lg:gap-x-10 ml-10">
             {navLinks.map((item) => (
@@ -301,7 +307,6 @@ export default function Home() {
               </a>
             ))}
           </div>
-
           {/* Right: Auth buttons (always right) */}
           <div className="ml-auto flex items-center gap-2 sm:gap-3">
             <Link
@@ -711,7 +716,13 @@ export default function Home() {
       <footer className="py-14 border-t border-zinc-100">
         <div className="mx-auto max-w-7xl px-6 text-center text-sm text-zinc-500">
           <div className="flex justify-center items-center gap-2 mb-5">
-            <Logo className="h-8 w-8" />
+            <img
+              src={brandLogo}
+              alt="LuminorPay"
+              className="h-9 w-9 rounded-xl object-contain transition-transform group-hover:scale-110"
+              loading="eager"
+              draggable="false"
+            />
             <span className="font-black text-zinc-900 text-base">
               LuminorPay
             </span>
