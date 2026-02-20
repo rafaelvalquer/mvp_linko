@@ -69,7 +69,10 @@ export function createApp() {
   // arquivos estáticos (imagens de produtos)
   app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
 
+  // webhooks (AbacatePay)
   app.use("/api", webhooksAbacatepayRoutes);
+  // webhooks (Stripe)
+  app.use("/api", webhooksStripeRoutes);
 
   // Se tiver Bearer token válido, popula req.user (senão segue)
   app.use(authOptional);
@@ -87,8 +90,6 @@ export function createApp() {
 
   // billing (Stripe)
   app.use("/api", billingStripeRoutes);
-  // webhooks (Stripe)
-  app.use("/api", webhooksStripeRoutes);
 
   app.use((err, _req, res, _next) => {
     console.error(err);
