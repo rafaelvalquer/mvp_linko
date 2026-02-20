@@ -9,14 +9,7 @@ export function login({ email, password }) {
   });
 }
 
-export function register({
-  name,
-  email,
-  password,
-  workspaceName,
-  plan,
-  pixMonthlyLimit, // opcional (enterprise)
-}) {
+export function register({ name, email, password, workspaceName }) {
   return api("/auth/register", {
     method: "POST",
     body: JSON.stringify({
@@ -24,8 +17,6 @@ export function register({
       email,
       password,
       workspaceName,
-      plan,
-      ...(Number.isFinite(pixMonthlyLimit) ? { pixMonthlyLimit } : {}),
     }),
   });
 }

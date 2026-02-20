@@ -1,37 +1,76 @@
 // src/pages/BillingSuccess.jsx
-import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams, Link } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../app/api.js";
+import { useAuth } from "../app/AuthContext.jsx";
 
 export default function BillingSuccess() {
   const [sp] = useSearchParams();
   const sessionId = sp.get("session_id") || "";
   const nav = useNavigate();
+  const { refreshWorkspace, refreshBilling } = useAuth();
 
   const [status, setStatus] = useState(null);
   const [error, setError] = useState("");
+  const [phase, setPhase] = useState("confirming"); // confirming | waiting | done
+
+  const canPoll = useMemo(() => !!sessionId, [sessionId]);
 
   useEffect(() => {
-    let alive = true;
+    if (!canPoll) return;
 
-    (async () => {
+    let alive = true;
+    let attempt = 0;
+    let timer = null;
+
+    async function step() {
+      attempt += 1;
+      setError("");
+
       try {
-        // Para MVP: basta ler status (webhook pode demorar alguns segundos)
-        const s = await api("/billing/stripe/status");
+        // 1) confirma/valida ownership + tenta sincronizar do Stripe (fallback)
+        const conf = await api(
+          `/billing/stripe/confirm?session_id=${encodeURIComponent(sessionId)}`,
+        );
+
         if (!alive) return;
-        setStatus(s);
-        // segue para dashboard
-        setTimeout(() => nav("/dashboard", { replace: true }), 800);
+
+        setStatus(conf);
+
+        const subStatus = String(
+          conf?.subscription?.status || "",
+        ).toLowerCase();
+        if (subStatus === "active") {
+          setPhase("done");
+
+          // atualiza context
+          await refreshWorkspace();
+          await refreshBilling();
+
+          nav("/dashboard", { replace: true });
+          return;
+        }
+
+        setPhase("waiting");
       } catch (e) {
         if (!alive) return;
-        setError(e?.data?.error || e?.message || "Falha ao confirmar status.");
+        setError(
+          e?.data?.error || e?.message || "Falha ao confirmar checkout.",
+        );
       }
-    })();
+
+      // backoff: 800ms -> 1500ms -> 2500ms -> 3500ms (cap)
+      const delay = Math.min(3500, 800 + attempt * 700);
+      timer = setTimeout(step, delay);
+    }
+
+    step();
 
     return () => {
       alive = false;
+      if (timer) clearTimeout(timer);
     };
-  }, [nav, sessionId]);
+  }, [canPoll, sessionId, nav, refreshWorkspace, refreshBilling]);
 
   return (
     <div className="min-h-screen bg-zinc-50 flex items-center justify-center px-4">
@@ -40,7 +79,11 @@ export default function BillingSuccess() {
           Pagamento confirmado
         </div>
         <div className="mt-2 text-sm text-zinc-600">
-          Atualizando assinatura e cota do seu workspace...
+          {phase === "confirming"
+            ? "Confirmando checkout e validando assinatura..."
+            : phase === "waiting"
+              ? "Aguardando ativação da assinatura (webhook pode levar alguns segundos)..."
+              : "Assinatura ativa. Redirecionando..."}
         </div>
 
         {error ? (

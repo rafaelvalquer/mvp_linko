@@ -5,11 +5,10 @@ import { Link } from "react-router-dom";
 
 function BillingInlineNotice() {
   const { subscriptionStatus, canCreatePix } = useAuth();
+  const s = String(subscriptionStatus || "").toLowerCase();
 
-  // só avisa quando o status é conhecido e não pode gerar Pix
   if (!subscriptionStatus || canCreatePix) return null;
 
-  const s = String(subscriptionStatus).toLowerCase();
   const title =
     s === "past_due"
       ? "Pagamento pendente"
@@ -28,10 +27,10 @@ function BillingInlineNotice() {
     <div className="col-span-12 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
       <div className="text-sm font-semibold">{title}</div>
       <div className="mt-1 text-sm">{desc}</div>
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="mt-3">
         <Link
           to="/billing/plans"
-          className="rounded-xl bg-zinc-900 px-3 py-2 text-xs font-semibold text-white hover:bg-zinc-800"
+          className="inline-flex rounded-xl bg-zinc-900 px-3 py-2 text-xs font-semibold text-white hover:bg-zinc-800"
         >
           Ver planos
         </Link>
@@ -46,11 +45,9 @@ export default function Shell({ children }) {
       <Topbar />
       <div className="mx-auto grid max-w-6xl grid-cols-12 gap-6 px-4 py-6">
         <BillingInlineNotice />
-
         <div className="col-span-12 md:col-span-3">
           <Sidebar />
         </div>
-
         <main className="col-span-12 md:col-span-9">{children}</main>
       </div>
     </div>

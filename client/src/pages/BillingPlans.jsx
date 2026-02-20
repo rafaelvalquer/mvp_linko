@@ -26,10 +26,11 @@ export default function BillingPlans() {
     setError("");
     setLoadingPlan(plan);
     try {
-      const data = await api("/billing/stripe/checkout", {
+      const data = await api("/billing/stripe/checkout-session", {
         method: "POST",
         body: JSON.stringify({ plan }),
       });
+
       if (data?.url) window.location.href = data.url;
       else setError("Checkout não retornou URL.");
     } catch (e) {

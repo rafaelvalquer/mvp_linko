@@ -22,6 +22,7 @@ import PublicPaidGuard from "../pages/PublicPaidGuard.jsx";
 import Withdraws from "../pages/Withdraws.jsx";
 import SettingsAgenda from "../pages/SettingsAgenda.jsx";
 
+// ✅ billing
 import BillingPlans from "../pages/BillingPlans.jsx";
 import BillingSuccess from "../pages/BillingSuccess.jsx";
 import BillingCancel from "../pages/BillingCancel.jsx";
@@ -32,7 +33,7 @@ export const router = createBrowserRouter(
     { path: "/register", element: <Register /> },
     { path: "/", element: <Home /> },
 
-    // Billing (área logada)
+    // ✅ Billing (protege)
     {
       path: "/billing/plans",
       element: (
@@ -135,7 +136,7 @@ export const router = createBrowserRouter(
       ),
     },
 
-    // PÚBLICO (guard redireciona para /done quando já estiver pago)
+    // PÚBLICO
     {
       path: "/p/:token",
       element: (

@@ -50,27 +50,22 @@ function normalizeWorkspace(wsRaw) {
     pixUsedThisCycle,
     pixRemaining,
     cycleKey: ws.cycleKey || "",
+    planStatus: ws.planStatus || "free",
     subscription: ws.subscription || null,
   };
 }
 
-function normalizeBilling(billingRaw) {
-  const b = billingRaw && typeof billingRaw === "object" ? billingRaw : null;
+function normalizeBilling(bRaw) {
+  const b = bRaw && typeof bRaw === "object" ? bRaw : null;
   if (!b?.ok) return null;
-
-  const plan = normalizePlan(b.plan);
-  const limit = getMonthlyLimit(plan, b.pixMonthlyLimit);
-
-  const used = Number(b.pixUsedThisCycle);
-  const remaining = Number(b.pixRemaining);
-
   return {
     ok: true,
-    plan,
-    pixMonthlyLimit: Number.isFinite(limit) ? limit : 0,
-    pixUsedThisCycle: Number.isFinite(used) ? used : 0,
-    pixRemaining: Number.isFinite(remaining) ? remaining : 0,
-    cycleKey: b.cycleKey || "",
+    plan: b.plan,
+    pixMonthlyLimit: b.pixMonthlyLimit,
+    pixUsedThisCycle: b.pixUsedThisCycle,
+    pixRemaining: b.pixRemaining,
+    cycleKey: b.cycleKey,
+    planStatus: b.planStatus,
     subscription: b.subscription || null,
   };
 }
@@ -81,7 +76,6 @@ export function AuthProvider({ children }) {
 
   const [user, setUser] = useState(null);
   const [workspace, setWorkspace] = useState(null);
-
   const [billing, setBilling] = useState(null);
 
   const signOut = useCallback(() => {
@@ -102,31 +96,28 @@ export function AuthProvider({ children }) {
 
     setLoadingBilling(true);
     try {
-      const d = await api("/billing/stripe/status");
-      const b = normalizeBilling(d);
+      const s = await api("/billing/stripe/status");
+      const b = normalizeBilling(s);
       setBilling(b);
 
-      // Merge billing -> workspace (para Topbar/QuotaBadge)
       if (b) {
         setWorkspace((prev) => {
           const base = prev && typeof prev === "object" ? prev : {};
-          const merged = {
+          return normalizeWorkspace({
             ...base,
-            plan: b.plan,
-            pixMonthlyLimit: b.pixMonthlyLimit,
-            pixUsedThisCycle: b.pixUsedThisCycle,
-            pixRemaining: b.pixRemaining,
-            cycleKey: b.cycleKey,
-            subscription: b.subscription || base.subscription || null,
-          };
-          return normalizeWorkspace(merged);
+            plan: b.plan ?? base.plan,
+            pixMonthlyLimit: b.pixMonthlyLimit ?? base.pixMonthlyLimit,
+            pixUsedThisCycle: b.pixUsedThisCycle ?? base.pixUsedThisCycle,
+            pixRemaining: b.pixRemaining ?? base.pixRemaining,
+            cycleKey: b.cycleKey ?? base.cycleKey,
+            planStatus: b.planStatus ?? base.planStatus,
+            subscription: b.subscription ?? base.subscription,
+          });
         });
       }
 
       return b;
-    } catch (e) {
-      // Se billing ainda não estiver plugado no backend, não derruba o app.
-      // Apenas não exibe status.
+    } catch {
       setBilling(null);
       return null;
     } finally {
@@ -151,7 +142,7 @@ export function AuthProvider({ children }) {
       setUser(d?.user || null);
       setWorkspace(ws);
 
-      // Carrega billing depois do /me (não bloqueia login)
+      // carrega billing em paralelo
       refreshBilling().catch(() => {});
       return ws;
     } catch (e) {
@@ -181,25 +172,23 @@ export function AuthProvider({ children }) {
       setWorkspace(ws);
       setLoadingMe(false);
 
+      // se login não vier completo, busca /me
       if (!ws) await refreshWorkspace();
 
-      // tenta carregar billing sempre após login
+      // atualiza billing (status assinatura/limites)
       refreshBilling().catch(() => {});
       return d;
     },
     [refreshWorkspace, refreshBilling],
   );
 
-  // ✅ ADD: signUp para o Register.jsx
   const signUp = useCallback(
-    async ({ name, email, password, workspaceName, plan, pixMonthlyLimit }) => {
+    async ({ name, email, password, workspaceName }) => {
       const d = await authApi.register({
         name,
         email,
         password,
         workspaceName,
-        plan,
-        pixMonthlyLimit,
       });
 
       const token =
@@ -225,17 +214,16 @@ export function AuthProvider({ children }) {
     [refreshWorkspace, refreshBilling],
   );
 
-  // boot: se houver token, carrega /me
   useEffect(() => {
     refreshWorkspace();
   }, [refreshWorkspace]);
 
   const subscriptionStatus =
-    billing?.subscription?.status || workspace?.subscription?.status || null;
+    billing?.subscription?.status ||
+    workspace?.subscription?.status ||
+    "inactive";
 
-  // Só bloqueia visualmente se conhecemos o status
-  const billingKnown = !!subscriptionStatus;
-  const canCreatePix = billingKnown ? subscriptionStatus === "active" : true;
+  const canCreatePix = subscriptionStatus === "active";
 
   const perms = useMemo(() => {
     const plan = workspace?.plan || "start";

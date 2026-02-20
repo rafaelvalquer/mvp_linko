@@ -1,11 +1,10 @@
 //src/pages/Login.jsx
-
 import { useState } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../app/AuthContext.jsx";
 
 export default function Login() {
-  const { user, signIn } = useAuth();
+  const { user, signIn, subscriptionStatus } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -13,7 +12,7 @@ export default function Login() {
 
   const nav = useNavigate();
   const loc = useLocation();
-  const next = new URLSearchParams(loc.search).get("next") || "/dashboard";
+  const nextParam = new URLSearchParams(loc.search).get("next");
 
   if (user) return <Navigate to="/dashboard" replace />;
 
@@ -23,7 +22,11 @@ export default function Login() {
     setLoading(true);
     try {
       await signIn({ email, password });
-      nav(next, { replace: true });
+
+      // ✅ se o usuário não tem assinatura ativa, manda para planos (quando não há next explícito)
+      const s = String(subscriptionStatus || "").toLowerCase();
+      const fallback = s === "active" ? "/dashboard" : "/billing/plans";
+      nav(nextParam || fallback, { replace: true });
     } catch (err) {
       setError(err?.message || "Falha ao entrar.");
     } finally {
@@ -36,7 +39,7 @@ export default function Login() {
       <div className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
         <h1 className="text-xl font-semibold text-zinc-900">Entrar</h1>
         <p className="mt-1 text-sm text-zinc-500">
-          Acesse sua conta para ver o Dashboard.
+          Acesse sua conta para continuar.
         </p>
 
         {error ? (
@@ -79,10 +82,7 @@ export default function Login() {
 
         <div className="mt-4 text-sm text-zinc-600">
           Não tem conta?{" "}
-          <Link
-            className="text-zinc-900 underline"
-            to={`/register?next=${encodeURIComponent(next)}`}
-          >
+          <Link className="text-zinc-900 underline" to="/register">
             Criar conta
           </Link>
         </div>

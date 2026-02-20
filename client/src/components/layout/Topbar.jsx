@@ -4,8 +4,6 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../app/AuthContext.jsx";
 import { api } from "../../app/api.js";
 import QuotaBadge from "../QuotaBadge.jsx";
-
-// ajuste o caminho conforme seu projeto
 import brandLogo from "../../assets/brand.png";
 
 function StatusBadge({ status, loading }) {
@@ -40,49 +38,6 @@ function StatusBadge({ status, loading }) {
   );
 }
 
-function BillingAlert({ status, onManage, hasPortal }) {
-  const s = String(status || "").toLowerCase();
-  if (!s || s === "active") return null;
-
-  const isPastDue = s === "past_due";
-  const isInactive = s === "inactive";
-  const isCanceled = s === "canceled";
-
-  const msg = isPastDue
-    ? "Pagamento pendente. Geração de Pix bloqueada até regularização."
-    : isInactive
-      ? "Assinatura inativa. Assine um plano para gerar cobranças Pix."
-      : isCanceled
-        ? "Assinatura cancelada. Assine novamente para voltar a gerar Pix."
-        : "Assinatura com restrição. Regularize para continuar.";
-
-  return (
-    <div className="border-t border-amber-200 bg-amber-50">
-      <div className="mx-auto flex max-w-7xl flex-col gap-2 px-4 py-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="text-sm font-medium text-amber-900">{msg}</div>
-        <div className="flex gap-2">
-          <Link
-            to="/billing/plans"
-            className="rounded-xl bg-zinc-900 px-3 py-2 text-xs font-semibold text-white hover:bg-zinc-800"
-          >
-            Ver planos
-          </Link>
-
-          {hasPortal ? (
-            <button
-              type="button"
-              onClick={onManage}
-              className="rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100"
-            >
-              Gerenciar assinatura
-            </button>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function Topbar({ title = "PayLink" }) {
   const {
     user,
@@ -100,8 +55,6 @@ export default function Topbar({ title = "PayLink" }) {
     (user?.name && String(user.name).trim()) || user?.email || "";
 
   const remaining = workspace?.pixRemaining;
-  const limit = workspace?.pixMonthlyLimit;
-
   const flags = useMemo(() => {
     const r = Number(remaining);
     if (!Number.isFinite(r)) return { low: false, empty: false };
@@ -110,6 +63,10 @@ export default function Topbar({ title = "PayLink" }) {
 
   const stripeCustomerId = workspace?.subscription?.stripeCustomerId || "";
   const hasPortal = !!stripeCustomerId;
+
+  const s = String(subscriptionStatus || "").toLowerCase();
+  const needsAttention = s !== "active";
+  const isPastDue = s === "past_due";
 
   function handleLogout() {
     signOut?.();
@@ -134,7 +91,6 @@ export default function Topbar({ title = "PayLink" }) {
   return (
     <div className="sticky top-0 z-40 border-b border-zinc-200 bg-white/80 backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
-        {/* LEFT */}
         <div className="flex items-center gap-4">
           <Link
             to={user ? "/dashboard" : "/"}
@@ -154,7 +110,7 @@ export default function Topbar({ title = "PayLink" }) {
             <div className="text-base font-bold tracking-tight text-zinc-900">
               <Link to={user ? "/dashboard" : "/"}>{title}</Link>
             </div>
-            <div className="text-[10px] font-medium uppercase tracking-wider text-zinc-400">
+            <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-medium">
               Propostas • Agenda • Pix
             </div>
           </div>
@@ -166,7 +122,6 @@ export default function Topbar({ title = "PayLink" }) {
           ) : null}
         </div>
 
-        {/* RIGHT */}
         <div className="flex items-center gap-3">
           <div className="hidden sm:block">
             <QuotaBadge
@@ -179,7 +134,6 @@ export default function Topbar({ title = "PayLink" }) {
             />
           </div>
 
-          {/* quota badge (mobile compacto) */}
           <div className="sm:hidden">
             <QuotaBadge
               plan={workspace?.plan}
@@ -192,12 +146,10 @@ export default function Topbar({ title = "PayLink" }) {
             />
           </div>
 
-          {/* Status da assinatura */}
           <div className="hidden md:block">
             <StatusBadge status={subscriptionStatus} loading={loadingBilling} />
           </div>
 
-          {/* Portal */}
           {user && hasPortal ? (
             <button
               type="button"
@@ -212,8 +164,17 @@ export default function Topbar({ title = "PayLink" }) {
 
           {user ? (
             <>
+              {needsAttention ? (
+                <Link
+                  to="/billing/plans"
+                  className="rounded-xl bg-zinc-900 px-3 py-2 text-xs font-semibold text-white hover:bg-zinc-800"
+                >
+                  {isPastDue ? "Regularizar" : "Assinar plano"}
+                </Link>
+              ) : null}
+
               <div className="hidden sm:block text-right">
-                <div className="text-[10px] font-bold uppercase text-zinc-400">
+                <div className="text-[10px] uppercase text-zinc-400 font-bold">
                   Usuário logado
                 </div>
                 <div className="text-sm font-medium text-zinc-700">
@@ -224,25 +185,28 @@ export default function Topbar({ title = "PayLink" }) {
               <button
                 type="button"
                 onClick={handleLogout}
-                className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2 text-xs font-semibold text-zinc-600 transition-all hover:border-red-100 hover:bg-red-50 hover:text-red-600"
+                className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2 text-xs font-semibold text-zinc-600 transition-all hover:bg-red-50 hover:text-red-600 hover:border-red-100"
               >
                 Sair
               </button>
             </>
           ) : (
-            <div className="rounded-full border border-zinc-100 bg-zinc-50 px-3 py-1 text-xs font-medium text-zinc-400">
+            <div className="text-xs font-medium text-zinc-400 bg-zinc-50 px-3 py-1 rounded-full border border-zinc-100">
               Modo Visualização
             </div>
           )}
         </div>
       </div>
 
-      {/* Banner de bloqueio por assinatura */}
-      <BillingAlert
-        status={subscriptionStatus}
-        hasPortal={hasPortal}
-        onManage={openPortal}
-      />
+      {user && needsAttention ? (
+        <div className="border-t border-amber-200 bg-amber-50">
+          <div className="mx-auto max-w-7xl px-4 py-2 text-sm text-amber-900">
+            {isPastDue
+              ? "Pagamento pendente. Geração de Pix bloqueada até regularização."
+              : "Assinatura inativa. Assine um plano para liberar cobranças Pix."}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
