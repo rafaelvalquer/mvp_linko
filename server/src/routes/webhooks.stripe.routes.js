@@ -50,6 +50,8 @@ function pickPriceIdFromSubscription(sub) {
 r.post("/webhooks/stripe", async (req, res) => {
   const stripe = getStripe();
 
+  console.log(req + res);
+
   const sig = req.headers["stripe-signature"];
   const whsec = process.env.STRIPE_WEBHOOK_SECRET;
 
@@ -62,23 +64,19 @@ r.post("/webhooks/stripe", async (req, res) => {
       .status(400)
       .json({ ok: false, error: "Stripe-Signature ausente." });
   if (!req.rawBody)
-    return res
-      .status(400)
-      .json({
-        ok: false,
-        error: "rawBody ausente (ver app.js express.json verify).",
-      });
+    return res.status(400).json({
+      ok: false,
+      error: "rawBody ausente (ver app.js express.json verify).",
+    });
 
   let event;
   try {
     event = stripe.webhooks.constructEvent(req.rawBody, sig, whsec);
   } catch (e) {
-    return res
-      .status(400)
-      .json({
-        ok: false,
-        error: `Assinatura inválida: ${e?.message || "erro"}`,
-      });
+    return res.status(400).json({
+      ok: false,
+      error: `Assinatura inválida: ${e?.message || "erro"}`,
+    });
   }
 
   // idempotência por eventId
@@ -95,12 +93,10 @@ r.post("/webhooks/stripe", async (req, res) => {
     if (e?.code === 11000) {
       return res.json({ ok: true, duplicated: true });
     }
-    return res
-      .status(500)
-      .json({
-        ok: false,
-        error: e?.message || "Falha ao registrar StripeEvent.",
-      });
+    return res.status(500).json({
+      ok: false,
+      error: e?.message || "Falha ao registrar StripeEvent.",
+    });
   }
 
   try {
@@ -311,12 +307,10 @@ r.post("/webhooks/stripe", async (req, res) => {
     return res.json({ ok: true, ignored: true, type: event.type });
   } catch (e) {
     // webhook deve responder 2xx quando possível, mas aqui registramos erro
-    return res
-      .status(500)
-      .json({
-        ok: false,
-        error: e?.message || "Erro ao processar webhook Stripe.",
-      });
+    return res.status(500).json({
+      ok: false,
+      error: e?.message || "Erro ao processar webhook Stripe.",
+    });
   }
 });
 
