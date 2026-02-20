@@ -20,8 +20,6 @@ export function httpError(status, message, details) {
 
 /**
  * cycleKey "YYYY-MM-DD" em America/Sao_Paulo
- * Importante: agora representa o INÍCIO DO CICLO da assinatura (anchor),
- * e não o mês calendário.
  */
 export function cycleKeySP(date = new Date()) {
   const dtf = new Intl.DateTimeFormat("en-CA", {
@@ -30,29 +28,16 @@ export function cycleKeySP(date = new Date()) {
     month: "2-digit",
     day: "2-digit",
   });
-  const parts = dtf.formatToParts(date);
-  const year = parts.find((p) => p.type === "year")?.value;
-  const month = parts.find((p) => p.type === "month")?.value;
-  const day = parts.find((p) => p.type === "day")?.value;
-  return `${year}-${month}-${day}`;
+  return dtf.format(date);
 }
 
-/**
- * Normaliza plano (compat):
- * - free -> start
- * - premium -> pro
- */
 export function normalizePlan(v) {
   const p = String(v || "")
     .trim()
     .toLowerCase();
   if (!p) return "start";
-
-  if (p === "start" || p === "pro" || p === "business" || p === "enterprise") {
+  if (p === "start" || p === "pro" || p === "business" || p === "enterprise")
     return p;
-  }
-
-  // fallback seguro
   return "start";
 }
 
@@ -67,12 +52,7 @@ export function limitForPlan(planRaw, enterpriseLimitRaw) {
   return PLAN_LIMITS[plan] ?? PLAN_LIMITS.start;
 }
 
-/**
- * cycleKey esperado:
- * - Se assinatura tiver currentPeriodStart => usa ele (anchor)
- * - Senão => usa agora (fallback)
- */
-export function expectedCycleKey(ws) {
+function expectedCycleKey(ws) {
   const cps = ws?.subscription?.currentPeriodStart
     ? new Date(ws.subscription.currentPeriodStart)
     : null;
@@ -81,9 +61,13 @@ export function expectedCycleKey(ws) {
   return cycleKeySP(new Date());
 }
 
+/**
+ * Só garante limite automaticamente quando assinatura está active.
+ * Se estiver inactive/past_due/canceled, mantemos o que está no banco (normalmente 0).
+ */
 export async function ensurePixMonthlyLimit(workspaceId, session) {
   const ws = await Workspace.findById(workspaceId)
-    .select("plan pixMonthlyLimit")
+    .select("plan planStatus pixMonthlyLimit subscription.status")
     .session(session || null);
 
   if (!ws) throw httpError(404, "Workspace não encontrado.");
@@ -91,7 +75,23 @@ export async function ensurePixMonthlyLimit(workspaceId, session) {
   const plan = normalizePlan(ws.plan);
   const current = Number(ws.pixMonthlyLimit);
 
-  // enterprise: não sobrescreve automaticamente
+  const subStatus = String(
+    ws?.subscription?.status || "inactive",
+  ).toLowerCase();
+  const active = subStatus === "active" && ws.planStatus === "active";
+
+  if (!active) {
+    // se não tiver valor coerente, zera
+    if (!Number.isFinite(current) || current < 0) {
+      await Workspace.updateOne(
+        { _id: workspaceId },
+        { $set: { pixMonthlyLimit: 0 } },
+        { session: session || undefined },
+      );
+    }
+    return;
+  }
+
   if (plan === "enterprise") return;
 
   const should = limitForPlan(plan);
@@ -105,12 +105,11 @@ export async function ensurePixMonthlyLimit(workspaceId, session) {
 }
 
 /**
- * Reseta o ciclo SOMENTE quando o expectedCycleKey(ws) mudar.
- * Isso evita reset indevido em virada de mês calendário.
+ * Reseta o ciclo apenas quando o expectedCycleKey mudar (baseado no currentPeriodStart).
  */
 export async function ensureWorkspaceCycle(workspaceId, session) {
   const ws = await Workspace.findById(workspaceId)
-    .select("pixUsage subscription.currentPeriodStart subscription.status")
+    .select("pixUsage subscription.currentPeriodStart")
     .session(session || null)
     .lean();
 
@@ -131,30 +130,24 @@ export async function ensureWorkspaceCycle(workspaceId, session) {
 }
 
 export function summarizeWorkspaceQuota(ws) {
-  const ck = expectedCycleKey(ws);
+  if (!ws) return { cycleKey: cycleKeySP(), used: 0, limit: 0, remaining: 0 };
+
+  const nowCk = expectedCycleKey(ws);
 
   const storedCk = ws?.pixUsage?.cycleKey || "";
   const storedUsed = Number(ws?.pixUsage?.used ?? 0);
-  const used = storedCk === ck && Number.isFinite(storedUsed) ? storedUsed : 0;
+  const used =
+    storedCk === nowCk && Number.isFinite(storedUsed) ? storedUsed : 0;
 
-  const plan = normalizePlan(ws?.plan);
-  const rawLimit = Number(ws?.pixMonthlyLimit);
+  const rawLimit = Number(ws.pixMonthlyLimit);
   const limit =
-    Number.isFinite(rawLimit) && rawLimit > 0
-      ? Math.trunc(rawLimit)
-      : plan === "enterprise"
-        ? 0
-        : limitForPlan(plan);
+    Number.isFinite(rawLimit) && rawLimit >= 0 ? Math.trunc(rawLimit) : 0;
 
-  const remaining = Math.max(0, limit - used);
-
-  return { cycleKey: ck, used, limit, remaining };
+  return { cycleKey: nowCk, used, limit, remaining: Math.max(0, limit - used) };
 }
 
 /**
- * Pré-check (bloqueio antes de criar cobrança Pix):
- * - exige assinatura ativa
- * - exige quota disponível
+ * Bloqueio antes de criar Pix: exige assinatura ativa.
  */
 export async function assertPixQuotaAvailable(workspaceId) {
   if (!workspaceId) throw httpError(400, "workspaceId ausente.");
@@ -164,21 +157,22 @@ export async function assertPixQuotaAvailable(workspaceId) {
 
   const ws = await Workspace.findById(workspaceId)
     .select(
-      "plan pixMonthlyLimit pixUsage subscription.status subscription.currentPeriodStart subscription.currentPeriodEnd",
+      "plan planStatus pixMonthlyLimit pixUsage subscription.status subscription.currentPeriodEnd",
     )
     .lean();
 
   if (!ws) throw httpError(404, "Workspace não encontrado.");
 
-  const subStatus = ws?.subscription?.status || "inactive";
-  if (subStatus !== "active") {
+  const subStatus = String(
+    ws?.subscription?.status || "inactive",
+  ).toLowerCase();
+  const active = subStatus === "active" && ws.planStatus === "active";
+
+  if (!active) {
     throw httpError(
       402,
       "Assinatura inativa ou pagamento pendente. Regularize para continuar.",
-      {
-        subscriptionStatus: subStatus,
-        currentPeriodEnd: ws?.subscription?.currentPeriodEnd || null,
-      },
+      { subscriptionStatus: subStatus, planStatus: ws.planStatus },
     );
   }
 
@@ -187,17 +181,14 @@ export async function assertPixQuotaAvailable(workspaceId) {
   if (quota.remaining <= 0) {
     throw httpError(
       402,
-      "Sua cota de Pix do ciclo acabou. Faça upgrade do plano.",
-      { ...quota },
+      "Sua cota do ciclo acabou. Faça upgrade do plano.",
+      quota,
     );
   }
 
   return quota;
 }
 
-/**
- * Débito idempotente e atômico (mantido), agora baseado no ciclo da assinatura.
- */
 export async function debitPix(workspaceId, eventId, meta) {
   const wid = String(workspaceId || "").trim();
   const eid = String(eventId || "").trim();
@@ -210,10 +201,12 @@ export async function debitPix(workspaceId, eventId, meta) {
 
   try {
     await session.withTransaction(async () => {
+      // exige assinatura ativa
+      await assertPixQuotaAvailable(wid);
+
       const ck = await ensureWorkspaceCycle(wid, session);
       await ensurePixMonthlyLimit(wid, session);
 
-      // 1) idempotência: tenta registrar o evento
       let debitDoc = null;
       try {
         const created = await PixDebit.create(
@@ -241,7 +234,7 @@ export async function debitPix(workspaceId, eventId, meta) {
 
           const wsNow = await Workspace.findById(wid)
             .select(
-              "plan pixMonthlyLimit pixUsage subscription.currentPeriodStart subscription.status",
+              "plan planStatus pixMonthlyLimit pixUsage subscription.currentPeriodStart subscription.status",
             )
             .session(session)
             .lean();
@@ -263,7 +256,6 @@ export async function debitPix(workspaceId, eventId, meta) {
         throw e;
       }
 
-      // 2) tenta debitar 1 (condicional atômica)
       const incRes = await Workspace.updateOne(
         {
           _id: wid,
@@ -279,19 +271,14 @@ export async function debitPix(workspaceId, eventId, meta) {
       if (!debited) {
         await PixDebit.updateOne(
           { _id: debitDoc._id },
-          {
-            $set: {
-              status: "SKIPPED_QUOTA",
-              reason: "quota_exceeded",
-            },
-          },
+          { $set: { status: "SKIPPED_QUOTA", reason: "quota_exceeded" } },
           { session },
         );
       }
 
       const wsAfter = await Workspace.findById(wid)
         .select(
-          "plan pixMonthlyLimit pixUsage subscription.currentPeriodStart subscription.status",
+          "pixMonthlyLimit pixUsage subscription.currentPeriodStart subscription.status planStatus",
         )
         .session(session)
         .lean();

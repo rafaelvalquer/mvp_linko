@@ -1,5 +1,4 @@
 //server/src/routes/auth.routes.js
-
 import { Router } from "express";
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
@@ -12,8 +11,6 @@ import { authOptional, ensureAuth } from "../middleware/auth.js";
 
 import {
   normalizePlan,
-  limitForPlan,
-  cycleKeySP,
   ensureWorkspaceCycle,
   summarizeWorkspaceQuota,
   ensurePixMonthlyLimit,
@@ -21,7 +18,6 @@ import {
 
 const r = Router();
 
-// ✅ popula req.user quando houver Bearer token (necessário para /auth/me)
 r.use(authOptional);
 
 function normEmail(v) {
@@ -73,26 +69,10 @@ r.post(
       String(req.body?.workspaceName || "").trim() ||
       (name ? `${name}` : "Meu Workspace");
 
-    // ✅ novo plano (com compat)
-    const plan = normalizePlan(req.body?.plan);
-
-    // enterprise pode mandar limite configurável (>0)
-    const enterpriseLimit = Number(req.body?.pixMonthlyLimit);
-    const pixMonthlyLimit = limitForPlan(plan, enterpriseLimit);
-
     if (!email)
       return res.status(400).json({ ok: false, error: "email required" });
     if (!password || password.length < 6)
       return res.status(400).json({ ok: false, error: "password min 6 chars" });
-
-    if (plan === "enterprise") {
-      if (!Number.isFinite(pixMonthlyLimit) || pixMonthlyLimit <= 0) {
-        return res.status(400).json({
-          ok: false,
-          error: "enterprise requer pixMonthlyLimit > 0",
-        });
-      }
-    }
 
     const exists = await User.exists({ email });
     if (exists)
@@ -110,6 +90,7 @@ r.post(
       const passwordHash = await bcrypt.hash(password, 10);
       wsSlug = await uniqueWorkspaceSlug(workspaceName);
 
+      // ✅ novo fluxo: cria sem plano pago
       await Workspace.create(
         [
           {
@@ -117,9 +98,14 @@ r.post(
             name: workspaceName,
             slug: wsSlug,
             ownerUserId: userId,
-            plan,
-            pixMonthlyLimit,
-            pixUsage: { cycleKey: cycleKeySP(), used: 0 },
+            plan: "start",
+            planStatus: "free",
+            pixMonthlyLimit: 0,
+            pixUsage: { cycleKey: "", used: 0 },
+            subscription: {
+              provider: "stripe",
+              status: "inactive",
+            },
           },
         ],
         { session },
@@ -145,10 +131,12 @@ r.post(
 
     session.endSession();
 
+    // não força ensurePixMonthlyLimit aqui (para manter 0)
     const ws = await Workspace.findById(workspaceId).lean();
     const quota = ws ? summarizeWorkspaceQuota(ws) : null;
 
     const token = signToken(userDoc);
+
     return res.json({
       ok: true,
       token,
@@ -166,6 +154,8 @@ r.post(
             name: ws.name,
             slug: ws.slug,
             plan: normalizePlan(ws.plan),
+            planStatus: ws.planStatus || "free",
+            subscription: ws.subscription || null,
             pixMonthlyLimit: quota?.limit ?? ws.pixMonthlyLimit,
             cycleKey: quota?.cycleKey ?? "",
             pixUsedThisCycle: quota?.used ?? 0,
@@ -194,7 +184,6 @@ r.post(
     if (!ok)
       return res.status(401).json({ ok: false, error: "invalid credentials" });
 
-    // ✅ garante ciclo correto e limite preenchido
     await ensureWorkspaceCycle(user.workspaceId);
     await ensurePixMonthlyLimit(user.workspaceId);
 
@@ -219,6 +208,8 @@ r.post(
             name: ws.name,
             slug: ws.slug,
             plan: normalizePlan(ws.plan),
+            planStatus: ws.planStatus || "free",
+            subscription: ws.subscription || null,
             pixMonthlyLimit: quota?.limit ?? ws.pixMonthlyLimit,
             cycleKey: quota?.cycleKey ?? "",
             pixUsedThisCycle: quota?.used ?? 0,
@@ -255,6 +246,8 @@ r.get(
             name: ws.name,
             slug: ws.slug,
             plan: normalizePlan(ws.plan),
+            planStatus: ws.planStatus || "free",
+            subscription: ws.subscription || null,
             pixMonthlyLimit: quota?.limit ?? ws.pixMonthlyLimit,
             cycleKey: quota?.cycleKey ?? "",
             pixUsedThisCycle: quota?.used ?? 0,

@@ -1,16 +1,12 @@
 //server/src/models/Workspace.js
-
 import mongoose from "mongoose";
 
 const PLANS = ["start", "pro", "business", "enterprise"];
+const PLAN_STATUS = ["free", "pending", "active"];
 
 const PixUsageSchema = new mongoose.Schema(
   {
-    /**
-     * cycleKey do CICLO DA ASSINATURA (não do mês calendário)
-     * Formato: "YYYY-MM-DD" em America/Sao_Paulo
-     * Ex.: 2026-02-19 (anchor day)
-     */
+    // ciclo por âncora (YYYY-MM-DD em America/Sao_Paulo)
     cycleKey: { type: String, default: "" },
     used: { type: Number, default: 0, min: 0 },
   },
@@ -19,10 +15,10 @@ const PixUsageSchema = new mongoose.Schema(
 
 const SubscriptionSchema = new mongoose.Schema(
   {
-    provider: { type: String, enum: ["stripe"], default: "stripe" },
+    provider: { type: String, default: "stripe" },
 
-    stripeCustomerId: { type: String, default: "", index: true },
-    stripeSubscriptionId: { type: String, default: "", index: true },
+    stripeCustomerId: { type: String, default: "" },
+    stripeSubscriptionId: { type: String, default: "" },
 
     status: {
       type: String,
@@ -31,8 +27,8 @@ const SubscriptionSchema = new mongoose.Schema(
       index: true,
     },
 
-    currentPeriodStart: { type: Date },
-    currentPeriodEnd: { type: Date },
+    currentPeriodStart: { type: Date, default: null },
+    currentPeriodEnd: { type: Date, default: null },
 
     priceId: { type: String, default: "" },
     planAtStripe: { type: String, default: "" },
@@ -45,7 +41,6 @@ const SubscriptionSchema = new mongoose.Schema(
 const WorkspaceSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
-    // opcional, mas único quando existir (sparse permite múltiplos null/undefined)
     slug: {
       type: String,
       unique: true,
@@ -62,23 +57,17 @@ const WorkspaceSchema = new mongoose.Schema(
       index: true,
     },
 
-    // ✅ Novo modelo de planos
-    plan: {
+    plan: { type: String, enum: PLANS, default: "start", index: true },
+
+    // ✅ novo: status do plano (cadastro -> free, checkout criado -> pending, pago -> active)
+    planStatus: {
       type: String,
-      enum: PLANS,
-      default: "start",
+      enum: PLAN_STATUS,
+      default: "free",
       index: true,
     },
 
-    /**
-     * Limite por ciclo de assinatura
-     * - start: 20
-     * - pro: 50
-     * - business: 120
-     * - enterprise: configurável
-     */
-    pixMonthlyLimit: { type: Number, default: 20, min: 0 },
-
+    pixMonthlyLimit: { type: Number, default: 0, min: 0 },
     pixUsage: { type: PixUsageSchema, default: () => ({}) },
 
     subscription: { type: SubscriptionSchema, default: () => ({}) },
@@ -88,7 +77,7 @@ const WorkspaceSchema = new mongoose.Schema(
 
 WorkspaceSchema.index({ ownerUserId: 1, createdAt: -1 });
 
-// opcional (não unique para evitar problemas em dados antigos):
+// evita warning duplicado: índice só aqui
 WorkspaceSchema.index(
   { "subscription.stripeSubscriptionId": 1 },
   { sparse: true },
