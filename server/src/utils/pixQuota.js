@@ -19,22 +19,26 @@ export function httpError(status, message, details) {
 }
 
 /**
- * cycleKey "YYYY-MM" em America/Sao_Paulo
+ * cycleKey "YYYY-MM-DD" em America/Sao_Paulo
+ * Importante: agora representa o INÍCIO DO CICLO da assinatura (anchor),
+ * e não o mês calendário.
  */
 export function cycleKeySP(date = new Date()) {
   const dtf = new Intl.DateTimeFormat("en-CA", {
     timeZone: TZ,
     year: "numeric",
     month: "2-digit",
+    day: "2-digit",
   });
   const parts = dtf.formatToParts(date);
   const year = parts.find((p) => p.type === "year")?.value;
   const month = parts.find((p) => p.type === "month")?.value;
-  return `${year}-${month}`;
+  const day = parts.find((p) => p.type === "day")?.value;
+  return `${year}-${month}-${day}`;
 }
 
 /**
- * Normaliza plano:
+ * Normaliza plano (compat):
  * - free -> start
  * - premium -> pro
  */
@@ -42,7 +46,6 @@ export function normalizePlan(v) {
   const p = String(v || "")
     .trim()
     .toLowerCase();
-
   if (!p) return "start";
 
   if (p === "start" || p === "pro" || p === "business" || p === "enterprise") {
@@ -65,9 +68,19 @@ export function limitForPlan(planRaw, enterpriseLimitRaw) {
 }
 
 /**
- * Garante que o Workspace tenha pixMonthlyLimit coerente com o plano
- * (útil para compat com workspaces antigos sem pixMonthlyLimit).
+ * cycleKey esperado:
+ * - Se assinatura tiver currentPeriodStart => usa ele (anchor)
+ * - Senão => usa agora (fallback)
  */
+export function expectedCycleKey(ws) {
+  const cps = ws?.subscription?.currentPeriodStart
+    ? new Date(ws.subscription.currentPeriodStart)
+    : null;
+
+  if (cps && !Number.isNaN(cps.getTime())) return cycleKeySP(cps);
+  return cycleKeySP(new Date());
+}
+
 export async function ensurePixMonthlyLimit(workspaceId, session) {
   const ws = await Workspace.findById(workspaceId)
     .select("plan pixMonthlyLimit")
@@ -79,13 +92,7 @@ export async function ensurePixMonthlyLimit(workspaceId, session) {
   const current = Number(ws.pixMonthlyLimit);
 
   // enterprise: não sobrescreve automaticamente
-  if (plan === "enterprise") {
-    if (!Number.isFinite(current) || current <= 0) {
-      // mantém 0 se não configurado; quem cria enterprise deve setar
-      // mas não quebra runtime
-    }
-    return;
-  }
+  if (plan === "enterprise") return;
 
   const should = limitForPlan(plan);
   if (!Number.isFinite(current) || current <= 0 || current !== should) {
@@ -98,49 +105,40 @@ export async function ensurePixMonthlyLimit(workspaceId, session) {
 }
 
 /**
- * Reseta automaticamente o ciclo (se virou o mês), de forma persistida.
+ * Reseta o ciclo SOMENTE quando o expectedCycleKey(ws) mudar.
+ * Isso evita reset indevido em virada de mês calendário.
  */
 export async function ensureWorkspaceCycle(workspaceId, session) {
-  const ck = cycleKeySP();
+  const ws = await Workspace.findById(workspaceId)
+    .select("pixUsage subscription.currentPeriodStart subscription.status")
+    .session(session || null)
+    .lean();
 
-  await Workspace.updateOne(
-    {
-      _id: workspaceId,
-      $or: [
-        { "pixUsage.cycleKey": { $exists: false } },
-        { "pixUsage.cycleKey": { $ne: ck } },
-        { pixUsage: { $exists: false } },
-      ],
-    },
-    {
-      $set: {
-        "pixUsage.cycleKey": ck,
-        "pixUsage.used": 0,
-      },
-    },
-    { session: session || undefined },
-  );
+  if (!ws) throw httpError(404, "Workspace não encontrado.");
+
+  const ck = expectedCycleKey(ws);
+  const stored = ws?.pixUsage?.cycleKey || "";
+
+  if (stored !== ck) {
+    await Workspace.updateOne(
+      { _id: workspaceId },
+      { $set: { "pixUsage.cycleKey": ck, "pixUsage.used": 0 } },
+      { session: session || undefined },
+    );
+  }
 
   return ck;
 }
 
-/**
- * Calcula resumo de quota a partir de um Workspace (lean/doc).
- * Se o ciclo armazenado for antigo, considera used=0 para o ciclo atual.
- */
 export function summarizeWorkspaceQuota(ws) {
-  if (!ws) {
-    return { cycleKey: cycleKeySP(), used: 0, limit: 0, remaining: 0 };
-  }
+  const ck = expectedCycleKey(ws);
 
-  const nowCk = cycleKeySP();
   const storedCk = ws?.pixUsage?.cycleKey || "";
   const storedUsed = Number(ws?.pixUsage?.used ?? 0);
-  const used =
-    storedCk === nowCk && Number.isFinite(storedUsed) ? storedUsed : 0;
+  const used = storedCk === ck && Number.isFinite(storedUsed) ? storedUsed : 0;
 
-  const plan = normalizePlan(ws.plan);
-  const rawLimit = Number(ws.pixMonthlyLimit);
+  const plan = normalizePlan(ws?.plan);
+  const rawLimit = Number(ws?.pixMonthlyLimit);
   const limit =
     Number.isFinite(rawLimit) && rawLimit > 0
       ? Math.trunc(rawLimit)
@@ -150,11 +148,13 @@ export function summarizeWorkspaceQuota(ws) {
 
   const remaining = Math.max(0, limit - used);
 
-  return { cycleKey: nowCk, used, limit, remaining };
+  return { cycleKey: ck, used, limit, remaining };
 }
 
 /**
- * Pré-check (bloqueio antes de criar cobrança Pix)
+ * Pré-check (bloqueio antes de criar cobrança Pix):
+ * - exige assinatura ativa
+ * - exige quota disponível
  */
 export async function assertPixQuotaAvailable(workspaceId) {
   if (!workspaceId) throw httpError(400, "workspaceId ausente.");
@@ -163,17 +163,31 @@ export async function assertPixQuotaAvailable(workspaceId) {
   await ensurePixMonthlyLimit(workspaceId);
 
   const ws = await Workspace.findById(workspaceId)
-    .select("plan pixMonthlyLimit pixUsage")
+    .select(
+      "plan pixMonthlyLimit pixUsage subscription.status subscription.currentPeriodStart subscription.currentPeriodEnd",
+    )
     .lean();
 
   if (!ws) throw httpError(404, "Workspace não encontrado.");
+
+  const subStatus = ws?.subscription?.status || "inactive";
+  if (subStatus !== "active") {
+    throw httpError(
+      402,
+      "Assinatura inativa ou pagamento pendente. Regularize para continuar.",
+      {
+        subscriptionStatus: subStatus,
+        currentPeriodEnd: ws?.subscription?.currentPeriodEnd || null,
+      },
+    );
+  }
 
   const quota = summarizeWorkspaceQuota(ws);
 
   if (quota.remaining <= 0) {
     throw httpError(
       402,
-      "Sua cota de Pix do mês acabou. Faça upgrade do plano.",
+      "Sua cota de Pix do ciclo acabou. Faça upgrade do plano.",
       { ...quota },
     );
   }
@@ -182,10 +196,7 @@ export async function assertPixQuotaAvailable(workspaceId) {
 }
 
 /**
- * Débito idempotente e atômico:
- * - idempotência por PixDebit(unique workspaceId+eventId)
- * - update atômico de used com $expr (used < limit)
- * - reseta ciclo automaticamente se necessário
+ * Débito idempotente e atômico (mantido), agora baseado no ciclo da assinatura.
  */
 export async function debitPix(workspaceId, eventId, meta) {
   const wid = String(workspaceId || "").trim();
@@ -211,7 +222,7 @@ export async function debitPix(workspaceId, eventId, meta) {
               workspaceId: wid,
               eventId: eid,
               cycleKey: ck,
-              status: "DEBITED", // pode virar SKIPPED_QUOTA depois
+              status: "DEBITED",
               reason: "",
               meta: meta || undefined,
             },
@@ -220,7 +231,6 @@ export async function debitPix(workspaceId, eventId, meta) {
         );
         debitDoc = created?.[0] || null;
       } catch (e) {
-        // duplicado -> já processado
         if (e?.code === 11000) {
           const existing = await PixDebit.findOne({
             workspaceId: wid,
@@ -230,7 +240,9 @@ export async function debitPix(workspaceId, eventId, meta) {
             .lean();
 
           const wsNow = await Workspace.findById(wid)
-            .select("plan pixMonthlyLimit pixUsage")
+            .select(
+              "plan pixMonthlyLimit pixUsage subscription.currentPeriodStart subscription.status",
+            )
             .session(session)
             .lean();
 
@@ -278,7 +290,9 @@ export async function debitPix(workspaceId, eventId, meta) {
       }
 
       const wsAfter = await Workspace.findById(wid)
-        .select("plan pixMonthlyLimit pixUsage")
+        .select(
+          "plan pixMonthlyLimit pixUsage subscription.currentPeriodStart subscription.status",
+        )
         .session(session)
         .lean();
 

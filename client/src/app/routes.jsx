@@ -22,11 +22,41 @@ import PublicPaidGuard from "../pages/PublicPaidGuard.jsx";
 import Withdraws from "../pages/Withdraws.jsx";
 import SettingsAgenda from "../pages/SettingsAgenda.jsx";
 
+import BillingPlans from "../pages/BillingPlans.jsx";
+import BillingSuccess from "../pages/BillingSuccess.jsx";
+import BillingCancel from "../pages/BillingCancel.jsx";
+
 export const router = createBrowserRouter(
   [
     { path: "/login", element: <Login /> },
     { path: "/register", element: <Register /> },
     { path: "/", element: <Home /> },
+
+    // Billing (área logada)
+    {
+      path: "/billing/plans",
+      element: (
+        <RequireAuth>
+          <BillingPlans />
+        </RequireAuth>
+      ),
+    },
+    {
+      path: "/billing/success",
+      element: (
+        <RequireAuth>
+          <BillingSuccess />
+        </RequireAuth>
+      ),
+    },
+    {
+      path: "/billing/cancel",
+      element: (
+        <RequireAuth>
+          <BillingCancel />
+        </RequireAuth>
+      ),
+    },
 
     {
       path: "/dashboard",

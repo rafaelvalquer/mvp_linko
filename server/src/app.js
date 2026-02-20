@@ -15,6 +15,9 @@ import productsRoutes from "./routes/products.routes.js";
 import clientsRoutes from "./routes/clients.routes.js";
 import settingsRoutes from "./routes/settings.routes.js";
 
+import billingStripeRoutes from "./routes/billing.stripe.routes.js";
+import webhooksStripeRoutes from "./routes/webhooks.stripe.routes.js";
+
 import path from "path";
 
 export function createApp() {
@@ -81,6 +84,11 @@ export function createApp() {
   app.use("/api", productsRoutes);
   app.use("/api", clientsRoutes);
   app.use("/api", settingsRoutes);
+
+  // billing (Stripe)
+  app.use("/api", billingStripeRoutes);
+  // webhooks (Stripe)
+  app.use("/api", webhooksStripeRoutes);
 
   app.use((err, _req, res, _next) => {
     console.error(err);

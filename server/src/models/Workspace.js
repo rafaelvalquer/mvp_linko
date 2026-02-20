@@ -2,18 +2,42 @@
 
 import mongoose from "mongoose";
 
-/**
- * Compatibilidade:
- * - "free" -> "start"
- * - "premium" -> "pro"
- * Mantemos no enum por enquanto para não quebrar workspaces antigos ainda não migrados.
- */
 const PLANS = ["start", "pro", "business", "enterprise"];
 
 const PixUsageSchema = new mongoose.Schema(
   {
-    cycleKey: { type: String, default: "" }, // "YYYY-MM"
+    /**
+     * cycleKey do CICLO DA ASSINATURA (não do mês calendário)
+     * Formato: "YYYY-MM-DD" em America/Sao_Paulo
+     * Ex.: 2026-02-19 (anchor day)
+     */
+    cycleKey: { type: String, default: "" },
     used: { type: Number, default: 0, min: 0 },
+  },
+  { _id: false },
+);
+
+const SubscriptionSchema = new mongoose.Schema(
+  {
+    provider: { type: String, enum: ["stripe"], default: "stripe" },
+
+    stripeCustomerId: { type: String, default: "", index: true },
+    stripeSubscriptionId: { type: String, default: "", index: true },
+
+    status: {
+      type: String,
+      enum: ["inactive", "active", "past_due", "canceled"],
+      default: "inactive",
+      index: true,
+    },
+
+    currentPeriodStart: { type: Date },
+    currentPeriodEnd: { type: Date },
+
+    priceId: { type: String, default: "" },
+    planAtStripe: { type: String, default: "" },
+
+    lastInvoiceId: { type: String, default: "" },
   },
   { _id: false },
 );
@@ -41,13 +65,13 @@ const WorkspaceSchema = new mongoose.Schema(
     // ✅ Novo modelo de planos
     plan: {
       type: String,
-      enum: ["start", "pro", "business", "enterprise"],
+      enum: PLANS,
       default: "start",
       index: true,
     },
 
     /**
-     * Limite mensal de Pix (cota do ciclo)
+     * Limite por ciclo de assinatura
      * - start: 20
      * - pro: 50
      * - business: 120
@@ -55,15 +79,20 @@ const WorkspaceSchema = new mongoose.Schema(
      */
     pixMonthlyLimit: { type: Number, default: 20, min: 0 },
 
-    /**
-     * Uso por ciclo mensal (YYYY-MM), em America/Sao_Paulo
-     */
     pixUsage: { type: PixUsageSchema, default: () => ({}) },
+
+    subscription: { type: SubscriptionSchema, default: () => ({}) },
   },
   { timestamps: true },
 );
 
 WorkspaceSchema.index({ ownerUserId: 1, createdAt: -1 });
+
+// opcional (não unique para evitar problemas em dados antigos):
+WorkspaceSchema.index(
+  { "subscription.stripeSubscriptionId": 1 },
+  { sparse: true },
+);
 
 export const Workspace =
   mongoose.models.Workspace || mongoose.model("Workspace", WorkspaceSchema);
