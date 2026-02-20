@@ -44,8 +44,6 @@ export function normalizePlan(v) {
     .toLowerCase();
 
   if (!p) return "start";
-  if (p === "free") return "start";
-  if (p === "premium") return "pro";
 
   if (p === "start" || p === "pro" || p === "business" || p === "enterprise") {
     return p;

@@ -73,9 +73,11 @@ function clampInt(n, min, max) {
 export default function NewOffer() {
   const { user, perms } = useAuth();
   const plan = String(
-    perms?.plan || user?.plan || user?.workspace?.plan || "free",
+    perms?.plan || user?.plan || user?.workspace?.plan || "start",
   ).toLowerCase();
-  const isPremium = plan === "premium";
+
+  // "premium features" agora = pro/business/enterprise (mantém compat com "premium" antigo)
+  const isPremium = ["pro", "business", "enterprise"].includes(plan);
 
   const [form, setForm] = useState({
     policyEnabled: false,

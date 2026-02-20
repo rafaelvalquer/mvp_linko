@@ -8,7 +8,7 @@ import mongoose from "mongoose";
  * - "premium" -> "pro"
  * Mantemos no enum por enquanto para não quebrar workspaces antigos ainda não migrados.
  */
-const PLANS = ["start", "pro", "business", "enterprise", "free", "premium"];
+const PLANS = ["start", "pro", "business", "enterprise"];
 
 const PixUsageSchema = new mongoose.Schema(
   {

@@ -11,10 +11,6 @@ export function normalizePlan(plan) {
     .trim()
     .toLowerCase();
 
-  // compat legado
-  if (p === "free") return "start";
-  if (p === "premium") return "pro";
-
   if (p === "start" || p === "pro" || p === "business" || p === "enterprise")
     return p;
 

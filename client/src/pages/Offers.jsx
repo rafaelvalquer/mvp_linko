@@ -96,12 +96,17 @@ export default function Offers() {
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
+
     const s =
       status === "ALL"
         ? items
-        : items.filter((o) => (o.status || "PUBLIC") === status);
+        : items.filter((o) => {
+            const st = String(o.status || "PUBLIC").toUpperCase();
+            return st === status;
+          });
 
     if (!query) return s;
+
     return s.filter((o) => {
       const a = (o.customerName || "").toLowerCase();
       const b = (o.title || "").toLowerCase();
@@ -178,9 +183,10 @@ export default function Offers() {
                   onChange={(e) => setStatus(e.target.value)}
                 >
                   <option value="ALL">Todos os status</option>
-                  <option value="PUBLIC">PUBLIC</option>
-                  <option value="DRAFT">DRAFT</option>
-                  <option value="EXPIRED">EXPIRED</option>
+                  <option value="PUBLIC">Publico</option>
+                  <option value="PAID">Pago</option>
+                  <option value="ACCEPTED">Aceito</option>
+                  <option value="EXPIRED">Expirado</option>
                 </select>
                 <div className="w-full sm:w-60">
                   <Input
