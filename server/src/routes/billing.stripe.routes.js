@@ -149,12 +149,10 @@ r.get(
     );
 
     if (!wsIdFromSession || wsIdFromSession !== workspaceId) {
-      return res
-        .status(403)
-        .json({
-          ok: false,
-          error: "Checkout session não pertence ao workspace autenticado.",
-        });
+      return res.status(403).json({
+        ok: false,
+        error: "Checkout session não pertence ao workspace autenticado.",
+      });
     }
 
     // se já estiver ativo no banco, só retorna status
@@ -197,6 +195,26 @@ r.get(
       const nextStatus = String(sub?.status || "").toLowerCase();
       const active = nextStatus === "active" || nextStatus === "trialing";
 
+      const customerFromSession =
+        typeof session?.customer === "string"
+          ? session.customer
+          : session?.customer?.id || "";
+
+      const customerFromSub =
+        typeof sub?.customer === "string"
+          ? sub.customer
+          : sub?.customer?.id || "";
+
+      const safeCustomerId =
+        customerFromSession ||
+        customerFromSub ||
+        String(ws?.subscription?.stripeCustomerId || "").trim();
+
+      // só grava se for cus_
+      const finalCustomerId = safeCustomerId.startsWith("cus_")
+        ? safeCustomerId
+        : "";
+
       await Workspace.updateOne(
         { _id: workspaceId },
         {
@@ -207,7 +225,7 @@ r.get(
             pixUsage: { cycleKey: ck, used: 0 },
 
             "subscription.provider": "stripe",
-            "subscription.stripeCustomerId": String(session?.customer || ""),
+            "subscription.stripeCustomerId": finalCustomerId,
             "subscription.stripeSubscriptionId": String(subscriptionId),
             "subscription.status": active ? "active" : "inactive",
             "subscription.currentPeriodStart": periodStart,

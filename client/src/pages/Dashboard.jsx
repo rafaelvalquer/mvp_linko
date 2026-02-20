@@ -174,6 +174,25 @@ const Icons = {
       <path d="M18 12a2 2 0 0 0 0 4h4v-4Z" />
     </svg>
   ),
+  Chevron: ({ open }) => (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={[
+        "transition-transform duration-200",
+        open ? "rotate-180" : "rotate-0",
+      ].join(" ")}
+    >
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  ),
 };
 
 /** ========= HELPERS ========= */
@@ -251,6 +270,128 @@ function Toast({ message, visible }) {
         <Icons.Copy /> {message}
       </div>
     </div>
+  );
+}
+
+function QuotaAccordion({ workspace, quota, loading }) {
+  const [open, setOpen] = useState(false);
+
+  const planLabel = useMemo(() => {
+    const p = String(workspace?.plan || "").toLowerCase();
+    if (!p) return "—";
+    return p.charAt(0).toUpperCase() + p.slice(1);
+  }, [workspace]);
+
+  const summaryLine = useMemo(() => {
+    // Ex.: "50/50 Pix"
+    return `${quota.remaining}/${quota.limit} Pix`;
+  }, [quota]);
+
+  return (
+    <Card className="border-none shadow-sm ring-1 ring-zinc-200 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full text-left"
+      >
+        <div className="flex items-start justify-between gap-4 px-5 py-4">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-zinc-900">
+              Cota Pix do mês
+            </div>
+
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-600">
+              <span>Ciclo: {quota.cycleKey || "—"}</span>
+              <span className="text-zinc-300">•</span>
+              <span>Plano: {planLabel}</span>
+              <span className="text-zinc-300">•</span>
+              <span className="font-semibold text-zinc-900">{summaryLine}</span>
+              {quota.cycleKey ? (
+                <>
+                  <span className="text-zinc-300">•</span>
+                  <span>• {quota.cycleKey}</span>
+                </>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <QuotaBadge
+              plan={workspace?.plan}
+              remaining={workspace?.pixRemaining}
+              limit={workspace?.pixMonthlyLimit}
+              used={workspace?.pixUsedThisCycle}
+              cycleKey={workspace?.cycleKey}
+              loading={loading}
+              compact
+            />
+            <span className="text-zinc-400">
+              <Icons.Chevron open={open} />
+            </span>
+          </div>
+        </div>
+      </button>
+
+      {/* Accordion body */}
+      {open ? (
+        <CardBody className="px-5 pb-5 pt-0">
+          {loading ? (
+            <Skeleton className="h-24 w-full rounded-xl" />
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border bg-zinc-50 p-4">
+                <div className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">
+                  Restantes
+                </div>
+                <div className="mt-1 text-2xl font-bold text-zinc-900">
+                  {quota.remaining}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border bg-zinc-50 p-4">
+                <div className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">
+                  Usados
+                </div>
+                <div className="mt-1 text-2xl font-bold text-zinc-900">
+                  {quota.used}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border bg-zinc-50 p-4">
+                <div className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">
+                  Limite
+                </div>
+                <div className="mt-1 text-2xl font-bold text-zinc-900">
+                  {quota.limit}
+                </div>
+              </div>
+
+              <div className="sm:col-span-3">
+                <div className="flex items-center justify-between text-xs text-zinc-600">
+                  <span>Uso do ciclo</span>
+                  <span className="font-semibold text-zinc-900">
+                    {quota.pct}%
+                  </span>
+                </div>
+                <div className="mt-2 h-2 w-full rounded-full bg-zinc-100">
+                  <div
+                    className="h-2 rounded-full bg-emerald-500"
+                    style={{ width: `${quota.pct}%` }}
+                  />
+                </div>
+
+                {quota.remaining === 0 ? (
+                  <div className="mt-2 text-xs text-amber-700">
+                    Sua cota do ciclo acabou. Faça upgrade do plano para liberar
+                    mais Pix.
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          )}
+        </CardBody>
+      ) : null}
+    </Card>
   );
 }
 
@@ -454,80 +595,11 @@ export default function Dashboard() {
         )}
 
         {/* ✅ COTA PIX DO MÊS */}
-        <Card className="border-none shadow-sm ring-1 ring-zinc-200 overflow-hidden">
-          <CardHeader
-            title="Cota Pix do mês"
-            subtitle={
-              quota.cycleKey ? `Ciclo: ${quota.cycleKey}` : "Ciclo atual"
-            }
-            right={
-              <QuotaBadge
-                plan={workspace?.plan}
-                remaining={workspace?.pixRemaining}
-                limit={workspace?.pixMonthlyLimit}
-                used={workspace?.pixUsedThisCycle}
-                cycleKey={workspace?.cycleKey}
-                loading={loadingMe}
-                compact
-              />
-            }
-          />
-          <CardBody className="p-5">
-            {loadingMe ? (
-              <Skeleton className="h-14 w-full rounded-xl" />
-            ) : (
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-2xl border bg-zinc-50 p-4">
-                  <div className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">
-                    Restantes
-                  </div>
-                  <div className="mt-1 text-2xl font-bold text-zinc-900">
-                    {quota.remaining}
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border bg-zinc-50 p-4">
-                  <div className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">
-                    Usados
-                  </div>
-                  <div className="mt-1 text-2xl font-bold text-zinc-900">
-                    {quota.used}
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border bg-zinc-50 p-4">
-                  <div className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">
-                    Limite
-                  </div>
-                  <div className="mt-1 text-2xl font-bold text-zinc-900">
-                    {quota.limit}
-                  </div>
-                </div>
-
-                <div className="sm:col-span-3">
-                  <div className="flex items-center justify-between text-xs text-zinc-600">
-                    <span>Uso do ciclo</span>
-                    <span className="font-semibold text-zinc-900">
-                      {quota.pct}%
-                    </span>
-                  </div>
-                  <div className="mt-2 h-2 w-full rounded-full bg-zinc-100">
-                    <div
-                      className="h-2 rounded-full bg-emerald-500"
-                      style={{ width: `${quota.pct}%` }}
-                    />
-                  </div>
-                  {quota.remaining === 0 ? (
-                    <div className="mt-2 text-xs text-amber-700">
-                      Sua cota do mês acabou. Faça upgrade do plano para liberar
-                      mais Pix.
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            )}
-          </CardBody>
-        </Card>
+        <QuotaAccordion
+          workspace={workspace}
+          quota={quota}
+          loading={loadingMe}
+        />
 
         {/* KPI GRID */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">

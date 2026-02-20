@@ -13,9 +13,7 @@ export function getStripe() {
 }
 
 export function getFrontendUrl() {
-  const url = String(
-    process.env.FRONTEND_URL || process.env.APP_URL || "",
-  ).trim();
+  const url = String(process.env.FRONTEND_URL || "").trim();
 
   if (!url) {
     throw new Error("FRONTEND_URL ausente (ex.: https://app.seudominio.com).");
@@ -105,7 +103,7 @@ export async function createCheckoutSession({
 export async function retrieveCheckoutSession(sessionId) {
   const stripe = getStripe();
   return stripe.checkout.sessions.retrieve(sessionId, {
-    expand: ["subscription", "customer"],
+    expand: ["subscription"], // ✅ não expandir "customer"
   });
 }
 
