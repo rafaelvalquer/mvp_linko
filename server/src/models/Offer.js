@@ -86,6 +86,9 @@ const OfferSchema = new mongoose.Schema(
     status: { type: String, default: "PUBLIC", index: true },
     acceptedAt: { type: Date, default: null },
 
+    // ✅ status de pagamento separado do status de fluxo (compat)
+    paymentStatus: { type: String, default: "PENDING", index: true },
+
     publicDoneOnly: { type: Boolean, default: false },
     publicLockedAt: { type: Date, default: null },
 

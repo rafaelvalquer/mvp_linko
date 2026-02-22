@@ -66,18 +66,43 @@ export default function PublicSchedule() {
     navigate(`/p/${token}/pay?bookingId=${encodeURIComponent(bookingId)}`);
   }
 
-  // carrega proposta
+  // carrega proposta + respeita flowState
   useEffect(() => {
     setOffer(null);
     setOfferErr("");
     api(`/p/${token}`)
       .then((d) => {
+        const step = String(d?.flow?.step || "").toUpperCase();
+
+        // ✅ se abrir /schedule indevidamente, redireciona para o passo correto
+        if (step && step !== "SCHEDULE") {
+          const bookingId = String(
+            d?.flow?.bookingId || d?.booking?.id || "",
+          ).trim();
+          const q = bookingId
+            ? `?bookingId=${encodeURIComponent(bookingId)}`
+            : "";
+
+          if (step === "PAYMENT") {
+            navigate(`/p/${token}/pay${q}`, { replace: true });
+            return;
+          }
+          if (step === "DONE") {
+            navigate(`/p/${token}/done${q}`, { replace: true });
+            return;
+          }
+
+          // ACCEPT / EXPIRED / CANCELED -> rota base (guard decide)
+          navigate(`/p/${token}`, { replace: true });
+          return;
+        }
+
         setOffer(d.offer);
       })
       .catch((e) => {
         setOfferErr(e?.message || "Falha ao carregar proposta.");
       });
-  }, [token]);
+  }, [token, navigate]);
 
   const view = useMemo(() => {
     const o = offer || {};
@@ -247,30 +272,6 @@ export default function PublicSchedule() {
     );
   }
 
-  // Se entrar aqui com produto, só avisa (fluxo futuro)
-  if (view.offerType !== "service") {
-    return (
-      <div className="min-h-screen bg-zinc-50 p-6">
-        <div className="mx-auto max-w-2xl rounded-2xl border bg-white p-6">
-          <div className="text-lg font-semibold text-zinc-900">Agendamento</div>
-          <div className="mt-2 text-sm text-zinc-600">
-            Este link é de <span className="font-semibold">produto</span>. No
-            MVP atual, o fluxo de “Aceitar e pagar” será conectado depois.
-          </div>
-          <div className="mt-4">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => navigate(`/p/${token}`)}
-            >
-              Voltar para a proposta
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-zinc-50">
       <div className="border-b bg-white">
@@ -292,6 +293,15 @@ export default function PublicSchedule() {
       </div>
 
       <div className="mx-auto grid max-w-2xl gap-4 px-4 py-6">
+        {String(offer?.status || "").toUpperCase() === "ACCEPTED" ? (
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+            <div className="font-semibold">Proposta aceita!</div>
+            <div className="mt-1 text-emerald-900/90">
+              Agora escolha a data e horário para continuar.
+            </div>
+          </div>
+        ) : null}
+
         {/* Resumo */}
         <div className="rounded-2xl border bg-white p-6 shadow-sm">
           <div className="text-xs font-semibold text-zinc-500">Resumo</div>
@@ -422,53 +432,34 @@ export default function PublicSchedule() {
             </div>
           )}
 
-          <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="text-xs text-zinc-500">
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-xs text-zinc-600">
               {selected ? (
                 <>
                   Selecionado:{" "}
-                  <span className="font-semibold text-zinc-900">
+                  <span className="font-semibold">
                     {fmtTime(selected.startAt)}
                   </span>
                 </>
               ) : (
-                "Selecione um horário para continuar."
+                "Selecione um horário para reservar."
               )}
             </div>
 
-            <Button
-              type="button"
-              disabled={
-                !selected || getSlotUi(selected).disabled || busy || !!booking
-              }
-              onClick={confirmBooking}
-            >
-              {busy
-                ? "Confirmando…"
-                : booking
-                  ? "Reserva criada"
-                  : "Confirmar agendamento"}
-            </Button>
+            {booking ? (
+              <Button type="button" onClick={onGoPay}>
+                Ir para pagamento
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                onClick={confirmBooking}
+                disabled={!selected || busy}
+              >
+                {busy ? "Reservando…" : "Reservar horário"}
+              </Button>
+            )}
           </div>
-
-          {booking ? (
-            <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-              <div className="text-sm font-semibold text-emerald-800">
-                Reserva criada (HOLD)
-              </div>
-              <div className="mt-1 text-sm text-emerald-900">
-                {fmtTime(booking.startAt)} – {fmtTime(booking.endAt)}
-              </div>
-              <div className="mt-2 text-xs text-emerald-800">
-                Próximo passo (MVP): direcionar para pagamento Pix.
-              </div>
-              <div className="mt-3">
-                <Button type="button" variant="secondary" onClick={onGoPay}>
-                  Ir para pagamento Pix
-                </Button>
-              </div>
-            </div>
-          ) : null}
         </div>
       </div>
     </div>

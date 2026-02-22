@@ -42,6 +42,46 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function isResendIdempotencyConflict(err) {
+  return (
+    err?.statusCode === 409 &&
+    (err?.data?.name === "invalid_idempotent_request" ||
+      String(err?.message || "").includes("idempotency key"))
+  );
+}
+
+function isTransientTxnError(err) {
+  return (
+    err?.code === 251 ||
+    (Array.isArray(err?.errorLabels) &&
+      err.errorLabels.includes("TransientTransactionError"))
+  );
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function debitPixWithRetry(wsId, paymentId, { retries = 3 } = {}) {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      await debitPix(wsId, paymentId);
+      return;
+    } catch (err) {
+      // duplicidade (caso seu debitPix crie registro único por paymentId)
+      if (err?.code === 11000) return;
+
+      // erro transitório de transação: retry com backoff
+      if (isTransientTxnError(err) && i < retries) {
+        await sleep(150 * (i + 1));
+        continue;
+      }
+
+      throw err;
+    }
+  }
+}
+
 function noStore(res) {
   res.set(
     "Cache-Control",
@@ -71,11 +111,14 @@ function overlaps(aStart, aEnd, bStart, bEnd) {
   return as < be && bs < ae;
 }
 
+function toInt(v, fallback = 0) {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.round(n) : fallback;
+}
+
 function computeAmountCents(offer) {
   const totalCents =
-    (Number.isFinite(offer?.totalCents) && offer.totalCents) ||
-    (Number.isFinite(offer?.amountCents) && offer.amountCents) ||
-    0;
+    toInt(offer?.totalCents, null) ?? toInt(offer?.amountCents, 0);
 
   const depositPctRaw = Number(offer?.depositPct);
   const depositPct =
@@ -147,6 +190,132 @@ function inferOfferType(offer) {
   const items = Array.isArray(offer?.items) ? offer.items : [];
   if (items.length > 0) return "product";
   return "service";
+}
+
+/** ---------- Public flow (máquina de estados) ---------- */
+function normalizeOfferStatus(st) {
+  const s = String(st || "")
+    .trim()
+    .toUpperCase();
+  if (s === "CANCELED") return "CANCELLED";
+  return s;
+}
+
+function computePaymentStatus(offerRaw) {
+  const explicit = normalizeOfferStatus(offerRaw?.paymentStatus);
+  if (explicit) return explicit;
+
+  const status = normalizeOfferStatus(offerRaw?.status);
+  const lastPix = normalizePixStatus(offerRaw?.payment?.lastPixStatus);
+  const paid =
+    isPaidStatus(status) ||
+    !!offerRaw?.paidAt ||
+    lastPix === "PAID" ||
+    status === "PAID";
+  return paid ? "PAID" : "PENDING";
+}
+
+function computePublicFlow({ offerRaw, booking }) {
+  const now = new Date();
+  const status = normalizeOfferStatus(offerRaw?.status);
+  const paymentStatus = computePaymentStatus(offerRaw);
+
+  const offerType = inferOfferType(offerRaw); // "service" | "product"
+  const type = offerType === "product" ? "PRODUCT" : "SERVICE";
+
+  const expiresAt = toDateOrNull(offerRaw?.expiresAt);
+  const isExpired =
+    paymentStatus !== "PAID" &&
+    (status === "EXPIRED" ||
+      (expiresAt && expiresAt.getTime() <= now.getTime()));
+
+  const isCancelled = status === "CANCELLED";
+
+  // prioridade: DONE > CANCELLED > EXPIRED
+  if (paymentStatus === "PAID") {
+    return {
+      step: "DONE",
+      reason: "PAID",
+      bookingId: booking?._id ? String(booking._id) : null,
+      type,
+      paymentStatus,
+    };
+  }
+
+  if (isCancelled) {
+    return {
+      step: "CANCELED",
+      reason: "CANCELLED",
+      bookingId: null,
+      type,
+      paymentStatus,
+    };
+  }
+
+  if (isExpired) {
+    return {
+      step: "EXPIRED",
+      reason: "EXPIRED",
+      bookingId: null,
+      type,
+      paymentStatus,
+    };
+  }
+
+  const accepted = status === "ACCEPTED" || !!offerRaw?.acceptedAt;
+
+  // estados pré-aceite (compat com legado)
+  const isPreAccept =
+    !accepted && ["DRAFT", "SENT", "PUBLIC", ""].includes(status);
+
+  if (isPreAccept) {
+    return {
+      step: "ACCEPT",
+      reason: status || "PUBLIC",
+      bookingId: null,
+      type,
+      paymentStatus,
+    };
+  }
+
+  // pós-aceite
+  if (offerType === "service") {
+    const b = booking || null;
+    const bStatus = normalizeOfferStatus(b?.status);
+
+    const holdOk =
+      bStatus === "HOLD" &&
+      (toDateOrNull(b?.holdExpiresAt)?.getTime() || 0) > now.getTime();
+
+    const confirmed = bStatus === "CONFIRMED" || bStatus === "PAID";
+
+    if (confirmed || holdOk) {
+      return {
+        step: "PAYMENT",
+        reason: confirmed ? "BOOKING_CONFIRMED" : "BOOKING_HOLD",
+        bookingId: b?._id ? String(b._id) : null,
+        type,
+        paymentStatus,
+      };
+    }
+
+    return {
+      step: "SCHEDULE",
+      reason: "NEEDS_BOOKING",
+      bookingId: null,
+      type,
+      paymentStatus,
+    };
+  }
+
+  // produto
+  return {
+    step: "PAYMENT",
+    reason: "PRODUCT",
+    bookingId: null,
+    type,
+    paymentStatus,
+  };
 }
 
 /**
@@ -321,33 +490,45 @@ async function markAsPaid({
   offerRaw,
   paidAmountCents,
 }) {
-  const paidAt = new Date();
-  const paidAtIso = paidAt.toISOString();
+  // 0) lê estado atual (para idempotência)
+  const offerState = await Offer.findById(offerId)
+    .select(
+      "status paymentStatus paidAt paidAmountCents paymentNotifiedAt sellerEmail sellerName",
+    )
+    .lean()
+    .catch(() => null);
 
-  // valor efetivamente pago (sinal/total) para persistência + e-mail
+  const alreadyPaid =
+    String(offerState?.paymentStatus || "").toUpperCase() === "PAID" ||
+    String(offerState?.status || "").toUpperCase() === "PAID" ||
+    !!offerState?.paidAt;
+
+  // 1) valor pago (fixo)
   let paidCents = Number(paidAmountCents);
   if (!Number.isFinite(paidCents) || paidCents <= 0) {
-    try {
-      const offerForAmount =
-        offerRaw ||
-        (await Offer.findById(offerId)
-          .lean()
-          .catch(() => null));
-      const amounts = computeAmountCents(offerForAmount);
-      paidCents = Number(amounts?.amountCents) || 0;
-    } catch {
-      paidCents = 0;
-    }
+    const base =
+      offerRaw ||
+      offerState ||
+      (await Offer.findById(offerId)
+        .lean()
+        .catch(() => null));
+    paidCents = Number(computeAmountCents(base).amountCents) || 0;
   }
 
-  // offer -> PAID + trava pública
-  if (offerId) {
+  // 2) paidAt estável: se já estava pago, reaproveita o paidAt do banco
+  const paidAtDate = alreadyPaid ? new Date(offerState.paidAt) : new Date();
+
+  const paidAtIso = paidAtDate.toISOString();
+
+  // 3) Atualiza offer como paga apenas se ainda não tinha paidAt (evita reescrever e mudar body do email)
+  if (!alreadyPaid) {
     await Offer.updateOne(
-      { _id: offerId },
+      { _id: offerId, paidAt: { $in: [null, undefined] } },
       {
         $set: {
           status: "PAID",
-          paidAt: paidAt,
+          paymentStatus: "PAID",
+          paidAt: paidAtDate,
           paidAmountCents: paidCents || null,
           publicDoneOnly: true,
           publicLockedAt: paidAtIso,
@@ -355,16 +536,24 @@ async function markAsPaid({
       },
       { strict: false },
     ).catch(() => {});
+
+    // garante status mesmo se paidAt já existia por corrida
+    await Offer.updateOne(
+      { _id: offerId, paymentStatus: { $ne: "PAID" } },
+      { $set: { status: "PAID", paymentStatus: "PAID", publicDoneOnly: true } },
+      { strict: false },
+    ).catch(() => {});
   }
 
+  // 4) Atualiza snapshot do Pix na offer
   await updateOfferPayment(offerId, {
     lastPixId: pix?.id,
     lastPixStatus: "PAID",
     lastPixExpiresAt: toDateOrNull(pix?.expiresAt) || undefined,
-    lastPixUpdatedAt: paidAt,
+    lastPixUpdatedAt: paidAtDate,
   });
 
-  // booking -> CONFIRMED
+  // 5) Confirma booking
   if (bookingId && mongoose.isValidObjectId(bookingId)) {
     await updateBookingPayment(bookingId, {
       status: "CONFIRMED",
@@ -372,53 +561,100 @@ async function markAsPaid({
         provider: "ABACATEPAY",
         providerPaymentId: pix?.id,
         status: "PAID",
-        paidAt,
+        paidAt: paidAtDate,
       },
     });
   }
-  // ✅ notificação por e-mail (não quebra o fluxo se falhar)
+
+  // 6) E-mail: só tenta se ainda não marcou como notificado
   try {
-    const offerForEmail =
+    const offerEmail =
       offerRaw ||
+      offerState ||
       (await Offer.findById(offerId)
         .lean()
         .catch(() => null));
-    if (offerForEmail && !offerForEmail.paymentNotifiedAt) {
+    const pixId = String(pix?.id || "").trim();
+
+    if (offerEmail && !offerEmail.paymentNotifiedAt) {
       const bookingForEmail =
         bookingId && mongoose.isValidObjectId(bookingId)
           ? await Booking.findById(bookingId)
               .lean()
               .catch(() => null)
           : null;
-      await notifySellerPixPaid({
-        offerId: String(offerId),
-        offer: offerForEmail,
-        booking: bookingForEmail,
-        pixId: String(pix?.id || "").trim(),
-        paidAt,
-        paidAmountCents: paidCents || null,
-      });
+
+      try {
+        await notifySellerPixPaid({
+          offerId: String(offerId),
+          offer: offerEmail,
+          booking: bookingForEmail,
+          pixId,
+          paidAt: offerEmail?.paidAt || paidAtDate, // ✅ evita variar entre chamadas
+          paidAmountCents: offerEmail?.paidAmountCents ?? paidCents ?? null,
+        });
+
+        // ✅ marca como notificado (evita reenvio)
+        await Offer.updateOne(
+          { _id: offerId, paymentNotifiedAt: { $in: [null, undefined] } },
+          {
+            $set: {
+              paymentNotifiedAt: paidAtDate,
+              paymentNotifiedPixId: pixId || null,
+              paymentNotifiedTo:
+                String(offerEmail?.sellerEmail || "").trim() || null,
+            },
+          },
+          { strict: false },
+        ).catch(() => {});
+      } catch (err) {
+        // ✅ se Resend der 409 por idempotência, trate como "já foi enviado" e marque igual
+        if (isResendIdempotencyConflict(err)) {
+          await Offer.updateOne(
+            { _id: offerId, paymentNotifiedAt: { $in: [null, undefined] } },
+            {
+              $set: {
+                paymentNotifiedAt: paidAtDate,
+                paymentNotifiedPixId: pixId || null,
+                paymentNotifiedTo:
+                  String(offerEmail?.sellerEmail || "").trim() || null,
+              },
+            },
+            { strict: false },
+          ).catch(() => {});
+        } else {
+          console.error("[pix] failed to send paid email", err);
+        }
+      }
     }
   } catch (err) {
     console.error("[pix] failed to send paid email", err);
   }
 
-  // ✅ Pix quota: debita 1 por Pix pago (idempotente e atômico)
+  // 7) Pix quota: debita com retry (transiente) e idempotência
   try {
     const wsId = offerRaw?.workspaceId ? String(offerRaw.workspaceId) : "";
     const paymentId = String(pix?.id || "").trim();
-    if (wsId && paymentId) {
-      await debitPix(wsId, paymentId);
+
+    // ✅ não debita de novo se já estava pago (evita duplicidade)
+    if (!alreadyPaid && wsId && paymentId) {
+      await debitPixWithRetry(wsId, paymentId, { retries: 3 });
     }
   } catch (err) {
-    console.warn("[pix] quota debit failed", err?.message || err);
+    console.warn("[pix] quota debit failed", {
+      code: err?.code,
+      name: err?.name,
+      message: err?.message,
+      wsId: offerRaw?.workspaceId ? String(offerRaw.workspaceId) : "",
+      paymentId: String(pix?.id || "").trim(),
+    });
   }
 
   return paidAtIso;
 }
 
 /**
- * GET /p/:token  -> retorna offer pública (+ locked/doneOnly)
+ * GET /p/:token  -> retorna offer pública (+ locked/doneOnly) + flowState
  */
 router.get("/p/:token", async (req, res, next) => {
   try {
@@ -495,8 +731,7 @@ router.get("/p/:token", async (req, res, next) => {
       }
     }
 
-    const offer = sanitizeOfferPublic(offerForPublic);
-    const locked = isPaidStatus(offerRaw?.status);
+    const offerSan = sanitizeOfferPublic(offerForPublic);
 
     // ✅ se já existir reserva (HOLD válida / CONFIRMED), devolve para o front não depender de bookingId na URL
     const offerType = inferOfferType(offerRaw);
@@ -518,6 +753,14 @@ router.get("/p/:token", async (req, res, next) => {
           .catch(() => null));
     }
 
+    const flow = computePublicFlow({ offerRaw, booking });
+    const locked = flow.step === "DONE";
+    const offer = {
+      ...offerSan,
+      type: flow.type,
+      paymentStatus: flow.paymentStatus,
+    };
+
     noStore(res);
     return res.json({
       ok: true,
@@ -525,6 +768,11 @@ router.get("/p/:token", async (req, res, next) => {
       locked,
       doneOnly: locked,
       booking: booking ? toPublicBooking(booking) : null,
+      flow: {
+        step: flow.step,
+        reason: flow.reason,
+        bookingId: flow.bookingId,
+      },
     });
   } catch (e) {
     next(e);
@@ -611,7 +859,7 @@ router.get("/p/:token/summary", async (req, res, next) => {
 });
 
 /**
- * POST /p/:token/accept
+ * POST /p/:token/accept (idempotente + retorna flow)
  */
 router.post("/p/:token/accept", async (req, res, next) => {
   try {
@@ -620,34 +868,90 @@ router.post("/p/:token/accept", async (req, res, next) => {
 
     if (!token)
       return res.status(400).json({ ok: false, error: "Token inválido." });
+
+    const offerRaw = await findOfferByPublicToken(token, { withTenant: true });
+    if (!offerRaw)
+      return res
+        .status(404)
+        .json({ ok: false, error: "Proposta não encontrada." });
+
+    // booking atual (para decidir próximo passo em SERVICE)
+    const now = new Date();
+    let booking = null;
+    if (inferOfferType(offerRaw) === "service") {
+      booking =
+        (await Booking.findOne({ offerId: offerRaw._id, status: "CONFIRMED" })
+          .sort({ startAt: -1 })
+          .lean()
+          .catch(() => null)) ||
+        (await Booking.findOne({
+          offerId: offerRaw._id,
+          status: "HOLD",
+          holdExpiresAt: { $gt: now },
+        })
+          .sort({ startAt: -1 })
+          .lean()
+          .catch(() => null));
+    }
+
+    const preFlow = computePublicFlow({ offerRaw, booking });
+
+    // ✅ idempotência: se já está aceito/pago/expirado/cancelado, não erra — só devolve o próximo passo
+    if (preFlow.step !== "ACCEPT") {
+      noStore(res);
+      return res.json({
+        ok: true,
+        flow: {
+          step: preFlow.step,
+          reason: preFlow.reason,
+          bookingId: preFlow.bookingId,
+        },
+      });
+    }
+
     if (!agreeTerms)
       return res.status(400).json({ ok: false, error: "Aceite obrigatório." });
 
-    const offerRaw = await findOfferByPublicToken(token, { withTenant: true });
-    if (offerRaw && isPaidStatus(offerRaw?.status)) {
-      return res
-        .status(409)
-        .json({ ok: false, error: "Proposta já concluída." });
-    }
+    const acc = acceptedAt ? new Date(acceptedAt) : new Date();
+    const acceptedAtDate = Number.isNaN(acc.getTime()) ? new Date() : acc;
 
     // opcional (não quebra)
     try {
       acceptances.set(token, {
         agreeTerms: true,
-        acceptedAt: acceptedAt || nowIso(),
+        acceptedAt: acceptedAtDate.toISOString(),
       });
     } catch {}
 
-    try {
-      await Offer.updateOne(
-        { publicToken: token },
-        { $set: { status: "ACCEPTED", acceptedAt: acceptedAt || nowIso() } },
-      );
-    } catch {
-      // ignora
-    }
+    // marca como aceito (sem depender do campo/token legado)
+    await Offer.updateOne(
+      { _id: offerRaw._id },
+      {
+        $set: {
+          status: "ACCEPTED",
+          acceptedAt: offerRaw.acceptedAt || acceptedAtDate,
+          paymentStatus: "PENDING",
+        },
+      },
+      { strict: false },
+    ).catch(() => {});
 
-    return res.json({ ok: true });
+    const offerAfter = (await Offer.findById(offerRaw._id)
+      .lean()
+      .catch(() => null)) || {
+      ...offerRaw,
+      status: "ACCEPTED",
+      acceptedAt: offerRaw.acceptedAt || acceptedAtDate,
+      paymentStatus: "PENDING",
+    };
+
+    const flow = computePublicFlow({ offerRaw: offerAfter, booking });
+
+    noStore(res);
+    return res.json({
+      ok: true,
+      flow: { step: flow.step, reason: flow.reason, bookingId: flow.bookingId },
+    });
   } catch (e) {
     next(e);
   }
@@ -1018,10 +1322,17 @@ router.post("/p/:token/pix/create", async (req, res, next) => {
       }
     }
 
-    const name = String(customer?.name || "").trim();
-    const cellphone = String(customer?.cellphone || "").trim();
-    const email = String(customer?.email || "").trim();
-    const taxId = onlyDigits(customer?.taxId);
+    const name = String(customer?.name || offerRaw?.customerName || "").trim();
+    const cellphone = String(
+      customer?.cellphone ||
+        customer?.phone ||
+        offerRaw?.customerWhatsApp ||
+        "",
+    ).trim();
+    const email = String(
+      customer?.email || offerRaw?.customerEmail || "",
+    ).trim();
+    const taxId = onlyDigits(customer?.taxId || offerRaw?.customerDoc || "");
 
     if (!name || !cellphone || !email || !taxId) {
       return res.status(400).json({
@@ -1032,28 +1343,32 @@ router.post("/p/:token/pix/create", async (req, res, next) => {
     }
 
     const { amountCents } = computeAmountCents(offerRaw);
-    if (!amountCents || amountCents <= 0) {
+    const amount = Number(amountCents);
+
+    if (!Number.isFinite(amount) || amount <= 0) {
       return res
         .status(400)
         .json({ ok: false, error: "Valor inválido para cobrança." });
     }
 
-    let expiresIn = Math.max(60, PIX_EXPIRES_IN);
+    // 1) Calcula expiresIn ANTES de usar
+    const expiresInSec = (() => {
+      const base = Math.max(60, PIX_EXPIRES_IN);
 
-    if (!isProduct) {
+      if (isProduct) return base;
+
       const nowMs = Date.now();
       const holdMs = new Date(booking.holdExpiresAt).getTime();
       const remainingHoldSec = Math.max(
         60,
         Math.floor((holdMs - nowMs) / 1000),
       );
-      expiresIn = Math.min(
-        Math.max(60, remainingHoldSec),
-        Math.max(60, PIX_EXPIRES_IN),
-      );
-    }
 
-    // ✅ quota pré-check (antes de criar NOVA cobrança Pix)
+      // Pix não pode durar mais que o hold da reserva
+      return Math.min(remainingHoldSec, base);
+    })();
+
+    // 2) Quota pré-check ANTES de criar Pix
     if (!offerRaw?.workspaceId) {
       return res
         .status(500)
@@ -1072,23 +1387,30 @@ router.post("/p/:token/pix/create", async (req, res, next) => {
       });
     }
 
-    const metadata = { externalId: String(effectiveBookingId) };
+    // 3) Metadata ANTES de usar
+    const metadata = {
+      externalId: String(effectiveBookingId), // usado depois no /pix/status
+      publicToken: token,
+      offerId: String(offerRaw._id),
+    };
 
+    // 4) Agora sim cria o Pix (com expiresInSec e metadata já definidos)
     const ab = await abacateCreatePixQr({
-      amount: amountCents,
-      expiresIn,
+      amount, // number
+      expiresIn: expiresInSec, // number
       description: shortDesc(offerRaw?.title || "Pagamento via Pix"),
       customer: { name, cellphone, email, taxId },
       metadata,
     });
 
+    // 5) Continua como você já faz
     const pixDataRaw = pickPixData(ab);
     if (!pixDataRaw?.id) {
       return res.status(502).json({ ok: false, error: "Falha ao gerar Pix." });
     }
 
     const st = normalizePixStatus(pixDataRaw.status || "PENDING");
-    const expiresAtIso = computeExpiresAtIso(pixDataRaw, expiresIn);
+    const expiresAtIso = computeExpiresAtIso(pixDataRaw, expiresInSec);
 
     await updateOfferPayment(offerRaw._id, {
       lastPixId: pixDataRaw.id,

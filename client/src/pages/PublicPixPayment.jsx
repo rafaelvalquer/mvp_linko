@@ -209,7 +209,7 @@ export default function PublicPixPayment() {
     };
   }, [offer]);
 
-  // Load offer (e resolve bookingId para SERVICE sem depender de querystring)
+  // Load offer (e respeita flowState)
   useEffect(() => {
     setLoadingOffer(true);
     setOfferErr("");
@@ -224,13 +224,36 @@ export default function PublicPixPayment() {
 
     api(`/p/${token}`)
       .then((d) => {
+        const step = String(d?.flow?.step || "").toUpperCase();
+
+        const flowBookingId = String(
+          d?.flow?.bookingId || d?.booking?.id || bookingId || "",
+        ).trim();
+
+        const q = flowBookingId
+          ? `?bookingId=${encodeURIComponent(flowBookingId)}`
+          : "";
+
+        // ✅ se abrir /pay indevidamente, redireciona para o passo correto
+        if (step && step !== "PAYMENT") {
+          if (step === "SCHEDULE") {
+            navigate(`/p/${token}/schedule`, { replace: true });
+            return;
+          }
+          if (step === "DONE") {
+            navigate(`/p/${token}/done${q}`, { replace: true });
+            return;
+          }
+          // ACCEPT / EXPIRED / CANCELED -> rota base (guard decide)
+          navigate(`/p/${token}`, { replace: true });
+          return;
+        }
+
         const o = d.offer || null;
         setOffer(o);
 
         // ✅ backend pode devolver booking existente para SERVICE
-        const bookingIdFromApi = d?.booking?.id ? String(d.booking.id) : "";
-        const effectiveBookingId = bookingId || bookingIdFromApi;
-        if (!bookingId && bookingIdFromApi) setBookingId(bookingIdFromApi);
+        if (!bookingId && flowBookingId) setBookingId(flowBookingId);
 
         setName(o?.customerName || "");
         setCellphone(o?.customerWhatsApp || o?.customerCellphone || "");
@@ -270,26 +293,9 @@ export default function PublicPixPayment() {
           setPrefillHint(true);
         }
 
-        // infer product/service aqui também (para validar bookingId)
-        const items = Array.isArray(o?.items) ? o.items : [];
-        const hasItems = items.length > 0;
-        const rawType = isNonEmpty(o?.offerType)
-          ? String(o.offerType).trim().toLowerCase()
-          : "";
-        const isProduct = rawType === "product" || hasItems;
-
-        if (!isProduct && !effectiveBookingId) {
-          setOfferErr(
-            "Nenhuma reserva ativa encontrada para este serviço. Volte e faça o agendamento novamente.",
-          );
-          return;
-        }
-
+        // segurança extra (caso algum status antigo não venha com flow)
         const st = normalizeStatus(o?.status);
         if (st === "PAID" || st === "CONFIRMED") {
-          const q = effectiveBookingId
-            ? `?bookingId=${encodeURIComponent(effectiveBookingId)}`
-            : "";
           navigate(`/p/${token}/done${q}`, { replace: true });
           return;
         }
