@@ -1,6 +1,6 @@
 // src/pages/Register.jsx
 import { useState } from "react";
-import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../app/AuthContext.jsx";
 
 export default function Register() {
@@ -18,10 +18,8 @@ export default function Register() {
   const nav = useNavigate();
   const loc = useLocation();
 
-  // ✅ novo fluxo: após cadastrar, vai para /billing/plans
+  // após cadastrar, vai para /billing/plans (ou respeita ?next=)
   const next = new URLSearchParams(loc.search).get("next") || "/billing/plans";
-
-  if (user) return <Navigate to={next} replace />;
 
   async function onSubmit(e) {
     e.preventDefault();
@@ -36,7 +34,7 @@ export default function Register() {
         workspaceName: workspaceName || undefined,
       });
 
-      nav("/billing/plans", { replace: true });
+      nav(next, { replace: true });
     } catch (err) {
       setError(err?.message || "Falha ao cadastrar.");
     } finally {
@@ -51,6 +49,13 @@ export default function Register() {
         <p className="mt-1 text-sm text-zinc-500">
           Cadastre-se e escolha um plano em seguida.
         </p>
+
+        {user ? (
+          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            Você já está logado. Esta tela continuará disponível para criar uma
+            nova conta.
+          </div>
+        ) : null}
 
         {error ? (
           <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
