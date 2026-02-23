@@ -545,46 +545,96 @@ export default function Dashboard() {
   return (
     <Shell>
       <div className="mx-auto max-w-7xl px-4 py-6 space-y-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <PageHeader
-              title="Dashboard"
-              subtitle="Resumo rápido das suas propostas, agendamentos e saques."
-            />
-            {lastUpdate && (
-              <p className="text-[10px] font-medium text-zinc-400 uppercase tracking-widest pt-1">
-                Última atualização: {lastUpdate}
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={load}
-              disabled={loading}
-              className="hidden sm:flex items-center gap-2"
-            >
-              <Icons.Refresh /> Atualizar
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setWithdrawOpen(true)}
-              className="flex items-center gap-2"
-            >
-              <Icons.Withdraw /> Saque
-            </Button>
-            <Link to="/offers/new">
-              <Button
-                size="sm"
-                className="flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 shadow-sm transition-all active:scale-95"
-              >
-                <Icons.Plus /> Nova proposta
-              </Button>
-            </Link>
+        {/* --- INÍCIO DO NOVO HEADER PREMIUM --- */}
+        <div className="relative mb-8">
+          <div className="bg-white border border-zinc-200 rounded-3xl p-5 sm:p-6 shadow-sm ring-1 ring-zinc-50">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+              {/* Lado Esquerdo: Título e Status */}
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-3">
+                  <h1 className="text-2xl sm:text-3xl font-bold text-zinc-900 tracking-tight">
+                    Dashboard
+                  </h1>
+
+                  {lastUpdate && (
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-100">
+                      <span className="relative flex h-2 w-2">
+                        <span
+                          className={`animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 ${loading ? "hidden" : ""}`}
+                        ></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                      </span>
+                      <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider flex items-center gap-1">
+                        <svg
+                          className={`w-3 h-3 ${loading ? "animate-spin" : ""}`}
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth="2"
+                            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                          />
+                        </svg>
+                        {loading
+                          ? "Sincronizando..."
+                          : `Atualizado: ${lastUpdate}`}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <p className="text-zinc-500 text-sm sm:text-base leading-relaxed max-w-2xl">
+                  Resumo rápido das suas propostas, agendamentos e saques.
+                </p>
+              </div>
+
+              {/* Lado Direito: Ações */}
+              <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
+                {/* Botões Secundários (Lado a lado no mobile) */}
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={load}
+                    disabled={loading}
+                    className="flex-1 sm:flex-none justify-center items-center gap-2 h-11 px-4 active:scale-95 transition-all"
+                  >
+                    <span className={`${loading ? "animate-spin" : ""}`}>
+                      <Icons.Refresh />
+                    </span>
+                    <span className="font-semibold">
+                      {loading ? "Atualizando..." : "Atualizar"}
+                    </span>
+                  </Button>
+
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setWithdrawOpen(true)}
+                    className="flex-1 sm:flex-none justify-center items-center gap-2 h-11 px-4 active:scale-95 transition-all"
+                  >
+                    <Icons.Withdraw />
+                    <span className="font-semibold">Saque</span>
+                  </Button>
+                </div>
+
+                {/* Botão Primário (Destaque total) */}
+                <Link to="/offers/new" className="w-full sm:w-auto">
+                  <Button
+                    size="sm"
+                    className="w-full sm:w-auto justify-center items-center gap-2 h-11 px-6 bg-zinc-900 hover:bg-zinc-800 text-white shadow-md shadow-zinc-200 active:scale-95 transition-all font-bold"
+                  >
+                    <Icons.Plus />
+                    Nova proposta
+                  </Button>
+                </Link>
+              </div>
+            </div>
           </div>
         </div>
+        {/* --- FIM DO NOVO HEADER PREMIUM --- */}
 
         {error && (
           <div className="p-4 rounded-xl bg-red-50 border border-red-100 text-sm text-red-700 flex justify-between items-center">
