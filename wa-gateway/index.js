@@ -11,6 +11,7 @@ dotenv.config();
 const qrcode = qrcodePkg?.default ?? qrcodePkg; // compat CJS/ESM
 const { Client, LocalAuth } = whatsappPkg?.default ?? whatsappPkg;
 
+// Render usa PORT
 const PORT = Number(process.env.PORT || process.env.WA_PORT || 3010);
 
 const API_KEY = process.env.WA_API_KEY || "";
@@ -19,27 +20,46 @@ const SESSION_PATH = process.env.WA_SESSION_PATH || "./wa-session";
 const HEADLESS =
   String(process.env.WA_PUPPETEER_HEADLESS || "true").toLowerCase() === "true";
 
-// ✅ /qr no browser (MVP)
-// - WA_QR_PUBLIC=true permite abrir /qr sem key
-// - se WA_QR_PUBLIC=false, exige key em ?key=... ou header x-api-key
+// /qr access
 const QR_PUBLIC =
   String(process.env.WA_QR_PUBLIC || "true").toLowerCase() === "true";
-const QR_KEY = process.env.WA_QR_KEY || ""; // opcional (se vazio, aceita WA_API_KEY)
+const QR_KEY = process.env.WA_QR_KEY || ""; // opcional (se vazio, usa WA_API_KEY)
 
-let state = "INIT"; // INIT | QR | READY | DISCONNECTED
+let state = "INIT"; // INIT | STARTING | QR | READY | DISCONNECTED
 let phone = null;
 let lastSeen = new Date().toISOString();
 
 let latestQr = null;
 let latestQrAt = null;
 
-function touch() {
-  lastSeen = new Date().toISOString();
-}
+let lastError = null;
+let lastErrorAt = null;
 
 function nowISO() {
   return new Date().toISOString();
 }
+
+function touch() {
+  lastSeen = nowISO();
+}
+
+function setLastError(where, err) {
+  lastErrorAt = nowISO();
+  lastError = `${where}: ${err?.message || String(err)}`;
+  touch();
+  console.error(`[wa] ERROR ${lastErrorAt} ${lastError}`);
+  if (err?.stack) console.error(err.stack);
+}
+
+process.on("unhandledRejection", (reason) => {
+  setLastError("unhandledRejection", reason);
+  state = "DISCONNECTED";
+});
+
+process.on("uncaughtException", (err) => {
+  setLastError("uncaughtException", err);
+  state = "DISCONNECTED";
+});
 
 function requireApiKey(req, res, next) {
   const key = req.header("x-api-key");
@@ -54,8 +74,7 @@ function allowQrAccess(req) {
   if (QR_PUBLIC) return true;
 
   const key = String(req.query.key || req.header("x-api-key") || "");
-  const expected = QR_KEY || API_KEY; // se WA_QR_KEY não definido, usa WA_API_KEY
-
+  const expected = QR_KEY || API_KEY;
   if (!expected) return false;
   return key === expected;
 }
@@ -75,10 +94,12 @@ const app = express();
 app.use(express.json({ limit: "200kb" }));
 
 app.get("/health", (req, res) => {
-  res.json({ ok: true, at: nowISO() });
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ ok: true, at: nowISO(), state });
 });
 
 app.get("/status", requireApiKey, (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
   res.json({
     ok: true,
     state,
@@ -86,25 +107,32 @@ app.get("/status", requireApiKey, (req, res) => {
     lastSeen,
     hasLatestQr: !!latestQr,
     latestQrAt,
+    lastError,
+    lastErrorAt,
   });
 });
 
-// ✅ página HTML para escanear o QR
+// ✅ visualizar QR no navegador
 app.get("/qr", async (req, res) => {
+  res.setHeader(
+    "Cache-Control",
+    "no-store, no-cache, must-revalidate, proxy-revalidate",
+  );
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+
   const ip =
     req.headers["x-forwarded-for"]?.toString()?.split(",")?.[0]?.trim() ||
     req.socket?.remoteAddress ||
     "unknown";
   const ua = req.headers["user-agent"] || "unknown";
 
+  const authorized = allowQrAccess(req);
   const isReady = state === "READY";
   const hasQr = !!latestQr;
 
-  const authorized = allowQrAccess(req);
-
-  // logs da rota /qr (pedido do usuário)
   console.log(
-    `[qr] access ip=${ip} ua="${ua}" authorized=${authorized} state=${state} isReady=${isReady} hasQr=${hasQr} at=${nowISO()}`,
+    `[qr] access ip=${ip} authorized=${authorized} state=${state} isReady=${isReady} hasQr=${hasQr} at=${nowISO()}`,
   );
 
   if (!authorized) {
@@ -114,28 +142,23 @@ app.get("/qr", async (req, res) => {
     );
   }
 
-  // se já está logado, mostra status “logado” em tela
+  // Se já está logado
   if (isReady) {
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     return res.send(`<!doctype html>
 <html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>WhatsApp QR</title>
-  </head>
+  <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>WhatsApp QR</title></head>
   <body style="font-family: system-ui; padding: 24px;">
     <h2>WhatsApp</h2>
     <p><b>Status:</b> ✅ LOGADO (READY)</p>
     <p><b>Número:</b> ${phone || "desconhecido"}</p>
     <p><b>Última atividade:</b> ${lastSeen}</p>
-    <hr/>
-    <p style="color:#555">Se precisar reconectar, reinicie o serviço para gerar um novo QR.</p>
+    ${lastError ? `<hr/><p style="color:#b45309"><b>Último erro:</b> ${lastError}<br/><b>Quando:</b> ${lastErrorAt}</p>` : ""}
   </body>
 </html>`);
   }
 
-  // se ainda não tem QR, mostra “aguarde” e auto refresh
+  // Sem QR ainda (ou init falhou)
   if (!latestQr) {
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     return res.send(`<!doctype html>
@@ -151,11 +174,22 @@ app.get("/qr", async (req, res) => {
     <p><b>Status:</b> ${state}</p>
     <p>QR ainda não foi gerado. Aguarde alguns segundos... (atualiza sozinho)</p>
     <p style="color:#555"><b>Última atividade:</b> ${lastSeen}</p>
+    ${
+      lastError
+        ? `<div style="margin-top:12px;padding:12px;border:1px solid #f59e0b;background:#fffbeb;border-radius:10px;">
+             <b>Último erro:</b><br/>${lastError}<br/><small>${lastErrorAt}</small>
+           </div>`
+        : ""
+    }
+    <hr/>
+    <p style="color:#666;font-size:13px;">
+      Se o status ficar DISCONNECTED e não aparecer QR, quase sempre é falha ao iniciar o Chromium/Puppeteer no Render.
+    </p>
   </body>
 </html>`);
   }
 
-  // tem QR: renderiza imagem e auto refresh enquanto não READY
+  // Tem QR: renderiza imagem
   const dataUrl = await QRCode.toDataURL(latestQr, {
     margin: 1,
     scale: 8,
@@ -173,14 +207,15 @@ app.get("/qr", async (req, res) => {
   </head>
   <body style="font-family: system-ui; padding: 24px;">
     <h2>WhatsApp</h2>
-    <p><b>Status:</b> ${state} (não logado ainda)</p>
+    <p><b>Status:</b> ${state} (ainda não logado)</p>
     <p><b>Gerado em:</b> ${latestQrAt}</p>
     <img src="${dataUrl}" alt="QR Code" style="max-width: 320px; width: 100%; height: auto;" />
     <p style="margin-top:12px;color:#555">
-      Escaneie no WhatsApp: <b>Dispositivos conectados</b> → <b>Conectar dispositivo</b>.
+      WhatsApp → <b>Dispositivos conectados</b> → <b>Conectar dispositivo</b>.
       Esta página atualiza sozinha.
     </p>
     <p style="color:#777"><b>Última atividade:</b> ${lastSeen}</p>
+    ${lastError ? `<hr/><p style="color:#b45309"><b>Último erro:</b> ${lastError}<br/><b>Quando:</b> ${lastErrorAt}</p>` : ""}
   </body>
 </html>`);
 });
@@ -188,76 +223,84 @@ app.get("/qr", async (req, res) => {
 let waClient = null;
 
 async function initWhatsApp() {
+  state = "STARTING";
+  touch();
+
   console.log(
     `[wa] init at=${nowISO()} headless=${HEADLESS} sessionPath=${SESSION_PATH}`,
   );
 
-  waClient = new Client({
-    authStrategy: new LocalAuth({ dataPath: SESSION_PATH }),
-    puppeteer: {
-      headless: HEADLESS,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-accelerated-2d-canvas",
-        "--no-first-run",
-        "--no-zygote",
-        "--disable-gpu",
-      ],
-    },
-  });
+  try {
+    waClient = new Client({
+      authStrategy: new LocalAuth({ dataPath: SESSION_PATH }),
+      puppeteer: {
+        headless: HEADLESS,
+        // Se você usar chromium do sistema, pode setar PUPPETEER_EXECUTABLE_PATH no Render
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-accelerated-2d-canvas",
+          "--no-first-run",
+          "--no-zygote",
+          "--disable-gpu",
+        ],
+      },
+    });
 
-  waClient.on("qr", (qr) => {
-    state = "QR";
-    touch();
+    waClient.on("qr", (qr) => {
+      state = "QR";
+      touch();
 
-    latestQr = qr;
-    latestQrAt = nowISO();
+      latestQr = qr;
+      latestQrAt = nowISO();
 
-    console.log("\n================ WHATSAPP QR (RAW) ================\n");
-    console.log(qr);
+      console.log("\n================ WHATSAPP QR (RAW) ================\n");
+      console.log(qr);
 
-    console.log("\n================ WHATSAPP QR (ASCII) ==============\n");
-    qrcode.generate(qr, { small: true }, (out) => console.log(out));
+      console.log("\n================ WHATSAPP QR (ASCII) ==============\n");
+      qrcode.generate(qr, { small: true }, (out) => console.log(out));
 
-    console.log(`\n[wa] QR generated at=${latestQrAt} | open /qr to scan\n`);
-  });
+      console.log(`\n[wa] QR generated at=${latestQrAt} | open /qr to scan\n`);
+    });
 
-  waClient.on("ready", () => {
-    state = "READY";
-    touch();
+    waClient.on("ready", () => {
+      state = "READY";
+      touch();
 
-    const widUser =
-      waClient?.info?.wid?.user || waClient?.info?.me?.user || null;
+      const widUser =
+        waClient?.info?.wid?.user || waClient?.info?.me?.user || null;
 
-    phone = widUser ? `55${widUser}`.replace(/\D/g, "") : widUser;
+      phone = widUser ? `55${widUser}`.replace(/\D/g, "") : widUser;
 
-    // opcional: limpa QR após conectar
-    latestQr = null;
-    latestQrAt = null;
+      // opcional: limpa QR depois de conectar
+      latestQr = null;
+      latestQrAt = null;
 
-    console.log(`[wa] READY at=${nowISO()} phone=${phone || widUser || "?"}`);
-  });
+      console.log(`[wa] READY at=${nowISO()} phone=${phone || widUser || "?"}`);
+    });
 
-  waClient.on("authenticated", () => {
-    touch();
-    console.log(`[wa] AUTHENTICATED at=${nowISO()}`);
-  });
+    waClient.on("authenticated", () => {
+      touch();
+      console.log(`[wa] AUTHENTICATED at=${nowISO()}`);
+    });
 
-  waClient.on("auth_failure", (msg) => {
+    waClient.on("auth_failure", (msg) => {
+      state = "DISCONNECTED";
+      setLastError("auth_failure", msg);
+    });
+
+    waClient.on("disconnected", (reason) => {
+      state = "DISCONNECTED";
+      setLastError("disconnected", reason);
+    });
+
+    await waClient.initialize();
+  } catch (e) {
     state = "DISCONNECTED";
-    touch();
-    console.log(`[wa] AUTH_FAILURE at=${nowISO()} msg=${msg}`);
-  });
-
-  waClient.on("disconnected", (reason) => {
-    state = "DISCONNECTED";
-    touch();
-    console.log(`[wa] DISCONNECTED at=${nowISO()} reason=${reason}`);
-  });
-
-  await waClient.initialize();
+    setLastError("initWhatsApp", e);
+  }
 }
 
 app.post("/send", requireApiKey, async (req, res) => {
@@ -272,7 +315,13 @@ app.post("/send", requireApiKey, async (req, res) => {
       return res.status(400).json({ ok: false, error: "INVALID_TO" });
 
     if (state !== "READY") {
-      return res.status(503).json({ ok: false, error: "WHATSAPP_NOT_READY" });
+      return res.status(503).json({
+        ok: false,
+        error: "WHATSAPP_NOT_READY",
+        state,
+        lastError,
+        lastErrorAt,
+      });
     }
 
     const chatId = `${toNorm}@c.us`;
@@ -286,8 +335,7 @@ app.post("/send", requireApiKey, async (req, res) => {
     touch();
     return res.json({ ok: true, providerMessageId });
   } catch (err) {
-    touch();
-    console.error("[send] error:", err?.message || err);
+    setLastError("send", err);
     return res.status(500).json({
       ok: false,
       error: "SEND_FAILED",
@@ -298,9 +346,5 @@ app.post("/send", requireApiKey, async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`[wa-gateway] listening on :${PORT}`);
-  initWhatsApp().catch((e) => {
-    state = "DISCONNECTED";
-    touch();
-    console.error("[wa] Failed to init WhatsApp:", e?.message || e);
-  });
+  initWhatsApp();
 });
