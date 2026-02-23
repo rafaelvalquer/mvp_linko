@@ -15,6 +15,7 @@ import { useAuth } from "../app/AuthContext.jsx";
 import WithdrawModal from "../components/WithdrawModal.jsx";
 import QuotaBadge from "../components/QuotaBadge.jsx";
 import { quotaPercent } from "../utils/planQuota.js";
+import AnalyticsSection from "../components/dashboard/AnalyticsSection.jsx";
 
 /** ========= ICON COMPONENTS (SVG INLINE) ========= */
 const Icons = {
@@ -639,6 +640,9 @@ export default function Dashboard() {
             loading={loading}
           />
         </div>
+
+        {/* ✅ ANALYTICS */}
+        <AnalyticsSection />
 
         <div className="grid grid-cols-12 gap-6">
           {/* MAIN COLUMN: RECENT LINKS */}

@@ -17,6 +17,7 @@ import settingsRoutes from "./routes/settings.routes.js";
 
 import billingStripeRoutes from "./routes/billing.stripe.routes.js";
 import webhooksStripeRoutes from "./routes/webhooks.stripe.routes.js";
+import analyticsRoutes from "./routes/analytics.routes.js";
 
 import path from "path";
 
@@ -88,6 +89,7 @@ export function createApp() {
   app.use("/api", productsRoutes);
   app.use("/api", clientsRoutes);
   app.use("/api", settingsRoutes);
+  app.use("/api", analyticsRoutes);
 
   // billing (Stripe)
   app.use("/api", billingStripeRoutes);
