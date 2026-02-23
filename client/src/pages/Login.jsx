@@ -4,7 +4,8 @@ import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../app/AuthContext.jsx";
 
 export default function Login() {
-  const { user, signIn, subscriptionStatus } = useAuth();
+  const { user, signIn, refreshBilling, refreshWorkspace } = useAuth();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -20,12 +21,35 @@ export default function Login() {
     e.preventDefault();
     setError("");
     setLoading(true);
+
     try {
       await signIn({ email, password });
 
-      // ✅ se o usuário não tem assinatura ativa, manda para planos (quando não há next explícito)
-      const s = String(subscriptionStatus || "").toLowerCase();
-      const fallback = s === "active" ? "/dashboard" : "/billing/plans";
+      // ✅ Atualiza contexto (workspace + billing) antes de decidir o redirect
+      let billing = null;
+      try {
+        if (typeof refreshWorkspace === "function") await refreshWorkspace();
+      } catch {}
+      try {
+        if (typeof refreshBilling === "function")
+          billing = await refreshBilling();
+      } catch {}
+
+      // tenta extrair status de qualquer formato comum
+      const statusRaw =
+        billing?.subscription?.status ||
+        billing?.subscriptionStatus ||
+        billing?.status ||
+        "";
+
+      const status = String(statusRaw).toLowerCase();
+
+      // Stripe: active/trialing contam como "ok"
+      const hasActiveSub = status === "active" || status === "trialing";
+
+      const fallback = hasActiveSub ? "/dashboard" : "/billing/plans";
+
+      // se vier next explícito (ex: usuário tentou acessar /billing/plans), respeita
       nav(nextParam || fallback, { replace: true });
     } catch (err) {
       setError(err?.message || "Falha ao entrar.");
@@ -60,6 +84,7 @@ export default function Login() {
               required
             />
           </div>
+
           <div>
             <label className="text-sm text-zinc-700">Senha</label>
             <input
@@ -71,6 +96,7 @@ export default function Login() {
               required
             />
           </div>
+
           <button
             className="w-full rounded-lg bg-zinc-900 px-4 py-2 text-white hover:bg-zinc-800 disabled:opacity-60"
             disabled={loading}

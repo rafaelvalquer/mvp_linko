@@ -50,13 +50,6 @@ export default function Register() {
           Cadastre-se e escolha um plano em seguida.
         </p>
 
-        {user ? (
-          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            Você já está logado. Esta tela continuará disponível para criar uma
-            nova conta.
-          </div>
-        ) : null}
-
         {error ? (
           <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
