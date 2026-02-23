@@ -66,9 +66,12 @@ export function createApp() {
     }),
   );
 
+  // ✅ 1) ROTAS PÚBLICAS PRIMEIRO (sem ensureAuth)
+  app.use("/api", publicRoutes);
+
   // arquivos estáticos (imagens de produtos)
   app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
-  app.use("/api", publicRoutes);
+
   // webhooks (AbacatePay)
   app.use("/api", webhooksAbacatepayRoutes);
   // webhooks (Stripe)
@@ -82,7 +85,6 @@ export function createApp() {
   app.use("/api", offersRoutes);
   app.use("/api", bookingsRoutes);
   app.use("/api", withdrawRoutes);
-
   app.use("/api", productsRoutes);
   app.use("/api", clientsRoutes);
   app.use("/api", settingsRoutes);

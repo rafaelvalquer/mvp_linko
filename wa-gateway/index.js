@@ -83,8 +83,15 @@ async function initWhatsApp() {
   waClient.on("qr", (qr) => {
     state = "QR";
     touch();
-    console.log("\n================ WHATSAPP QR ================\n");
-    qrcode.generate(qr, { small: true });
+
+    console.log("\n================ WHATSAPP QR (RAW) ================\n");
+    console.log(qr); // ✅ sempre aparece no log (texto simples)
+
+    console.log("\n================ WHATSAPP QR (ASCII) ==============\n");
+    qrcode.generate(qr, { small: true }, (out) => {
+      console.log(out); // ✅ Render captura melhor assim
+    });
+
     console.log("\nEscaneie o QR no WhatsApp (Dispositivos conectados)\n");
   });
 
