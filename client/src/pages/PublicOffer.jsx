@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../app/api.js";
 import Button from "../components/appui/Button.jsx";
 import { motion, useReducedMotion } from "framer-motion";
+import brand from "../assets/brand.png";
 
 /* =========================
    Helpers
@@ -674,11 +675,15 @@ export default function PublicOffer() {
       <div className="border-b bg-white">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-600 text-sm font-semibold text-white">
-              P
-            </div>
+            <img
+              src={brand}
+              alt="Luminor Pay"
+              className="h-9 w-9 rounded-xl object-contain ring-1 ring-zinc-200 bg-white p-1"
+            />
             <div>
-              <div className="text-sm font-semibold text-zinc-900">PayLink</div>
+              <div className="text-sm font-semibold text-zinc-900">
+                LuminorPay
+              </div>
               <div className="text-xs text-zinc-500">
                 Proposta •{" "}
                 {view.offerType === "product" ? "Produto" : "Serviço"} • Link

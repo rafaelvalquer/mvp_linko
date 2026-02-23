@@ -8,6 +8,7 @@ import {
   isQuotaExceededError,
   quotaExceededMessage,
 } from "../utils/planQuota.js";
+import brand from "../assets/brand.png";
 
 function fmtBRL(cents) {
   const v = Number.isFinite(cents) ? cents : 0;
@@ -566,7 +567,14 @@ export default function PublicPixPayment() {
       <div className="border-b bg-white">
         <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3">
           <div>
-            <div className="text-sm font-semibold text-zinc-900">PayLink</div>
+            <img
+              src={brand}
+              alt="Luminor Pay"
+              className="h-9 w-9 rounded-xl object-contain ring-1 ring-zinc-200 bg-white p-1"
+            />
+            <div className="text-sm font-semibold text-zinc-900">
+              LuminorPay
+            </div>
             <div className="text-xs text-zinc-500">Pagamento Pix</div>
           </div>
 

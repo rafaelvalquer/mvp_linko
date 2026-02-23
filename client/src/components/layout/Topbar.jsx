@@ -38,7 +38,7 @@ function StatusBadge({ status, loading }) {
   );
 }
 
-export default function Topbar({ title = "PayLink" }) {
+export default function Topbar({ title = "LuminorPay" }) {
   const {
     user,
     workspace,

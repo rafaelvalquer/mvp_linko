@@ -156,7 +156,7 @@ export default function WithdrawModal({ open, onClose, onCreated }) {
         pixType,
         pixKey,
         grossAmountCents: grossCents,
-        description: "Saque do PayLink",
+        description: "Saque da LuminorPay",
       });
 
       const w = d?.withdraw;
