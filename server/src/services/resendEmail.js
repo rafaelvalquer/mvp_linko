@@ -241,10 +241,6 @@ export async function notifySellerPixPaid({
   const sellerEmail = String(offer?.sellerEmail || "").trim();
   const to = (sellerEmail || fallbackTo || "").trim();
 
-  console.log("sellerEmail" + sellerEmail);
-  console.log(from);
-  console.log(to);
-
   if (!apiKey) {
     console.warn("[resend] RESEND_API_KEY missing; skipping email notify");
     return { ok: false, skipped: true, reason: "missing_api_key" };

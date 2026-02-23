@@ -79,6 +79,8 @@ async function createOfferLocal({ tenantId, userId, body }) {
   let customerEmail = String(b.customerEmail || "").trim();
   let customerDoc = onlyDigits(b.customerDoc);
   let customerWhatsApp = String(b.customerWhatsApp || "").trim();
+  const notifyWhatsAppOnPaid = safeBool(b.notifyWhatsAppOnPaid);
+
 
   if (customerId) {
     const c = await Client.findOne({
@@ -196,6 +198,8 @@ async function createOfferLocal({ tenantId, userId, body }) {
     customerEmail,
     customerDoc,
     customerWhatsApp,
+
+    notifyWhatsAppOnPaid,
 
     offerType,
     title,

@@ -19,6 +19,7 @@ import {
 } from "../services/abacatepayClient.js";
 
 import { notifySellerPixPaid } from "../services/resendEmail.js";
+import { maybeNotifyWhatsAppPixPaid } from "../services/whatsappNotify.js";
 import { assertPixQuotaAvailable, debitPix } from "../utils/pixQuota.js";
 
 const router = express.Router();
@@ -570,10 +571,10 @@ async function markAsPaid({
   try {
     const offerEmail =
       offerRaw ||
-      offerState ||
       (await Offer.findById(offerId)
         .lean()
-        .catch(() => null));
+        .catch(() => null)) ||
+      offerState;
     const pixId = String(pix?.id || "").trim();
 
     if (offerEmail && !offerEmail.paymentNotifiedAt) {
@@ -629,6 +630,38 @@ async function markAsPaid({
     }
   } catch (err) {
     console.error("[pix] failed to send paid email", err);
+  }
+
+  // 6b) WhatsApp (cliente): tentativa única e idempotente via MessageLog
+  try {
+    const offerForWhatsApp =
+      offerRaw ||
+      (await Offer.findById(offerId)
+        .lean()
+        .catch(() => null)) ||
+      offerState;
+
+    await maybeNotifyWhatsAppPixPaid({
+      offer: offerForWhatsApp,
+      offerId: String(offerId),
+      workspaceId: offerForWhatsApp?.workspaceId
+        ? String(offerForWhatsApp.workspaceId)
+        : null,
+      bookingId:
+        bookingId && mongoose.isValidObjectId(bookingId) ? bookingId : null,
+      booking:
+        bookingId && mongoose.isValidObjectId(bookingId)
+          ? await Booking.findById(bookingId)
+              .lean()
+              .catch(() => null)
+          : null,
+      pixId: String(pix?.id || "").trim(),
+    });
+  } catch (err) {
+    console.warn("[whatsapp] failed to notify customer (ignored)", {
+      message: err?.message,
+      code: err?.code,
+    });
   }
 
   // 7) Pix quota: debita com retry (transiente) e idempotência

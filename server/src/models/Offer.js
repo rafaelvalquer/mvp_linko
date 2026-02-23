@@ -41,6 +41,15 @@ const OfferSchema = new mongoose.Schema(
     customerDoc: { type: String, trim: true, default: "" }, // apenas dígitos
     customerWhatsApp: { type: String, trim: true, default: "" },
 
+    // ✅ WhatsApp (cliente): enviar confirmação quando Pix for pago
+    notifyWhatsAppOnPaid: { type: Boolean, default: false },
+
+    // opcional: auditoria/idempotência adicional (não obrigatório no MVP)
+    whatsappNotifiedAt: { type: Date, default: null },
+    whatsappNotifiedTo: { type: String, trim: true, default: null },
+    whatsappNotifiedKey: { type: String, trim: true, default: null },
+
+
     offerType: { type: String, trim: true, default: "service" }, // service|product
     title: { type: String, required: true, trim: true },
     description: { type: String, default: "" },

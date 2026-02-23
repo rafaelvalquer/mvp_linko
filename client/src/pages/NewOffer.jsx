@@ -9,6 +9,8 @@ import { useAuth } from "../app/AuthContext.jsx";
 import { listClients } from "../app/clientsApi.js";
 import { listProducts } from "../app/productsApi.js";
 
+import { MessageCircle } from "lucide-react";
+
 function parseMoneyToCents(raw) {
   const s0 = String(raw ?? "").trim();
   if (!s0) return NaN;
@@ -55,6 +57,53 @@ function onlyDigits(s) {
   return String(s || "").replace(/\D+/g, "");
 }
 
+function normalizePhoneForWaMe(raw) {
+  const digits = onlyDigits(raw);
+  if (!digits) return "";
+
+  // Se vier com DDD+numero (10/11 dígitos), assume BR e prefixa 55
+  if (digits.length === 10 || digits.length === 11) return `55${digits}`;
+
+  // Se já vier com 55 (12/13 dígitos), mantém
+  if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13))
+    return digits;
+
+  // Outros países: mantém somente dígitos
+  return digits;
+}
+
+function linkTextForWhatsApp(offerUrl) {
+  try {
+    const u = new URL(offerUrl);
+    const host = u.hostname;
+
+    // Se for localhost (sem ponto), force "www.localhost" apenas para linkificar no WhatsApp
+    // (OBS: para abrir de verdade no celular, use um domínio real ou IP/Ngrok)
+    const isLocalhost = host === "localhost";
+    const hostname = isLocalhost
+      ? "www.localhost"
+      : host.startsWith("www.")
+        ? host
+        : `www.${host}`;
+
+    const port = u.port ? `:${u.port}` : "";
+    return `${hostname}${port}${u.pathname}${u.search}${u.hash}`;
+  } catch {
+    // fallback simples
+    const s = String(offerUrl || "").trim();
+    return s.replace(/^https?:\/\//i, "");
+  }
+}
+
+function buildWaMeLink({ phoneRaw, offerUrl }) {
+  const to = normalizePhoneForWaMe(phoneRaw);
+  if (!to) return "";
+
+  const waLinkText = linkTextForWhatsApp(offerUrl); // ✅ agora manda "www..."
+  const msg = `Segue o link da proposta:\n${waLinkText}`;
+  return `https://wa.me/${to}?text=${encodeURIComponent(msg)}`;
+}
+
 function formatBRL(cents) {
   const v = Number.isFinite(cents) ? cents : 0;
   return new Intl.NumberFormat("pt-BR", {
@@ -85,6 +134,7 @@ export default function NewOffer() {
 
     customerName: "",
     customerWhatsApp: "",
+    notifyWhatsAppOnPaid: false,
     customerId: null,
     customerEmail: "",
     customerDoc: "", // SOMENTE dígitos
@@ -476,6 +526,7 @@ export default function NewOffer() {
         sellerName,
         customerName: form.customerName,
         customerWhatsApp: form.customerWhatsApp,
+        notifyWhatsAppOnPaid: !!form.notifyWhatsAppOnPaid,
 
         // ✅ envia snapshot + vínculo
         customerId: isPremium ? form.customerId || null : null,
@@ -582,6 +633,17 @@ export default function NewOffer() {
   }
 
   const isProduct = form.offerType === "product";
+
+  const offerPublicUrl = result?.offer?.publicToken
+    ? `${window.location.origin}/p/${result.offer.publicToken}`
+    : "";
+
+  const waShareUrl = offerPublicUrl
+    ? buildWaMeLink({
+        phoneRaw: form.customerWhatsApp,
+        offerUrl: offerPublicUrl,
+      })
+    : "";
 
   return (
     <Shell>
@@ -767,6 +829,38 @@ export default function NewOffer() {
                   }
                   placeholder="Ex.: 11 99999-9999"
                 />
+              </div>
+
+              <div className="mt-3 rounded-xl border bg-zinc-50 p-3">
+                <label className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    className="mt-1 h-4 w-4 accent-emerald-600"
+                    checked={!!form.notifyWhatsAppOnPaid}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        notifyWhatsAppOnPaid: e.target.checked,
+                      })
+                    }
+                  />
+                  <div>
+                    <div className="text-sm font-semibold text-zinc-900">
+                      Enviar confirmação de pagamento por WhatsApp
+                    </div>
+                    <div className="text-xs text-zinc-600">
+                      Quando o Pix for confirmado, enviaremos uma mensagem para
+                      o cliente.
+                    </div>
+                    {form.notifyWhatsAppOnPaid &&
+                    !onlyDigits(form.customerWhatsApp) ? (
+                      <div className="mt-1 text-xs text-amber-700">
+                        Para enviar WhatsApp, preencha o WhatsApp do cliente na
+                        proposta.
+                      </div>
+                    ) : null}
+                  </div>
+                </label>
               </div>
             </CardBody>
           </Card>
@@ -1655,29 +1749,46 @@ export default function NewOffer() {
                       variant="secondary"
                       type="button"
                       onClick={async () => {
-                        const url =
-                          window.location.origin +
-                          `/p/${result.offer.publicToken}`;
                         try {
-                          await navigator.clipboard.writeText(url);
-                          alert("Link copiado!"); // Opcional: feedback visual
+                          await navigator.clipboard.writeText(offerPublicUrl);
+                          alert("Link copiado!");
                         } catch {}
                       }}
                     >
                       Copiar link
                     </Button>
+
                     <Button
                       variant="ghost"
                       type="button"
                       onClick={() =>
                         window.open(
-                          `/p/${result.offer.publicToken}`,
+                          offerPublicUrl,
                           "_blank",
                           "noopener,noreferrer",
                         )
                       }
                     >
                       Visualizar Proposta
+                    </Button>
+
+                    <Button
+                      variant="secondary"
+                      type="button"
+                      disabled={!waShareUrl}
+                      title={
+                        waShareUrl
+                          ? "Abrir WhatsApp com a mensagem pronta"
+                          : "Preencha o WhatsApp do cliente para usar este botão"
+                      }
+                      onClick={() =>
+                        window.open(waShareUrl, "_blank", "noopener,noreferrer")
+                      }
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        <MessageCircle className="h-4 w-4" />
+                        WhatsApp
+                      </span>
                     </Button>
                   </div>
                 </CardBody>
