@@ -156,7 +156,7 @@ export default function Topbar({ title = "LuminorPay" }) {
               onClick={openPortal}
               disabled={portalLoading}
               className="hidden sm:inline-flex rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-60"
-              title="Gerenciar assinatura/cartão/cancelamento"
+              title="Gerenciar assinatura (trocar plano, cartão e cancelamento)"
             >
               {portalLoading ? "Abrindo..." : "Gerenciar assinatura"}
             </button>

@@ -328,7 +328,13 @@ r.post(
     }
 
     const frontendUrl = getFrontendUrl();
-    const returnUrl = String(req.body?.returnUrl || `${frontendUrl}/dashboard`);
+    // Evita open-redirect: só aceita returnUrl dentro do FRONTEND_URL.
+    const requestedReturnUrl = String(req.body?.returnUrl || "").trim();
+    const safeDefault = `${frontendUrl}/dashboard`;
+    const returnUrl =
+      requestedReturnUrl && requestedReturnUrl.startsWith(frontendUrl)
+        ? requestedReturnUrl
+        : safeDefault;
 
     const portal = await createPortalSession(stripeCustomerId, returnUrl);
     return res.json({ ok: true, url: portal.url });

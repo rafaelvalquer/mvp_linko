@@ -109,8 +109,24 @@ export async function retrieveCheckoutSession(sessionId) {
 
 export async function createPortalSession(stripeCustomerId, returnUrl) {
   const stripe = getStripe();
-  return stripe.billingPortal.sessions.create({
+
+  // Opcional: use uma configuração específica do Portal (para habilitar troca de plano,
+  // regras de proration, etc.). Se não informado, Stripe usa a configuração default.
+  const configurationId = String(
+    process.env.STRIPE_PORTAL_CONFIGURATION_ID || "",
+  ).trim();
+
+  if (configurationId && !/^bpc_[A-Za-z0-9]+$/.test(configurationId)) {
+    throw new Error(
+      `STRIPE_PORTAL_CONFIGURATION_ID inválido: "${configurationId}". Esperado um Portal Configuration ID (bpc_...).`,
+    );
+  }
+
+  const payload = {
     customer: stripeCustomerId,
     return_url: returnUrl,
-  });
+    ...(configurationId ? { configuration: configurationId } : {}),
+  };
+
+  return stripe.billingPortal.sessions.create(payload);
 }

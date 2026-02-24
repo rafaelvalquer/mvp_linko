@@ -69,25 +69,18 @@ function pickPeriodFromInvoice(invoice) {
   return { start, end, startSec, endSec };
 }
 
-async function applyInvoicePaid(invoice) {
-  const stripe = getStripe();
+function isNewCycleInvoice(invoice) {
+  const reason = String(invoice?.billing_reason || "").toLowerCase();
+  // subscription_cycle: fatura do ciclo (renovação)
+  // subscription_create: primeira fatura da assinatura
+  return reason === "subscription_cycle" || reason === "subscription_create";
+}
 
-  const subscriptionId = invoice?.subscription
-    ? String(invoice.subscription)
-    : "";
-  const customerId = invoice?.customer ? String(invoice.customer) : "";
-
-  const workspaceId = pickWorkspaceIdFromInvoice(invoice);
-  const priceId = pickPriceIdFromInvoice(invoice);
-  const planFromMeta = pickPlanFromInvoiceMeta(invoice);
-
-  const plan = normalizePlan(
-    planForPriceId(priceId) || planFromMeta || "start",
-  );
-  const { start: periodStart, end: periodEnd } = pickPeriodFromInvoice(invoice);
-
-  const ck = cycleKeySP(periodStart || new Date());
-
+async function findWorkspaceForInvoice({
+  subscriptionId,
+  customerId,
+  workspaceId,
+}) {
   let ws = null;
 
   if (subscriptionId) {
@@ -106,6 +99,26 @@ async function applyInvoicePaid(invoice) {
     });
   }
 
+  return ws;
+}
+
+async function applyInvoicePaid(invoice) {
+  const stripe = getStripe();
+
+  const subscriptionId = invoice?.subscription
+    ? String(invoice.subscription)
+    : "";
+  const customerId = invoice?.customer ? String(invoice.customer) : "";
+
+  const workspaceId = pickWorkspaceIdFromInvoice(invoice);
+  const planFromMeta = pickPlanFromInvoiceMeta(invoice);
+
+  const ws = await findWorkspaceForInvoice({
+    subscriptionId,
+    customerId,
+    workspaceId,
+  });
+
   if (!ws) {
     console.log("[stripe] invoice.paid: workspace não encontrado", {
       subscriptionId,
@@ -115,10 +128,57 @@ async function applyInvoicePaid(invoice) {
     return;
   }
 
+  // Preferir o plano atual do subscription (mais confiável que a 1ª linha da invoice,
+  // pois invoice pode ter proration/ajustes que não representam o price final)
+  let sub = null;
+  if (subscriptionId) {
+    try {
+      sub = await stripe.subscriptions.retrieve(subscriptionId, {
+        expand: ["items.data.price"],
+      });
+    } catch {}
+  }
+
+  const priceIdFromSub = pickPriceIdFromSubscription(sub);
+  const priceIdFromInvoice = pickPriceIdFromInvoice(invoice);
+  const priceId = priceIdFromSub || priceIdFromInvoice || "";
+
+  const plan = normalizePlan(
+    planForPriceId(priceId) || planFromMeta || ws.plan || "start",
+  );
+
+  // Período preferencial do subscription; fallback para invoice line period
+  const periodStart = sub?.current_period_start
+    ? new Date(sub.current_period_start * 1000)
+    : pickPeriodFromInvoice(invoice).start;
+
+  const periodEnd = sub?.current_period_end
+    ? new Date(sub.current_period_end * 1000)
+    : pickPeriodFromInvoice(invoice).end;
+
+  const ck = cycleKeySP(periodStart || new Date());
+
+  const wsSubStatus = wsStatusFromStripeStatus(sub?.status || "active");
+  const isActive = wsSubStatus === "active";
+
+  // Evitar reset de Pix em proration de troca de plano (subscription_update).
+  // Resetar apenas em criação/renovação de ciclo.
+  const shouldResetUsage =
+    isNewCycleInvoice(invoice) || !ws?.pixUsage?.cycleKey;
+
+  const nextUsage = shouldResetUsage
+    ? { cycleKey: ck, used: 0 }
+    : {
+        cycleKey: ws?.pixUsage?.cycleKey || ck,
+        used: Number.isFinite(Number(ws?.pixUsage?.used))
+          ? Number(ws.pixUsage.used)
+          : 0,
+      };
+
   ws.plan = plan;
   ws.planStatus = "active";
-  ws.pixMonthlyLimit = limitForPlan(plan);
-  ws.pixUsage = { cycleKey: ck, used: 0 };
+  ws.pixMonthlyLimit = isActive ? limitForPlan(plan) : 0;
+  ws.pixUsage = nextUsage;
 
   ws.subscription = {
     ...(ws.subscription?.toObject?.() || ws.subscription || {}),
@@ -126,7 +186,7 @@ async function applyInvoicePaid(invoice) {
     stripeCustomerId: customerId || ws.subscription?.stripeCustomerId || "",
     stripeSubscriptionId:
       subscriptionId || ws.subscription?.stripeSubscriptionId || "",
-    status: "active",
+    status: wsSubStatus,
     currentPeriodStart:
       periodStart || ws.subscription?.currentPeriodStart || undefined,
     currentPeriodEnd:
@@ -145,6 +205,8 @@ async function applyInvoicePaid(invoice) {
     plan: ws.plan,
     limit: ws.pixMonthlyLimit,
     cycleKey: ws.pixUsage?.cycleKey,
+    resetUsage: shouldResetUsage,
+    billingReason: String(invoice?.billing_reason || ""),
   });
 }
 
@@ -173,12 +235,10 @@ r.post("/webhooks/stripe", async (req, res) => {
   try {
     event = stripe.webhooks.constructEvent(req.rawBody, sig, whsec);
   } catch (e) {
-    return res
-      .status(400)
-      .json({
-        ok: false,
-        error: `Assinatura inválida: ${e?.message || "erro"}`,
-      });
+    return res.status(400).json({
+      ok: false,
+      error: `Assinatura inválida: ${e?.message || "erro"}`,
+    });
   }
 
   // idempotência
@@ -192,12 +252,10 @@ r.post("/webhooks/stripe", async (req, res) => {
     });
   } catch (e) {
     if (e?.code === 11000) return res.json({ ok: true, duplicated: true });
-    return res
-      .status(500)
-      .json({
-        ok: false,
-        error: e?.message || "Falha ao registrar StripeEvent.",
-      });
+    return res.status(500).json({
+      ok: false,
+      error: e?.message || "Falha ao registrar StripeEvent.",
+    });
   }
 
   try {
@@ -290,13 +348,25 @@ r.post("/webhooks/stripe", async (req, res) => {
       if (subscriptionId) {
         result = await Workspace.updateOne(
           { "subscription.stripeSubscriptionId": subscriptionId },
-          { $set: { "subscription.status": "past_due", planStatus: "active" } },
+          {
+            $set: {
+              "subscription.status": "past_due",
+              planStatus: "active",
+              pixMonthlyLimit: 0,
+            },
+          },
         );
       }
       if ((!result || result.matchedCount === 0) && customerId) {
         await Workspace.updateOne(
           { "subscription.stripeCustomerId": customerId },
-          { $set: { "subscription.status": "past_due", planStatus: "active" } },
+          {
+            $set: {
+              "subscription.status": "past_due",
+              planStatus: "active",
+              pixMonthlyLimit: 0,
+            },
+          },
         );
       }
 
@@ -311,7 +381,13 @@ r.post("/webhooks/stripe", async (req, res) => {
 
       await Workspace.updateOne(
         { "subscription.stripeSubscriptionId": subscriptionId },
-        { $set: { "subscription.status": "canceled", planStatus: "active" } },
+        {
+          $set: {
+            "subscription.status": "canceled",
+            planStatus: "active",
+            pixMonthlyLimit: 0,
+          },
+        },
       );
 
       return res.json({ ok: true });
@@ -323,11 +399,27 @@ r.post("/webhooks/stripe", async (req, res) => {
       const subscriptionId = String(sub?.id || "");
       if (!subscriptionId) return res.json({ ok: true });
 
+      const customerId = typeof sub?.customer === "string" ? sub.customer : "";
+      const safeCustomerId = customerId.startsWith("cus_") ? customerId : "";
+
       const priceId = pickPriceIdFromSubscription(sub);
       const planFromPrice = planForPriceId(priceId);
 
+      const ws = await Workspace.findOne({
+        "subscription.stripeSubscriptionId": subscriptionId,
+      })
+        .select("plan pixMonthlyLimit")
+        .lean();
+
+      const currentLimit = Number.isFinite(Number(ws?.pixMonthlyLimit))
+        ? Number(ws.pixMonthlyLimit)
+        : limitForPlan(ws?.plan);
+
       const patch = {
         "subscription.status": wsStatusFromStripeStatus(sub?.status),
+        ...(safeCustomerId
+          ? { "subscription.stripeCustomerId": safeCustomerId }
+          : {}),
         "subscription.currentPeriodStart": sub?.current_period_start
           ? new Date(sub.current_period_start * 1000)
           : undefined,
@@ -339,8 +431,25 @@ r.post("/webhooks/stripe", async (req, res) => {
 
       if (planFromPrice) {
         const plan = normalizePlan(planFromPrice);
-        patch.plan = plan;
         patch["subscription.planAtStripe"] = plan;
+
+        const status = patch["subscription.status"];
+        const isActive = status === "active";
+        const nextLimit = limitForPlan(plan);
+
+        // downgrade (ou igual): aplica já; upgrade: espera invoice.paid
+        if (Number.isFinite(nextLimit) && nextLimit <= currentLimit) {
+          patch.plan = plan;
+          patch.pixMonthlyLimit = isActive ? nextLimit : 0;
+        } else {
+          if (!isActive) patch.pixMonthlyLimit = 0;
+        }
+      }
+
+      // se status não for active/trialing (aqui normalizamos pra "active" apenas),
+      // bloqueia Pix imediatamente
+      if (patch["subscription.status"] !== "active") {
+        patch.pixMonthlyLimit = 0;
       }
 
       await Workspace.updateOne(
@@ -353,12 +462,10 @@ r.post("/webhooks/stripe", async (req, res) => {
 
     return res.json({ ok: true, ignored: true, type: event.type });
   } catch (e) {
-    return res
-      .status(500)
-      .json({
-        ok: false,
-        error: e?.message || "Erro ao processar webhook Stripe.",
-      });
+    return res.status(500).json({
+      ok: false,
+      error: e?.message || "Erro ao processar webhook Stripe.",
+    });
   }
 });
 
