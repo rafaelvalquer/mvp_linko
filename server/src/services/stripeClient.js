@@ -103,16 +103,14 @@ export async function createCheckoutSession({
 export async function retrieveCheckoutSession(sessionId) {
   const stripe = getStripe();
   return stripe.checkout.sessions.retrieve(sessionId, {
-    expand: ["subscription"], // ✅ não expandir "customer"
+    expand: ["subscription"],
   });
 }
 
 export async function createPortalSession(stripeCustomerId, returnUrl) {
   const stripe = getStripe();
 
-  // Opcional: use uma configuração específica do Portal (para habilitar troca de plano,
-  // proration imediata e downgrade no fim do ciclo, etc.).
-  // Se não informado, Stripe usa a configuração default.
+  // Opcional: usar uma configuração específica do Customer Portal (bpc_...)
   const configurationId = String(
     process.env.STRIPE_PORTAL_CONFIGURATION_ID || "",
   ).trim();

@@ -65,7 +65,7 @@ const WorkspaceSchema = new mongoose.Schema(
 
     plan: { type: String, enum: PLANS, default: "start", index: true },
 
-    // ✅ novo: status do plano (cadastro -> free, checkout criado -> pending, pago -> active)
+    // ✅ status do plano (cadastro -> free, checkout criado -> pending, pago -> active)
     planStatus: {
       type: String,
       enum: PLAN_STATUS,

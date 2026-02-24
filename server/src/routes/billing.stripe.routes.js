@@ -332,6 +332,7 @@ r.post(
     }
 
     const frontendUrl = getFrontendUrl();
+
     const defaultReturnUrl = `${frontendUrl}/dashboard`;
     const rawReturnUrl = String(req.body?.returnUrl || "").trim();
 
