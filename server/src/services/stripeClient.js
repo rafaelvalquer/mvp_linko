@@ -111,7 +111,8 @@ export async function createPortalSession(stripeCustomerId, returnUrl) {
   const stripe = getStripe();
 
   // Opcional: use uma configuração específica do Portal (para habilitar troca de plano,
-  // regras de proration, etc.). Se não informado, Stripe usa a configuração default.
+  // proration imediata e downgrade no fim do ciclo, etc.).
+  // Se não informado, Stripe usa a configuração default.
   const configurationId = String(
     process.env.STRIPE_PORTAL_CONFIGURATION_ID || "",
   ).trim();
@@ -122,11 +123,9 @@ export async function createPortalSession(stripeCustomerId, returnUrl) {
     );
   }
 
-  const payload = {
+  return stripe.billingPortal.sessions.create({
     customer: stripeCustomerId,
     return_url: returnUrl,
     ...(configurationId ? { configuration: configurationId } : {}),
-  };
-
-  return stripe.billingPortal.sessions.create(payload);
+  });
 }

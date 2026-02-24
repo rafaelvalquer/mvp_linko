@@ -294,6 +294,10 @@ r.get(
         currentPeriodStart: ws.subscription?.currentPeriodStart || null,
         currentPeriodEnd: ws.subscription?.currentPeriodEnd || null,
         priceId: ws.subscription?.priceId || "",
+        planAtStripe: ws.subscription?.planAtStripe || "",
+        pendingPlan: ws.subscription?.pendingPlan || "",
+        pendingEffectiveAt: ws.subscription?.pendingEffectiveAt || null,
+        scheduleId: ws.subscription?.scheduleId || "",
         lastInvoiceId: ws.subscription?.lastInvoiceId || "",
       },
     });
@@ -328,13 +332,18 @@ r.post(
     }
 
     const frontendUrl = getFrontendUrl();
-    // Evita open-redirect: só aceita returnUrl dentro do FRONTEND_URL.
-    const requestedReturnUrl = String(req.body?.returnUrl || "").trim();
-    const safeDefault = `${frontendUrl}/dashboard`;
-    const returnUrl =
-      requestedReturnUrl && requestedReturnUrl.startsWith(frontendUrl)
-        ? requestedReturnUrl
-        : safeDefault;
+    const defaultReturnUrl = `${frontendUrl}/dashboard`;
+    const rawReturnUrl = String(req.body?.returnUrl || "").trim();
+
+    // evita open redirect: só aceita returnUrl no mesmo origin do FRONTEND_URL
+    let returnUrl = defaultReturnUrl;
+    if (rawReturnUrl) {
+      try {
+        const u = new URL(rawReturnUrl);
+        const allowed = new URL(frontendUrl);
+        if (u.origin === allowed.origin) returnUrl = u.toString();
+      } catch {}
+    }
 
     const portal = await createPortalSession(stripeCustomerId, returnUrl);
     return res.json({ ok: true, url: portal.url });

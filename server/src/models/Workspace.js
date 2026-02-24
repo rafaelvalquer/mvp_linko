@@ -33,6 +33,12 @@ const SubscriptionSchema = new mongoose.Schema(
     priceId: { type: String, default: "" },
     planAtStripe: { type: String, default: "" },
 
+    // Mudança de plano agendada (ex.: downgrade no fim do ciclo)
+    pendingPriceId: { type: String, default: "" },
+    pendingPlan: { type: String, default: "" },
+    pendingEffectiveAt: { type: Date, default: null },
+    scheduleId: { type: String, default: "" },
+
     lastInvoiceId: { type: String, default: "" },
   },
   { _id: false },

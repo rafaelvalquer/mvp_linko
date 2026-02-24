@@ -29,7 +29,15 @@ async function loadSubscription(subscriptionId) {
 }
 
 function pickPriceIdFromSubscription(sub) {
-  return sub?.items?.data?.[0]?.price?.id || "";
+  const item = sub?.items?.data?.[0];
+  return item?.price?.id || item?.plan?.id || sub?.plan?.id || "";
+}
+
+function pickScheduleIdFromSubscription(sub) {
+  if (!sub?.schedule) return "";
+  return typeof sub.schedule === "string"
+    ? sub.schedule
+    : sub?.schedule?.id || "";
 }
 
 function pickInvoiceLine(invoice) {
@@ -46,11 +54,6 @@ function pickWorkspaceIdFromInvoice(invoice) {
   );
 }
 
-function pickPlanFromInvoiceMeta(invoice) {
-  const line = pickInvoiceLine(invoice);
-  return line?.metadata?.plan || "";
-}
-
 function pickPriceIdFromInvoice(invoice) {
   const line = pickInvoiceLine(invoice);
   return line?.price?.id || line?.pricing?.price_details?.price || "";
@@ -60,27 +63,25 @@ function pickPeriodFromInvoice(invoice) {
   const line = pickInvoiceLine(invoice);
   const startSec = line?.period?.start;
   const endSec = line?.period?.end;
+
   const start = Number.isFinite(Number(startSec))
     ? new Date(Number(startSec) * 1000)
     : null;
   const end = Number.isFinite(Number(endSec))
     ? new Date(Number(endSec) * 1000)
     : null;
-  return { start, end, startSec, endSec };
+
+  return { start, end };
 }
 
 function isNewCycleInvoice(invoice) {
   const reason = String(invoice?.billing_reason || "").toLowerCase();
-  // subscription_cycle: fatura do ciclo (renovação)
-  // subscription_create: primeira fatura da assinatura
+  // subscription_cycle: renovação
+  // subscription_create: primeira cobrança
   return reason === "subscription_cycle" || reason === "subscription_create";
 }
 
-async function findWorkspaceForInvoice({
-  subscriptionId,
-  customerId,
-  workspaceId,
-}) {
+async function findWorkspace({ subscriptionId, customerId, workspaceId }) {
   let ws = null;
 
   if (subscriptionId) {
@@ -109,16 +110,9 @@ async function applyInvoicePaid(invoice) {
     ? String(invoice.subscription)
     : "";
   const customerId = invoice?.customer ? String(invoice.customer) : "";
-
   const workspaceId = pickWorkspaceIdFromInvoice(invoice);
-  const planFromMeta = pickPlanFromInvoiceMeta(invoice);
 
-  const ws = await findWorkspaceForInvoice({
-    subscriptionId,
-    customerId,
-    workspaceId,
-  });
-
+  const ws = await findWorkspace({ subscriptionId, customerId, workspaceId });
   if (!ws) {
     console.log("[stripe] invoice.paid: workspace não encontrado", {
       subscriptionId,
@@ -128,86 +122,248 @@ async function applyInvoicePaid(invoice) {
     return;
   }
 
-  // Preferir o plano atual do subscription (mais confiável que a 1ª linha da invoice,
-  // pois invoice pode ter proration/ajustes que não representam o price final)
+  // Buscar subscription para obter o priceId final (invoice pode conter proration/linhas não finais)
   let sub = null;
   if (subscriptionId) {
     try {
-      sub = await stripe.subscriptions.retrieve(subscriptionId, {
-        expand: ["items.data.price"],
-      });
+      sub = await loadSubscription(subscriptionId);
     } catch {}
   }
+
+  const wsSubStatus = wsStatusFromStripeStatus(
+    sub?.status || ws?.subscription?.status,
+  );
+  const isActive = wsSubStatus === "active";
 
   const priceIdFromSub = pickPriceIdFromSubscription(sub);
   const priceIdFromInvoice = pickPriceIdFromInvoice(invoice);
   const priceId = priceIdFromSub || priceIdFromInvoice || "";
 
-  const plan = normalizePlan(
-    planForPriceId(priceId) || planFromMeta || ws.plan || "start",
-  );
+  const plan = normalizePlan(planForPriceId(priceId) || ws.plan || "start");
+  const nextLimit = limitForPlan(plan);
+
+  const currentLimit = Number.isFinite(Number(ws.pixMonthlyLimit))
+    ? Number(ws.pixMonthlyLimit)
+    : limitForPlan(ws.plan);
+
+  const billingReason = String(invoice?.billing_reason || "").toLowerCase();
+  const cycleInvoice = isNewCycleInvoice(invoice);
+
+  // REGRAS:
+  // - Upgrade: aplicar imediatamente quando a invoice do update for paga (subscription_update)
+  // - Downgrade: NÃO aplicar em invoice de update (se houver). Aplicar só no próximo ciclo.
+  // - Reset de uso: apenas no início de ciclo (subscription_cycle/subscription_create)
+  const shouldApplyPlan = cycleInvoice || nextLimit > currentLimit;
+  const shouldResetUsage = cycleInvoice || !ws?.pixUsage?.cycleKey;
 
   // Período preferencial do subscription; fallback para invoice line period
   const periodStart = sub?.current_period_start
     ? new Date(sub.current_period_start * 1000)
     : pickPeriodFromInvoice(invoice).start;
-
   const periodEnd = sub?.current_period_end
     ? new Date(sub.current_period_end * 1000)
     : pickPeriodFromInvoice(invoice).end;
 
   const ck = cycleKeySP(periodStart || new Date());
 
-  const wsSubStatus = wsStatusFromStripeStatus(sub?.status || "active");
-  const isActive = wsSubStatus === "active";
+  if (shouldApplyPlan) {
+    ws.plan = plan;
+    ws.planStatus = "active";
 
-  // Evitar reset de Pix em proration de troca de plano (subscription_update).
-  // Resetar apenas em criação/renovação de ciclo.
-  const shouldResetUsage =
-    isNewCycleInvoice(invoice) || !ws?.pixUsage?.cycleKey;
+    // Se assinatura não está ativa, bloqueia Pix
+    ws.pixMonthlyLimit = isActive ? nextLimit : 0;
 
-  const nextUsage = shouldResetUsage
-    ? { cycleKey: ck, used: 0 }
-    : {
-        cycleKey: ws?.pixUsage?.cycleKey || ck,
-        used: Number.isFinite(Number(ws?.pixUsage?.used))
-          ? Number(ws.pixUsage.used)
-          : 0,
-      };
+    ws.pixUsage = shouldResetUsage
+      ? { cycleKey: ck, used: 0 }
+      : {
+          cycleKey: ws?.pixUsage?.cycleKey || ck,
+          used: Number.isFinite(Number(ws?.pixUsage?.used))
+            ? Number(ws.pixUsage.used)
+            : 0,
+        };
 
-  ws.plan = plan;
-  ws.planStatus = "active";
-  ws.pixMonthlyLimit = isActive ? limitForPlan(plan) : 0;
-  ws.pixUsage = nextUsage;
+    // limpamos qualquer pending downgrade quando efetivamos um plano
+    ws.subscription = {
+      ...(ws.subscription?.toObject?.() || ws.subscription || {}),
+      provider: "stripe",
+      stripeCustomerId: customerId || ws.subscription?.stripeCustomerId || "",
+      stripeSubscriptionId:
+        subscriptionId || ws.subscription?.stripeSubscriptionId || "",
+      status: wsSubStatus || "active",
+      currentPeriodStart:
+        periodStart || ws.subscription?.currentPeriodStart || undefined,
+      currentPeriodEnd:
+        periodEnd || ws.subscription?.currentPeriodEnd || undefined,
+      priceId: priceId || ws.subscription?.priceId || "",
+      planAtStripe: plan,
+      pendingPriceId: "",
+      pendingPlan: "",
+      pendingEffectiveAt: null,
+      scheduleId:
+        pickScheduleIdFromSubscription(sub) ||
+        ws.subscription?.scheduleId ||
+        "",
+      lastInvoiceId: String(invoice?.id || ""),
+    };
 
+    await ws.save();
+
+    console.log("[stripe] invoice.paid aplicado", {
+      workspace: String(ws._id),
+      subscriptionId: ws.subscription?.stripeSubscriptionId,
+      status: ws.subscription?.status,
+      plan: ws.plan,
+      limit: ws.pixMonthlyLimit,
+      cycleKey: ws.pixUsage?.cycleKey,
+      resetUsage: shouldResetUsage,
+      billingReason,
+    });
+
+    return;
+  }
+
+  // Downgrade em invoice de update: apenas registra o plano no Stripe e mantém acesso até o fim do ciclo.
+  // (O downgrade será aplicado no próximo invoice.paid de subscription_cycle.)
   ws.subscription = {
     ...(ws.subscription?.toObject?.() || ws.subscription || {}),
     provider: "stripe",
     stripeCustomerId: customerId || ws.subscription?.stripeCustomerId || "",
     stripeSubscriptionId:
       subscriptionId || ws.subscription?.stripeSubscriptionId || "",
-    status: wsSubStatus,
+    status: wsSubStatus || ws.subscription?.status || "active",
     currentPeriodStart:
       periodStart || ws.subscription?.currentPeriodStart || undefined,
     currentPeriodEnd:
       periodEnd || ws.subscription?.currentPeriodEnd || undefined,
     priceId: priceId || ws.subscription?.priceId || "",
     planAtStripe: plan,
+    pendingPriceId: priceId,
+    pendingPlan: plan,
+    pendingEffectiveAt: periodEnd || ws.subscription?.currentPeriodEnd || null,
+    scheduleId:
+      pickScheduleIdFromSubscription(sub) || ws.subscription?.scheduleId || "",
     lastInvoiceId: String(invoice?.id || ""),
   };
 
   await ws.save();
 
-  console.log("[stripe] invoice.paid aplicado", {
+  console.log("[stripe] invoice.paid (downgrade adiado)", {
     workspace: String(ws._id),
-    subscriptionId: ws.subscription?.stripeSubscriptionId,
-    status: ws.subscription?.status,
-    plan: ws.plan,
-    limit: ws.pixMonthlyLimit,
-    cycleKey: ws.pixUsage?.cycleKey,
-    resetUsage: shouldResetUsage,
-    billingReason: String(invoice?.billing_reason || ""),
+    subscriptionId,
+    currentPlan: ws.plan,
+    pendingPlan: plan,
+    effectiveAt: ws.subscription?.pendingEffectiveAt,
+    billingReason,
   });
+}
+
+async function applySubscriptionUpdated(sub) {
+  const subscriptionId = String(sub?.id || "");
+  if (!subscriptionId) return;
+
+  const customerId =
+    typeof sub?.customer === "string" ? sub.customer : sub?.customer?.id || "";
+  const workspaceId = String(sub?.metadata?.workspaceId || "").trim();
+
+  const ws = await findWorkspace({ subscriptionId, customerId, workspaceId });
+  if (!ws) {
+    console.log(
+      "[stripe] customer.subscription.updated: workspace não encontrado",
+      {
+        subscriptionId,
+        customerId,
+        workspaceId,
+      },
+    );
+    return;
+  }
+
+  const priceId = pickPriceIdFromSubscription(sub);
+  const planFromPrice = normalizePlan(
+    planForPriceId(priceId) || ws.plan || "start",
+  );
+
+  const wsSubStatus = wsStatusFromStripeStatus(sub?.status);
+  const active = wsSubStatus === "active";
+
+  const periodStart = sub?.current_period_start
+    ? new Date(sub.current_period_start * 1000)
+    : null;
+  const periodEnd = sub?.current_period_end
+    ? new Date(sub.current_period_end * 1000)
+    : null;
+
+  const scheduleId = pickScheduleIdFromSubscription(sub);
+
+  const currentLimit = Number.isFinite(Number(ws.pixMonthlyLimit))
+    ? Number(ws.pixMonthlyLimit)
+    : limitForPlan(ws.plan);
+
+  const nextLimit = limitForPlan(planFromPrice);
+
+  // Regra solicitada:
+  // - downgrade: efetivar apenas no próximo ciclo (não reduz agora)
+  // - upgrade: efetivar apenas quando invoice.paid do update ocorrer (não aumenta aqui)
+  const isDowngrade = Number.isFinite(nextLimit) && nextLimit < currentLimit;
+
+  const patch = {
+    "subscription.status": wsSubStatus,
+    ...(customerId && customerId.startsWith("cus_")
+      ? { "subscription.stripeCustomerId": customerId }
+      : {}),
+    "subscription.currentPeriodStart": periodStart || undefined,
+    "subscription.currentPeriodEnd": periodEnd || undefined,
+    "subscription.priceId": priceId || "",
+    "subscription.planAtStripe": planFromPrice,
+    "subscription.scheduleId": scheduleId || "",
+  };
+
+  if (!active) {
+    patch.pixMonthlyLimit = 0;
+  }
+
+  if (isDowngrade) {
+    patch["subscription.pendingPriceId"] = priceId || "";
+    patch["subscription.pendingPlan"] = planFromPrice;
+    patch["subscription.pendingEffectiveAt"] =
+      periodEnd || ws?.subscription?.currentPeriodEnd || null;
+  } else {
+    // se não é downgrade, limpa pendências
+    patch["subscription.pendingPriceId"] = "";
+    patch["subscription.pendingPlan"] = "";
+    patch["subscription.pendingEffectiveAt"] = null;
+  }
+
+  await Workspace.updateOne({ _id: ws._id }, { $set: patch });
+}
+
+async function markSubscriptionProblem({
+  subscriptionId,
+  customerId,
+  status,
+  invoiceId,
+}) {
+  const patch = {
+    "subscription.status": status,
+    planStatus: "active",
+    pixMonthlyLimit: 0,
+    ...(invoiceId ? { "subscription.lastInvoiceId": String(invoiceId) } : {}),
+  };
+
+  let result = null;
+  if (subscriptionId) {
+    result = await Workspace.updateOne(
+      { "subscription.stripeSubscriptionId": subscriptionId },
+      { $set: patch },
+    );
+  }
+
+  if ((!result || result.matchedCount === 0) && customerId) {
+    await Workspace.updateOne(
+      { "subscription.stripeCustomerId": customerId },
+      { $set: patch },
+    );
+  }
 }
 
 r.post("/webhooks/stripe", async (req, res) => {
@@ -308,10 +464,13 @@ r.post("/webhooks/stripe", async (req, res) => {
         currentPeriodEnd: periodEnd || undefined,
         priceId: priceId || ws.subscription?.priceId || "",
         planAtStripe: plan,
+        pendingPriceId: "",
+        pendingPlan: "",
+        pendingEffectiveAt: null,
+        scheduleId: pickScheduleIdFromSubscription(sub) || "",
       };
 
       await ws.save();
-
       return res.json({ ok: true });
     }
 
@@ -321,19 +480,20 @@ r.post("/webhooks/stripe", async (req, res) => {
       return res.json({ ok: true });
     }
 
-    // fallback: payment_intent.succeeded -> invoice retrieve (order_reference)
-    if (event.type === "payment_intent.succeeded") {
-      const pi = event.data.object;
-      const invId = pi?.payment_details?.order_reference;
-
-      if (typeof invId === "string" && invId.startsWith("in_")) {
-        const invoice = await stripe.invoices.retrieve(invId, {
-          expand: ["lines.data.price"],
-        });
-        if (invoice?.status === "paid") await applyInvoicePaid(invoice);
-      }
-
-      return res.json({ ok: true, ignored: true, type: event.type });
+    // invoice.payment_action_required (SCA/3DS) => bloqueia Pix até resolver
+    if (event.type === "invoice.payment_action_required") {
+      const invoice = event.data.object;
+      const subscriptionId = invoice?.subscription
+        ? String(invoice.subscription)
+        : "";
+      const customerId = invoice?.customer ? String(invoice.customer) : "";
+      await markSubscriptionProblem({
+        subscriptionId,
+        customerId,
+        status: "past_due",
+        invoiceId: invoice?.id,
+      });
+      return res.json({ ok: true });
     }
 
     // invoice.payment_failed
@@ -344,31 +504,12 @@ r.post("/webhooks/stripe", async (req, res) => {
         : "";
       const customerId = invoice?.customer ? String(invoice.customer) : "";
 
-      let result = null;
-      if (subscriptionId) {
-        result = await Workspace.updateOne(
-          { "subscription.stripeSubscriptionId": subscriptionId },
-          {
-            $set: {
-              "subscription.status": "past_due",
-              planStatus: "active",
-              pixMonthlyLimit: 0,
-            },
-          },
-        );
-      }
-      if ((!result || result.matchedCount === 0) && customerId) {
-        await Workspace.updateOne(
-          { "subscription.stripeCustomerId": customerId },
-          {
-            $set: {
-              "subscription.status": "past_due",
-              planStatus: "active",
-              pixMonthlyLimit: 0,
-            },
-          },
-        );
-      }
+      await markSubscriptionProblem({
+        subscriptionId,
+        customerId,
+        status: "past_due",
+        invoiceId: invoice?.id,
+      });
 
       return res.json({ ok: true });
     }
@@ -386,6 +527,9 @@ r.post("/webhooks/stripe", async (req, res) => {
             "subscription.status": "canceled",
             planStatus: "active",
             pixMonthlyLimit: 0,
+            "subscription.pendingPriceId": "",
+            "subscription.pendingPlan": "",
+            "subscription.pendingEffectiveAt": null,
           },
         },
       );
@@ -395,69 +539,23 @@ r.post("/webhooks/stripe", async (req, res) => {
 
     // subscription.updated
     if (event.type === "customer.subscription.updated") {
-      const sub = event.data.object;
-      const subscriptionId = String(sub?.id || "");
-      if (!subscriptionId) return res.json({ ok: true });
-
-      const customerId = typeof sub?.customer === "string" ? sub.customer : "";
-      const safeCustomerId = customerId.startsWith("cus_") ? customerId : "";
-
-      const priceId = pickPriceIdFromSubscription(sub);
-      const planFromPrice = planForPriceId(priceId);
-
-      const ws = await Workspace.findOne({
-        "subscription.stripeSubscriptionId": subscriptionId,
-      })
-        .select("plan pixMonthlyLimit")
-        .lean();
-
-      const currentLimit = Number.isFinite(Number(ws?.pixMonthlyLimit))
-        ? Number(ws.pixMonthlyLimit)
-        : limitForPlan(ws?.plan);
-
-      const patch = {
-        "subscription.status": wsStatusFromStripeStatus(sub?.status),
-        ...(safeCustomerId
-          ? { "subscription.stripeCustomerId": safeCustomerId }
-          : {}),
-        "subscription.currentPeriodStart": sub?.current_period_start
-          ? new Date(sub.current_period_start * 1000)
-          : undefined,
-        "subscription.currentPeriodEnd": sub?.current_period_end
-          ? new Date(sub.current_period_end * 1000)
-          : undefined,
-        "subscription.priceId": priceId || "",
-      };
-
-      if (planFromPrice) {
-        const plan = normalizePlan(planFromPrice);
-        patch["subscription.planAtStripe"] = plan;
-
-        const status = patch["subscription.status"];
-        const isActive = status === "active";
-        const nextLimit = limitForPlan(plan);
-
-        // downgrade (ou igual): aplica já; upgrade: espera invoice.paid
-        if (Number.isFinite(nextLimit) && nextLimit <= currentLimit) {
-          patch.plan = plan;
-          patch.pixMonthlyLimit = isActive ? nextLimit : 0;
-        } else {
-          if (!isActive) patch.pixMonthlyLimit = 0;
-        }
-      }
-
-      // se status não for active/trialing (aqui normalizamos pra "active" apenas),
-      // bloqueia Pix imediatamente
-      if (patch["subscription.status"] !== "active") {
-        patch.pixMonthlyLimit = 0;
-      }
-
-      await Workspace.updateOne(
-        { "subscription.stripeSubscriptionId": subscriptionId },
-        { $set: patch },
-      );
-
+      await applySubscriptionUpdated(event.data.object);
       return res.json({ ok: true });
+    }
+
+    // fallback: payment_intent.succeeded -> invoice retrieve (order_reference)
+    if (event.type === "payment_intent.succeeded") {
+      const pi = event.data.object;
+      const invId = pi?.payment_details?.order_reference;
+
+      if (typeof invId === "string" && invId.startsWith("in_")) {
+        const invoice = await stripe.invoices.retrieve(invId, {
+          expand: ["lines.data.price"],
+        });
+        if (invoice?.status === "paid") await applyInvoicePaid(invoice);
+      }
+
+      return res.json({ ok: true, ignored: true, type: event.type });
     }
 
     return res.json({ ok: true, ignored: true, type: event.type });
