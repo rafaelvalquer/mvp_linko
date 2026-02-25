@@ -599,20 +599,28 @@ async function handleBillingPaid(event) {
     console.log("netCents = " + netCents);
 
     if (wsId && paymentId && netCents > 0) {
-      await creditWalletIdempotent({
-        workspaceId: wsId,
-        offerId: offer?._id,
-        paymentId,
-        amountCents: netCents,
-      });
+      await retryMongoTransient(
+        () =>
+          creditWalletIdempotent({
+            workspaceId: wsId,
+            offerId: offer?._id,
+            paymentId,
+            amountCents: netCents,
+          }),
+        { label: "abacatepay wallet credit" },
+      );
 
       try {
-        await tryAutoPayout({
-          workspaceId: wsId,
-          offerId: offer?._id,
-          paymentId,
-          amountCents: netCents,
-        });
+        await retryMongoTransient(
+          () =>
+            tryAutoPayout({
+              workspaceId: wsId,
+              offerId: offer?._id,
+              paymentId,
+              amountCents: netCents,
+            }),
+          { label: "abacatepay auto payout" },
+        );
       } catch (err) {
         console.warn(
           "[abacatepay webhook] auto payout failed",
