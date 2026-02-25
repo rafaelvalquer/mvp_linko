@@ -50,9 +50,23 @@ export function createApp() {
       return cb(err);
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+
+    // ✅ IMPORTANTE: inclua Idempotency-Key (preflight pede isso)
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "Idempotency-Key",
+      // opcionais (não atrapalham)
+      "X-Requested-With",
+      "Accept",
+    ],
+
+    // ✅ se quiser ler algum header custom no frontend
+    exposedHeaders: ["Idempotency-Key"],
+
     credentials: false, // use false se você autentica por Bearer token (localStorage)
     optionsSuccessStatus: 204,
+    maxAge: 86400,
   };
 
   app.use(cors(corsOptions));
