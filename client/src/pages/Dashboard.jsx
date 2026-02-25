@@ -4,8 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import Shell from "../components/layout/Shell.jsx";
 import { api } from "../app/api.js";
 import { listBookings } from "../app/bookingsApi.js";
-import { listWithdraws } from "../app/withdrawApi.js";
-import PageHeader from "../components/appui/PageHeader.jsx";
+import { getPayoutSettings, listWithdraws } from "../app/withdrawApi.js";
 import Card, { CardBody, CardHeader } from "../components/appui/Card.jsx";
 import Button from "../components/appui/Button.jsx";
 import Skeleton from "../components/appui/Skeleton.jsx";
@@ -17,7 +16,7 @@ import QuotaBadge from "../components/QuotaBadge.jsx";
 import { quotaPercent } from "../utils/planQuota.js";
 import AnalyticsSection from "../components/dashboard/AnalyticsSection.jsx";
 
-/** ========= ICON COMPONENTS (SVG INLINE) ========= */
+/** ========= ICONS ========= */
 const Icons = {
   Refresh: () => (
     <svg
@@ -220,7 +219,7 @@ const fmtTimeBR = (iso) =>
 const safeDate = (v) => {
   if (!v) return null;
   const d = new Date(v);
-  return isNaN(d.getTime()) ? null : d;
+  return Number.isNaN(d.getTime()) ? null : d;
 };
 
 function holdRemainingLabel(holdExpiresAt) {
@@ -240,11 +239,11 @@ function StatCard({ label, value, meta, icon: Icon, loading }) {
           <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
             {label}
           </span>
-          {Icon && (
+          {Icon ? (
             <div className="p-2 bg-zinc-50 rounded-lg">
               <Icon />
             </div>
-          )}
+          ) : null}
         </div>
         <div className="mt-3">
           {loading ? (
@@ -283,10 +282,10 @@ function QuotaAccordion({ workspace, quota, loading }) {
     return p.charAt(0).toUpperCase() + p.slice(1);
   }, [workspace]);
 
-  const summaryLine = useMemo(() => {
-    // Ex.: "50/50 Pix"
-    return `${quota.remaining}/${quota.limit} Pix`;
-  }, [quota]);
+  const summaryLine = useMemo(
+    () => `${quota.remaining}/${quota.limit} Pix`,
+    [quota],
+  );
 
   return (
     <Card className="border-none shadow-sm ring-1 ring-zinc-200 overflow-hidden">
@@ -300,19 +299,12 @@ function QuotaAccordion({ workspace, quota, loading }) {
             <div className="text-sm font-semibold text-zinc-900">
               Cota Pix do mês
             </div>
-
             <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-600">
               <span>Ciclo: {quota.cycleKey || "—"}</span>
               <span className="text-zinc-300">•</span>
               <span>Plano: {planLabel}</span>
               <span className="text-zinc-300">•</span>
               <span className="font-semibold text-zinc-900">{summaryLine}</span>
-              {quota.cycleKey ? (
-                <>
-                  <span className="text-zinc-300">•</span>
-                  <span>• {quota.cycleKey}</span>
-                </>
-              ) : null}
             </div>
           </div>
 
@@ -333,7 +325,6 @@ function QuotaAccordion({ workspace, quota, loading }) {
         </div>
       </button>
 
-      {/* Accordion body */}
       {open ? (
         <CardBody className="px-5 pb-5 pt-0">
           {loading ? (
@@ -396,33 +387,42 @@ function QuotaAccordion({ workspace, quota, loading }) {
   );
 }
 
-/** ========= MAIN DASHBOARD ========= */
+/** ========= MAIN ========= */
 export default function Dashboard() {
   const [offers, setOffers] = useState([]);
   const [bookings, setBookings] = useState([]);
   const [withdraws, setWithdraws] = useState([]);
+
   const [loading, setLoading] = useState(true);
   const [bookingsBusy, setBookingsBusy] = useState(true);
   const [withdrawsBusy, setWithdrawsBusy] = useState(true);
+
   const [error, setError] = useState("");
   const [bookingsErr, setBookingsErr] = useState("");
   const [withdrawsErr, setWithdrawsErr] = useState("");
+
   const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [payoutInfo, setPayoutInfo] = useState({
+    walletAvailableCents: 0,
+    autoPayoutEnabled: false,
+  });
+
   const [showToast, setShowToast] = useState(false);
   const [lastUpdate, setLastUpdate] = useState("");
-  const { signOut, workspace, loadingMe } = useAuth();
 
+  const { signOut, workspace, loadingMe } = useAuth();
   const nav = useNavigate();
+
   const toastTimerRef = useRef(null);
 
-  const handleCopy = async (url) => {
+  const handleCopy = async (path) => {
     try {
-      await navigator.clipboard.writeText(window.location.origin + url);
+      await navigator.clipboard.writeText(window.location.origin + path);
       setShowToast(true);
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
       toastTimerRef.current = setTimeout(() => setShowToast(false), 2000);
-    } catch (err) {
-      console.error(err);
+    } catch {
+      // ignora
     }
   };
 
@@ -433,11 +433,13 @@ export default function Dashboard() {
       from.setHours(0, 0, 0, 0);
       const to = new Date(from);
       to.setDate(to.getDate() + 7);
+
       const d = await listBookings({
         from: from.toISOString(),
         to: to.toISOString(),
         status: "HOLD,CONFIRMED",
       });
+
       setBookings(d.items || []);
     } catch (e) {
       if (e?.status === 401) return signOut();
@@ -460,6 +462,19 @@ export default function Dashboard() {
     }
   }
 
+  async function loadPayoutInfo() {
+    try {
+      const d = await getPayoutSettings();
+      setPayoutInfo({
+        walletAvailableCents: Number(d?.walletAvailableCents || 0),
+        autoPayoutEnabled: !!d?.autoPayoutEnabled,
+      });
+    } catch (e) {
+      if (e?.status === 401) return signOut();
+      // não bloqueia o dashboard
+    }
+  }
+
   async function load() {
     try {
       setLoading(true);
@@ -473,6 +488,7 @@ export default function Dashboard() {
       );
       loadBookings();
       loadWithdraws();
+      loadPayoutInfo();
     } catch (e) {
       if (e?.status === 401) return signOut();
       setError("Falha ao carregar dados principais.");
@@ -489,6 +505,7 @@ export default function Dashboard() {
   const kpis = useMemo(() => {
     const total = offers.length;
     const totalValue = offers.reduce((acc, o) => acc + (o.amountCents || 0), 0);
+
     const paidOffers = offers.filter((o) =>
       ["PAID", "CONFIRMED"].includes(normStatus(o.status)),
     );
@@ -545,11 +562,10 @@ export default function Dashboard() {
   return (
     <Shell>
       <div className="mx-auto max-w-7xl px-4 py-6 space-y-6">
-        {/* --- INÍCIO DO NOVO HEADER PREMIUM --- */}
+        {/* HEADER */}
         <div className="relative mb-8">
           <div className="bg-white border border-zinc-200 rounded-3xl p-5 sm:p-6 shadow-sm ring-1 ring-zinc-50">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-              {/* Lado Esquerdo: Título e Status */}
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-3">
                   <h1 className="text-2xl sm:text-3xl font-bold text-zinc-900 tracking-tight">
@@ -561,23 +577,10 @@ export default function Dashboard() {
                       <span className="relative flex h-2 w-2">
                         <span
                           className={`animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 ${loading ? "hidden" : ""}`}
-                        ></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                        />
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
                       </span>
                       <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider flex items-center gap-1">
-                        <svg
-                          className={`w-3 h-3 ${loading ? "animate-spin" : ""}`}
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth="2"
-                            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                          />
-                        </svg>
                         {loading
                           ? "Sincronizando..."
                           : `Atualizado: ${lastUpdate}`}
@@ -590,9 +593,7 @@ export default function Dashboard() {
                 </p>
               </div>
 
-              {/* Lado Direito: Ações */}
               <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
-                {/* Botões Secundários (Lado a lado no mobile) */}
                 <div className="flex items-center gap-2 w-full sm:w-auto">
                   <Button
                     variant="secondary"
@@ -616,11 +617,22 @@ export default function Dashboard() {
                     className="flex-1 sm:flex-none justify-center items-center gap-2 h-11 px-4 active:scale-95 transition-all"
                   >
                     <Icons.Withdraw />
-                    <span className="font-semibold">Saque</span>
+                    <div className="flex flex-col items-start leading-tight">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold">Saque</span>
+                        {payoutInfo.autoPayoutEnabled ? (
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                            Auto
+                          </span>
+                        ) : null}
+                      </div>
+                      <span className="text-[10px] text-zinc-500">
+                        {fmtBRL(payoutInfo.walletAvailableCents)}
+                      </span>
+                    </div>
                   </Button>
                 </div>
 
-                {/* Botão Primário (Destaque total) */}
                 <Link to="/offers/new" className="w-full sm:w-auto">
                   <Button
                     size="sm"
@@ -634,7 +646,6 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
-        {/* --- FIM DO NOVO HEADER PREMIUM --- */}
 
         {error && (
           <div className="p-4 rounded-xl bg-red-50 border border-red-100 text-sm text-red-700 flex justify-between items-center">
@@ -645,7 +656,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* ✅ COTA PIX DO MÊS */}
+        {/* QUOTA */}
         <QuotaAccordion
           workspace={workspace}
           quota={quota}
@@ -691,11 +702,11 @@ export default function Dashboard() {
           />
         </div>
 
-        {/* ✅ ANALYTICS */}
+        {/* ANALYTICS */}
         <AnalyticsSection />
 
         <div className="grid grid-cols-12 gap-6">
-          {/* MAIN COLUMN: RECENT LINKS */}
+          {/* LINKS */}
           <div className="col-span-12 lg:col-span-8 space-y-6">
             <Card className="border-none shadow-sm ring-1 ring-zinc-200 overflow-hidden">
               <CardHeader
@@ -745,6 +756,7 @@ export default function Dashboard() {
                                   className="shrink-0"
                                 />
                               </div>
+
                               <div className="mt-1 text-xs text-zinc-500">
                                 {fmtBRL(o.amountCents)} •{" "}
                                 {o.customerName || "Cliente"}
@@ -789,7 +801,7 @@ export default function Dashboard() {
             </Card>
           </div>
 
-          {/* RIGHT COLUMN */}
+          {/* SIDEBAR */}
           <div className="col-span-12 lg:col-span-4 space-y-6">
             {/* AGENDA */}
             <Card className="border-none shadow-sm ring-1 ring-zinc-200">
@@ -829,11 +841,11 @@ export default function Dashboard() {
                       <div className="text-[11px] text-zinc-500 line-clamp-1">
                         {b?.offer?.title}
                       </div>
-                      {normStatus(b.status) === "HOLD" && (
+                      {normStatus(b.status) === "HOLD" ? (
                         <div className="mt-1 text-[10px] font-bold text-amber-600 italic">
                           {holdRemainingLabel(b.holdExpiresAt)}
                         </div>
-                      )}
+                      ) : null}
                     </div>
                   ))
                 )}
@@ -875,16 +887,16 @@ export default function Dashboard() {
                         <div className="flex items-center gap-3">
                           <Badge tone={w.status} size="xs" />
                           {w.receiptUrl &&
-                            normStatus(w.status) === "COMPLETE" && (
-                              <button
-                                onClick={() =>
-                                  window.open(w.receiptUrl, "_blank")
-                                }
-                                className="p-1.5 text-zinc-400 hover:text-zinc-900 transition-colors"
-                              >
-                                <Icons.External />
-                              </button>
-                            )}
+                          normStatus(w.status) === "COMPLETE" ? (
+                            <button
+                              onClick={() =>
+                                window.open(w.receiptUrl, "_blank")
+                              }
+                              className="p-1.5 text-zinc-400 hover:text-zinc-900 transition-colors"
+                            >
+                              <Icons.External />
+                            </button>
+                          ) : null}
                         </div>
                       </div>
                     ))}
@@ -893,7 +905,7 @@ export default function Dashboard() {
               </CardBody>
             </Card>
 
-            {/* CAIXA EXPRESSO */}
+            {/* CAIXA HOJE */}
             <div className="p-5 rounded-2xl bg-zinc-900 text-white shadow-xl flex items-center justify-between">
               <div>
                 <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1">
@@ -919,7 +931,10 @@ export default function Dashboard() {
       <WithdrawModal
         open={withdrawOpen}
         onClose={() => setWithdrawOpen(false)}
-        onCreated={() => loadWithdraws()}
+        onCreated={() => {
+          loadWithdraws();
+          loadPayoutInfo();
+        }}
       />
     </Shell>
   );

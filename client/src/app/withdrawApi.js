@@ -39,20 +39,44 @@ export async function getWithdrawConfig() {
   });
 }
 
+export async function getPayoutSettings() {
+  return api(`/withdraw/payout-settings`, {
+    method: "GET",
+    cache: "no-store",
+    headers: withAuthHeaders(),
+  });
+}
+
+export async function updatePayoutSettings(payload) {
+  return api(`/withdraw/payout-settings`, {
+    method: "PUT",
+    headers: withAuthHeaders(),
+    body: JSON.stringify(payload || {}),
+  });
+}
+
+/**
+ * createWithdraw
+ * - amountCents: number
+ * - description?: string
+ * - idempotencyKey?: string (opcional)
+ */
 export async function createWithdraw({
-  pixType,
-  pixKey,
-  grossAmountCents,
+  amountCents,
   description,
-}) {
+  idempotencyKey,
+} = {}) {
+  const headers = withAuthHeaders();
+  if (idempotencyKey) headers["Idempotency-Key"] = String(idempotencyKey);
+
   return api(`/withdraw/create`, {
     method: "POST",
-    headers: withAuthHeaders(),
+    headers,
     body: JSON.stringify({
-      pixType,
-      pixKey,
-      grossAmountCents,
+      amountCents,
       description,
+      // fallback para quem preferir enviar no body
+      idempotencyKey,
     }),
   });
 }
@@ -60,7 +84,11 @@ export async function createWithdraw({
 export async function getWithdraw(externalId) {
   const d = await api(
     `/withdraw/get?externalId=${encodeURIComponent(externalId)}`,
-    { method: "GET", cache: "no-store" },
+    {
+      method: "GET",
+      cache: "no-store",
+      headers: withAuthHeaders(),
+    },
   );
   return d?.withdraw || null;
 }
@@ -69,6 +97,7 @@ export async function listWithdraws({ limit = 20 } = {}) {
   const d = await api(`/withdraw/list?limit=${encodeURIComponent(limit)}`, {
     method: "GET",
     cache: "no-store",
+    headers: withAuthHeaders(),
   });
   return Array.isArray(d?.items) ? d.items : [];
 }

@@ -77,6 +77,33 @@ const WorkspaceSchema = new mongoose.Schema(
     pixUsage: { type: PixUsageSchema, default: () => ({}) },
 
     subscription: { type: SubscriptionSchema, default: () => ({}) },
+
+    // ======================================================
+    // ✅ Wallet / Saques
+    // ======================================================
+
+    // saldo disponível para saque
+    walletAvailableCents: { type: Number, default: 0, min: 0 },
+
+    payoutPixKeyType: {
+      type: String,
+      enum: ["CPF", "CNPJ", "PHONE", "EMAIL", "EVP"],
+      default: null,
+    },
+
+    // ⚠️ por segurança, não retorna em queries padrão
+    // (para usar, selecione explicitamente com +payoutPixKey)
+    payoutPixKey: { type: String, default: null, select: false },
+
+    // sempre retornar a masked no frontend
+    payoutPixKeyMasked: { type: String, default: null },
+
+    autoPayoutEnabled: { type: Boolean, default: false },
+
+    // evita auto-saque pequeno (0 = desativado)
+    autoPayoutMinCents: { type: Number, default: 0, min: 0 },
+
+    payoutUpdatedAt: { type: Date, default: null },
   },
   { timestamps: true },
 );

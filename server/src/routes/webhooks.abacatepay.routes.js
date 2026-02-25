@@ -1,16 +1,23 @@
+// server/src/routes/webhooks.abacatepay.routes.js
 import express from "express";
 import crypto from "node:crypto";
 import mongoose from "mongoose";
 
-import { abacateCheckPix } from "../services/abacatepayClient.js";
+import {
+  abacateCheckPix,
+  abacateCreateWithdraw,
+} from "../services/abacatepayClient.js";
+
 import { Offer } from "../models/Offer.js";
 import * as BookingModule from "../models/Booking.js";
 import Withdraw from "../models/Withdraw.js";
 import WebhookEvent from "../models/WebhookEvent.js";
+import { Workspace } from "../models/Workspace.js";
+import PixDebit from "../models/PixDebit.js";
+
 import { debitPix } from "../utils/pixQuota.js";
 
 const Booking = BookingModule.Booking || BookingModule.default;
-
 const router = express.Router();
 
 // Public HMAC key (AbacatePay)
@@ -31,7 +38,6 @@ function verifyAbacateSignature(rawBody, signatureFromHeader) {
 
   const A = Buffer.from(expectedSig);
   const B = Buffer.from(String(signatureFromHeader));
-
   return A.length === B.length && crypto.timingSafeEqual(A, B);
 }
 
@@ -73,14 +79,28 @@ function computeExpiresAtIso(pix) {
   return null;
 }
 
+function normalizeWithdrawStatus(st) {
+  const s = String(st || "")
+    .trim()
+    .toUpperCase();
+  if (!s) return "PENDING";
+  if (s === "CANCELED") return "CANCELLED";
+  if (s === "PAID" || s === "DONE" || s === "COMPLETED" || s === "SUCCESS")
+    return "COMPLETE";
+  if (s === "FAILED") return "FAILED";
+  if (s === "EXPIRED") return "EXPIRED";
+  if (s === "REFUNDED") return "REFUNDED";
+  if (s === "PROCESSING" || s === "PENDING") return "PENDING";
+  return "PENDING";
+}
+
 async function updateOfferPayment(offerId, patch) {
   const $set = {};
   for (const [k, v] of Object.entries(patch || {})) {
     if (v === undefined) continue;
     $set[`payment.${k}`] = v;
   }
-  if (Object.keys($set).length === 0) return;
-
+  if (!Object.keys($set).length) return;
   await Offer.updateOne({ _id: offerId }, { $set }, { strict: false }).catch(
     () => {},
   );
@@ -95,9 +115,6 @@ async function updateBooking(bookingId, patch) {
   ).catch(() => {});
 }
 
-/**
- * Opcional: se você tiver OfferLocked no projeto, tenta upsert sem quebrar build caso não exista.
- */
 async function tryUpsertOfferLocked(offerId, paidAtIso, pix) {
   try {
     const mod = await import("../models/OfferLocked.js");
@@ -123,7 +140,7 @@ async function tryUpsertOfferLocked(offerId, paidAtIso, pix) {
       { upsert: true, strict: false },
     ).catch(() => {});
   } catch {
-    // model não existe -> ignora
+    // ignora se não existir
   }
 }
 
@@ -133,7 +150,6 @@ async function markAsPaidFromWebhook({ offer, booking, pix }) {
 
   // Offer -> PAID
   const offerSet = { status: "PAID", paidAt: now };
-
   if (booking?._id) {
     offerSet.bookingId = booking._id;
     offerSet.scheduledStartAt = booking.startAt || booking.scheduledStartAt;
@@ -146,7 +162,7 @@ async function markAsPaidFromWebhook({ offer, booking, pix }) {
     { strict: false },
   ).catch(() => {});
 
-  // Payment status no Offer
+  // snapshot Pix
   await updateOfferPayment(offer._id, {
     lastPixId: pix?.id,
     lastPixStatus: "PAID",
@@ -168,31 +184,30 @@ async function markAsPaidFromWebhook({ offer, booking, pix }) {
   }
 
   await tryUpsertOfferLocked(offer._id, paidAtIso, pix);
-
   return paidAtIso;
 }
 
 async function resolveOfferAndBookingFromPix({ pixId, pix }) {
   const meta = pix?.metadata || {};
-  const externalId = meta?.externalId; // bookingId OU publicToken
+  const externalId = meta?.externalId;
   const publicTokenFromMeta = meta?.publicToken;
   const offerIdFromMeta = meta?.offerId;
 
-  // 1) tenta Offer por pixId já registrado
+  // 1) por pixId já registrado
   let offer = await Offer.findOne({ "payment.lastPixId": pixId }).lean();
 
-  // 2) tenta Offer por offerId (se tiver)
+  // 2) por offerId (se tiver)
   if (!offer && offerIdFromMeta && isValidObjectId(offerIdFromMeta)) {
     offer = await Offer.findById(offerIdFromMeta).lean();
   }
 
-  // 3) tenta Booking por externalId (se for ObjectId)
+  // 3) Booking por externalId (se for ObjectId)
   let booking = null;
   if (Booking && externalId && isValidObjectId(externalId)) {
     booking = await Booking.findById(externalId).lean();
   }
 
-  // 4) tenta Booking pelo providerPaymentId
+  // 4) Booking pelo providerPaymentId
   if (!booking && Booking) {
     booking = await Booking.findOne({
       "payment.providerPaymentId": pixId,
@@ -204,7 +219,7 @@ async function resolveOfferAndBookingFromPix({ pixId, pix }) {
     offer = await Offer.findById(booking.offerId).lean();
   }
 
-  // 6) pagamento direto de produto: externalId/publicToken aponta pra Offer.publicToken
+  // 6) pagamento direto de produto (token aponta para Offer.publicToken)
   if (!offer) {
     const token =
       publicTokenFromMeta ||
@@ -213,6 +228,307 @@ async function resolveOfferAndBookingFromPix({ pixId, pix }) {
   }
 
   return { offer, booking };
+}
+
+function toProviderPixType(workspacePixType) {
+  const t = String(workspacePixType || "")
+    .trim()
+    .toUpperCase();
+  if (t === "EVP") return "RANDOM";
+  return t;
+}
+
+function centsFromOffer(offer) {
+  const v =
+    offer?.amountCents ??
+    offer?.totalCents ??
+    offer?.payment?.amountCents ??
+    offer?.payment?.grossAmountCents ??
+    0;
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/**
+ * ✅ crédito idempotente: key = credit:pixPaid:<paymentId>
+ */
+async function creditWalletIdempotent({
+  workspaceId,
+  offerId,
+  paymentId,
+  amountCents,
+}) {
+  const wid = String(workspaceId || "").trim();
+  const pid = String(paymentId || "").trim();
+  const cents = Math.round(Number(amountCents) || 0);
+  if (!wid || !pid || cents <= 0) return { ok: false, credited: false };
+
+  const key = `credit:pixPaid:${pid}`;
+  const session = await mongoose.startSession();
+
+  try {
+    let already = false;
+
+    await session.withTransaction(async () => {
+      try {
+        await PixDebit.create(
+          [
+            {
+              workspaceId: wid,
+              kind: "WALLET_CREDIT",
+              key,
+              offerId: offerId || null,
+              paymentId: pid,
+              amountCents: cents,
+              status: "APPLIED",
+            },
+          ],
+          { session },
+        );
+      } catch (e) {
+        if (e?.code === 11000) {
+          already = true;
+          return;
+        }
+        throw e;
+      }
+
+      await Workspace.updateOne(
+        { _id: wid },
+        { $inc: { walletAvailableCents: cents } },
+        { session },
+      );
+    });
+
+    const wsAfter = await Workspace.findById(wid)
+      .select(
+        "walletAvailableCents autoPayoutEnabled autoPayoutMinCents payoutPixKeyMasked payoutPixKeyType",
+      )
+      .lean()
+      .catch(() => null);
+
+    return {
+      ok: true,
+      credited: !already,
+      alreadyProcessed: already,
+      walletAvailableCents: Number(wsAfter?.walletAvailableCents || 0),
+      autoPayoutEnabled: !!wsAfter?.autoPayoutEnabled,
+      autoPayoutMinCents: Number(wsAfter?.autoPayoutMinCents || 0),
+      payoutPixKeyMasked: wsAfter?.payoutPixKeyMasked || null,
+      payoutPixKeyType: wsAfter?.payoutPixKeyType || null,
+    };
+  } finally {
+    session.endSession();
+  }
+}
+
+async function safeRevertWallet({ workspaceId, ownerUserId, amountCents }) {
+  const wid = String(workspaceId || "").trim();
+  const oid = String(ownerUserId || "").trim();
+  const cents = Math.round(Number(amountCents) || 0);
+  if (!wid || !oid || cents <= 0) return;
+
+  await Workspace.updateOne(
+    { _id: wid, ownerUserId: oid },
+    { $inc: { walletAvailableCents: cents } },
+  ).catch(() => {});
+}
+
+async function markDebitReverted({ workspaceId, withdrawId }) {
+  if (!workspaceId || !withdrawId) return;
+
+  await PixDebit.updateMany(
+    {
+      workspaceId,
+      withdrawId,
+      kind: { $in: ["AUTO_PAYOUT", "MANUAL_WITHDRAW"] },
+      status: { $in: ["CREATED", "APPLIED"] },
+    },
+    { $set: { status: "REVERTED" } },
+  ).catch(() => {});
+}
+
+/**
+ * ✅ auto payout idempotente: key = autowithdraw:pixPaid:<paymentId>
+ * - debita wallet ANTES do gateway
+ * - se gateway falhar, estorna e marca REVERTED/FAILED
+ */
+async function tryAutoPayout({ workspaceId, offerId, paymentId, amountCents }) {
+  const wid = String(workspaceId || "").trim();
+  const pid = String(paymentId || "").trim();
+  const cents = Math.round(Number(amountCents) || 0);
+  if (!wid || !pid || cents <= 0) return { ok: false, skipped: true };
+
+  const ws = await Workspace.findById(wid)
+    .select(
+      "+payoutPixKey ownerUserId walletAvailableCents payoutPixKeyType payoutPixKeyMasked autoPayoutEnabled autoPayoutMinCents",
+    )
+    .lean()
+    .catch(() => null);
+
+  if (!ws) return { ok: false, skipped: true };
+  if (!ws.autoPayoutEnabled)
+    return { ok: true, skipped: true, reason: "auto_disabled" };
+  if (!ws.payoutPixKeyType || !ws.payoutPixKey)
+    return { ok: true, skipped: true, reason: "no_pix_key" };
+
+  const min = Math.round(Number(ws.autoPayoutMinCents || 0));
+  if (Number.isFinite(min) && min > 0 && cents < min) {
+    return { ok: true, skipped: true, reason: "below_min" };
+  }
+
+  const providerPixType = toProviderPixType(ws.payoutPixKeyType);
+  const pixMasked = ws.payoutPixKeyMasked || "";
+
+  const ledgerKey = `autowithdraw:pixPaid:${pid}`;
+  let ledgerDoc = null;
+
+  try {
+    ledgerDoc = await PixDebit.create({
+      workspaceId: wid,
+      kind: "AUTO_PAYOUT",
+      key: ledgerKey,
+      offerId: offerId || null,
+      paymentId: pid,
+      amountCents: cents,
+      status: "CREATED",
+      meta: { at: new Date().toISOString() },
+    });
+  } catch (e) {
+    if (e?.code === 11000)
+      return { ok: true, skipped: true, reason: "already_processed" };
+    throw e;
+  }
+
+  const externalId = `autowithdraw_${wid}_${pid}`;
+
+  let withdrawDoc =
+    (await Withdraw.findOne({ externalId, workspaceId: wid })
+      .lean()
+      .catch(() => null)) ||
+    (await Withdraw.create({
+      workspaceId: wid,
+      ownerUserId: ws.ownerUserId,
+      externalId,
+      requestedBy: "AUTO",
+      method: "PIX",
+      grossAmountCents: cents,
+      feePct: 0,
+      feeCents: 0,
+      netAmountCents: cents,
+      destinationPixKeyType: ws.payoutPixKeyType,
+      destinationPixKeyMasked: pixMasked,
+      pix: { type: providerPixType, key: pixMasked },
+      description: "Auto saque (Pix confirmado)",
+      provider: "ABACATEPAY",
+      status: "PENDING",
+      ledgerDebited: false,
+      balanceReverted: false,
+    }));
+
+  // ✅ debita wallet antes do gateway
+  const debitedWs = await Workspace.findOneAndUpdate(
+    { _id: wid, walletAvailableCents: { $gte: cents } },
+    { $inc: { walletAvailableCents: -cents } },
+    { new: true },
+  ).lean();
+
+  if (!debitedWs) {
+    await Withdraw.updateOne(
+      { _id: withdrawDoc._id },
+      {
+        $set: {
+          status: "FAILED",
+          error: {
+            code: "INSUFFICIENT_FUNDS",
+            message: "Saldo insuficiente para auto saque.",
+          },
+        },
+      },
+    ).catch(() => {});
+
+    await PixDebit.updateOne(
+      { _id: ledgerDoc._id },
+      {
+        $set: {
+          status: "FAILED",
+          reason: "insufficient_funds",
+          withdrawId: withdrawDoc._id,
+        },
+      },
+    ).catch(() => {});
+
+    return { ok: true, skipped: true, reason: "insufficient_funds" };
+  }
+
+  await Withdraw.updateOne(
+    { _id: withdrawDoc._id },
+    { $set: { ledgerDebited: true } },
+  ).catch(() => {});
+  await PixDebit.updateOne(
+    { _id: ledgerDoc._id },
+    { $set: { status: "APPLIED", withdrawId: withdrawDoc._id } },
+  ).catch(() => {});
+
+  // chama gateway
+  let createResp;
+  try {
+    createResp = await abacateCreateWithdraw({
+      externalId,
+      amount: cents,
+      pix: { type: providerPixType, key: ws.payoutPixKey },
+      description: "Auto saque (Pix confirmado)",
+    });
+  } catch (err) {
+    await safeRevertWallet({
+      workspaceId: wid,
+      ownerUserId: ws.ownerUserId,
+      amountCents: cents,
+    });
+    await markDebitReverted({ workspaceId: wid, withdrawId: withdrawDoc._id });
+
+    await Withdraw.updateOne(
+      { _id: withdrawDoc._id },
+      {
+        $set: {
+          status: "FAILED",
+          balanceReverted: true,
+          error: {
+            code: "GATEWAY_CREATE_FAILED",
+            message: err?.message || "Falha ao criar auto saque no gateway.",
+          },
+          gateway: { lastError: err?.details || err?.message || String(err) },
+        },
+      },
+    ).catch(() => {});
+
+    return { ok: true, failed: true, error: err?.message || String(err) };
+  }
+
+  const data = createResp?.data ?? createResp ?? {};
+  const status = normalizeWithdrawStatus(data.status || "PENDING");
+  const receiptUrl = data.receiptUrl || data.receipt_url || "";
+  const providerTransactionId =
+    data.id || data.withdrawId || data.transactionId || "";
+
+  await Withdraw.updateOne(
+    { _id: withdrawDoc._id },
+    {
+      $set: {
+        status,
+        receiptUrl,
+        providerTransactionId,
+        gateway: { rawCreateResponse: createResp },
+      },
+    },
+    { strict: false },
+  ).catch(() => {});
+
+  return {
+    ok: true,
+    transferred: true,
+    walletAvailableCents: Number(debitedWs.walletAvailableCents || 0),
+  };
 }
 
 async function handleBillingPaid(event) {
@@ -227,7 +543,7 @@ async function handleBillingPaid(event) {
     throw err;
   }
 
-  // Confirma no API da AbacatePay (verificação “de fato”)
+  // confirma no AbacatePay (status real)
   const chk = await abacateCheckPix({ pixId });
   const pix = pickPixData(chk);
 
@@ -242,12 +558,10 @@ async function handleBillingPaid(event) {
     pix,
   });
 
-  // Se não conseguir mapear, responde 200 (evita retry infinito), mas registra no log
-  if (!offer) {
-    return { ok: true, mapped: false, pixStatus: pix.status };
-  }
+  // não mapeou -> responde 200 (evita retry infinito)
+  if (!offer) return { ok: true, mapped: false, pixStatus: pix.status };
 
-  // Sempre atualiza o “lastPixStatus” do Offer
+  // sempre atualiza snapshot do pix na offer
   await updateOfferPayment(offer._id, {
     lastPixId: pix.id,
     lastPixStatus: pix.status || event?.data?.pixQrCode?.status,
@@ -255,28 +569,65 @@ async function handleBillingPaid(event) {
     lastPixUpdatedAt: new Date(),
   });
 
-  // Só marca como pago se estiver PAID no check
-  if (pix.status === "PAID") {
-    await markAsPaidFromWebhook({ offer, booking, pix });
-
-    // ✅ Pix quota: debita 1 por Pix pago (idempotente e atômico)
-    try {
-      const wsId = offer?.workspaceId ? String(offer.workspaceId) : "";
-      const paymentId = String(pix?.id || "").trim();
-      if (wsId && paymentId) {
-        await debitPix(wsId, paymentId);
-      }
-    } catch (err) {
-      console.warn(
-        "[abacatepay webhook] quota debit failed",
-        err?.message || err,
-      );
-    }
-
-    return { ok: true, mapped: true, markedPaid: true };
+  if (pix.status !== "PAID") {
+    return { ok: true, mapped: true, markedPaid: false, pixStatus: pix.status };
   }
 
-  return { ok: true, mapped: true, markedPaid: false, pixStatus: pix.status };
+  // marca como pago (idempotente pelo estado da Offer)
+  await markAsPaidFromWebhook({ offer, booking, pix });
+
+  // ✅ quota Pix (idempotente pelo PixDebit legado)
+  try {
+    const wsId = offer?.workspaceId ? String(offer.workspaceId) : "";
+    const paymentId = String(pix?.id || "").trim();
+    if (wsId && paymentId) await debitPix(wsId, paymentId);
+  } catch (err) {
+    console.warn(
+      "[abacatepay webhook] quota debit failed",
+      err?.message || err,
+    );
+  }
+
+  // ✅ wallet credit + auto payout (não bloqueia confirmação do pagamento)
+  try {
+    const wsId = offer?.workspaceId ? String(offer.workspaceId) : "";
+    const paymentId = String(pix?.id || "").trim();
+    const netCents = centsFromOffer(offer);
+
+    console.log("wsId = " + wsId);
+    console.log("paymentId = " + paymentId);
+    console.log("netCents = " + netCents);
+
+    if (wsId && paymentId && netCents > 0) {
+      await creditWalletIdempotent({
+        workspaceId: wsId,
+        offerId: offer?._id,
+        paymentId,
+        amountCents: netCents,
+      });
+
+      try {
+        await tryAutoPayout({
+          workspaceId: wsId,
+          offerId: offer?._id,
+          paymentId,
+          amountCents: netCents,
+        });
+      } catch (err) {
+        console.warn(
+          "[abacatepay webhook] auto payout failed",
+          err?.message || err,
+        );
+      }
+    }
+  } catch (err) {
+    console.warn(
+      "[abacatepay webhook] wallet credit failed",
+      err?.message || err,
+    );
+  }
+
+  return { ok: true, mapped: true, markedPaid: true };
 }
 
 async function handleWithdrawEvent(event) {
@@ -287,60 +638,67 @@ async function handleWithdrawEvent(event) {
     throw err;
   }
 
+  const externalId = String(tx.externalId || "").trim();
+  const status = normalizeWithdrawStatus(tx.status);
+
   const patch = {
     providerTransactionId: tx.id,
-    status: tx.status,
+    status,
     receiptUrl: tx.receiptUrl,
   };
 
   const updated = await Withdraw.findOneAndUpdate(
-    { externalId: tx.externalId },
+    { externalId },
     { $set: patch },
     { new: true },
   )
     .lean()
     .catch(() => null);
 
+  // se falhou no gateway depois de já ter debitado a wallet, estorna uma vez
+  if (updated) {
+    const isFail =
+      status === "FAILED" ||
+      status === "CANCELLED" ||
+      status === "EXPIRED" ||
+      status === "REFUNDED";
+    if (isFail && updated.ledgerDebited && !updated.balanceReverted) {
+      await safeRevertWallet({
+        workspaceId: updated.workspaceId,
+        ownerUserId: updated.ownerUserId,
+        amountCents: updated.netAmountCents,
+      });
+
+      await markDebitReverted({
+        workspaceId: String(updated.workspaceId),
+        withdrawId: updated._id,
+      });
+
+      await Withdraw.updateOne(
+        { _id: updated._id },
+        { $set: { balanceReverted: true } },
+      ).catch(() => {});
+    }
+  }
+
   return { ok: true, mapped: !!updated, status: tx.status };
 }
 
 router.post("/webhooks/abacatepay", async (req, res, next) => {
   try {
-    // ✅ LOG: chegou request (antes de validar, sem expor segredo)
-    console.log("[abacatepay webhook] incoming", {
-      method: req.method,
-      url: req.originalUrl,
-      hasWebhookSecret: !!req.query?.webhookSecret,
-      hasSignature: !!req.get("X-Webhook-Signature"),
-      rawBodyBytes: req.rawBody?.length || 0,
-      at: new Date().toISOString(),
-    });
-
-    // 1) Secret na URL
+    // 1) secret na URL
     const webhookSecret = req.query.webhookSecret;
     const expectedSecret = process.env.ABACATEPAY_WEBHOOK_SECRET;
 
-    console.log("meu env. " + expectedSecret);
-    console.log("o que vem na url + " + webhookSecret);
-
     if (expectedSecret && webhookSecret !== expectedSecret) {
-      console.log("[abacatepay webhook] rejected: invalid secret", {
-        url: req.originalUrl,
-        at: new Date().toISOString(),
-      });
       return res
         .status(401)
         .json({ ok: false, error: "Invalid webhook secret" });
     }
 
-    // 2) Assinatura HMAC (precisa do rawBody)
+    // 2) assinatura HMAC (precisa rawBody)
     const signature = req.get("X-Webhook-Signature") || "";
-
     if (!req.rawBody) {
-      console.log("[abacatepay webhook] rejected: missing rawBody", {
-        url: req.originalUrl,
-        at: new Date().toISOString(),
-      });
       return res.status(400).json({
         ok: false,
         error: "Missing rawBody for signature verification",
@@ -348,25 +706,12 @@ router.post("/webhooks/abacatepay", async (req, res, next) => {
     }
 
     const sigOk = verifyAbacateSignature(req.rawBody, signature);
-    if (!sigOk) {
-      console.log("[abacatepay webhook] rejected: invalid signature", {
-        url: req.originalUrl,
-        at: new Date().toISOString(),
-      });
+    if (!sigOk)
       return res.status(401).json({ ok: false, error: "Invalid signature" });
-    }
 
     const event = req.body || {};
     const eventId = String(event.id || "").trim();
     const eventType = String(event.event || "").trim();
-
-    // ✅ LOG: evento parseado
-    console.log("[abacatepay webhook] event", {
-      eventType,
-      eventId,
-      devMode: !!event.devMode,
-      at: new Date().toISOString(),
-    });
 
     if (!eventId || !eventType) {
       return res
@@ -374,14 +719,9 @@ router.post("/webhooks/abacatepay", async (req, res, next) => {
         .json({ ok: false, error: "Invalid webhook payload" });
     }
 
-    // Idempotência: processa cada evento uma única vez
+    // Idempotência por eventId
     const already = await WebhookEvent.findOne({ eventId }).lean();
     if (already) {
-      console.log("[abacatepay webhook] duplicate ignored", {
-        eventType,
-        eventId,
-        at: new Date().toISOString(),
-      });
       return res
         .status(200)
         .json({ ok: true, received: true, duplicate: true });
@@ -413,17 +753,8 @@ router.post("/webhooks/abacatepay", async (req, res, next) => {
       { strict: false },
     ).catch(() => {});
 
-    // ✅ LOG: processado
-    console.log("[abacatepay webhook] processed", {
-      eventType,
-      eventId,
-      result,
-      at: new Date().toISOString(),
-    });
-
     return res.status(200).json({ ok: true, received: true });
   } catch (e) {
-    console.error("[abacatepay webhook] error", e);
     return next(e);
   }
 });
