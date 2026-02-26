@@ -1,3 +1,4 @@
+// server/src/routes/webhooks.abacatepay.routes.js
 import express from "express";
 import crypto from "node:crypto";
 import mongoose from "mongoose";
@@ -17,15 +18,17 @@ const Booking = BookingModule.Booking || BookingModule.default;
 const router = express.Router();
 
 const ABACATEPAY_API_BASE =
-  String(process.env.ABACATEPAY_API_BASE || process.env.ABACATEPAY_API_URL || "").trim() ||
-  "https://api.abacatepay.com/v1";
+  String(
+    process.env.ABACATEPAY_API_BASE || process.env.ABACATEPAY_API_URL || "",
+  ).trim() || "https://api.abacatepay.com/v1";
 
 async function abacatePixQrCodeCheck({ pixId }) {
   const id = String(pixId || "").trim();
   if (!id) throw new Error("pixId obrigatório.");
 
   const token = process.env.ABACATEPAY_TOKEN;
-  if (!token) throw new Error("AbacatePay não configurado (ABACATEPAY_TOKEN ausente).");
+  if (!token)
+    throw new Error("AbacatePay não configurado (ABACATEPAY_TOKEN ausente).");
 
   const url = `${ABACATEPAY_API_BASE}/pixQrCode/check?id=${encodeURIComponent(id)}`;
   const r = await fetch(url, {
@@ -85,11 +88,15 @@ function onlyDigits(v) {
 }
 
 function normalizeEmail(v) {
-  return String(v || "").trim().toLowerCase();
+  return String(v || "")
+    .trim()
+    .toLowerCase();
 }
 
 function normalizePixKey(type, key) {
-  const t = String(type || "").trim().toUpperCase();
+  const t = String(type || "")
+    .trim()
+    .toUpperCase();
   const raw = String(key || "").trim();
   if (!raw) return "";
 
@@ -112,15 +119,22 @@ function maskEmail(email) {
   const e = normalizeEmail(email);
   if (!e || !e.includes("@")) return "";
   const [user, domain] = e.split("@");
-  const u = user.length <= 2 ? user[0] + "*" : user.slice(0, 2) + "*".repeat(Math.max(1, user.length - 2));
+  const u =
+    user.length <= 2
+      ? user[0] + "*"
+      : user.slice(0, 2) + "*".repeat(Math.max(1, user.length - 2));
   const dparts = String(domain || "").split(".");
-  const d0 = dparts[0] ? dparts[0].slice(0, 2) + "*".repeat(Math.max(1, dparts[0].length - 2)) : "***";
+  const d0 = dparts[0]
+    ? dparts[0].slice(0, 2) + "*".repeat(Math.max(1, dparts[0].length - 2))
+    : "***";
   const rest = dparts.slice(1).join(".");
   return `${u}@${d0}${rest ? "." + rest : ""}`;
 }
 
 function maskPixKey(type, key) {
-  const t = String(type || "").trim().toUpperCase();
+  const t = String(type || "")
+    .trim()
+    .toUpperCase();
   const k = normalizePixKey(t, key);
   if (!k) return "";
 
@@ -137,7 +151,9 @@ function maskPixKey(type, key) {
 }
 
 function gatewayPixTypeFromWorkspaceType(t) {
-  const s = String(t || "").trim().toUpperCase();
+  const s = String(t || "")
+    .trim()
+    .toUpperCase();
   if (s === "EVP") return "RANDOM";
   return s;
 }
@@ -274,7 +290,8 @@ async function markAsPaidFromWebhook({ offer, booking, pix }) {
     String(current?.status || "").toUpperCase() === "PAID" ||
     !!current?.paidAt;
 
-  const stablePaidAt = alreadyPaid && current?.paidAt ? new Date(current.paidAt) : now;
+  const stablePaidAt =
+    alreadyPaid && current?.paidAt ? new Date(current.paidAt) : now;
 
   // Offer -> PAID + paymentStatus PAID
   const offerSet = {
@@ -367,9 +384,15 @@ async function resolveOfferAndBookingFromPix({ pixId, pix }) {
   return { offer, booking };
 }
 
-async function creditWalletIdempotent({ workspaceId, offerId, paymentId, netCents }) {
+async function creditWalletIdempotent({
+  workspaceId,
+  offerId,
+  paymentId,
+  netCents,
+}) {
   if (!workspaceId || !paymentId) return { ok: false, skipped: true };
-  if (!Number.isFinite(Number(netCents)) || Number(netCents) <= 0) return { ok: false, skipped: true };
+  if (!Number.isFinite(Number(netCents)) || Number(netCents) <= 0)
+    return { ok: false, skipped: true };
 
   const key = `credit:paid:${paymentId}`;
 
@@ -397,11 +420,18 @@ async function creditWalletIdempotent({ workspaceId, offerId, paymentId, netCent
   return { ok: true, credited: true };
 }
 
-async function autoPayoutIfEnabled({ workspaceId, ownerUserId, paymentId, netCents }) {
+async function autoPayoutIfEnabled({
+  workspaceId,
+  ownerUserId,
+  paymentId,
+  netCents,
+}) {
   if (!workspaceId || !paymentId) return { ok: false, skipped: true };
 
   const ws = await Workspace.findById(workspaceId)
-    .select("walletAvailableCents autoPayoutEnabled autoPayoutMinCents payoutPixKeyType payoutPixKey payoutPixKeyMasked ownerUserId")
+    .select(
+      "walletAvailableCents autoPayoutEnabled autoPayoutMinCents payoutPixKeyType payoutPixKey payoutPixKeyMasked ownerUserId",
+    )
     .lean()
     .catch(() => null);
 
@@ -489,7 +519,10 @@ async function autoPayoutIfEnabled({ workspaceId, ownerUserId, paymentId, netCen
     const createResp = await abacateCreateWithdraw({
       externalId,
       amount: amt,
-      pix: { type: gatewayPixTypeFromWorkspaceType(ws.payoutPixKeyType), key: String(ws.payoutPixKey) },
+      pix: {
+        type: gatewayPixTypeFromWorkspaceType(ws.payoutPixKeyType),
+        key: String(ws.payoutPixKey),
+      },
       description: "Transferência automática (Pix confirmado)",
     });
 
@@ -591,19 +624,47 @@ async function handleBillingPaid(event) {
 
   // Só marca como pago se estiver PAID no check
   if (pix.status === "PAID") {
-    const { paidAmountCents } = await markAsPaidFromWebhook({ offer, booking, pix });
+    const { paidAmountCents } = await markAsPaidFromWebhook({
+      offer,
+      booking,
+      pix,
+    });
 
     // ✅ Wallet: credita SOMENTE quando pagamento confirmado (idempotente por paymentId)
     try {
       const wsId = offer?.workspaceId ? String(offer.workspaceId) : "";
       const paymentId = String(pix?.id || "").trim();
       if (wsId && paymentId) {
-        await creditWalletIdempotent({
+        const r = await creditWalletOnPaid({
           workspaceId: wsId,
           offerId: offer._id,
           paymentId,
-          netCents: paidAmountCents,
+          amountCents: paidAmountCents,
+          meta: { source: "abacatepay_webhook" },
         });
+
+        if (r?.credited) {
+          console.log("[wallet] credit applied", {
+            workspaceId: wsId,
+            offerId: String(offer._id),
+            paymentId,
+            amountCents: Math.round(Number(paidAmountCents || 0)),
+          });
+        } else if (r?.skipped) {
+          console.log("[wallet] credit skipped (already applied)", {
+            workspaceId: wsId,
+            offerId: String(offer._id),
+            paymentId,
+          });
+        } else if (r?.ok === false) {
+          console.warn("[wallet] credit failed", {
+            workspaceId: wsId,
+            offerId: String(offer._id),
+            paymentId,
+            error: r?.error,
+            reason: r?.reason,
+          });
+        }
 
         // ✅ Auto payout (idempotente por paymentId)
         await autoPayoutIfEnabled({
@@ -614,7 +675,10 @@ async function handleBillingPaid(event) {
         });
       }
     } catch (err) {
-      console.warn("[abacatepay webhook] wallet/auto payout failed", err?.message || err);
+      console.warn(
+        "[abacatepay webhook] wallet/auto payout failed",
+        err?.message || err,
+      );
     }
 
     // ✅ Pix quota: debita 1 por Pix pago (idempotente e atômico)

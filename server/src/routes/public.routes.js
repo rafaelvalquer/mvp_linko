@@ -568,49 +568,45 @@ async function markAsPaid({
     });
   }
 
-  // 5b) WALLET CREDIT (idempotente) — NÃO bloqueia o fluxo público
+  // 5b) WALLET CREDIT (idempotente) — não quebra confirmação se falhar
   try {
     const wsId = String(
       offerRaw?.workspaceId || offerState?.workspaceId || "",
     ).trim();
+
     const paymentId = String(pix?.id || "").trim();
 
     if (wsId && paymentId && paidCents > 0) {
-      void creditWalletOnPaid({
+      const r = await creditWalletOnPaid({
         workspaceId: wsId,
         offerId,
         paymentId,
         amountCents: paidCents,
-        meta: { source: "markAsPaid", token },
-      })
-        .then((r) => {
-          if (r?.credited) {
-            console.log("[wallet] credit applied", {
-              wsId,
-              offerId: String(offerId),
-              paymentId,
-              amountCents: paidCents,
-            });
-          } else if (r?.skipped) {
-            console.log("[wallet] credit skipped (already applied)", {
-              wsId,
-              offerId: String(offerId),
-              paymentId,
-            });
-          } else if (r?.ok === false) {
-            console.warn("[wallet] credit failed", {
-              wsId,
-              paymentId,
-              error: r?.error,
-            });
-          }
-        })
-        .catch((err) => {
-          console.warn(
-            "[wallet] credit failed (exception)",
-            err?.message || err,
-          );
+        meta: { source: "public.markAsPaid", token },
+      });
+
+      if (r?.credited) {
+        console.log("[wallet] credit applied", {
+          wsId,
+          offerId: String(offerId),
+          paymentId,
+          amountCents: paidCents,
         });
+      } else if (r?.skipped) {
+        console.log("[wallet] credit skipped (already applied)", {
+          wsId,
+          offerId: String(offerId),
+          paymentId,
+        });
+      } else if (!r?.ok) {
+        console.warn("[wallet] credit failed (ignored)", {
+          wsId,
+          offerId: String(offerId),
+          paymentId,
+          error: r?.error,
+          reason: r?.reason,
+        });
+      }
     }
   } catch (err) {
     console.warn("[wallet] credit failed (ignored)", err?.message || err);
@@ -752,6 +748,20 @@ router.get("/p/:token", async (req, res, next) => {
       return res
         .status(404)
         .json({ ok: false, error: "Proposta não encontrada." });
+
+    // ✅ otimização: se a oferta já está PAID no Mongo, não consulta o gateway de novo
+    if (isPaidStatus(offerRaw?.status) || offerRaw?.paidAt) {
+      noStore(res);
+      return res.json({
+        ok: true,
+        pix: { id: pixId, status: "PAID" },
+        locked: true,
+        paidAt: offerRaw?.paidAt
+          ? new Date(offerRaw.paidAt).toISOString()
+          : null,
+        reused: true,
+      });
+    }
 
     // ✅ sem cache (evita 304 e dados "travados")
     noStore(res);
@@ -1349,8 +1359,20 @@ router.post("/p/:token/pix/create", async (req, res, next) => {
       : offerRaw?.payment?.lastPixId;
 
     if (existingPixId) {
-      const chk = await abacateCheckPix({ pixId: existingPixId });
-      const pixDataRaw = pickPixData(chk);
+      // Se existir Pix anterior, tenta reaproveitar. Se o gateway responder "not found", ignora e cria um novo.
+      let chk = null;
+      try {
+        chk = await abacateCheckPix({ pixId: existingPixId });
+      } catch (err) {
+        const msg = String(err?.details?.error || err?.message || "");
+        const st = Number(err?.status || err?.statusCode || 0);
+        const notFound =
+          (st === 400 || st === 404) && msg.toLowerCase().includes("not found");
+        if (!notFound) throw err;
+        chk = null;
+      }
+
+      const pixDataRaw = chk ? pickPixData(chk) : null;
 
       if (pixDataRaw?.id) {
         const st = normalizePixStatus(pixDataRaw.status);
@@ -1552,7 +1574,7 @@ router.get("/p/:token/pix/status", async (req, res, next) => {
         .status(404)
         .json({ ok: false, error: "Proposta não encontrada." });
 
-    // ✅ short-circuit: se já está PAID no banco, não chama gateway
+    // ✅ Otimização: se a oferta já está paga, não precisa chamar o gateway.
     if (isPaidStatus(offerRaw?.status) || offerRaw?.paidAt) {
       noStore(res);
       return res.json({
@@ -1562,6 +1584,7 @@ router.get("/p/:token/pix/status", async (req, res, next) => {
         paidAt: offerRaw?.paidAt
           ? new Date(offerRaw.paidAt).toISOString()
           : null,
+        reused: true,
       });
     }
 

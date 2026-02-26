@@ -86,7 +86,7 @@ export async function ensurePixMonthlyLimit(workspaceId, session) {
       await Workspace.updateOne(
         { _id: workspaceId },
         { $set: { pixMonthlyLimit: 0 } },
-        { session: session || undefined },
+        { session: session || undefined, strict: false },
       );
     }
     return;
@@ -99,7 +99,7 @@ export async function ensurePixMonthlyLimit(workspaceId, session) {
     await Workspace.updateOne(
       { _id: workspaceId },
       { $set: { pixMonthlyLimit: should, plan } },
-      { session: session || undefined },
+      { session: session || undefined, strict: false },
     );
   }
 }
@@ -121,8 +121,15 @@ export async function ensureWorkspaceCycle(workspaceId, session) {
   if (stored !== ck) {
     await Workspace.updateOne(
       { _id: workspaceId },
-      { $set: { "pixUsage.cycleKey": ck, "pixUsage.used": 0 } },
-      { session: session || undefined },
+      {
+        $set: {
+          "pixUsage.cycleKey": ck,
+          "pixUsage.used": 0,
+          pixCycleKey: ck,
+          pixUsedThisMonth: 0,
+        },
+      },
+      { session: session || undefined, strict: false },
     );
   }
 
@@ -134,10 +141,16 @@ export function summarizeWorkspaceQuota(ws) {
 
   const nowCk = expectedCycleKey(ws);
 
-  const storedCk = ws?.pixUsage?.cycleKey || "";
-  const storedUsed = Number(ws?.pixUsage?.used ?? 0);
+  const storedCk =
+    ws?.pixUsage?.cycleKey || String(ws?.pixCycleKey || "").trim() || "";
+  const storedUsedRaw =
+    ws?.pixUsage?.used ?? ws?.pixUsedThisMonth ?? ws?.pixUsedThisCycle ?? 0;
+  const storedUsed = Number(storedUsedRaw);
+
   const used =
-    storedCk === nowCk && Number.isFinite(storedUsed) ? storedUsed : 0;
+    storedCk === nowCk && Number.isFinite(storedUsed)
+      ? Math.trunc(storedUsed)
+      : 0;
 
   const rawLimit = Number(ws.pixMonthlyLimit);
   const limit =
@@ -213,7 +226,14 @@ export async function debitPix(workspaceId, eventId, meta) {
           [
             {
               workspaceId: wid,
+              // ✅ preencher também paymentId (antes ficava null no PIX_QUOTA)
+              paymentId: eid,
+              // ✅ mantém legado: alguns fluxos ainda usam eventId
               eventId: eid,
+              // ✅ key explícita (não depende do pre-validate legado)
+              key: `quota:pix:${eid}`,
+              kind: "PIX_QUOTA",
+              amountCents: 0,
               cycleKey: ck,
               status: "DEBITED",
               reason: "",
@@ -259,11 +279,27 @@ export async function debitPix(workspaceId, eventId, meta) {
       const incRes = await Workspace.updateOne(
         {
           _id: wid,
-          "pixUsage.cycleKey": ck,
-          $expr: { $lt: ["$pixUsage.used", "$pixMonthlyLimit"] },
+          $expr: {
+            $and: [
+              {
+                $eq: [{ $ifNull: ["$pixUsage.cycleKey", "$pixCycleKey"] }, ck],
+              },
+              {
+                $lt: [
+                  {
+                    $ifNull: [
+                      "$pixUsage.used",
+                      { $ifNull: ["$pixUsedThisMonth", 0] },
+                    ],
+                  },
+                  "$pixMonthlyLimit",
+                ],
+              },
+            ],
+          },
         },
-        { $inc: { "pixUsage.used": 1 } },
-        { session },
+        { $inc: { "pixUsage.used": 1, pixUsedThisMonth: 1 } },
+        { session, strict: false },
       );
 
       const debited = (incRes?.modifiedCount || 0) === 1;
