@@ -143,9 +143,8 @@ export default function PublicPixPayment() {
   }, [token, bookingId]);
 
   const stopPolling = useCallback(() => {
-    if (pollRef.current) clearInterval(pollRef.current);
+    if (pollRef.current) clearTimeout(pollRef.current);
     pollRef.current = null;
-
     if (expireTimerRef.current) clearTimeout(expireTimerRef.current);
     expireTimerRef.current = null;
   }, []);
@@ -344,6 +343,11 @@ export default function PublicPixPayment() {
         markPaidOnce(p, d?.paidAt);
       }
 
+      if (st === "PAID" || d?.locked) {
+        markPaidOnce({ ...p, status: "PAID" }, d?.paidAt);
+        return "PAID";
+      }
+
       // ✅ CANCELLED / REFUNDED / EXPIRED: terminal (para o polling)
       if (st === "EXPIRED" || st === "CANCELLED" || st === "REFUNDED") {
         stopPolling();
@@ -459,22 +463,19 @@ export default function PublicPixPayment() {
       }, ms + 250); // pequena folga para evitar edge de relógio
     }
 
-    (async () => {
+    const tick = async () => {
+      if (stopped) return;
       try {
         const st = await refreshStatus(pix.id);
-        if (isTerminalPixStatus(st)) return;
-        if (stopped) return;
+        if (isTerminalPixStatus(st)) return; // PAID/EXPIRED/CANCELLED/REFUNDED
+      } catch {
+        // ignora e tenta de novo
+      }
+      if (stopped) return;
+      pollRef.current = setTimeout(tick, 3000);
+    };
 
-        pollRef.current = setInterval(async () => {
-          try {
-            const s = await refreshStatus(pix.id);
-            if (isTerminalPixStatus(s)) {
-              stopPolling();
-            }
-          } catch {}
-        }, 3000);
-      } catch {}
-    })();
+    tick();
 
     return () => {
       stopped = true;

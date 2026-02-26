@@ -4,6 +4,8 @@ import mongoose from "mongoose";
 const PLANS = ["start", "pro", "business", "enterprise"];
 const PLAN_STATUS = ["free", "pending", "active"];
 
+const PIX_KEY_TYPES = ["CPF", "CNPJ", "PHONE", "EMAIL", "EVP"];
+
 const PixUsageSchema = new mongoose.Schema(
   {
     // ciclo por âncora (YYYY-MM-DD em America/Sao_Paulo)
@@ -73,9 +75,34 @@ const WorkspaceSchema = new mongoose.Schema(
       index: true,
     },
 
+    // =========================================================
+    // ✅ PIX QUOTA (já existente)
+    // =========================================================
     pixMonthlyLimit: { type: Number, default: 0, min: 0 },
     pixUsage: { type: PixUsageSchema, default: () => ({}) },
 
+    // =========================================================
+    // ✅ WALLET / SAQUE
+    // =========================================================
+    walletAvailableCents: { type: Number, default: 0, min: 0 }, // saldo liberado para saque
+
+    // Configuração de conta Pix (NUNCA retornar a chave crua no front)
+    payoutPixKeyType: {
+      type: String,
+      enum: PIX_KEY_TYPES,
+      default: null,
+    },
+    payoutPixKey: { type: String, default: null }, // chave normalizada (ideal criptografar no futuro)
+    payoutPixKeyMasked: { type: String, default: null }, // sempre retornar isso no front
+
+    // Auto transferência
+    autoPayoutEnabled: { type: Boolean, default: false },
+    autoPayoutMinCents: { type: Number, default: 0, min: 0 },
+    payoutUpdatedAt: { type: Date, default: null },
+
+    // =========================================================
+    // ✅ ASSINATURA
+    // =========================================================
     subscription: { type: SubscriptionSchema, default: () => ({}) },
   },
   { timestamps: true },

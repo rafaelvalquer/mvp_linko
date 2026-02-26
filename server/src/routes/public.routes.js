@@ -21,6 +21,7 @@ import {
 import { notifySellerPixPaid } from "../services/resendEmail.js";
 import { maybeNotifyWhatsAppPixPaid } from "../services/whatsappNotify.js";
 import { assertPixQuotaAvailable, debitPix } from "../utils/pixQuota.js";
+import { creditWalletOnPaid } from "../services/wallet.service.js";
 
 const router = express.Router();
 
@@ -494,7 +495,7 @@ async function markAsPaid({
   // 0) lê estado atual (para idempotência)
   const offerState = await Offer.findById(offerId)
     .select(
-      "status paymentStatus paidAt paidAmountCents paymentNotifiedAt sellerEmail sellerName",
+      "workspaceId status paymentStatus paidAt paidAmountCents paymentNotifiedAt sellerEmail sellerName",
     )
     .lean()
     .catch(() => null);
@@ -565,6 +566,54 @@ async function markAsPaid({
         paidAt: paidAtDate,
       },
     });
+  }
+
+  // 5b) WALLET CREDIT (idempotente) — NÃO bloqueia o fluxo público
+  try {
+    const wsId = String(
+      offerRaw?.workspaceId || offerState?.workspaceId || "",
+    ).trim();
+    const paymentId = String(pix?.id || "").trim();
+
+    if (wsId && paymentId && paidCents > 0) {
+      void creditWalletOnPaid({
+        workspaceId: wsId,
+        offerId,
+        paymentId,
+        amountCents: paidCents,
+        meta: { source: "markAsPaid", token },
+      })
+        .then((r) => {
+          if (r?.credited) {
+            console.log("[wallet] credit applied", {
+              wsId,
+              offerId: String(offerId),
+              paymentId,
+              amountCents: paidCents,
+            });
+          } else if (r?.skipped) {
+            console.log("[wallet] credit skipped (already applied)", {
+              wsId,
+              offerId: String(offerId),
+              paymentId,
+            });
+          } else if (r?.ok === false) {
+            console.warn("[wallet] credit failed", {
+              wsId,
+              paymentId,
+              error: r?.error,
+            });
+          }
+        })
+        .catch((err) => {
+          console.warn(
+            "[wallet] credit failed (exception)",
+            err?.message || err,
+          );
+        });
+    }
+  } catch (err) {
+    console.warn("[wallet] credit failed (ignored)", err?.message || err);
   }
 
   // 6) E-mail: só tenta se ainda não marcou como notificado
@@ -1502,6 +1551,19 @@ router.get("/p/:token/pix/status", async (req, res, next) => {
       return res
         .status(404)
         .json({ ok: false, error: "Proposta não encontrada." });
+
+    // ✅ short-circuit: se já está PAID no banco, não chama gateway
+    if (isPaidStatus(offerRaw?.status) || offerRaw?.paidAt) {
+      noStore(res);
+      return res.json({
+        ok: true,
+        pix: { id: pixId, status: "PAID" },
+        locked: true,
+        paidAt: offerRaw?.paidAt
+          ? new Date(offerRaw.paidAt).toISOString()
+          : null,
+      });
+    }
 
     const ab = await abacateCheckPix({ pixId });
     const pixDataRaw = pickPixData(ab);
