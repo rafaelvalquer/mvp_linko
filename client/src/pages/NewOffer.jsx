@@ -1224,30 +1224,35 @@ export default function NewOffer() {
                   </Button>
                 </div>
 
-                <div className="grid grid-cols-1 gap-2 rounded-xl border bg-zinc-50 p-3 text-sm sm:grid-cols-3">
-                  <div>
-                    <div className="text-xs font-semibold text-zinc-500">
+                <div
+                  className="grid grid-cols-1 gap-2 rounded-xl border border-zinc-200 bg-white p-3 text-sm
+  sm:grid-cols-3 dark:border-zinc-800 dark:bg-zinc-900"
+                >
+                  <div className="rounded-lg bg-zinc-50 p-2 dark:bg-zinc-800/60">
+                    <div className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
                       Subtotal
                     </div>
-                    <div className="mt-1 font-semibold">
+                    <div className="mt-1 font-semibold text-zinc-900 dark:text-zinc-50">
                       {formatBRL(calc.subtotalItemsCents)}
                     </div>
                   </div>
-                  <div>
-                    <div className="text-xs font-semibold text-zinc-500">
+
+                  <div className="rounded-lg bg-zinc-50 p-2 dark:bg-zinc-800/60">
+                    <div className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
                       Desconto
                     </div>
-                    <div className="mt-1 font-semibold">
+                    <div className="mt-1 font-semibold text-zinc-900 dark:text-zinc-50">
                       {form.discountEnabled
                         ? `-${formatBRL(calc.discountCents)}`
                         : "—"}
                     </div>
                   </div>
-                  <div>
-                    <div className="text-xs font-semibold text-zinc-500">
+
+                  <div className="rounded-lg bg-zinc-50 p-2 dark:bg-zinc-800/60">
+                    <div className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
                       Total
                     </div>
-                    <div className="mt-1 font-semibold">
+                    <div className="mt-1 font-semibold text-zinc-900 dark:text-zinc-50">
                       {formatBRL(calc.totalCents)}
                     </div>
                   </div>
