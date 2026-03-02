@@ -26,8 +26,8 @@ import {
   Zap,
   Lock,
   ChevronDown,
-  Moon,
   Sun,
+  Moon,
 } from "lucide-react";
 
 import AnimatedSection from "../components/marketing/AnimatedSection";
@@ -59,15 +59,72 @@ function cx(...classes) {
   return classes.filter(Boolean).join(" ");
 }
 
+const EASE_OUT = [0.16, 1, 0.3, 1];
+
+function useThemeToggle() {
+  const [isDark, setIsDark] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const stored = window.localStorage.getItem("theme");
+    if (stored === "dark") return true;
+    if (stored === "light") return false;
+    return window.matchMedia?.("(prefers-color-scheme: dark)")?.matches;
+  });
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (isDark) root.classList.add("dark");
+    else root.classList.remove("dark");
+    try {
+      window.localStorage.setItem("theme", isDark ? "dark" : "light");
+    } catch {
+      // ignore
+    }
+  }, [isDark]);
+
+  return { isDark, setIsDark };
+}
+
+function AetherBackdrop() {
+  // Background layers kept lightweight (no canvas/three.js)
+  return (
+    <div className="absolute inset-0 -z-10 overflow-hidden">
+      {/* Base gradient */}
+      <div className="absolute inset-0 bg-[radial-gradient(1200px_circle_at_50%_-10%,rgb(var(--accent)/0.18),transparent_55%),radial-gradient(900px_circle_at_90%_10%,rgb(56_189_248/0.10),transparent_55%),radial-gradient(700px_circle_at_10%_90%,rgb(15_23_42/0.06),transparent_55%)] dark:bg-[radial-gradient(1200px_circle_at_50%_-10%,rgb(var(--accent)/0.22),transparent_55%),radial-gradient(900px_circle_at_90%_10%,rgb(56_189_248/0.12),transparent_55%),radial-gradient(700px_circle_at_10%_90%,rgb(0_0_0/0.35),transparent_55%)]" />
+
+      {/* Grid */}
+      <div
+        className="absolute inset-0 opacity-[0.22] dark:opacity-[0.18]"
+        style={{
+          backgroundImage:
+            "linear-gradient(to right, rgb(var(--grid) / 0.55) 1px, transparent 1px), linear-gradient(to bottom, rgb(var(--grid) / 0.55) 1px, transparent 1px)",
+          backgroundSize: "48px 48px",
+          maskImage:
+            "radial-gradient(60% 55% at 50% 30%, black 0%, transparent 70%)",
+          WebkitMaskImage:
+            "radial-gradient(60% 55% at 50% 30%, black 0%, transparent 70%)",
+        }}
+      />
+
+      {/* Soft vignette */}
+      <div className="absolute inset-0 bg-gradient-to-b from-[rgb(var(--bg))] via-[rgb(var(--bg))] to-[rgb(var(--surface-2))]" />
+    </div>
+  );
+}
+
 export default function Home() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [faqOpen, setFaqOpen] = useState(0);
-  const [darkMode, setDarkMode] = useState(false);
+
+  const { isDark, setIsDark } = useThemeToggle();
 
   const reduceMotion = useReducedMotion();
   const { scrollYProgress } = useScroll();
-  const yParallax = useTransform(scrollYProgress, [0, 1], [0, -120]);
+  const yParallax = useTransform(
+    scrollYProgress,
+    [0, 1],
+    [0, reduceMotion ? 0 : -120],
+  );
 
   const navLinks = useMemo(
     () => [
@@ -136,7 +193,7 @@ export default function Home() {
     [],
   );
 
-  const ENTERPRISE_CONTACT = "/contact";
+  const ENTERPRISE_CONTACT = "/contact"; // ou: "mailto:contato@luminorpay.com"
 
   const plans = useMemo(
     () => [
@@ -254,97 +311,130 @@ export default function Home() {
     };
   }, [mobileMenuOpen]);
 
-  // Dark mode toggle
-  useEffect(() => {
-    if (darkMode) {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-  }, [darkMode]);
+  const t = reduceMotion ? 0 : 0.65;
 
-  const t = reduceMotion ? 0 : 0.6;
+  const ui = {
+    page: "min-h-screen font-sans text-[rgb(var(--text))] bg-[rgb(var(--bg))] selection:bg-emerald-200/30 selection:text-[rgb(var(--text))]",
+    container: "mx-auto max-w-7xl px-5 sm:px-6 lg:px-8",
+    focusRing:
+      "focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--bg))]",
+    glass:
+      "backdrop-blur-xl bg-[rgb(var(--surface)/0.72)] border border-[rgb(var(--border)/0.75)] shadow-[0_10px_40px_-28px_rgba(0,0,0,0.25)] dark:shadow-[0_10px_40px_-28px_rgba(0,0,0,0.55)]",
+    glassSoft:
+      "backdrop-blur-xl bg-[rgb(var(--surface)/0.62)] border border-[rgb(var(--border)/0.65)]",
+    subtleText: "text-[rgb(var(--muted))]",
+  };
 
   return (
-    <div className="min-h-screen bg-surface font-sans text-foreground selection:bg-accent/20 scroll-smooth antialiased">
+    <div className={ui.page}>
       {/* Skip link (acessibilidade) */}
       <a
         href="#conteudo"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[999] rounded-xl bg-zinc-900 dark:bg-white px-5 py-3 text-white dark:text-zinc-900 font-semibold shadow-2xl ring-2 ring-accent focus:outline-none"
+        className={cx(
+          "sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[999]",
+          "rounded-xl bg-[rgb(var(--text))] px-4 py-2 text-[rgb(var(--bg))]",
+          ui.focusRing,
+        )}
       >
         Pular para o conteúdo
       </a>
 
-      {/* HEADER */}
       <header
         className={cx(
           "fixed inset-x-0 top-0 z-[100] transition-all duration-300",
           scrolled
-            ? "bg-surface-glass backdrop-blur-xl border-b border-border shadow-sm"
-            : "bg-transparent",
-          "py-3 lg:py-4",
+            ? cx(
+                "py-3",
+                "bg-[rgb(var(--surface)/0.72)] backdrop-blur-xl",
+                "border-b border-[rgb(var(--border)/0.7)]",
+                "shadow-[0_10px_30px_-22px_rgba(0,0,0,0.35)]",
+              )
+            : "py-5 bg-transparent",
         )}
       >
-        <nav className="mx-auto flex max-w-7xl items-center justify-between px-5 sm:px-6 lg:px-8">
-          {/* Left: Logo + Badge */}
+        <nav className={cx(ui.container, "flex items-center")}>
+          {/* Left: Logo */}
           <div className="relative flex items-center gap-3">
-            <div className="absolute -top-7 left-0 hidden lg:flex items-center gap-1.5 text-[10px] font-extrabold text-accent uppercase tracking-widest whitespace-nowrap">
-              <Sparkles className="h-3 w-3" strokeWidth={3} />
-              NOVO: AGENDA INTEGRADA
+            <div
+              className={cx(
+                "absolute -top-6 left-0 hidden lg:flex items-center gap-1",
+                "text-[10px] font-extrabold uppercase tracking-[0.22em] whitespace-nowrap",
+                "text-emerald-700/90 dark:text-emerald-300/90",
+              )}
+            >
+              <Sparkles className="h-3 w-3" /> NOVO: AGENDA INTEGRADA
             </div>
 
             <Link
               to="/"
-              className="flex items-center gap-2.5 group focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface rounded-lg"
-              aria-label="LuminorPay - Página inicial"
+              className={cx(
+                "flex items-center gap-2 group",
+                "rounded-2xl",
+                ui.focusRing,
+              )}
+              aria-label="LuminorPay"
             >
               <img
                 src={brandLogo}
-                alt=""
-                className="h-9 w-9 rounded-xl object-contain transition-transform duration-300 group-hover:scale-110 group-focus-visible:scale-110"
+                alt="LuminorPay"
+                className="h-9 w-9 rounded-xl object-contain transition-transform group-hover:scale-110"
                 loading="eager"
                 draggable="false"
               />
               <span className="text-xl font-black tracking-tight">
-                Luminor<span className="text-accent">Pay</span>
+                Luminor<span className="text-emerald-500">Pay</span>
               </span>
             </Link>
           </div>
-
           {/* Center: Nav links (desktop) */}
-          <div className="hidden lg:flex lg:gap-x-8">
+          <div className="hidden lg:flex lg:gap-x-10 ml-10">
             {navLinks.map((item) => (
               <a
                 key={item.name}
                 href={item.href}
-                className="text-sm font-semibold text-muted hover:text-foreground transition-colors focus:outline-none focus-visible:text-accent focus-visible:underline underline-offset-4"
+                className={cx(
+                  "text-sm font-semibold tracking-wide",
+                  "text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]",
+                  "relative py-2",
+                  "after:absolute after:left-0 after:right-0 after:-bottom-1 after:h-px after:scale-x-0 after:bg-emerald-400/70 after:transition-transform after:duration-300 after:origin-left hover:after:scale-x-100",
+                  ui.focusRing,
+                )}
               >
                 {item.name}
               </a>
             ))}
           </div>
-
-          {/* Right: Dark Mode + Auth buttons */}
-          <div className="flex items-center gap-2 sm:gap-3">
-            {/* Dark mode toggle (opcional) */}
+          {/* Right: Auth buttons (always right) */}
+          <div className="ml-auto flex items-center gap-2 sm:gap-3">
+            {/* Theme toggle */}
             <button
-              onClick={() => setDarkMode(!darkMode)}
-              className="hidden sm:flex p-2.5 rounded-full bg-surface-elevated hover:bg-surface-elevated/80 border border-border transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-              aria-label={darkMode ? "Ativar modo claro" : "Ativar modo escuro"}
+              type="button"
+              onClick={() => setIsDark((v) => !v)}
+              className={cx(
+                "hidden sm:inline-flex h-10 w-10 items-center justify-center rounded-full",
+                ui.glassSoft,
+                "transition-colors",
+                "hover:bg-[rgb(var(--surface)/0.78)]",
+                ui.focusRing,
+              )}
+              aria-label={isDark ? "Ativar tema claro" : "Ativar tema escuro"}
             >
-              {darkMode ? (
-                <Sun className="h-4 w-4 text-muted" />
+              {isDark ? (
+                <Sun className="h-5 w-5 text-emerald-300" />
               ) : (
-                <Moon className="h-4 w-4 text-muted" />
+                <Moon className="h-5 w-5 text-emerald-700" />
               )}
             </button>
 
             <Link
               to="/login"
               className={cx(
-                "inline-flex items-center justify-center rounded-full font-bold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface",
-                "h-10 px-5 text-sm lg:h-11 lg:px-6 lg:text-base",
-                "text-foreground bg-surface-elevated hover:bg-surface-elevated/80 border border-border hover:border-border-hover",
+                "inline-flex items-center justify-center rounded-full font-extrabold transition-all",
+                "h-10 px-4 text-sm sm:h-11 sm:px-5 sm:text-base",
+                ui.glassSoft,
+                "text-[rgb(var(--text))]",
+                "hover:bg-[rgb(var(--surface)/0.78)]",
+                ui.focusRing,
               )}
             >
               Entrar
@@ -353,20 +443,29 @@ export default function Home() {
             <Link
               to="/register"
               className={cx(
-                "relative inline-flex items-center justify-center rounded-full font-bold transition-all overflow-hidden group focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface",
-                "h-10 px-5 text-sm lg:h-11 lg:px-6 lg:text-base",
-                "bg-accent text-white hover:bg-accent-hover shadow-lg shadow-accent/25 hover:shadow-xl hover:shadow-accent/30",
+                "group relative inline-flex items-center justify-center rounded-full font-extrabold transition-all",
+                "h-10 px-4 text-sm sm:h-11 sm:px-6 sm:text-base",
+                "bg-emerald-500 text-white hover:bg-emerald-600",
+                "shadow-[0_18px_40px_-18px_rgb(var(--accent)/0.55)]",
+                "overflow-hidden",
+                ui.focusRing,
               )}
             >
-              {/* Sheen effect */}
-              <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000" />
-              <span className="relative">Criar conta</span>
+              <span className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                <span className="absolute -inset-y-10 -left-24 w-24 rotate-12 bg-white/25 blur-md group-hover:animate-[sheen_1.1s_ease-in-out] motion-reduce:animate-none" />
+              </span>
+              Criar conta
             </Link>
 
             {/* Mobile: menu button */}
             <button
               onClick={() => setMobileMenuOpen(true)}
-              className="lg:hidden p-2.5 bg-surface-elevated rounded-full border border-border hover:bg-surface-elevated/80 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className={cx(
+                "lg:hidden p-2 rounded-full",
+                ui.glassSoft,
+                "hover:bg-[rgb(var(--surface)/0.78)]",
+                ui.focusRing,
+              )}
               aria-label="Abrir menu"
               aria-expanded={mobileMenuOpen}
             >
@@ -377,76 +476,70 @@ export default function Home() {
       </header>
 
       {/* HERO */}
-      <main
-        id="conteudo"
-        className="relative pt-32 sm:pt-40 pb-20 lg:pt-48 overflow-hidden"
-      >
-        {/* Premium background with grid + gradients */}
-        <div className="absolute inset-0 -z-10">
-          {/* Grid overlay */}
-          <div
-            className="absolute inset-0 opacity-[0.015] dark:opacity-[0.03]"
-            style={{
-              backgroundImage: `
-                linear-gradient(to right, currentColor 1px, transparent 1px),
-                linear-gradient(to bottom, currentColor 1px, transparent 1px)
-              `,
-              backgroundSize: "64px 64px",
-            }}
-          />
+      <main id="conteudo" className="relative pt-32 sm:pt-36 pb-20 lg:pt-44">
+        <AetherBackdrop />
 
-          {/* Hero glow */}
-          <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[800px] h-[800px] bg-gradient-radial from-accent/10 via-accent/5 to-transparent blur-3xl" />
-          <div className="absolute top-1/4 -right-48 w-[600px] h-[600px] bg-gradient-radial from-purple-500/5 via-transparent to-transparent blur-3xl" />
-
-          {/* Base gradient */}
-          <div className="absolute inset-0 bg-gradient-to-b from-surface via-surface to-surface-elevated" />
-        </div>
-
-        <div className="mx-auto max-w-7xl px-5 sm:px-6 lg:px-8">
+        <div className={ui.container}>
           <div className="text-center">
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: t, ease: [0.16, 1, 0.3, 1] }}
-              className="max-w-4xl mx-auto"
+              transition={{ duration: t, ease: EASE_OUT }}
+              className="max-w-3xl mx-auto"
             >
-              {/* Trust badge */}
-              <div className="inline-flex items-center gap-2 rounded-full border border-border bg-surface-glass backdrop-blur-sm px-4 py-2 text-xs font-bold text-accent shadow-sm">
+              <div
+                className={cx(
+                  "inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-extrabold",
+                  ui.glass,
+                  "text-emerald-700 dark:text-emerald-300",
+                )}
+              >
                 <BadgeCheck className="h-4 w-4" />
                 Propostas, Pix e agenda em um único fluxo
               </div>
 
-              {/* Headline */}
-              <h1 className="mt-8 text-[clamp(2.5rem,6vw,5rem)] font-black leading-[1.05] tracking-tight">
+              <h1 className="mt-6 text-4xl font-black leading-[1.05] tracking-[-0.03em] sm:text-6xl lg:text-7xl">
                 Crie propostas que viram{" "}
-                <span className="bg-gradient-to-r from-accent via-emerald-500 to-accent bg-clip-text text-transparent">
-                  pagamento
-                </span>
-                .
+                <span className="text-emerald-500">pagamento</span>.
               </h1>
 
-              {/* Subheadline */}
-              <p className="mt-6 text-lg sm:text-xl text-muted leading-relaxed max-w-2xl mx-auto font-medium">
+              <p
+                className={cx(
+                  "mt-6 text-lg sm:text-xl leading-relaxed max-w-2xl mx-auto",
+                  ui.subtleText,
+                )}
+              >
                 Orçamento, aceite, Pix e agenda em um único link. Feito para
                 quem não tem tempo a perder.
               </p>
 
-              {/* CTAs */}
               <div className="mt-10 flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3 sm:gap-4">
                 <Link
                   to="/register"
-                  className="group relative overflow-hidden rounded-full bg-accent px-8 py-4 text-base lg:text-lg font-bold text-white shadow-2xl shadow-accent/30 hover:shadow-accent/40 transition-all duration-300 flex items-center justify-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface hover:scale-[1.02]"
+                  className={cx(
+                    "group relative rounded-full px-8 py-4 text-lg font-extrabold text-white",
+                    "bg-emerald-500 hover:bg-emerald-600",
+                    "shadow-[0_22px_50px_-24px_rgb(var(--accent)/0.75)]",
+                    "transition-colors overflow-hidden",
+                    ui.focusRing,
+                  )}
                 >
-                  {/* Sheen */}
-                  <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/25 to-transparent translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700" />
-                  <span className="relative">Começar agora</span>
+                  <span className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <span className="absolute -inset-y-10 -left-28 w-28 rotate-12 bg-white/25 blur-md group-hover:animate-[sheen_1.1s_ease-in-out] motion-reduce:animate-none" />
+                  </span>
+                  Começar agora
                   <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </Link>
 
                 <a
                   href="#planos"
-                  className="rounded-full bg-surface-elevated hover:bg-surface-elevated/80 border border-border hover:border-border-hover px-8 py-4 text-base lg:text-lg font-bold text-foreground transition-all flex items-center justify-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                  className={cx(
+                    "rounded-full px-8 py-4 text-lg font-extrabold",
+                    ui.glass,
+                    "hover:bg-[rgb(var(--surface)/0.78)]",
+                    "transition-colors flex items-center justify-center gap-2",
+                    ui.focusRing,
+                  )}
                 >
                   Ver planos
                   <ChevronDown className="w-5 h-5" />
@@ -454,7 +547,7 @@ export default function Home() {
               </div>
 
               {/* Trust row */}
-              <div className="mt-12 grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-3xl mx-auto">
+              <div className="mt-10 grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-3xl mx-auto">
                 {[
                   { icon: Lock, label: "Sem cartão de crédito" },
                   { icon: Zap, label: "Setup em minutos" },
@@ -462,31 +555,34 @@ export default function Home() {
                 ].map((it, idx) => (
                   <div
                     key={idx}
-                    className="flex items-center justify-center gap-2.5 rounded-2xl border border-border bg-surface-glass backdrop-blur-sm px-4 py-3.5 text-sm font-semibold text-muted shadow-sm"
+                    className={cx(
+                      "flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold",
+                      ui.glass,
+                      "text-[rgb(var(--muted))]",
+                    )}
                   >
-                    <it.icon
-                      className="h-4 w-4 text-accent"
-                      strokeWidth={2.5}
-                    />
+                    <it.icon className="h-4 w-4 text-emerald-500" />
                     {it.label}
                   </div>
                 ))}
               </div>
             </motion.div>
 
-            {/* Hero preview */}
             <motion.div
-              style={{ y: reduceMotion ? 0 : yParallax }}
+              style={{ y: yParallax }}
               initial={{ opacity: 0, scale: 0.98 }}
               whileInView={{ opacity: 1, scale: 1 }}
               viewport={{ once: true, margin: "-120px" }}
-              transition={{
-                duration: reduceMotion ? 0 : 0.8,
-                ease: [0.16, 1, 0.3, 1],
-              }}
-              className="mt-16 sm:mt-20 lg:mt-24 max-w-6xl mx-auto"
+              transition={{ duration: reduceMotion ? 0 : 0.85, ease: EASE_OUT }}
+              className="mt-14 sm:mt-16 lg:mt-20 max-w-6xl mx-auto"
             >
-              <div className="rounded-[32px] border border-border bg-surface-elevated shadow-[0_20px_80px_-20px_rgba(0,0,0,0.15)] dark:shadow-[0_20px_80px_-20px_rgba(0,0,0,0.4)] overflow-hidden ring-1 ring-border/50">
+              <div
+                className={cx(
+                  "rounded-[28px] overflow-hidden",
+                  ui.glass,
+                  "shadow-[0_18px_70px_-50px_rgba(0,0,0,0.45)]",
+                )}
+              >
                 <HeroPreview />
               </div>
             </motion.div>
@@ -495,31 +591,46 @@ export default function Home() {
       </main>
 
       {/* RECURSOS */}
-      <section id="recursos" className="py-24 sm:py-32 scroll-mt-24 relative">
-        {/* Subtle bg */}
-        <div className="absolute inset-0 bg-gradient-to-b from-surface-elevated/50 to-surface -z-10" />
-
-        <div className="mx-auto max-w-7xl px-5 sm:px-6 lg:px-8">
-          <AnimatedSection className="text-center max-w-3xl mx-auto mb-16 sm:mb-20">
-            <h2 className="text-[clamp(2rem,5vw,3.5rem)] font-black leading-tight tracking-tight">
+      <section
+        id="recursos"
+        className="py-24 sm:py-28 scroll-mt-28 bg-[rgb(var(--surface-2))]"
+      >
+        <div className={ui.container}>
+          <AnimatedSection className="text-center max-w-3xl mx-auto mb-14 sm:mb-16">
+            <h2 className="text-3xl font-black sm:text-4xl lg:text-5xl">
               Tudo para escalar sua operação
             </h2>
-            <p className="mt-5 text-base sm:text-lg text-muted font-medium leading-relaxed">
+            <p className={cx("mt-5 text-base sm:text-lg", ui.subtleText)}>
               Elimine a confusão de planilhas e mensagens soltas no WhatsApp.
             </p>
           </AnimatedSection>
 
           <div className="grid grid-cols-1 gap-5 sm:gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {features.map((f, i) => (
-              <AnimatedSection key={i} delay={reduceMotion ? 0 : i * 0.05}>
-                <div className="group h-full rounded-3xl border border-border bg-surface-glass backdrop-blur-sm p-8 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-accent/5 hover:border-accent/30 hover:bg-surface-elevated/80 focus-within:ring-2 focus-within:ring-accent">
-                  <div className="inline-flex p-4 rounded-2xl bg-accent/10 text-accent group-hover:bg-accent group-hover:text-white transition-all duration-300">
-                    <f.icon className="w-6 h-6" strokeWidth={2.5} />
+              <AnimatedSection key={i} delay={reduceMotion ? 0 : i * 0.06}>
+                <div
+                  className={cx(
+                    "h-full rounded-3xl p-8 sm:p-9 transition-all group",
+                    ui.glass,
+                    "hover:-translate-y-1 hover:shadow-[0_24px_60px_-50px_rgba(0,0,0,0.55)]",
+                  )}
+                >
+                  <div
+                    className={cx(
+                      "inline-flex p-4 rounded-2xl transition-colors",
+                      "bg-emerald-500/10 text-emerald-600",
+                      "group-hover:bg-emerald-500 group-hover:text-white",
+                    )}
+                  >
+                    <f.icon className="w-7 h-7" />
                   </div>
-                  <h3 className="mt-6 font-bold text-xl leading-tight">
-                    {f.title}
-                  </h3>
-                  <p className="mt-3 text-base text-muted leading-relaxed">
+                  <h3 className="mt-7 font-black text-xl">{f.title}</h3>
+                  <p
+                    className={cx(
+                      "mt-3 text-base leading-relaxed",
+                      ui.subtleText,
+                    )}
+                  >
                     {f.desc}
                   </p>
                 </div>
@@ -530,16 +641,11 @@ export default function Home() {
       </section>
 
       {/* COMO FUNCIONA */}
-      <section
-        id="como-funciona"
-        className="py-24 sm:py-32 scroll-mt-24 relative"
-      >
-        <div className="mx-auto max-w-7xl px-5 sm:px-6 lg:px-8">
-          <div className="text-center mb-16 sm:mb-20">
-            <h2 className="text-[clamp(2rem,5vw,3.5rem)] font-black leading-tight tracking-tight">
-              Como funciona?
-            </h2>
-            <p className="mt-5 text-base sm:text-lg text-muted font-medium leading-relaxed">
+      <section id="como-funciona" className="py-24 sm:py-28 scroll-mt-28">
+        <div className={ui.container}>
+          <div className="text-center mb-14 sm:mb-16">
+            <h2 className="text-3xl font-black lg:text-5xl">Como funciona?</h2>
+            <p className={cx("mt-5 text-base sm:text-lg", ui.subtleText)}>
               Simples, rápido e profissional para você e seu cliente.
             </p>
           </div>
@@ -548,15 +654,24 @@ export default function Home() {
             {steps.map((step, i) => (
               <div
                 key={i}
-                className="group rounded-3xl border border-border bg-surface-glass backdrop-blur-sm p-8 hover:shadow-2xl hover:shadow-accent/5 hover:border-accent/30 transition-all duration-300 hover:-translate-y-0.5"
+                className={cx(
+                  "rounded-3xl p-8 sm:p-9 transition-all",
+                  ui.glass,
+                  "hover:shadow-[0_24px_60px_-50px_rgba(0,0,0,0.55)]",
+                )}
               >
-                <div className="w-14 h-14 bg-accent/10 rounded-2xl flex items-center justify-center text-accent group-hover:bg-accent group-hover:text-white transition-all duration-300">
-                  <step.icon className="w-7 h-7" strokeWidth={2.5} />
+                <div className="w-14 h-14 bg-emerald-500/10 rounded-2xl flex items-center justify-center text-emerald-500">
+                  <step.icon className="w-7 h-7" />
                 </div>
-                <h3 className="mt-6 text-xl font-bold leading-tight">
+                <h3 className="mt-6 text-xl sm:text-2xl font-black">
                   {step.title}
                 </h3>
-                <p className="mt-3 text-muted text-base leading-relaxed">
+                <p
+                  className={cx(
+                    "mt-3 text-base leading-relaxed",
+                    ui.subtleText,
+                  )}
+                >
                   {step.desc}
                 </p>
               </div>
@@ -566,20 +681,21 @@ export default function Home() {
       </section>
 
       {/* PLANOS */}
-      <section id="planos" className="py-24 sm:py-32 scroll-mt-24 relative">
-        <div className="absolute inset-0 bg-gradient-to-b from-surface-elevated/50 to-surface -z-10" />
-
-        <div className="mx-auto max-w-7xl px-5 sm:px-6 lg:px-8">
-          <div className="text-center mb-16 sm:mb-20">
-            <h2 className="text-[clamp(2rem,5vw,3.5rem)] font-black leading-tight tracking-tight">
+      <section
+        id="planos"
+        className="py-24 sm:py-28 scroll-mt-28 bg-[rgb(var(--surface-2))]"
+      >
+        <div className={ui.container}>
+          <div className="text-center mb-14 sm:mb-16">
+            <h2 className="text-3xl font-black lg:text-5xl">
               Planos transparentes
             </h2>
-            <p className="mt-5 text-base sm:text-lg text-muted font-medium leading-relaxed">
+            <p className={cx("mt-5 text-base sm:text-lg", ui.subtleText)}>
               Escolha o plano ideal e evolua conforme crescer.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-5 sm:gap-6 md:grid-cols-2 lg:grid-cols-4">
             {plans.map((plan, i) => {
               const isEnterprise = !plan.price;
               const ctaTo = plan.cta?.to || "/register";
@@ -599,16 +715,17 @@ export default function Home() {
               return (
                 <AnimatedSection
                   key={i}
-                  delay={reduceMotion ? 0 : i * 0.05}
                   className={cx(
-                    "relative flex flex-col rounded-[32px] p-8 bg-surface-glass backdrop-blur-sm border transition-all duration-300",
+                    "relative flex flex-col rounded-[28px] p-8 sm:p-9 transition-all",
+                    ui.glass,
+                    plan.popular ? "pt-11 sm:pt-12" : "", // + espaço no topo para não colidir com a pill
                     plan.popular
-                      ? "border-accent shadow-2xl shadow-accent/10 lg:scale-[1.02]"
-                      : "border-border hover:shadow-xl hover:shadow-accent/5 hover:border-accent/30",
+                      ? "border-2 border-emerald-500/90 shadow-[0_26px_70px_-55px_rgb(var(--accent)/0.85)] lg:-translate-y-1"
+                      : "hover:shadow-[0_24px_60px_-50px_rgba(0,0,0,0.55)]",
                   )}
                 >
                   {plan.popular && (
-                    <span className="absolute -top-4 left-1/2 -translate-x-1/2 bg-accent text-white text-xs font-extrabold px-5 py-2 rounded-full uppercase tracking-wide shadow-lg">
+                    <span className="absolute -top-4 left-1/2 -translate-x-1/2 bg-emerald-500 text-white text-xs font-extrabold px-4 py-2 rounded-full uppercase tracking-[0.18em] shadow-[0_18px_40px_-24px_rgb(var(--accent)/0.75)]">
                       Mais Popular
                     </span>
                   )}
@@ -620,68 +737,105 @@ export default function Home() {
                           {plan.name}
                         </h3>
                         {plan.subtitle && (
-                          <div className="mt-1.5 text-sm font-semibold text-muted">
+                          <div
+                            className={cx(
+                              "mt-1 text-sm font-semibold",
+                              ui.subtleText,
+                            )}
+                          >
                             {plan.subtitle}
                           </div>
                         )}
                       </div>
+
+                      {/* badges */}
+                      <div className="flex flex-col items-end gap-2 mt-1">
+                        {Array.isArray(plan.badges) &&
+                          plan.badges.slice(0, 2).map((b) => (
+                            <span
+                              key={b}
+                              className="inline-flex items-center rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-[11px] font-black text-emerald-700"
+                            >
+                              {b}
+                            </span>
+                          ))}
+                      </div>
                     </div>
 
-                    {/* Price */}
-                    <div className="mt-6">
+                    {/* price */}
+                    <div className="mt-5">
                       <div className="flex items-baseline gap-2">
                         <span className="text-4xl font-black">
-                          {plan.price || "Sob consulta"}
+                          {plan.price || "Fale com a gente"}
                         </span>
                         {plan.price && (
-                          <span className="text-muted text-base font-semibold">
+                          <span
+                            className={cx(
+                              "text-base font-semibold",
+                              ui.subtleText,
+                            )}
+                          >
                             /mês
                           </span>
                         )}
                       </div>
 
-                      {/* Pix info */}
+                      {/* included pix + extra */}
                       {!isEnterprise && (
-                        <div className="mt-4 flex flex-wrap items-center gap-2">
-                          <span className="inline-flex items-center gap-2 rounded-full bg-accent/10 px-3 py-1.5 text-xs font-bold text-accent border border-accent/20">
-                            <QrCode className="h-3.5 w-3.5" />
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <span className="inline-flex items-center gap-2 rounded-full bg-emerald-500/10 px-3 py-1.5 text-xs font-extrabold text-emerald-600 dark:text-emerald-300">
+                            <QrCode className="h-4 w-4" />
                             {plan.includedPix} Pix/mês
                           </span>
-                          <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-elevated px-3 py-1.5 text-xs font-semibold text-muted border border-border">
-                            Extra:{" "}
-                            <span className="font-bold text-foreground">
+                          <span
+                            className={cx(
+                              "inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold",
+                              ui.glassSoft,
+                              ui.subtleText,
+                            )}
+                          >
+                            Pix extra:{" "}
+                            <span className="font-black text-[rgb(var(--text))]">
                               {plan.extraPix}
                             </span>
                           </span>
                         </div>
                       )}
 
-                      {/* Microcopy */}
+                      {/* microcopy */}
                       {plan.microcopy && (
-                        <p className="mt-4 text-sm text-muted leading-relaxed">
+                        <p
+                          className={cx(
+                            "mt-4 text-sm leading-relaxed",
+                            ui.subtleText,
+                          )}
+                        >
                           {plan.microcopy}
                         </p>
                       )}
                     </div>
                   </div>
 
-                  {/* Benefits */}
+                  {/* benefits */}
                   <div className="flex-1">
-                    <div className="text-xs font-extrabold uppercase tracking-wider text-muted mb-4">
+                    <div
+                      className={cx(
+                        "text-xs font-extrabold uppercase tracking-[0.22em] mb-3",
+                        "text-[rgb(var(--muted-2))]",
+                      )}
+                    >
                       Benefícios
                     </div>
                     <ul className="space-y-3">
                       {plan.benefits.map((item, idx) => (
                         <li
                           key={idx}
-                          className="flex items-start gap-3 text-sm text-foreground"
+                          className="flex items-start gap-3 text-sm text-[rgb(var(--muted))]"
                         >
-                          <span className="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-accent/10 text-accent flex-shrink-0">
-                            <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                          <span className="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-300">
+                            <Check className="h-4 w-4" />
                           </span>
-                          <span className="leading-snug font-medium">
-                            {item}
-                          </span>
+                          <span className="leading-snug">{item}</span>
                         </li>
                       ))}
                     </ul>
@@ -691,24 +845,26 @@ export default function Home() {
                   <div className="mt-8">
                     <CTA
                       className={cx(
-                        "group relative w-full overflow-hidden text-center py-4 rounded-2xl font-bold text-base transition-all duration-300 block focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface",
+                        "group relative w-full text-center py-4 rounded-2xl font-extrabold text-base transition-colors block overflow-hidden",
+                        ui.focusRing,
                         plan.popular
-                          ? "bg-accent text-white hover:bg-accent-hover shadow-lg shadow-accent/30 hover:shadow-xl hover:shadow-accent/40"
-                          : "bg-foreground text-surface hover:bg-foreground/90 shadow-md",
+                          ? "bg-emerald-500 text-white hover:bg-emerald-600 shadow-[0_18px_40px_-24px_rgb(var(--accent)/0.75)]"
+                          : isEnterprise
+                            ? "bg-[rgb(var(--text))] text-[rgb(var(--bg))] hover:opacity-95"
+                            : "bg-[rgb(var(--text))] text-[rgb(var(--bg))] hover:opacity-95",
                       )}
                     >
-                      {/* Sheen */}
-                      <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700" />
-                      <span className="relative">
-                        {plan.cta?.label ||
-                          (isEnterprise
-                            ? "Falar com especialista"
-                            : "Começar agora")}
+                      <span className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <span className="absolute -inset-y-10 -left-28 w-28 rotate-12 bg-white/25 blur-md group-hover:animate-[sheen_1.1s_ease-in-out] motion-reduce:animate-none" />
                       </span>
+                      {plan.cta?.label ||
+                        (isEnterprise
+                          ? "Falar com especialista"
+                          : "Começar agora")}
                     </CTA>
 
                     {!isEnterprise && (
-                      <div className="mt-3 text-[11px] text-muted text-center font-medium">
+                      <div className="mt-3 text-[11px] text-[rgb(var(--muted-2))] text-center">
                         Inclui {plan.includedPix} Pix/mês • Pix extra disponível
                       </div>
                     )}
@@ -720,10 +876,10 @@ export default function Home() {
         </div>
       </section>
 
-      {/* FAQ */}
-      <section id="faq" className="py-24 sm:py-32 scroll-mt-24">
+      {/* FAQ (Accordion) */}
+      <section id="faq" className="py-24 sm:py-28 scroll-mt-28">
         <div className="mx-auto max-w-4xl px-5 sm:px-6">
-          <h2 className="text-center text-[clamp(2rem,5vw,3.5rem)] font-black mb-14 sm:mb-16 tracking-tight">
+          <h2 className="text-center text-3xl font-black mb-12 sm:mb-14 lg:text-5xl">
             Dúvidas comuns
           </h2>
 
@@ -733,23 +889,26 @@ export default function Home() {
               return (
                 <div
                   key={i}
-                  className="rounded-3xl border border-border bg-surface-glass backdrop-blur-sm overflow-hidden transition-all duration-300 hover:border-accent/30"
+                  className={cx("rounded-3xl overflow-hidden", ui.glass)}
                 >
                   <button
                     type="button"
                     onClick={() => setFaqOpen(open ? -1 : i)}
-                    className="w-full flex items-center justify-between gap-4 p-6 sm:p-7 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset"
+                    className={cx(
+                      "w-full flex items-center justify-between gap-4 p-6 sm:p-7 text-left",
+                      "hover:bg-[rgb(var(--surface)/0.78)] transition-colors",
+                      ui.focusRing,
+                    )}
                     aria-expanded={open}
                   >
-                    <span className="font-bold text-lg sm:text-xl text-foreground leading-tight">
+                    <span className="font-black text-lg sm:text-xl">
                       {item.q}
                     </span>
                     <ChevronDown
                       className={cx(
-                        "h-5 w-5 shrink-0 transition-transform duration-300 text-muted",
-                        open ? "rotate-180 text-accent" : "rotate-0",
+                        "h-5 w-5 shrink-0 transition-transform",
+                        open ? "rotate-180" : "rotate-0",
                       )}
-                      strokeWidth={2.5}
                     />
                   </button>
 
@@ -760,11 +919,16 @@ export default function Home() {
                         animate={{ height: "auto", opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
                         transition={{
-                          duration: reduceMotion ? 0 : 0.3,
-                          ease: [0.16, 1, 0.3, 1],
+                          duration: reduceMotion ? 0 : 0.28,
+                          ease: EASE_OUT,
                         }}
                       >
-                        <div className="px-6 sm:px-7 pb-6 sm:pb-7 text-muted leading-relaxed font-medium">
+                        <div
+                          className={cx(
+                            "px-6 sm:px-7 pb-6 sm:pb-7 leading-relaxed",
+                            ui.subtleText,
+                          )}
+                        >
                           {item.a}
                         </div>
                       </motion.div>
@@ -777,100 +941,156 @@ export default function Home() {
         </div>
       </section>
 
-      {/* FOOTER */}
-      <footer className="py-16 border-t border-border bg-surface-elevated/50">
-        <div className="mx-auto max-w-7xl px-6 text-center">
-          <div className="flex justify-center items-center gap-2.5 mb-6">
+      <footer className="py-14 border-t border-[rgb(var(--border)/0.65)]">
+        <div
+          className={cx(
+            ui.container,
+            "text-center text-sm text-[rgb(var(--muted-2))]",
+          )}
+        >
+          <div className="flex justify-center items-center gap-2 mb-5">
             <img
               src={brandLogo}
-              alt=""
-              className="h-10 w-10 rounded-xl object-contain"
-              loading="lazy"
+              alt="LuminorPay"
+              className="h-9 w-9 rounded-xl object-contain transition-transform group-hover:scale-110"
+              loading="eager"
               draggable="false"
             />
-            <span className="font-black text-foreground text-lg tracking-tight">
+            <span className="font-black text-[rgb(var(--text))] text-base">
               LuminorPay
             </span>
           </div>
-          <p className="text-sm text-muted font-medium">
+          <p>
             © {new Date().getFullYear()} LuminorPay. Todos os direitos
             reservados.
           </p>
         </div>
       </footer>
 
-      {/* MOBILE MENU */}
+      {/* MOBILE MENU (overlay + drawer) */}
       <AnimatePresence>
         {mobileMenuOpen && (
           <>
             <motion.button
               aria-label="Fechar menu"
               onClick={() => setMobileMenuOpen(false)}
-              className="fixed inset-0 z-[109] bg-black/40 backdrop-blur-sm"
+              className="fixed inset-0 z-[109] bg-black/30 backdrop-blur-[2px]"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: reduceMotion ? 0 : 0.2 }}
+              transition={{ duration: reduceMotion ? 0 : 0.18, ease: EASE_OUT }}
             />
 
             <motion.aside
               role="dialog"
               aria-modal="true"
-              className="fixed right-0 top-0 bottom-0 z-[110] w-[90%] max-w-sm bg-surface border-l border-border shadow-2xl p-6 overflow-y-auto"
+              className={cx(
+                "fixed right-0 top-0 bottom-0 z-[110] w-[92%] max-w-sm",
+                "p-6 overflow-y-auto",
+                "shadow-2xl",
+                ui.glass,
+              )}
               initial={{ x: "100%" }}
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
-              transition={{
-                duration: reduceMotion ? 0 : 0.3,
-                ease: [0.16, 1, 0.3, 1],
-              }}
+              transition={{ duration: reduceMotion ? 0 : 0.28, ease: EASE_OUT }}
             >
               <div className="flex justify-between items-center mb-10">
                 <Link
                   to="/"
-                  className="flex items-center gap-2.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-lg"
+                  className={cx(
+                    "flex items-center gap-2 rounded-2xl",
+                    ui.focusRing,
+                  )}
                   onClick={() => setMobileMenuOpen(false)}
                 >
                   <Logo className="h-8 w-8" />
-                  <span className="font-black text-foreground text-base tracking-tight">
+                  <span className="font-black text-[rgb(var(--text))] text-base">
                     LuminorPay
                   </span>
                 </Link>
 
                 <button
                   onClick={() => setMobileMenuOpen(false)}
-                  className="p-2.5 bg-surface-elevated rounded-full border border-border hover:bg-surface-elevated/80 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                  aria-label="Fechar menu"
+                  className={cx(
+                    "p-2 rounded-full",
+                    ui.glassSoft,
+                    "hover:bg-[rgb(var(--surface)/0.78)] transition-colors",
+                    ui.focusRing,
+                  )}
+                  aria-label="Fechar"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-6 h-6" />
                 </button>
               </div>
 
-              <nav className="flex flex-col gap-3">
+              <div className="mb-6 sm:hidden">
+                <button
+                  type="button"
+                  onClick={() => setIsDark((v) => !v)}
+                  className={cx(
+                    "inline-flex w-full items-center justify-between rounded-2xl px-4 py-4",
+                    ui.glassSoft,
+                    ui.focusRing,
+                  )}
+                  aria-label={
+                    isDark ? "Ativar tema claro" : "Ativar tema escuro"
+                  }
+                >
+                  <span className="text-sm font-extrabold tracking-wide">
+                    {isDark ? "Tema claro" : "Tema escuro"}
+                  </span>
+                  {isDark ? (
+                    <Sun className="h-5 w-5 text-emerald-300" />
+                  ) : (
+                    <Moon className="h-5 w-5 text-emerald-700" />
+                  )}
+                </button>
+              </div>
+
+              <nav className="flex flex-col gap-4">
                 {navLinks.map((it) => (
                   <a
                     key={it.name}
                     href={it.href}
                     onClick={() => setMobileMenuOpen(false)}
-                    className="rounded-2xl px-5 py-4 text-base font-bold text-foreground hover:bg-surface-elevated border border-border hover:border-accent/30 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset"
+                    className={cx(
+                      "rounded-2xl px-4 py-4 text-lg font-extrabold",
+                      ui.glassSoft,
+                      "hover:bg-[rgb(var(--surface)/0.78)] transition-colors",
+                      ui.focusRing,
+                    )}
                   >
                     {it.name}
                   </a>
                 ))}
 
-                <div className="pt-6 mt-6 border-t border-border flex flex-col gap-3">
+                <div className="pt-6 mt-6 border-t border-[rgb(var(--border)/0.65)] flex flex-col gap-3">
                   <Link
                     to="/login"
                     onClick={() => setMobileMenuOpen(false)}
-                    className="text-foreground text-center py-4 rounded-2xl border border-border bg-surface-elevated hover:bg-surface-elevated/80 font-bold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    className={cx(
+                      "text-center py-4 rounded-2xl font-extrabold",
+                      "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300",
+                      "border border-emerald-500/20",
+                      ui.focusRing,
+                    )}
                   >
                     Entrar
                   </Link>
                   <Link
                     to="/register"
                     onClick={() => setMobileMenuOpen(false)}
-                    className="bg-accent text-white text-center py-4 rounded-2xl shadow-lg shadow-accent/30 font-bold hover:bg-accent-hover transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                    className={cx(
+                      "group relative bg-emerald-500 text-white text-center py-4 rounded-2xl",
+                      "shadow-[0_18px_40px_-24px_rgb(var(--accent)/0.75)]",
+                      "font-extrabold overflow-hidden",
+                      ui.focusRing,
+                    )}
                   >
+                    <span className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <span className="absolute -inset-y-10 -left-28 w-28 rotate-12 bg-white/25 blur-md group-hover:animate-[sheen_1.1s_ease-in-out] motion-reduce:animate-none" />
+                    </span>
                     Criar conta
                   </Link>
                 </div>
