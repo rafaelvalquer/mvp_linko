@@ -10,6 +10,13 @@ import {
 } from "../utils/planQuota.js";
 import brand from "../assets/brand.png";
 
+// ✅ LOTTIE
+// 1) Instale (se ainda não tiver): npm i lottie-react
+// 2) Coloque seu JSON em algum lugar do src (ex: src/assets/lottie/pix-success.json)
+// 3) Ajuste o import abaixo para o caminho do seu arquivo
+import Lottie from "lottie-react";
+import successLottie from "../assets/lottie/pix-success.json";
+
 function fmtBRL(cents) {
   const v = Number.isFinite(cents) ? cents : 0;
   return new Intl.NumberFormat("pt-BR", {
@@ -50,8 +57,22 @@ function SuccessModal({ open, title, sub, detail, onConfirm }) {
         className="w-full max-w-md rounded-2xl border bg-white p-6 shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* ✅ Lottie de confirmação */}
+        <div className="mb-2 flex justify-center">
+          <div className="h-28 w-28">
+            <Lottie
+              animationData={successLottie}
+              loop={false}
+              autoplay
+              style={{ height: "100%", width: "100%" }}
+              aria-hidden="true"
+            />
+          </div>
+        </div>
+
         <div className="text-xl font-semibold text-zinc-900">{title}</div>
         <div className="mt-2 text-sm text-zinc-700">{sub}</div>
+
         {detail ? (
           <div className="mt-3 rounded-xl border bg-zinc-50 p-3 text-xs text-zinc-700">
             {detail}
