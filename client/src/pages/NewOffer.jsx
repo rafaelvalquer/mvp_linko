@@ -57,6 +57,123 @@ function onlyDigits(s) {
   return String(s || "").replace(/\D+/g, "");
 }
 
+function formatCpfCnpj(raw) {
+  const d = onlyDigits(raw).slice(0, 14);
+  if (!d) return "";
+
+  // CPF (até 11)
+  if (d.length <= 11) {
+    const a = d.slice(0, 3);
+    const b = d.slice(3, 6);
+    const c = d.slice(6, 9);
+    const e = d.slice(9, 11);
+
+    let out = a;
+    if (b) out += `.${b}`;
+    if (c) out += `.${c}`;
+    if (e) out += `-${e}`;
+    return out;
+  }
+
+  // CNPJ (12-14)
+  const a = d.slice(0, 2);
+  const b = d.slice(2, 5);
+  const c = d.slice(5, 8);
+  const m = d.slice(8, 12);
+  const e = d.slice(12, 14);
+
+  let out = a;
+  if (b) out += `.${b}`;
+  if (c) out += `.${c}`;
+  if (m) out += `/${m}`;
+  if (e) out += `-${e}`;
+  return out;
+}
+
+function isValidCPF(d) {
+  if (!/^\d{11}$/.test(d)) return false;
+  if (/^(\d)\1{10}$/.test(d)) return false;
+
+  const calc = (base, factor) => {
+    let sum = 0;
+    for (let i = 0; i < base.length; i++) sum += Number(base[i]) * (factor - i);
+    const mod = sum % 11;
+    return mod < 2 ? 0 : 11 - mod;
+  };
+
+  const d1 = calc(d.slice(0, 9), 10);
+  const d2 = calc(d.slice(0, 10), 11);
+  return d1 === Number(d[9]) && d2 === Number(d[10]);
+}
+
+function isValidCNPJ(d) {
+  if (!/^\d{14}$/.test(d)) return false;
+  if (/^(\d)\1{13}$/.test(d)) return false;
+
+  const calc = (base, weights) => {
+    let sum = 0;
+    for (let i = 0; i < base.length; i++) sum += Number(base[i]) * weights[i];
+    const mod = sum % 11;
+    return mod < 2 ? 0 : 11 - mod;
+  };
+
+  const w1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  const w2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+
+  const d1 = calc(d.slice(0, 12), w1);
+  const d2 = calc(d.slice(0, 13), w2);
+
+  return d1 === Number(d[12]) && d2 === Number(d[13]);
+}
+
+function getCpfCnpjError(digits, { showIncomplete = false } = {}) {
+  const d = onlyDigits(digits);
+  if (!d) return "";
+
+  if (d.length === 11) return isValidCPF(d) ? "" : "CPF inválido.";
+  if (d.length === 14) return isValidCNPJ(d) ? "" : "CNPJ inválido.";
+
+  if (!showIncomplete) return "";
+  return "Informe CPF (11 dígitos) ou CNPJ (14 dígitos).";
+}
+
+function formatBRPhone(raw) {
+  const d = onlyDigits(raw).slice(0, 11);
+  if (!d) return "";
+
+  const ddd = d.slice(0, 2);
+  const rest = d.slice(2);
+
+  if (!rest) return ddd;
+  if (rest.length <= 5) return `${ddd} ${rest}`;
+
+  const p1 = rest.slice(0, 5);
+  const p2 = rest.slice(5, 9);
+  return `${ddd} ${p1}${p2 ? `-${p2}` : ""}`;
+}
+
+function isValidBRMobile(d) {
+  // DDD + 9 + 8 dígitos = 11 (ex: 11 9xxxx-xxxx)
+  return /^\d{2}9\d{8}$/.test(d);
+}
+
+function getPhoneError(
+  digits,
+  { required = false, showIncomplete = false } = {},
+) {
+  const d = onlyDigits(digits);
+  if (!d) return required ? "Informe um celular/WhatsApp." : "";
+
+  if (d.length === 11) {
+    return isValidBRMobile(d)
+      ? ""
+      : "Celular inválido. Use DDD + 9 dígitos (ex: 119xxxx-xxxx).";
+  }
+
+  if (!showIncomplete) return "";
+  return "Celular deve ter 11 dígitos (ex: 119xxxx-xxxx).";
+}
+
 function normalizePhoneForWaMe(raw) {
   const digits = onlyDigits(raw);
   if (!digits) return "";
@@ -183,7 +300,24 @@ export default function NewOffer() {
   const [busy, setBusy] = useState(false);
 
   // Premium: auto-preencher cliente/produto a partir de cadastros
-  const [customerDoc, setCustomerDoc] = useState("");
+  const [customerDoc, setCustomerDoc] = useState(""); // SOMENTE dígitos
+  const [docTouched, setDocTouched] = useState(false);
+  const [phoneTouched, setPhoneTouched] = useState(false);
+
+  const docError = useMemo(
+    () => getCpfCnpjError(customerDoc, { showIncomplete: docTouched }),
+    [customerDoc, docTouched],
+  );
+
+  const phoneDigits = onlyDigits(form.customerWhatsApp);
+  const phoneError = useMemo(
+    () =>
+      getPhoneError(phoneDigits, {
+        required: !!form.notifyWhatsAppOnPaid,
+        showIncomplete: phoneTouched,
+      }),
+    [phoneDigits, phoneTouched, form.notifyWhatsAppOnPaid],
+  );
   const [clientHits, setClientHits] = useState([]);
   const [clientLoading, setClientLoading] = useState(false);
   const [clientOpen, setClientOpen] = useState(false);
@@ -694,20 +828,25 @@ export default function NewOffer() {
                     CPF/CNPJ (Premium)
                   </label>
                   <Input
-                    value={customerDoc}
+                    value={formatCpfCnpj(customerDoc)}
                     onChange={(e) => {
-                      const v = e.target.value;
-                      setCustomerDoc(v);
+                      const digits = onlyDigits(e.target.value).slice(0, 14);
+                      setCustomerDoc(digits);
                       setClientOpen(true);
-                      setForm((prev) => ({
-                        ...prev,
-                        customerDoc: onlyDigits(v), // agora v existe
-                      }));
+                      setForm((prev) => ({ ...prev, customerDoc: digits }));
                     }}
                     onFocus={() => setClientOpen(true)}
-                    onBlur={() => setTimeout(() => setClientOpen(false), 120)}
-                    placeholder="000.000.000-00 ou 00.000.000/0000-00"
+                    onBlur={() => {
+                      setDocTouched(true);
+                      setTimeout(() => setClientOpen(false), 120);
+                    }}
+                    placeholder="CPF: XXX.XXX.XXX-XX ou CNPJ: XX.XX.XXX/0001-00"
+                    inputMode="numeric"
                   />
+
+                  {docError ? (
+                    <div className="mt-1 text-xs text-red-600">{docError}</div>
+                  ) : null}
 
                   {clientOpen ? (
                     <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-lg">
@@ -780,7 +919,7 @@ export default function NewOffer() {
                                   }));
 
                                   setCustomerDoc(
-                                    String(doc || customerDoc || ""),
+                                    onlyDigits(doc || customerDoc || ""),
                                   );
                                   setClientOpen(false);
                                 }}
@@ -823,12 +962,20 @@ export default function NewOffer() {
                   WhatsApp (opcional)
                 </label>
                 <Input
-                  value={form.customerWhatsApp}
-                  onChange={(e) =>
-                    setForm({ ...form, customerWhatsApp: e.target.value })
-                  }
-                  placeholder="Ex.: 11 99999-9999"
+                  value={formatBRPhone(form.customerWhatsApp)}
+                  onChange={(e) => {
+                    const digits = onlyDigits(e.target.value).slice(0, 11);
+                    setForm({ ...form, customerWhatsApp: digits });
+                  }}
+                  onBlur={() => setPhoneTouched(true)}
+                  placeholder="11 99999-9999"
+                  inputMode="numeric"
+                  autoComplete="tel"
                 />
+
+                {phoneError ? (
+                  <div className="mt-1 text-xs text-red-600">{phoneError}</div>
+                ) : null}
               </div>
 
               <div className="mt-3 rounded-xl border bg-zinc-50 p-3">

@@ -361,9 +361,7 @@ export default function Home() {
                 "text-[10px] font-extrabold uppercase tracking-[0.22em] whitespace-nowrap",
                 "text-emerald-700/90 dark:text-emerald-300/90",
               )}
-            >
-              <Sparkles className="h-3 w-3" /> NOVO: AGENDA INTEGRADA
-            </div>
+            ></div>
 
             <Link
               to="/"

@@ -36,6 +36,93 @@ function onlyDigits(s) {
   return String(s || "").replace(/\D+/g, "");
 }
 
+function formatCpfCnpj(raw) {
+  const d = onlyDigits(raw).slice(0, 14);
+  if (!d) return "";
+
+  // CPF
+  if (d.length <= 11) {
+    const a = d.slice(0, 3);
+    const b = d.slice(3, 6);
+    const c = d.slice(6, 9);
+    const e = d.slice(9, 11);
+    let out = a;
+    if (b) out += `.${b}`;
+    if (c) out += `.${c}`;
+    if (e) out += `-${e}`;
+    return out;
+  }
+
+  // CNPJ
+  const a = d.slice(0, 2);
+  const b = d.slice(2, 5);
+  const c = d.slice(5, 8);
+  const m = d.slice(8, 12);
+  const e = d.slice(12, 14);
+
+  let out = a;
+  if (b) out += `.${b}`;
+  if (c) out += `.${c}`;
+  if (m) out += `/${m}`;
+  if (e) out += `-${e}`;
+  return out;
+}
+
+function isValidCPF(d) {
+  if (!/^\d{11}$/.test(d)) return false;
+  if (/^(\d)\1{10}$/.test(d)) return false;
+
+  const calc = (base, factor) => {
+    let sum = 0;
+    for (let i = 0; i < base.length; i++) sum += Number(base[i]) * (factor - i);
+    const mod = sum % 11;
+    return mod < 2 ? 0 : 11 - mod;
+  };
+
+  const d1 = calc(d.slice(0, 9), 10);
+  const d2 = calc(d.slice(0, 10), 11);
+  return d1 === Number(d[9]) && d2 === Number(d[10]);
+}
+
+function isValidCNPJ(d) {
+  if (!/^\d{14}$/.test(d)) return false;
+  if (/^(\d)\1{13}$/.test(d)) return false;
+
+  const calc = (base, weights) => {
+    let sum = 0;
+    for (let i = 0; i < base.length; i++) sum += Number(base[i]) * weights[i];
+    const mod = sum % 11;
+    return mod < 2 ? 0 : 11 - mod;
+  };
+
+  const w1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  const w2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+
+  const d1 = calc(d.slice(0, 12), w1);
+  const d2 = calc(d.slice(0, 13), w2);
+  return d1 === Number(d[12]) && d2 === Number(d[13]);
+}
+
+function getCpfCnpjError(rawDigits) {
+  const d = onlyDigits(rawDigits);
+  if (!d) return "Informe CPF ou CNPJ.";
+  if (d.length === 11) return isValidCPF(d) ? "" : "CPF inválido.";
+  if (d.length === 14) return isValidCNPJ(d) ? "" : "CNPJ inválido.";
+  return "CPF deve ter 11 dígitos ou CNPJ 14 dígitos.";
+}
+
+function isValidEmail(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(s);
+}
+
+function getEmailError(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return "Informe um email.";
+  return isValidEmail(s) ? "" : "Email inválido.";
+}
+
 function SuccessModal({ open, title, sub, detail, onConfirm }) {
   const btnRef = useRef(null);
 
@@ -147,6 +234,19 @@ export default function PublicPixPayment() {
   const [busy, setBusy] = useState(false);
   const [pixErr, setPixErr] = useState("");
   const [quotaBlocked, setQuotaBlocked] = useState(false);
+
+  const [emailTouched, setEmailTouched] = useState(false);
+  const [taxTouched, setTaxTouched] = useState(false);
+
+  const emailError = useMemo(() => getEmailError(email), [email]);
+  const taxError = useMemo(() => getCpfCnpjError(taxId), [taxId]);
+
+  const canCreatePix = useMemo(() => {
+    const okName = isNonEmpty(name);
+    const okEmail = !emailError;
+    const okTax = !taxError;
+    return okName && okEmail && okTax && !quotaBlocked && !busy;
+  }, [name, emailError, taxError, quotaBlocked, busy]);
 
   const [pix, setPix] = useState(null);
   const pollRef = useRef(null);
@@ -380,6 +480,16 @@ export default function PublicPixPayment() {
   );
 
   async function createPix() {
+    const emailTrim = String(email || "").trim();
+    const taxDigits = onlyDigits(taxId);
+
+    const eErr = getEmailError(emailTrim);
+    const tErr = getCpfCnpjError(taxDigits);
+
+    if (!isNonEmpty(name)) return setPixErr("Informe o nome.");
+    if (eErr) return setPixErr(eErr);
+    if (tErr) return setPixErr(tErr);
+
     if (quotaBlocked) {
       setPixErr(quotaExceededMessage("public"));
       return;
@@ -721,21 +831,37 @@ export default function PublicPixPayment() {
                       emailDirtyRef.current = true;
                       setEmail(e.target.value);
                     }}
+                    onBlur={() => setEmailTouched(true)}
                     placeholder="[email protected]"
+                    inputMode="email"
+                    autoComplete="email"
                   />
+                  {emailTouched && emailError ? (
+                    <div className="mt-1 text-xs text-red-600">
+                      {emailError}
+                    </div>
+                  ) : null}
                 </div>
+
                 <div>
                   <div className="text-xs font-semibold text-zinc-600">
-                    CPF/CNPJ (taxId)
+                    CPF/CNPJ
                   </div>
                   <Input
-                    value={taxId}
+                    value={formatCpfCnpj(taxId)}
                     onChange={(e) => {
                       taxDirtyRef.current = true;
-                      setTaxId(e.target.value);
+                      const digits = onlyDigits(e.target.value).slice(0, 14);
+                      setTaxId(digits);
                     }}
-                    placeholder="Somente números"
+                    onBlur={() => setTaxTouched(true)}
+                    placeholder="CPF: 382.403.498-03 ou CNPJ: 45.543.915/0001-81"
+                    inputMode="numeric"
+                    autoComplete="off"
                   />
+                  {taxTouched && taxError ? (
+                    <div className="mt-1 text-xs text-red-600">{taxError}</div>
+                  ) : null}
                 </div>
               </div>
 
@@ -752,7 +878,7 @@ export default function PublicPixPayment() {
                 <Button
                   type="button"
                   onClick={createPix}
-                  disabled={busy || quotaBlocked}
+                  disabled={!canCreatePix}
                 >
                   {busy ? "Gerando…" : "Gerar Pix"}
                 </Button>
