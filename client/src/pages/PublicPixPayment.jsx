@@ -500,8 +500,8 @@ export default function PublicPixPayment() {
       customer: {
         name: String(name || "").trim(),
         cellphone: onlyDigits(cellphone),
-        email: String(email || "").trim(),
-        taxId: onlyDigits(taxId),
+        email: emailTrim,
+        taxId: taxDigits,
       },
     };
 
