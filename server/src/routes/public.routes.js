@@ -40,6 +40,14 @@ const Booking = BookingModule.default || BookingModule.Booking;
 const HOLD_MINUTES = 15;
 const PIX_EXPIRES_IN = Number(process.env.PIX_EXPIRES_IN || 3600); // segundos
 
+// timeouts (evita request "pendurado" em chamadas externas/efeitos colaterais)
+const ABACATEPAY_CHECK_TIMEOUT_MS = Number(
+  process.env.ABACATEPAY_CHECK_TIMEOUT_MS || 4500,
+);
+const MARK_AS_PAID_TIMEOUT_MS = Number(
+  process.env.MARK_AS_PAID_TIMEOUT_MS || 6500,
+);
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -62,6 +70,44 @@ function isTransientTxnError(err) {
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+function msSince(t0) {
+  return Date.now() - Number(t0 || 0);
+}
+
+// resolve sempre (não rejeita) e sinaliza timeout
+async function raceTimeout(promise, ms, label) {
+  let t = null;
+
+  const timeout = new Promise((resolve) => {
+    t = setTimeout(() => resolve({ timeout: true, label, ms }), ms);
+  });
+
+  const wrapped = Promise.resolve(promise)
+    .then((value) => ({ value }))
+    .catch((error) => ({ error }));
+
+  const out = await Promise.race([wrapped, timeout]).finally(() => {
+    if (t) clearTimeout(t);
+  });
+
+  return out;
+}
+
+// gate simples para logs (evita spam no polling)
+const _pixStatusLogGate =
+  globalThis.__PAYLINK_PIX_STATUS_LOG_GATE__ ||
+  (globalThis.__PAYLINK_PIX_STATUS_LOG_GATE__ = new Map());
+
+function gatedLog(key, minIntervalMs, fn) {
+  const now = Date.now();
+  const last = _pixStatusLogGate.get(key) || 0;
+  if (now - last < minIntervalMs) return;
+  _pixStatusLogGate.set(key, now);
+  try {
+    fn();
+  } catch {}
 }
 
 async function debitPixWithRetry(wsId, paymentId, { retries = 3 } = {}) {
@@ -577,39 +623,53 @@ async function markAsPaid({
     const paymentId = String(pix?.id || "").trim();
 
     if (wsId && paymentId && paidCents > 0) {
-      const r = await creditWalletOnPaid({
+      // ⚠️ não await aqui: nunca deixe o /pix/status "pendurado" por causa do crédito
+      creditWalletOnPaid({
         workspaceId: wsId,
         offerId,
         paymentId,
         amountCents: paidCents,
         meta: { source: "public.markAsPaid", token },
-      });
-
-      if (r?.credited) {
-        console.log("[wallet] credit applied", {
-          wsId,
-          offerId: String(offerId),
-          paymentId,
-          amountCents: paidCents,
+      })
+        .then((r) => {
+          if (r?.credited) {
+            console.log("[wallet] credit applied", {
+              wsId,
+              offerId: String(offerId),
+              paymentId,
+              amountCents: paidCents,
+            });
+          } else if (r?.skipped) {
+            console.log("[wallet] credit skipped (already applied)", {
+              wsId,
+              offerId: String(offerId),
+              paymentId,
+            });
+          } else if (!r?.ok) {
+            console.warn("[wallet] credit failed (ignored)", {
+              wsId,
+              offerId: String(offerId),
+              paymentId,
+              error: r?.error,
+              reason: r?.reason,
+            });
+          }
+        })
+        .catch((err) => {
+          console.warn("[wallet] credit failed (ignored)", {
+            wsId,
+            offerId: String(offerId),
+            paymentId,
+            message: err?.message,
+            code: err?.code,
+          });
         });
-      } else if (r?.skipped) {
-        console.log("[wallet] credit skipped (already applied)", {
-          wsId,
-          offerId: String(offerId),
-          paymentId,
-        });
-      } else if (!r?.ok) {
-        console.warn("[wallet] credit failed (ignored)", {
-          wsId,
-          offerId: String(offerId),
-          paymentId,
-          error: r?.error,
-          reason: r?.reason,
-        });
-      }
     }
   } catch (err) {
-    console.warn("[wallet] credit failed (ignored)", err?.message || err);
+    console.warn(
+      "[wallet] credit scheduling failed (ignored)",
+      err?.message || err,
+    );
   }
 
   // 6) E-mail: só tenta se ainda não marcou como notificado
@@ -752,9 +812,11 @@ router.get("/p/:token", async (req, res, next) => {
     // ✅ otimização: se a oferta já está PAID no Mongo, não consulta o gateway de novo
     if (isPaidStatus(offerRaw?.status) || offerRaw?.paidAt) {
       noStore(res);
+      const paidPixId =
+        offerRaw?.payment?.lastPixId || offerRaw?.paymentNotifiedPixId || null;
       return res.json({
         ok: true,
-        pix: { id: pixId, status: "PAID" },
+        pix: { id: paidPixId, status: "PAID" },
         locked: true,
         paidAt: offerRaw?.paidAt
           ? new Date(offerRaw.paidAt).toISOString()
@@ -1376,6 +1438,14 @@ router.post("/p/:token/pix/create", async (req, res, next) => {
 
       if (pixDataRaw?.id) {
         const st = normalizePixStatus(pixDataRaw.status);
+        gatedLog(`pix/status:gateway:${pixId}:${st}`, 5000, () => {
+          console.log("[pix/status] gateway status", {
+            token,
+            pixId,
+            st,
+            ms: msSince(tCheck),
+          });
+        });
         const expiresAtIso = computeExpiresAtIso(pixDataRaw, PIX_EXPIRES_IN);
         const updatedAt = new Date();
 
@@ -1574,6 +1644,15 @@ router.get("/p/:token/pix/status", async (req, res, next) => {
         .status(404)
         .json({ ok: false, error: "Proposta não encontrada." });
 
+    const t0 = Date.now();
+    gatedLog(`pix/status:in:${pixId}`, 5000, () => {
+      console.log("[pix/status] in", {
+        token,
+        pixId,
+        at: new Date().toISOString(),
+      });
+    });
+
     // ✅ Otimização: se a oferta já está paga, não precisa chamar o gateway.
     if (isPaidStatus(offerRaw?.status) || offerRaw?.paidAt) {
       noStore(res);
@@ -1588,7 +1667,44 @@ router.get("/p/:token/pix/status", async (req, res, next) => {
       });
     }
 
-    const ab = await abacateCheckPix({ pixId });
+    const tCheck = Date.now();
+    const abRes = await raceTimeout(
+      abacateCheckPix({ pixId }),
+      ABACATEPAY_CHECK_TIMEOUT_MS,
+      "abacateCheckPix",
+    );
+
+    if (abRes?.timeout) {
+      gatedLog(`pix/status:abacate_timeout:${pixId}`, 10000, () => {
+        console.warn("[pix/status] gateway timeout", {
+          token,
+          pixId,
+          ms: msSince(tCheck),
+        });
+      });
+
+      noStore(res);
+      return res.status(504).json({
+        ok: false,
+        error: "Timeout ao consultar status do Pix.",
+      });
+    }
+
+    if (abRes?.error) {
+      console.error("[pix/status] gateway error", {
+        token,
+        pixId,
+        ms: msSince(tCheck),
+        message: abRes.error?.message,
+        code: abRes.error?.code,
+      });
+
+      return res
+        .status(502)
+        .json({ ok: false, error: "Falha ao consultar status do Pix." });
+    }
+
+    const ab = abRes.value;
     const pixDataRaw = pickPixData(ab);
 
     if (!pixDataRaw?.id) {
@@ -1634,14 +1750,72 @@ router.get("/p/:token/pix/status", async (req, res, next) => {
 
     if (st === "PAID") {
       locked = true;
-      paidAt = await markAsPaid({
+      const ctx = {
         token,
-        offerId: offerRaw._id,
-        bookingId,
-        pix: { ...pixDataRaw, status: st, expiresAt: expiresAtIso },
-        offerRaw,
-        paidAmountCents: computeAmountCents(offerRaw).amountCents,
+        offerId: String(offerRaw._id),
+        workspaceId: offerRaw?.workspaceId
+          ? String(offerRaw.workspaceId)
+          : null,
+        bookingId: bookingId || null,
+        paymentId: String(pixDataRaw?.id || pixId),
+        amountCents: computeAmountCents(offerRaw).amountCents,
+      };
+
+      gatedLog(`pix/status:paid:${pixId}`, 15000, () => {
+        console.log("[pix/status] entering PAID block", ctx);
       });
+
+      const tPaid = Date.now();
+      const paidRes = await raceTimeout(
+        markAsPaid({
+          token,
+          offerId: offerRaw._id,
+          bookingId,
+          pix: { ...pixDataRaw, status: st, expiresAt: expiresAtIso },
+          offerRaw,
+          paidAmountCents: computeAmountCents(offerRaw).amountCents,
+        }),
+        MARK_AS_PAID_TIMEOUT_MS,
+        "markAsPaid",
+      );
+
+      if (paidRes?.timeout) {
+        console.warn("[pix/status] markAsPaid timeout (ignored)", {
+          ...ctx,
+          ms: msSince(tPaid),
+        });
+
+        const db = await Offer.findById(offerRaw._id)
+          .select("paidAt")
+          .lean()
+          .catch(() => null);
+
+        paidAt = db?.paidAt ? new Date(db.paidAt).toISOString() : null;
+      } else if (paidRes?.error) {
+        console.error("[pix/status] markAsPaid error (ignored)", {
+          ...ctx,
+          ms: msSince(tPaid),
+          message: paidRes.error?.message,
+          code: paidRes.error?.code,
+          stack: paidRes.error?.stack,
+        });
+
+        const db = await Offer.findById(offerRaw._id)
+          .select("paidAt")
+          .lean()
+          .catch(() => null);
+
+        paidAt = db?.paidAt ? new Date(db.paidAt).toISOString() : null;
+      } else {
+        paidAt = paidRes?.value || null;
+        gatedLog(`pix/status:paid_done:${pixId}`, 15000, () => {
+          console.log("[pix/status] markAsPaid done", {
+            ...ctx,
+            ms: msSince(tPaid),
+            paidAt,
+          });
+        });
+      }
     } else {
       locked = isPaidStatus(offerRaw?.status);
     }

@@ -1,9 +1,54 @@
+/* Import Inter font */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap");
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  body {
-    @apply bg-[#f0fdf4]; /* Um verde bem clarinho do Tailwind */
+/* Design tokens - Light mode (default) */
+:root {
+  --color-foreground: 24 24 27; /* zinc-900 */
+  --color-muted: 113 113 122; /* zinc-500 */
+  --color-surface: 255 255 255; /* white */
+  --color-surface-elevated: 250 250 250; /* zinc-50 */
+  --color-surface-glass: 255 255 255 / 0.7; /* white/70 with blur */
+  --color-border: 228 228 231; /* zinc-200 */
+  --color-border-hover: 212 212 216; /* zinc-300 */
+}
+
+/* Dark mode tokens */
+.dark {
+  --color-foreground: 250 250 250; /* zinc-50 */
+  --color-muted: 161 161 170; /* zinc-400 */
+  --color-surface: 24 24 27; /* zinc-900 */
+  --color-surface-elevated: 39 39 42; /* zinc-800 */
+  --color-surface-glass: 39 39 42 / 0.7; /* zinc-800/70 with blur */
+  --color-border: 63 63 70; /* zinc-700 */
+  --color-border-hover: 82 82 91; /* zinc-600 */
+}
+
+/* Smooth animations respect */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
+}
+
+/* Glass effect helper */
+.backdrop-blur-sm {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.backdrop-blur-md {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.backdrop-blur-xl {
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
 }
