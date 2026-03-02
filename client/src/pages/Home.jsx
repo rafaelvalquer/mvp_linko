@@ -26,12 +26,10 @@ import {
   Zap,
   Lock,
   ChevronDown,
-  Sun,
-  Moon,
 } from "lucide-react";
 
-import AnimatedSection from "../components/marketing/AnimatedSection";
-import HeroPreview from "../components/marketing/HeroPreview";
+import AnimatedSection from "../components/AnimatedSection";
+import HeroPreview from "../components/HeroPreview";
 import brandLogo from "../assets/brand.png";
 
 const Logo = ({ className }) => (
@@ -59,72 +57,14 @@ function cx(...classes) {
   return classes.filter(Boolean).join(" ");
 }
 
-const EASE_OUT = [0.16, 1, 0.3, 1];
-
-function useThemeToggle() {
-  const [isDark, setIsDark] = useState(() => {
-    if (typeof window === "undefined") return false;
-    const stored = window.localStorage.getItem("theme");
-    if (stored === "dark") return true;
-    if (stored === "light") return false;
-    return window.matchMedia?.("(prefers-color-scheme: dark)")?.matches;
-  });
-
-  useEffect(() => {
-    const root = document.documentElement;
-    if (isDark) root.classList.add("dark");
-    else root.classList.remove("dark");
-    try {
-      window.localStorage.setItem("theme", isDark ? "dark" : "light");
-    } catch {
-      // ignore
-    }
-  }, [isDark]);
-
-  return { isDark, setIsDark };
-}
-
-function AetherBackdrop() {
-  // Background layers kept lightweight (no canvas/three.js)
-  return (
-    <div className="absolute inset-0 -z-10 overflow-hidden">
-      {/* Base gradient */}
-      <div className="absolute inset-0 bg-[radial-gradient(1200px_circle_at_50%_-10%,rgb(var(--accent)/0.18),transparent_55%),radial-gradient(900px_circle_at_90%_10%,rgb(56_189_248/0.10),transparent_55%),radial-gradient(700px_circle_at_10%_90%,rgb(15_23_42/0.06),transparent_55%)] dark:bg-[radial-gradient(1200px_circle_at_50%_-10%,rgb(var(--accent)/0.22),transparent_55%),radial-gradient(900px_circle_at_90%_10%,rgb(56_189_248/0.12),transparent_55%),radial-gradient(700px_circle_at_10%_90%,rgb(0_0_0/0.35),transparent_55%)]" />
-
-      {/* Grid */}
-      <div
-        className="absolute inset-0 opacity-[0.22] dark:opacity-[0.18]"
-        style={{
-          backgroundImage:
-            "linear-gradient(to right, rgb(var(--grid) / 0.55) 1px, transparent 1px), linear-gradient(to bottom, rgb(var(--grid) / 0.55) 1px, transparent 1px)",
-          backgroundSize: "48px 48px",
-          maskImage:
-            "radial-gradient(60% 55% at 50% 30%, black 0%, transparent 70%)",
-          WebkitMaskImage:
-            "radial-gradient(60% 55% at 50% 30%, black 0%, transparent 70%)",
-        }}
-      />
-
-      {/* Soft vignette */}
-      <div className="absolute inset-0 bg-gradient-to-b from-[rgb(var(--bg))] via-[rgb(var(--bg))] to-[rgb(var(--surface-2))]" />
-    </div>
-  );
-}
-
 export default function Home() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [faqOpen, setFaqOpen] = useState(0);
 
-  const { isDark, setIsDark } = useThemeToggle();
-
   const reduceMotion = useReducedMotion();
   const { scrollYProgress } = useScroll();
-  const yParallax = useTransform(
-    scrollYProgress,
-    [0, 1],
-    [0, reduceMotion ? 0 : -120],
-  );
+  const yParallax = useTransform(scrollYProgress, [0, 1], [0, -120]);
 
   const navLinks = useMemo(
     () => [
@@ -193,7 +133,7 @@ export default function Home() {
     [],
   );
 
-  const ENTERPRISE_CONTACT = "/contact"; // ou: "mailto:contato@luminorpay.com"
+  const ENTERPRISE_CONTACT = "/contact";
 
   const plans = useMemo(
     () => [
@@ -293,7 +233,6 @@ export default function Home() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // Lock scroll + ESC para menu mobile
   useEffect(() => {
     if (!mobileMenuOpen) return;
 
@@ -311,130 +250,69 @@ export default function Home() {
     };
   }, [mobileMenuOpen]);
 
-  const t = reduceMotion ? 0 : 0.65;
-
-  const ui = {
-    page: "min-h-screen font-sans text-[rgb(var(--text))] bg-[rgb(var(--bg))] selection:bg-emerald-200/30 selection:text-[rgb(var(--text))]",
-    container: "mx-auto max-w-7xl px-5 sm:px-6 lg:px-8",
-    focusRing:
-      "focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--bg))]",
-    glass:
-      "backdrop-blur-xl bg-[rgb(var(--surface)/0.72)] border border-[rgb(var(--border)/0.75)] shadow-[0_10px_40px_-28px_rgba(0,0,0,0.25)] dark:shadow-[0_10px_40px_-28px_rgba(0,0,0,0.55)]",
-    glassSoft:
-      "backdrop-blur-xl bg-[rgb(var(--surface)/0.62)] border border-[rgb(var(--border)/0.65)]",
-    subtleText: "text-[rgb(var(--muted))]",
-  };
+  const t = reduceMotion ? 0 : 0.6;
 
   return (
-    <div className={ui.page}>
+    <div className="min-h-screen bg-white font-sans text-zinc-900 selection:bg-emerald-100 scroll-smooth">
       {/* Skip link (acessibilidade) */}
       <a
         href="#conteudo"
-        className={cx(
-          "sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[999]",
-          "rounded-xl bg-[rgb(var(--text))] px-4 py-2 text-[rgb(var(--bg))]",
-          ui.focusRing,
-        )}
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[999] rounded-xl bg-zinc-900 px-4 py-2 text-white"
       >
         Pular para o conteúdo
       </a>
 
+      {/* HEADER */}
       <header
         className={cx(
           "fixed inset-x-0 top-0 z-[100] transition-all duration-300",
           scrolled
-            ? cx(
-                "py-3",
-                "bg-[rgb(var(--surface)/0.72)] backdrop-blur-xl",
-                "border-b border-[rgb(var(--border)/0.7)]",
-                "shadow-[0_10px_30px_-22px_rgba(0,0,0,0.35)]",
-              )
-            : "py-5 bg-transparent",
+            ? "bg-white/80 backdrop-blur-md border-b border-zinc-200/70 py-3 shadow-sm"
+            : "bg-transparent py-5",
         )}
       >
-        <nav className={cx(ui.container, "flex items-center")}>
-          {/* Left: Logo */}
+        <nav className="mx-auto flex max-w-7xl items-center px-5 sm:px-6 lg:px-8">
+          {/* Logo */}
           <div className="relative flex items-center gap-3">
-            <div
-              className={cx(
-                "absolute -top-6 left-0 hidden lg:flex items-center gap-1",
-                "text-[10px] font-extrabold uppercase tracking-[0.22em] whitespace-nowrap",
-                "text-emerald-700/90 dark:text-emerald-300/90",
-              )}
-            >
+            <div className="absolute -top-6 left-0 hidden lg:flex items-center gap-1 text-[10px] font-black text-emerald-600 uppercase tracking-widest whitespace-nowrap">
               <Sparkles className="h-3 w-3" /> NOVO: AGENDA INTEGRADA
             </div>
 
             <Link
               to="/"
-              className={cx(
-                "flex items-center gap-2 group",
-                "rounded-2xl",
-                ui.focusRing,
-              )}
+              className="flex items-center gap-2 group"
               aria-label="LuminorPay"
             >
-              <img
-                src={brandLogo}
-                alt="LuminorPay"
-                className="h-9 w-9 rounded-xl object-contain transition-transform group-hover:scale-110"
-                loading="eager"
-                draggable="false"
-              />
-              <span className="text-xl font-black tracking-tight">
+              <div className="h-9 w-9 rounded-xl bg-emerald-500 flex items-center justify-center transition-transform group-hover:scale-110">
+                <Logo className="h-6 w-6" />
+              </div>
+              <span className="text-xl font-black tracking-tighter">
                 Luminor<span className="text-emerald-500">Pay</span>
               </span>
             </Link>
           </div>
-          {/* Center: Nav links (desktop) */}
+
+          {/* Nav links (desktop) */}
           <div className="hidden lg:flex lg:gap-x-10 ml-10">
             {navLinks.map((item) => (
               <a
                 key={item.name}
                 href={item.href}
-                className={cx(
-                  "text-sm font-semibold tracking-wide",
-                  "text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]",
-                  "relative py-2",
-                  "after:absolute after:left-0 after:right-0 after:-bottom-1 after:h-px after:scale-x-0 after:bg-emerald-400/70 after:transition-transform after:duration-300 after:origin-left hover:after:scale-x-100",
-                  ui.focusRing,
-                )}
+                className="text-base font-semibold text-zinc-600 hover:text-emerald-600 transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 rounded-md px-2 py-1"
               >
                 {item.name}
               </a>
             ))}
           </div>
-          {/* Right: Auth buttons (always right) */}
-          <div className="ml-auto flex items-center gap-2 sm:gap-3">
-            {/* Theme toggle */}
-            <button
-              type="button"
-              onClick={() => setIsDark((v) => !v)}
-              className={cx(
-                "hidden sm:inline-flex h-10 w-10 items-center justify-center rounded-full",
-                ui.glassSoft,
-                "transition-colors",
-                "hover:bg-[rgb(var(--surface)/0.78)]",
-                ui.focusRing,
-              )}
-              aria-label={isDark ? "Ativar tema claro" : "Ativar tema escuro"}
-            >
-              {isDark ? (
-                <Sun className="h-5 w-5 text-emerald-300" />
-              ) : (
-                <Moon className="h-5 w-5 text-emerald-700" />
-              )}
-            </button>
 
+          {/* Auth buttons */}
+          <div className="ml-auto flex items-center gap-2 sm:gap-3">
             <Link
               to="/login"
               className={cx(
-                "inline-flex items-center justify-center rounded-full font-extrabold transition-all",
+                "inline-flex items-center justify-center rounded-full font-black transition-all",
                 "h-10 px-4 text-sm sm:h-11 sm:px-5 sm:text-base",
-                ui.glassSoft,
-                "text-[rgb(var(--text))]",
-                "hover:bg-[rgb(var(--surface)/0.78)]",
-                ui.focusRing,
+                "text-zinc-800 bg-white/80 ring-1 ring-zinc-200 hover:bg-white hover:ring-zinc-300 focus:outline-none focus:ring-2 focus:ring-emerald-500",
               )}
             >
               Entrar
@@ -443,29 +321,18 @@ export default function Home() {
             <Link
               to="/register"
               className={cx(
-                "group relative inline-flex items-center justify-center rounded-full font-extrabold transition-all",
+                "inline-flex items-center justify-center rounded-full font-black transition-all",
                 "h-10 px-4 text-sm sm:h-11 sm:px-6 sm:text-base",
-                "bg-emerald-500 text-white hover:bg-emerald-600",
-                "shadow-[0_18px_40px_-18px_rgb(var(--accent)/0.55)]",
-                "overflow-hidden",
-                ui.focusRing,
+                "bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg shadow-emerald-500/20 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2",
               )}
             >
-              <span className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                <span className="absolute -inset-y-10 -left-24 w-24 rotate-12 bg-white/25 blur-md group-hover:animate-[sheen_1.1s_ease-in-out] motion-reduce:animate-none" />
-              </span>
               Criar conta
             </Link>
 
-            {/* Mobile: menu button */}
+            {/* Mobile menu button */}
             <button
               onClick={() => setMobileMenuOpen(true)}
-              className={cx(
-                "lg:hidden p-2 rounded-full",
-                ui.glassSoft,
-                "hover:bg-[rgb(var(--surface)/0.78)]",
-                ui.focusRing,
-              )}
+              className="lg:hidden p-2 bg-zinc-100 rounded-full hover:bg-zinc-200 transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500"
               aria-label="Abrir menu"
               aria-expanded={mobileMenuOpen}
             >
@@ -477,69 +344,55 @@ export default function Home() {
 
       {/* HERO */}
       <main id="conteudo" className="relative pt-32 sm:pt-36 pb-20 lg:pt-44">
-        <AetherBackdrop />
+        {/* Premium background */}
+        <div className="absolute inset-0 -z-10 overflow-hidden">
+          <div className="absolute -top-24 left-1/2 h-[520px] w-[520px] -translate-x-1/2 rounded-full bg-emerald-200/40 blur-3xl" />
+          <div className="absolute -bottom-28 right-[-120px] h-[520px] w-[520px] rounded-full bg-zinc-200/50 blur-3xl" />
+          <div className="absolute inset-0 bg-gradient-to-b from-white via-white to-zinc-50" />
+        </div>
 
-        <div className={ui.container}>
+        <div className="mx-auto max-w-7xl px-5 sm:px-6 lg:px-8">
           <div className="text-center">
             <motion.div
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: t, ease: EASE_OUT }}
+              transition={{ duration: t }}
               className="max-w-3xl mx-auto"
             >
-              <div
-                className={cx(
-                  "inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-extrabold",
-                  ui.glass,
-                  "text-emerald-700 dark:text-emerald-300",
-                )}
-              >
+              {/* Badge */}
+              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/70 px-4 py-2 text-sm font-bold text-emerald-700 shadow-sm backdrop-blur-sm">
                 <BadgeCheck className="h-4 w-4" />
                 Propostas, Pix e agenda em um único fluxo
               </div>
 
-              <h1 className="mt-6 text-4xl font-black leading-[1.05] tracking-[-0.03em] sm:text-6xl lg:text-7xl">
+              {/* Headline */}
+              <h1 className="mt-6 text-4xl font-black leading-[1.05] tracking-tight text-zinc-900 sm:text-6xl lg:text-7xl">
                 Crie propostas que viram{" "}
-                <span className="text-emerald-500">pagamento</span>.
+                <span className="text-emerald-600 drop-shadow-sm">
+                  pagamento
+                </span>
+                .
               </h1>
 
-              <p
-                className={cx(
-                  "mt-6 text-lg sm:text-xl leading-relaxed max-w-2xl mx-auto",
-                  ui.subtleText,
-                )}
-              >
+              {/* Subheadline */}
+              <p className="mt-6 text-lg sm:text-xl text-zinc-600 leading-relaxed max-w-2xl mx-auto">
                 Orçamento, aceite, Pix e agenda em um único link. Feito para
                 quem não tem tempo a perder.
               </p>
 
+              {/* CTAs */}
               <div className="mt-10 flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3 sm:gap-4">
                 <Link
                   to="/register"
-                  className={cx(
-                    "group relative rounded-full px-8 py-4 text-lg font-extrabold text-white",
-                    "bg-emerald-500 hover:bg-emerald-600",
-                    "shadow-[0_22px_50px_-24px_rgb(var(--accent)/0.75)]",
-                    "transition-colors overflow-hidden",
-                    ui.focusRing,
-                  )}
+                  className="rounded-full bg-emerald-500 px-8 py-4 text-lg font-black text-white shadow-xl shadow-emerald-500/20 hover:bg-emerald-600 transition-all flex items-center justify-center gap-2 group focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
                 >
-                  <span className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <span className="absolute -inset-y-10 -left-28 w-28 rotate-12 bg-white/25 blur-md group-hover:animate-[sheen_1.1s_ease-in-out] motion-reduce:animate-none" />
-                  </span>
                   Começar agora
                   <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </Link>
 
                 <a
                   href="#planos"
-                  className={cx(
-                    "rounded-full px-8 py-4 text-lg font-extrabold",
-                    ui.glass,
-                    "hover:bg-[rgb(var(--surface)/0.78)]",
-                    "transition-colors flex items-center justify-center gap-2",
-                    ui.focusRing,
-                  )}
+                  className="rounded-full bg-white/80 px-8 py-4 text-lg font-black text-zinc-900 ring-1 ring-zinc-200 hover:bg-white hover:ring-zinc-300 transition-all flex items-center justify-center gap-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
                 >
                   Ver planos
                   <ChevronDown className="w-5 h-5" />
@@ -555,34 +408,25 @@ export default function Home() {
                 ].map((it, idx) => (
                   <div
                     key={idx}
-                    className={cx(
-                      "flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold",
-                      ui.glass,
-                      "text-[rgb(var(--muted))]",
-                    )}
+                    className="flex items-center justify-center gap-2 rounded-2xl border border-zinc-200 bg-white/70 px-4 py-3 text-sm font-semibold text-zinc-700 backdrop-blur-sm"
                   >
-                    <it.icon className="h-4 w-4 text-emerald-500" />
+                    <it.icon className="h-4 w-4 text-emerald-600" />
                     {it.label}
                   </div>
                 ))}
               </div>
             </motion.div>
 
+            {/* Hero Preview */}
             <motion.div
               style={{ y: yParallax }}
               initial={{ opacity: 0, scale: 0.98 }}
               whileInView={{ opacity: 1, scale: 1 }}
               viewport={{ once: true, margin: "-120px" }}
-              transition={{ duration: reduceMotion ? 0 : 0.85, ease: EASE_OUT }}
+              transition={{ duration: reduceMotion ? 0 : 0.8 }}
               className="mt-14 sm:mt-16 lg:mt-20 max-w-6xl mx-auto"
             >
-              <div
-                className={cx(
-                  "rounded-[28px] overflow-hidden",
-                  ui.glass,
-                  "shadow-[0_18px_70px_-50px_rgba(0,0,0,0.45)]",
-                )}
-              >
+              <div className="rounded-[28px] border border-zinc-200 bg-white shadow-[0_10px_40px_-20px_rgba(0,0,0,0.25)] overflow-hidden">
                 <HeroPreview />
               </div>
             </motion.div>
@@ -593,14 +437,14 @@ export default function Home() {
       {/* RECURSOS */}
       <section
         id="recursos"
-        className="py-24 sm:py-28 scroll-mt-28 bg-[rgb(var(--surface-2))]"
+        className="py-24 sm:py-28 bg-zinc-50/60 scroll-mt-28"
       >
-        <div className={ui.container}>
+        <div className="mx-auto max-w-7xl px-5 sm:px-6 lg:px-8">
           <AnimatedSection className="text-center max-w-3xl mx-auto mb-14 sm:mb-16">
             <h2 className="text-3xl font-black sm:text-4xl lg:text-5xl">
               Tudo para escalar sua operação
             </h2>
-            <p className={cx("mt-5 text-base sm:text-lg", ui.subtleText)}>
+            <p className="mt-5 text-base sm:text-lg text-zinc-600">
               Elimine a confusão de planilhas e mensagens soltas no WhatsApp.
             </p>
           </AnimatedSection>
@@ -608,29 +452,12 @@ export default function Home() {
           <div className="grid grid-cols-1 gap-5 sm:gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {features.map((f, i) => (
               <AnimatedSection key={i} delay={reduceMotion ? 0 : i * 0.06}>
-                <div
-                  className={cx(
-                    "h-full rounded-3xl p-8 sm:p-9 transition-all group",
-                    ui.glass,
-                    "hover:-translate-y-1 hover:shadow-[0_24px_60px_-50px_rgba(0,0,0,0.55)]",
-                  )}
-                >
-                  <div
-                    className={cx(
-                      "inline-flex p-4 rounded-2xl transition-colors",
-                      "bg-emerald-500/10 text-emerald-600",
-                      "group-hover:bg-emerald-500 group-hover:text-white",
-                    )}
-                  >
+                <div className="h-full rounded-3xl border border-zinc-200 bg-white p-8 sm:p-9 transition-all hover:-translate-y-1 hover:shadow-xl hover:shadow-zinc-900/5 hover:ring-1 hover:ring-emerald-200 group focus-within:ring-2 focus-within:ring-emerald-500">
+                  <div className="inline-flex p-4 rounded-2xl bg-emerald-50 text-emerald-600 group-hover:bg-emerald-500 group-hover:text-white transition-colors">
                     <f.icon className="w-7 h-7" />
                   </div>
                   <h3 className="mt-7 font-black text-xl">{f.title}</h3>
-                  <p
-                    className={cx(
-                      "mt-3 text-base leading-relaxed",
-                      ui.subtleText,
-                    )}
-                  >
+                  <p className="mt-3 text-base text-zinc-600 leading-relaxed">
                     {f.desc}
                   </p>
                 </div>
@@ -642,10 +469,10 @@ export default function Home() {
 
       {/* COMO FUNCIONA */}
       <section id="como-funciona" className="py-24 sm:py-28 scroll-mt-28">
-        <div className={ui.container}>
+        <div className="mx-auto max-w-7xl px-5 sm:px-6 lg:px-8">
           <div className="text-center mb-14 sm:mb-16">
             <h2 className="text-3xl font-black lg:text-5xl">Como funciona?</h2>
-            <p className={cx("mt-5 text-base sm:text-lg", ui.subtleText)}>
+            <p className="mt-5 text-base sm:text-lg text-zinc-600">
               Simples, rápido e profissional para você e seu cliente.
             </p>
           </div>
@@ -654,24 +481,15 @@ export default function Home() {
             {steps.map((step, i) => (
               <div
                 key={i}
-                className={cx(
-                  "rounded-3xl p-8 sm:p-9 transition-all",
-                  ui.glass,
-                  "hover:shadow-[0_24px_60px_-50px_rgba(0,0,0,0.55)]",
-                )}
+                className="rounded-3xl border border-zinc-200 bg-white p-8 sm:p-9 hover:shadow-xl hover:shadow-zinc-900/5 transition-all focus-within:ring-2 focus-within:ring-emerald-500"
               >
-                <div className="w-14 h-14 bg-emerald-500/10 rounded-2xl flex items-center justify-center text-emerald-500">
+                <div className="w-14 h-14 bg-emerald-100 rounded-2xl flex items-center justify-center text-emerald-700">
                   <step.icon className="w-7 h-7" />
                 </div>
                 <h3 className="mt-6 text-xl sm:text-2xl font-black">
                   {step.title}
                 </h3>
-                <p
-                  className={cx(
-                    "mt-3 text-base leading-relaxed",
-                    ui.subtleText,
-                  )}
-                >
+                <p className="mt-3 text-zinc-600 text-base leading-relaxed">
                   {step.desc}
                 </p>
               </div>
@@ -683,14 +501,14 @@ export default function Home() {
       {/* PLANOS */}
       <section
         id="planos"
-        className="py-24 sm:py-28 scroll-mt-28 bg-[rgb(var(--surface-2))]"
+        className="py-24 sm:py-28 bg-zinc-50/60 scroll-mt-28"
       >
-        <div className={ui.container}>
+        <div className="mx-auto max-w-7xl px-5 sm:px-6 lg:px-8">
           <div className="text-center mb-14 sm:mb-16">
             <h2 className="text-3xl font-black lg:text-5xl">
               Planos transparentes
             </h2>
-            <p className={cx("mt-5 text-base sm:text-lg", ui.subtleText)}>
+            <p className="mt-5 text-base sm:text-lg text-zinc-600">
               Escolha o plano ideal e evolua conforme crescer.
             </p>
           </div>
@@ -716,16 +534,15 @@ export default function Home() {
                 <AnimatedSection
                   key={i}
                   className={cx(
-                    "relative flex flex-col rounded-[28px] p-8 sm:p-9 transition-all",
-                    ui.glass,
-                    plan.popular ? "pt-11 sm:pt-12" : "", // + espaço no topo para não colidir com a pill
+                    "relative flex flex-col rounded-[28px] p-8 sm:p-9 bg-white transition-all",
+                    plan.popular ? "pt-11 sm:pt-12" : "",
                     plan.popular
-                      ? "border-2 border-emerald-500/90 shadow-[0_26px_70px_-55px_rgb(var(--accent)/0.85)] lg:-translate-y-1"
-                      : "hover:shadow-[0_24px_60px_-50px_rgba(0,0,0,0.55)]",
+                      ? "border-2 border-emerald-500 shadow-xl shadow-emerald-500/10 lg:-translate-y-1"
+                      : "border border-zinc-200 hover:shadow-xl hover:shadow-zinc-900/5",
                   )}
                 >
                   {plan.popular && (
-                    <span className="absolute -top-4 left-1/2 -translate-x-1/2 bg-emerald-500 text-white text-xs font-extrabold px-4 py-2 rounded-full uppercase tracking-[0.18em] shadow-[0_18px_40px_-24px_rgb(var(--accent)/0.75)]">
+                    <span className="absolute -top-4 left-1/2 -translate-x-1/2 bg-emerald-500 text-white text-xs font-black px-4 py-2 rounded-full uppercase tracking-tight">
                       Mais Popular
                     </span>
                   )}
@@ -737,102 +554,73 @@ export default function Home() {
                           {plan.name}
                         </h3>
                         {plan.subtitle && (
-                          <div
-                            className={cx(
-                              "mt-1 text-sm font-semibold",
-                              ui.subtleText,
-                            )}
-                          >
+                          <div className="mt-1 text-sm font-semibold text-zinc-500">
                             {plan.subtitle}
                           </div>
                         )}
                       </div>
 
-                      {/* badges */}
-                      <div className="flex flex-col items-end gap-2 mt-1">
-                        {Array.isArray(plan.badges) &&
-                          plan.badges.slice(0, 2).map((b) => (
-                            <span
-                              key={b}
-                              className="inline-flex items-center rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-[11px] font-black text-emerald-700"
-                            >
-                              {b}
-                            </span>
-                          ))}
-                      </div>
+                      {Array.isArray(plan.badges) &&
+                        plan.badges.slice(0, 2).map((b) => (
+                          <span
+                            key={b}
+                            className="inline-flex items-center rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-[11px] font-black text-emerald-700"
+                          >
+                            {b}
+                          </span>
+                        ))}
                     </div>
 
-                    {/* price */}
+                    {/* Price */}
                     <div className="mt-5">
                       <div className="flex items-baseline gap-2">
                         <span className="text-4xl font-black">
                           {plan.price || "Fale com a gente"}
                         </span>
                         {plan.price && (
-                          <span
-                            className={cx(
-                              "text-base font-semibold",
-                              ui.subtleText,
-                            )}
-                          >
+                          <span className="text-zinc-500 text-base font-semibold">
                             /mês
                           </span>
                         )}
                       </div>
 
-                      {/* included pix + extra */}
+                      {/* Included Pix + Extra */}
                       {!isEnterprise && (
                         <div className="mt-3 flex flex-wrap items-center gap-2">
-                          <span className="inline-flex items-center gap-2 rounded-full bg-emerald-500/10 px-3 py-1.5 text-xs font-extrabold text-emerald-600 dark:text-emerald-300">
-                            <QrCode className="h-4 w-4" />
+                          <span className="inline-flex items-center gap-2 rounded-full bg-zinc-100 px-3 py-1.5 text-xs font-black text-zinc-800">
+                            <QrCode className="h-4 w-4 text-emerald-600" />
                             {plan.includedPix} Pix/mês
                           </span>
-                          <span
-                            className={cx(
-                              "inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold",
-                              ui.glassSoft,
-                              ui.subtleText,
-                            )}
-                          >
+                          <span className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-xs font-bold text-zinc-600 ring-1 ring-zinc-200">
                             Pix extra:{" "}
-                            <span className="font-black text-[rgb(var(--text))]">
+                            <span className="font-black text-zinc-900">
                               {plan.extraPix}
                             </span>
                           </span>
                         </div>
                       )}
 
-                      {/* microcopy */}
+                      {/* Microcopy */}
                       {plan.microcopy && (
-                        <p
-                          className={cx(
-                            "mt-4 text-sm leading-relaxed",
-                            ui.subtleText,
-                          )}
-                        >
+                        <p className="mt-4 text-sm text-zinc-600 leading-relaxed">
                           {plan.microcopy}
                         </p>
                       )}
                     </div>
                   </div>
 
-                  {/* benefits */}
+                  {/* Benefits */}
                   <div className="flex-1">
-                    <div
-                      className={cx(
-                        "text-xs font-extrabold uppercase tracking-[0.22em] mb-3",
-                        "text-[rgb(var(--muted-2))]",
-                      )}
-                    >
+                    <div className="text-xs font-black uppercase tracking-wider text-zinc-500 mb-3">
                       Benefícios
                     </div>
                     <ul className="space-y-3">
                       {plan.benefits.map((item, idx) => (
                         <li
                           key={idx}
-                          className="flex items-start gap-3 text-sm text-[rgb(var(--muted))]"
+                          className="flex items-start gap-3 text-sm text-zinc-700"
                         >
-                          <span className="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-300">
+                          <span className="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-50 text-emerald-700 flex-shrink-0">
                             <Check className="h-4 w-4" />
                           </span>
                           <span className="leading-snug">{item}</span>
@@ -845,18 +633,14 @@ export default function Home() {
                   <div className="mt-8">
                     <CTA
                       className={cx(
-                        "group relative w-full text-center py-4 rounded-2xl font-extrabold text-base transition-colors block overflow-hidden",
-                        ui.focusRing,
+                        "w-full text-center py-4 rounded-2xl font-black text-base transition-all block focus:outline-none focus:ring-2 focus:ring-offset-2",
                         plan.popular
-                          ? "bg-emerald-500 text-white hover:bg-emerald-600 shadow-[0_18px_40px_-24px_rgb(var(--accent)/0.75)]"
+                          ? "bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg shadow-emerald-200/60 focus:ring-emerald-500"
                           : isEnterprise
-                            ? "bg-[rgb(var(--text))] text-[rgb(var(--bg))] hover:opacity-95"
-                            : "bg-[rgb(var(--text))] text-[rgb(var(--bg))] hover:opacity-95",
+                            ? "bg-zinc-900 text-white hover:bg-zinc-800 focus:ring-zinc-900"
+                            : "bg-zinc-900 text-white hover:bg-zinc-800 focus:ring-zinc-900",
                       )}
                     >
-                      <span className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <span className="absolute -inset-y-10 -left-28 w-28 rotate-12 bg-white/25 blur-md group-hover:animate-[sheen_1.1s_ease-in-out] motion-reduce:animate-none" />
-                      </span>
                       {plan.cta?.label ||
                         (isEnterprise
                           ? "Falar com especialista"
@@ -864,7 +648,7 @@ export default function Home() {
                     </CTA>
 
                     {!isEnterprise && (
-                      <div className="mt-3 text-[11px] text-[rgb(var(--muted-2))] text-center">
+                      <div className="mt-3 text-[11px] text-zinc-500 text-center">
                         Inclui {plan.includedPix} Pix/mês • Pix extra disponível
                       </div>
                     )}
@@ -876,7 +660,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* FAQ (Accordion) */}
+      {/* FAQ */}
       <section id="faq" className="py-24 sm:py-28 scroll-mt-28">
         <div className="mx-auto max-w-4xl px-5 sm:px-6">
           <h2 className="text-center text-3xl font-black mb-12 sm:mb-14 lg:text-5xl">
@@ -889,19 +673,15 @@ export default function Home() {
               return (
                 <div
                   key={i}
-                  className={cx("rounded-3xl overflow-hidden", ui.glass)}
+                  className="rounded-3xl border border-zinc-200 bg-white overflow-hidden focus-within:ring-2 focus-within:ring-emerald-500"
                 >
                   <button
                     type="button"
                     onClick={() => setFaqOpen(open ? -1 : i)}
-                    className={cx(
-                      "w-full flex items-center justify-between gap-4 p-6 sm:p-7 text-left",
-                      "hover:bg-[rgb(var(--surface)/0.78)] transition-colors",
-                      ui.focusRing,
-                    )}
+                    className="w-full flex items-center justify-between gap-4 p-6 sm:p-7 text-left hover:bg-zinc-50/50 transition-colors focus:outline-none"
                     aria-expanded={open}
                   >
-                    <span className="font-black text-lg sm:text-xl">
+                    <span className="font-black text-lg sm:text-xl text-zinc-900">
                       {item.q}
                     </span>
                     <ChevronDown
@@ -918,17 +698,9 @@ export default function Home() {
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: "auto", opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
-                        transition={{
-                          duration: reduceMotion ? 0 : 0.28,
-                          ease: EASE_OUT,
-                        }}
+                        transition={{ duration: reduceMotion ? 0 : 0.25 }}
                       >
-                        <div
-                          className={cx(
-                            "px-6 sm:px-7 pb-6 sm:pb-7 leading-relaxed",
-                            ui.subtleText,
-                          )}
-                        >
+                        <div className="px-6 sm:px-7 pb-6 sm:pb-7 text-zinc-600 leading-relaxed border-t border-zinc-100">
                           {item.a}
                         </div>
                       </motion.div>
@@ -941,22 +713,14 @@ export default function Home() {
         </div>
       </section>
 
-      <footer className="py-14 border-t border-[rgb(var(--border)/0.65)]">
-        <div
-          className={cx(
-            ui.container,
-            "text-center text-sm text-[rgb(var(--muted-2))]",
-          )}
-        >
+      {/* FOOTER */}
+      <footer className="py-14 border-t border-zinc-100 bg-zinc-50/50">
+        <div className="mx-auto max-w-7xl px-6 text-center text-sm text-zinc-500">
           <div className="flex justify-center items-center gap-2 mb-5">
-            <img
-              src={brandLogo}
-              alt="LuminorPay"
-              className="h-9 w-9 rounded-xl object-contain transition-transform group-hover:scale-110"
-              loading="eager"
-              draggable="false"
-            />
-            <span className="font-black text-[rgb(var(--text))] text-base">
+            <div className="h-9 w-9 rounded-xl bg-emerald-500 flex items-center justify-center">
+              <Logo className="h-6 w-6" />
+            </div>
+            <span className="font-black text-zinc-900 text-base">
               LuminorPay
             </span>
           </div>
@@ -967,7 +731,7 @@ export default function Home() {
         </div>
       </footer>
 
-      {/* MOBILE MENU (overlay + drawer) */}
+      {/* MOBILE MENU */}
       <AnimatePresence>
         {mobileMenuOpen && (
           <>
@@ -978,73 +742,35 @@ export default function Home() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: reduceMotion ? 0 : 0.18, ease: EASE_OUT }}
             />
 
             <motion.aside
               role="dialog"
               aria-modal="true"
-              className={cx(
-                "fixed right-0 top-0 bottom-0 z-[110] w-[92%] max-w-sm",
-                "p-6 overflow-y-auto",
-                "shadow-2xl",
-                ui.glass,
-              )}
+              className="fixed right-0 top-0 bottom-0 z-[110] w-[92%] max-w-sm bg-white shadow-2xl p-6 overflow-y-auto"
               initial={{ x: "100%" }}
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
-              transition={{ duration: reduceMotion ? 0 : 0.28, ease: EASE_OUT }}
+              transition={{ duration: reduceMotion ? 0 : 0.25 }}
             >
               <div className="flex justify-between items-center mb-10">
                 <Link
                   to="/"
-                  className={cx(
-                    "flex items-center gap-2 rounded-2xl",
-                    ui.focusRing,
-                  )}
+                  className="flex items-center gap-2"
                   onClick={() => setMobileMenuOpen(false)}
                 >
                   <Logo className="h-8 w-8" />
-                  <span className="font-black text-[rgb(var(--text))] text-base">
+                  <span className="font-black text-zinc-900 text-base">
                     LuminorPay
                   </span>
                 </Link>
 
                 <button
                   onClick={() => setMobileMenuOpen(false)}
-                  className={cx(
-                    "p-2 rounded-full",
-                    ui.glassSoft,
-                    "hover:bg-[rgb(var(--surface)/0.78)] transition-colors",
-                    ui.focusRing,
-                  )}
+                  className="p-2 bg-zinc-100 rounded-full hover:bg-zinc-200 transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   aria-label="Fechar"
                 >
                   <X className="w-6 h-6" />
-                </button>
-              </div>
-
-              <div className="mb-6 sm:hidden">
-                <button
-                  type="button"
-                  onClick={() => setIsDark((v) => !v)}
-                  className={cx(
-                    "inline-flex w-full items-center justify-between rounded-2xl px-4 py-4",
-                    ui.glassSoft,
-                    ui.focusRing,
-                  )}
-                  aria-label={
-                    isDark ? "Ativar tema claro" : "Ativar tema escuro"
-                  }
-                >
-                  <span className="text-sm font-extrabold tracking-wide">
-                    {isDark ? "Tema claro" : "Tema escuro"}
-                  </span>
-                  {isDark ? (
-                    <Sun className="h-5 w-5 text-emerald-300" />
-                  ) : (
-                    <Moon className="h-5 w-5 text-emerald-700" />
-                  )}
                 </button>
               </div>
 
@@ -1054,43 +780,25 @@ export default function Home() {
                     key={it.name}
                     href={it.href}
                     onClick={() => setMobileMenuOpen(false)}
-                    className={cx(
-                      "rounded-2xl px-4 py-4 text-lg font-extrabold",
-                      ui.glassSoft,
-                      "hover:bg-[rgb(var(--surface)/0.78)] transition-colors",
-                      ui.focusRing,
-                    )}
+                    className="rounded-2xl px-4 py-4 text-lg font-black text-zinc-900 hover:bg-zinc-50 border border-zinc-100 transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   >
                     {it.name}
                   </a>
                 ))}
 
-                <div className="pt-6 mt-6 border-t border-[rgb(var(--border)/0.65)] flex flex-col gap-3">
+                <div className="pt-6 mt-6 border-t border-zinc-100 flex flex-col gap-3">
                   <Link
                     to="/login"
                     onClick={() => setMobileMenuOpen(false)}
-                    className={cx(
-                      "text-center py-4 rounded-2xl font-extrabold",
-                      "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300",
-                      "border border-emerald-500/20",
-                      ui.focusRing,
-                    )}
+                    className="text-emerald-700 text-center py-4 rounded-2xl border border-emerald-100 bg-emerald-50 font-black transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   >
                     Entrar
                   </Link>
                   <Link
                     to="/register"
                     onClick={() => setMobileMenuOpen(false)}
-                    className={cx(
-                      "group relative bg-emerald-500 text-white text-center py-4 rounded-2xl",
-                      "shadow-[0_18px_40px_-24px_rgb(var(--accent)/0.75)]",
-                      "font-extrabold overflow-hidden",
-                      ui.focusRing,
-                    )}
+                    className="bg-emerald-500 text-white text-center py-4 rounded-2xl shadow-lg font-black hover:bg-emerald-600 transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
                   >
-                    <span className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <span className="absolute -inset-y-10 -left-28 w-28 rotate-12 bg-white/25 blur-md group-hover:animate-[sheen_1.1s_ease-in-out] motion-reduce:animate-none" />
-                    </span>
                     Criar conta
                   </Link>
                 </div>
