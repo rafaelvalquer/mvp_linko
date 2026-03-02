@@ -4,6 +4,7 @@ import Button from "./appui/Button.jsx";
 import { Input } from "./appui/Input.jsx";
 import {
   createWithdraw,
+  getPayoutSettings,
   getWithdraw,
   getWithdrawConfig,
   getPayoutSettings,
@@ -57,7 +58,6 @@ function parseBRLToCents(input) {
 
   let t = s.replace(/[^\d.,-]/g, "");
 
-  // se tiver vírgula, assume vírgula como decimal e remove pontos
   if (t.includes(",")) {
     t = t.replace(/\./g, "");
     t = t.replace(",", ".");
@@ -67,6 +67,14 @@ function parseBRLToCents(input) {
   if (!Number.isFinite(n)) return 0;
 
   return Math.max(0, Math.round(n * 100));
+}
+
+function genIdemKey() {
+  try {
+    return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  } catch {
+    return String(Date.now());
+  }
 }
 
 export default function WithdrawModal({ open, onClose, onCreated }) {
@@ -93,6 +101,7 @@ export default function WithdrawModal({ open, onClose, onCreated }) {
   // status do withdraw
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [msg, setMsg] = useState("");
 
   const [withdraw, setWithdraw] = useState(null);
   const pollRef = useRef(null);
@@ -239,12 +248,44 @@ export default function WithdrawModal({ open, onClose, onCreated }) {
   async function onConfirmWithdraw() {
     try {
       setErr("");
+      setMsg("");
+      setSavingAuto(true);
+
+      const minCents = parseBRLToCents(autoMinBRL);
+
+      const d = await updatePayoutSettings({
+        autoPayoutEnabled: autoEnabledDraft,
+        autoPayoutMinCents: minCents,
+      });
+
+      setAutoPayoutEnabled(!!d?.autoPayoutEnabled);
+      setAutoEnabledDraft(!!d?.autoPayoutEnabled);
+      setAutoPayoutMinCents(Number(d?.autoPayoutMinCents || 0));
+      setMsg("Configuração de transferência automática atualizada.");
+
+      loadSettings();
+    } catch (e) {
+      setErr(e?.message || "Falha ao salvar transferência automática.");
+    } finally {
+      setSavingAuto(false);
+    }
+  }
+
+  async function onConfirmWithdraw() {
+    try {
+      setErr("");
+      setMsg("");
       setBusy(true);
 
       const d = await createWithdraw({
         amountCents,
         description: "Saque da LuminorPay",
+        idempotencyKey: genIdemKey(),
       });
+
+      if (Number.isFinite(Number(d?.walletAvailableCents))) {
+        setWalletAvailableCents(Number(d.walletAvailableCents));
+      }
 
       const w = d?.withdraw;
       setWithdraw(w || null);
@@ -257,6 +298,7 @@ export default function WithdrawModal({ open, onClose, onCreated }) {
       } else {
         setBusy(false);
         onCreated?.(w);
+        loadSettings();
       }
     } catch (e) {
       setBusy(false);

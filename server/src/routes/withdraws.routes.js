@@ -4,6 +4,7 @@ import mongoose from "mongoose";
 import crypto from "crypto";
 
 import { ensureAuth, tenantFromUser } from "../middleware/auth.js";
+import { Workspace } from "../models/Workspace.js";
 import Withdraw from "../models/Withdraw.js";
 import { Workspace } from "../models/Workspace.js";
 import PixDebit from "../models/PixDebit.js";
@@ -23,6 +24,21 @@ const PAYOUT_PIX_TYPES = ["CPF", "CNPJ", "PHONE", "EMAIL", "EVP"];
 
 const TERMINAL = new Set(["COMPLETE", "EXPIRED", "CANCELLED", "REFUNDED", "PAID", "FAILED"]);
 const MIN_NET_CENTS = 350;
+const PROVIDER_PIX_TYPES = [
+  "CPF",
+  "CNPJ",
+  "PHONE",
+  "EMAIL",
+  "RANDOM",
+  "BR_CODE",
+];
+const TERMINAL = new Set([
+  "COMPLETE",
+  "EXPIRED",
+  "CANCELLED",
+  "REFUNDED",
+  "FAILED",
+]);
 
 // ===== helpers =====
 function sleep(ms) {
@@ -30,7 +46,6 @@ function sleep(ms) {
 }
 
 function getOwnerUserId(req) {
-  // depende do ensureAuth - tenta cobrir formatos comuns
   const id =
     req.user?._id ||
     req.user?.id ||
@@ -41,8 +56,7 @@ function getOwnerUserId(req) {
     null;
 
   const s = id ? String(id) : "";
-  if (!s) return null;
-  if (!mongoose.isValidObjectId(s)) return null;
+  if (!s || !mongoose.isValidObjectId(s)) return null;
   return s;
 }
 
@@ -206,9 +220,9 @@ function toPublicWithdrawDetail(doc, { includeGateway = false } = {}) {
     destinationPixKeyMasked: doc.destinationPixKeyMasked || doc?.pix?.key || null,
     receiptUrl: doc.receiptUrl || "",
     provider: doc.provider,
-    providerTransactionId: doc.providerTransactionId || "",
     devMode: !!doc.devMode,
     description: doc.description,
+    error: doc.error || undefined,
     pix: {
       type: doc?.pix?.type,
       key: doc?.pix?.key, // ⚠️ para novos registros, está mascarada
@@ -218,7 +232,6 @@ function toPublicWithdrawDetail(doc, { includeGateway = false } = {}) {
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };
-
   if (includeGateway) base.gateway = doc.gateway;
   return base;
 }
@@ -382,7 +395,42 @@ router.post("/withdraw/create", async (req, res, next) => {
   try {
     const tenantId = req.tenantId;
     const ownerUserId = getOwnerUserId(req);
+    if (!tenantId || !ownerUserId)
+      return res.status(401).json({ ok: false, error: "Unauthorized" });
 
+    const ws = await Workspace.findOne({ _id: tenantId, ownerUserId })
+      .select(
+        "walletAvailableCents payoutPixKeyType payoutPixKeyMasked autoPayoutEnabled autoPayoutMinCents payoutUpdatedAt",
+      )
+      .lean();
+
+    if (!ws)
+      return res
+        .status(404)
+        .json({ ok: false, error: "Workspace não encontrado." });
+
+    return res.json({
+      ok: true,
+      walletAvailableCents: Number(ws.walletAvailableCents || 0),
+      payoutPixKeyType: ws.payoutPixKeyType || null,
+      payoutPixKeyMasked: ws.payoutPixKeyMasked || null,
+      autoPayoutEnabled: !!ws.autoPayoutEnabled,
+      autoPayoutMinCents: Number(ws.autoPayoutMinCents || 0),
+      payoutUpdatedAt: ws.payoutUpdatedAt || null,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * PUT /api/withdraw/payout-settings
+ * Body: { payoutPixKeyType, payoutPixKey, autoPayoutEnabled, autoPayoutMinCents }
+ */
+router.put("/withdraw/payout-settings", async (req, res, next) => {
+  try {
+    const tenantId = req.tenantId;
+    const ownerUserId = getOwnerUserId(req);
     if (!tenantId || !ownerUserId)
       return res.status(401).json({ ok: false, error: "Unauthorized" });
 
@@ -430,7 +478,37 @@ router.post("/withdraw/create", async (req, res, next) => {
       });
     }
 
-    const externalId = makeExternalId(tenantId);
+    const providerPixType = toProviderPixType(ws.payoutPixKeyType);
+    if (!PROVIDER_PIX_TYPES.includes(providerPixType)) {
+      return res
+        .status(400)
+        .json({ ok: false, error: "Tipo de chave Pix não suportado." });
+    }
+
+    const pixMasked =
+      ws.payoutPixKeyMasked || maskPixKey(ws.payoutPixKeyType, ws.payoutPixKey);
+
+    // cria Withdraw local (antes do gateway) com chave mascarada
+    let doc = await Withdraw.create({
+      workspaceId: tenantId,
+      ownerUserId,
+      externalId,
+      idempotencyKey: idemKey,
+      requestedBy: "USER",
+      method: "PIX",
+      grossAmountCents: grossCents,
+      feePct: 0,
+      feeCents: 0,
+      netAmountCents: netCents,
+      destinationPixKeyType: ws.payoutPixKeyType,
+      destinationPixKeyMasked: pixMasked,
+      pix: { type: providerPixType, key: pixMasked },
+      description,
+      provider: "ABACATEPAY",
+      status: "PENDING",
+      ledgerDebited: false,
+      balanceReverted: false,
+    });
 
     // ✅ 1) débito atômico do wallet antes do gateway
     const debitedWs = await Workspace.findOneAndUpdate(
@@ -574,31 +652,27 @@ router.post("/withdraw/create", async (req, res, next) => {
           const got = await abacateGetWithdraw({ externalId });
           const g = got?.data ?? got ?? {};
           const nextStatus = normalizeStatus(g.status);
-          const nextReceipt = g.receiptUrl || g.receipt_url || doc.receiptUrl;
-
-          const changed =
-            nextStatus !== doc.status || nextReceipt !== doc.receiptUrl;
-
-          if (changed) {
-            doc.status = nextStatus;
-            doc.receiptUrl = nextReceipt || "";
-            doc.providerTransactionId =
-              g.id ||
-              g.withdrawId ||
-              g.transactionId ||
-              doc.providerTransactionId;
-
-            doc.gateway = {
-              ...(doc.gateway || {}),
-              rawGetResponse: got,
-            };
-
-            await doc.save();
+          if (isTerminalStatus(nextStatus)) {
+            await Withdraw.updateOne(
+              { _id: doc._id },
+              {
+                $set: {
+                  status: nextStatus,
+                  receiptUrl: g.receiptUrl || g.receipt_url || receiptUrl,
+                  providerTransactionId:
+                    g.id ||
+                    g.withdrawId ||
+                    g.transactionId ||
+                    providerTransactionId,
+                  gateway: { ...(doc.gateway || {}), rawGetResponse: got },
+                },
+              },
+              { strict: false },
+            ).catch(() => {});
+            break;
           }
-
-          if (isTerminalStatus(nextStatus)) break;
         } catch {
-          // ignora tentativa e continua
+          // ignora
         }
       }
     }
@@ -615,19 +689,21 @@ router.post("/withdraw/create", async (req, res, next) => {
       !!req.user?.perms?.admin ||
       req.user?.admin === true;
 
-    // gateway/debug apenas para admin ou quando o saque foi criado em devMode
-    const includeGateway = isAdmin || fresh?.devMode === true;
-
     return res.json({
       ok: true,
-      withdraw: toPublicWithdrawDetail(fresh, { includeGateway }),
+      withdraw: toPublicWithdrawDetail(fresh, {
+        includeGateway: isAdmin || fresh?.devMode === true,
+      }),
+      walletAvailableCents: Number(debitedWs.walletAvailableCents || 0),
     });
   } catch (e) {
     if (e?.code === 11000) {
-      return res.status(409).json({
-        ok: false,
-        error: "Conflito ao gerar externalId. Tente novamente.",
-      });
+      return res
+        .status(409)
+        .json({
+          ok: false,
+          error: "Conflito ao gerar externalId. Tente novamente.",
+        });
     }
     next(e);
   }
@@ -654,12 +730,12 @@ router.get("/withdraw/get", async (req, res, next) => {
       workspaceId: tenantId,
       ownerUserId,
     });
-
     if (!doc)
       return res
         .status(404)
         .json({ ok: false, error: "Saque não encontrado." });
 
+    // best-effort sync com gateway
     try {
       const got = await abacateGetWithdraw({ externalId });
       const g = got?.data ?? got ?? {};
@@ -668,22 +744,17 @@ router.get("/withdraw/get", async (req, res, next) => {
 
       const changed =
         nextStatus !== doc.status || nextReceipt !== doc.receiptUrl;
-
       if (changed) {
         doc.status = nextStatus;
         doc.receiptUrl = nextReceipt || "";
         doc.providerTransactionId =
           g.id || g.withdrawId || g.transactionId || doc.providerTransactionId;
 
-        doc.gateway = {
-          ...(doc.gateway || {}),
-          rawGetResponse: got,
-        };
-
+        doc.gateway = { ...(doc.gateway || {}), rawGetResponse: got };
         await doc.save();
       }
     } catch {
-      // mantém estado local
+      // mantém local
     }
 
     noStore(res);
@@ -700,7 +771,6 @@ router.get("/withdraw/list", async (req, res, next) => {
   try {
     const tenantId = req.tenantId;
     const ownerUserId = getOwnerUserId(req);
-
     if (!tenantId || !ownerUserId)
       return res.status(401).json({ ok: false, error: "Unauthorized" });
 

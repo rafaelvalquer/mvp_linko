@@ -40,6 +40,15 @@ const WithdrawSchema = new mongoose.Schema(
     // referência interna (usada como externalId no gateway)
     externalId: { type: String, required: true, unique: true, index: true },
 
+    idempotencyKey: { type: String, default: "", index: true },
+
+    requestedBy: {
+      type: String,
+      enum: ["USER", "AUTO"],
+      default: "USER",
+      index: true,
+    },
+
     method: { type: String, enum: ["PIX"], required: true, default: "PIX" },
 
     // valor solicitado (novo / MVP)
@@ -64,6 +73,16 @@ const WithdrawSchema = new mongoose.Schema(
 
     provider: { type: String, default: "ABACATEPAY" },
     providerTransactionId: { type: String, index: true },
+
+    // flags de ledger
+    ledgerDebited: { type: Boolean, default: false },
+    balanceReverted: { type: Boolean, default: false },
+
+    // erro (quando falha)
+    error: {
+      code: { type: String, default: "" },
+      message: { type: String, default: "" },
+    },
 
     status: {
       // superset: mantém estados do provedor e adiciona estados internos
@@ -98,6 +117,7 @@ const WithdrawSchema = new mongoose.Schema(
 );
 
 WithdrawSchema.index({ workspaceId: 1, createdAt: -1 });
+WithdrawSchema.index({ workspaceId: 1, requestedBy: 1, createdAt: -1 });
 
 const Withdraw =
   mongoose.models.Withdraw || mongoose.model("Withdraw", WithdrawSchema);
