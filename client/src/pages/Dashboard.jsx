@@ -295,7 +295,10 @@ function StatCard({
     trend?.value !== undefined &&
     trend?.value !== null;
   const t = Number(trend?.value);
-  const tText = Number.isFinite(t) ? `${t > 0 ? "+" : ""}${t}` : "";
+  const isPct = trend?.format === "pct";
+  const tText = Number.isFinite(t)
+    ? `${t > 0 ? "+" : ""}${t}${isPct ? "%" : ""}`
+    : "";
 
   const trendClass =
     t > 0
@@ -868,7 +871,11 @@ export default function Dashboard() {
             icon={<FileText className="h-5 w-5 text-amber-500" />}
             label="Aguardando pagamento"
             value={kpis.pendingNow}
-            trend={{ value: kpis.pendingTrend, label: "vs semana anterior" }}
+            trend={{
+              value: kpis.pendingTrend,
+              label: "vs semana anterior",
+              format: "pct",
+            }}
             loading={loading}
             index={0}
           />

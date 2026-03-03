@@ -21,7 +21,13 @@ const PixDebitSchema = new Schema(
 
     kind: {
       type: String,
-      enum: ["PIX_QUOTA", "WALLET_CREDIT", "WITHDRAW", "AUTO_PAYOUT"],
+      enum: [
+        "PIX_QUOTA",
+        "WALLET_CREDIT",
+        "WITHDRAW",
+        "AUTO_PAYOUT",
+        "MANUAL_WITHDRAW",
+      ],
       default: "PIX_QUOTA",
       index: true,
     },

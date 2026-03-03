@@ -1,3 +1,4 @@
+// src/pages/Offers.jsx
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../app/api.js";
@@ -69,6 +70,473 @@ const IconEye = () => (
   </svg>
 );
 
+const STATUS_LABEL = {
+  PUBLIC: "Público",
+  ACCEPTED: "Aceito",
+  HOLD: "Reservado",
+  CONFIRMED: "Pago",
+  PAID: "Pago",
+  EXPIRED: "Expirado",
+  CANCELLED: "Cancelado",
+  CANCELED: "Cancelado",
+  DRAFT: "Rascunho",
+  PENDING: "Pendente",
+};
+
+// ===== helpers (seguros) =====
+const normStatus = (s) => {
+  const v = String(s || "")
+    .trim()
+    .toUpperCase();
+  if (!v) return "";
+  return v === "CANCELED" ? "CANCELLED" : v;
+};
+const isPaidCode = (s) => ["PAID", "CONFIRMED"].includes(normStatus(s));
+const isOfferPaid = (o) =>
+  isPaidCode(o?.paymentStatus) || isPaidCode(o?.status);
+
+const safeDate = (v) => {
+  if (!v) return null;
+  const d = new Date(v);
+  return Number.isFinite(d.getTime()) ? d : null;
+};
+
+const fmtDateTimeBR = (isoOrDate) => {
+  const d = isoOrDate instanceof Date ? isoOrDate : safeDate(isoOrDate);
+  return d ? d.toLocaleString("pt-BR") : "—";
+};
+
+const fmtBRLFromCents = (cents) =>
+  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
+    (Number(cents) || 0) / 100,
+  );
+
+function getPaidAt(o) {
+  return (
+    o?.paidAt ||
+    o?.payment?.lastPixUpdatedAt ||
+    o?.payment?.updatedAt ||
+    o?.updatedAt ||
+    o?.createdAt ||
+    null
+  );
+}
+
+function getPaidCents(o) {
+  const v = o?.paidAmountCents ?? o?.totalCents ?? o?.amountCents ?? 0;
+  return Number(v) || 0;
+}
+
+function getTotalCents(o) {
+  return Number(o?.totalCents ?? o?.amountCents ?? 0) || 0;
+}
+
+function getSubtotalCents(o) {
+  const v = o?.subtotalCents;
+  return v == null ? null : Number(v) || 0;
+}
+
+function getDiscountCents(o) {
+  const v = o?.discountCents;
+  return v == null ? null : Number(v) || 0;
+}
+
+function getFreightCents(o) {
+  const v = o?.freightCents;
+  return v == null ? null : Number(v) || 0;
+}
+
+function extractBooking(offer) {
+  // suporte a diferentes formatos, sem depender de endpoint
+  const b =
+    offer?.booking ||
+    offer?.appointment ||
+    offer?.schedule ||
+    offer?.agenda ||
+    null;
+
+  if (b && (b.startAt || b.endAt)) return b;
+
+  if (offer?.startAt || offer?.endAt) {
+    return {
+      startAt: offer.startAt,
+      endAt: offer.endAt,
+      status: offer.bookingStatus || offer.scheduleStatus || offer.status,
+    };
+  }
+
+  return null;
+}
+
+function OfferDetailsModal({
+  open,
+  baseOffer,
+  offer,
+  loading,
+  error,
+  onClose,
+  onCopyLink,
+  onOpenLink,
+}) {
+  if (!open) return null;
+
+  const o = offer || baseOffer || {};
+  const publicUrl = o?.publicToken ? `/p/${o.publicToken}` : null;
+
+  const paid = isOfferPaid(o);
+  const paidAt = getPaidAt(o);
+  const paidCents = paid ? getPaidCents(o) : 0;
+
+  const items = Array.isArray(o?.items) ? o.items : [];
+  const offerType = String(o?.offerType || "service").toLowerCase();
+  const booking = extractBooking(o);
+
+  const totalCents = getTotalCents(o);
+  const subtotalCents = getSubtotalCents(o);
+  const discountCents = getDiscountCents(o);
+  const freightCents = getFreightCents(o);
+
+  const paymentStatus = normStatus(
+    o?.paymentStatus || o?.payment?.lastPixStatus || "",
+  );
+  const flowStatus = normStatus(o?.status || "PUBLIC");
+
+  const pillCode = paid ? "PAID" : flowStatus || "PUBLIC";
+  const pillText = STATUS_LABEL[pillCode] || pillCode;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Detalhes da proposta"
+      onClick={() => onClose?.()}
+    >
+      <div
+        className="w-full max-w-3xl rounded-2xl border border-zinc-200 bg-white shadow-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="px-5 py-4 border-b border-zinc-100 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="text-sm font-semibold text-zinc-900 truncate">
+                {o?.customerName || "Cliente"}
+              </div>
+
+              <Badge tone={pillCode} size="xs">
+                {pillText}
+              </Badge>
+            </div>
+
+            <div className="mt-1 text-xs text-zinc-500 line-clamp-1">
+              {o?.title || "Proposta"}{" "}
+              {o?.description ? `• ${o.description}` : ""}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {publicUrl ? (
+              <>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="h-9"
+                  onClick={() => onCopyLink?.(publicUrl)}
+                >
+                  <IconCopy />
+                  <span className="ml-2">Copiar</span>
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="h-9"
+                  onClick={() => onOpenLink?.(publicUrl)}
+                >
+                  <IconExternal />
+                  <span className="ml-2">Abrir</span>
+                </Button>
+              </>
+            ) : null}
+
+            <button
+              type="button"
+              className="h-9 w-9 rounded-xl border border-zinc-200 text-zinc-500 hover:bg-zinc-50"
+              onClick={() => onClose?.()}
+              aria-label="Fechar"
+              title="Fechar"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="p-5">
+          {loading ? (
+            <div className="space-y-3">
+              <Skeleton className="h-6 w-40 rounded-lg" />
+              <Skeleton className="h-24 w-full rounded-xl" />
+              <Skeleton className="h-24 w-full rounded-xl" />
+            </div>
+          ) : error ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              {error}
+            </div>
+          ) : null}
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* Left: Payment + Totals */}
+            <div className="lg:col-span-1 space-y-4">
+              <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">
+                  Pagamento
+                </div>
+
+                <div className="mt-2 flex items-end justify-between gap-3">
+                  <div className="text-sm font-semibold text-zinc-900">
+                    {paid ? "Confirmado" : "Pendente"}
+                  </div>
+                  <div className="text-lg font-extrabold text-zinc-900 tabular-nums">
+                    {paid ? fmtBRLFromCents(paidCents) : "—"}
+                  </div>
+                </div>
+
+                <div className="mt-2 text-xs text-zinc-600 space-y-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-zinc-500">Pago em</span>
+                    <span className="font-semibold text-zinc-800">
+                      {paid ? fmtDateTimeBR(paidAt) : "—"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-zinc-500">Método</span>
+                    <span className="font-semibold text-zinc-800">Pix</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">
+                  Resumo
+                </div>
+
+                <div className="mt-2 space-y-1 text-xs">
+                  {subtotalCents != null ? (
+                    <div className="flex items-center justify-between">
+                      <span className="text-zinc-500">Subtotal</span>
+                      <span className="font-semibold text-zinc-900 tabular-nums">
+                        {fmtBRLFromCents(subtotalCents)}
+                      </span>
+                    </div>
+                  ) : null}
+
+                  {discountCents != null ? (
+                    <div className="flex items-center justify-between">
+                      <span className="text-zinc-500">Desconto</span>
+                      <span className="font-semibold text-zinc-900 tabular-nums">
+                        - {fmtBRLFromCents(discountCents)}
+                      </span>
+                    </div>
+                  ) : null}
+
+                  {freightCents != null ? (
+                    <div className="flex items-center justify-between">
+                      <span className="text-zinc-500">Frete</span>
+                      <span className="font-semibold text-zinc-900 tabular-nums">
+                        {fmtBRLFromCents(freightCents)}
+                      </span>
+                    </div>
+                  ) : null}
+
+                  <div className="pt-2 mt-2 border-t border-zinc-100 flex items-center justify-between">
+                    <span className="text-zinc-600 font-bold">Total</span>
+                    <span className="text-zinc-900 font-extrabold tabular-nums">
+                      {fmtBRLFromCents(totalCents)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {booking ? (
+                <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">
+                    Agendamento
+                  </div>
+
+                  <div className="mt-2 space-y-1 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-zinc-500">Início</span>
+                      <span className="font-semibold text-zinc-900">
+                        {fmtDateTimeBR(booking.startAt)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-zinc-500">Fim</span>
+                      <span className="font-semibold text-zinc-900">
+                        {fmtDateTimeBR(booking.endAt)}
+                      </span>
+                    </div>
+                    {booking.status ? (
+                      <div className="flex items-center justify-between pt-2">
+                        <span className="text-zinc-500">Status</span>
+                        <span className="font-semibold text-zinc-900">
+                          {normStatus(booking.status)}
+                        </span>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            {/* Right: Offer info + items */}
+            <div className="lg:col-span-2 space-y-4">
+              <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">
+                      Proposta
+                    </div>
+                    <div className="mt-2 text-sm font-semibold text-zinc-900">
+                      {o?.title || "—"}
+                    </div>
+                    <div className="mt-1 text-xs text-zinc-600">
+                      {o?.description || "—"}
+                    </div>
+                  </div>
+
+                  <div className="shrink-0 text-right">
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
+                      Tipo
+                    </div>
+                    <div className="mt-1 text-xs font-semibold text-zinc-900">
+                      {offerType === "product" ? "Produto" : "Serviço"}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div className="rounded-xl border border-zinc-100 bg-zinc-50 p-3">
+                    <div className="text-[11px] font-bold uppercase text-zinc-400">
+                      Cliente
+                    </div>
+                    <div className="mt-1 font-semibold text-zinc-900">
+                      {o?.customerName || "—"}
+                    </div>
+                    <div className="mt-1 text-zinc-600">
+                      {o?.customerWhatsApp || "—"}
+                    </div>
+                    <div className="mt-1 text-zinc-600">
+                      {o?.customerEmail || "—"}
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-zinc-100 bg-zinc-50 p-3">
+                    <div className="text-[11px] font-bold uppercase text-zinc-400">
+                      Vendedor
+                    </div>
+                    <div className="mt-1 font-semibold text-zinc-900">
+                      {o?.sellerName || "—"}
+                    </div>
+                    <div className="mt-1 text-zinc-600">
+                      {o?.sellerEmail || "—"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+                <div className="flex items-center justify-between">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">
+                    Itens
+                  </div>
+                  <div className="text-xs text-zinc-500">
+                    {items.length ? `${items.length} item(s)` : "—"}
+                  </div>
+                </div>
+
+                {items.length ? (
+                  <div className="mt-3 overflow-hidden rounded-xl border border-zinc-100">
+                    <table className="w-full text-left">
+                      <thead className="bg-zinc-50">
+                        <tr>
+                          <th className="px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-zinc-400">
+                            Descrição
+                          </th>
+                          <th className="px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-zinc-400 text-right">
+                            Qtde
+                          </th>
+                          <th className="px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-zinc-400 text-right">
+                            Unit.
+                          </th>
+                          <th className="px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-zinc-400 text-right">
+                            Total
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-100">
+                        {items.map((it, idx) => {
+                          const qty = Number(it?.qty ?? 1) || 1;
+                          const unit = Number(it?.unitPriceCents ?? 0) || 0;
+                          const line =
+                            Number(it?.lineTotalCents ?? qty * unit) || 0;
+
+                          return (
+                            <tr key={idx} className="text-xs">
+                              <td className="px-3 py-2">
+                                <div className="font-semibold text-zinc-900">
+                                  {it?.description || "Item"}
+                                </div>
+                              </td>
+                              <td className="px-3 py-2 text-right tabular-nums text-zinc-700">
+                                {qty}
+                              </td>
+                              <td className="px-3 py-2 text-right tabular-nums text-zinc-700">
+                                {unit ? fmtBRLFromCents(unit) : "—"}
+                              </td>
+                              <td className="px-3 py-2 text-right tabular-nums font-semibold text-zinc-900">
+                                {fmtBRLFromCents(line)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="mt-3 rounded-xl border border-zinc-100 bg-zinc-50 p-4 text-xs text-zinc-600">
+                    {offerType === "product"
+                      ? "Nenhum item detalhado. (Você pode adicionar itens na criação da proposta.)"
+                      : "Serviço sem itens detalhados."}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-4 border-t border-zinc-100 bg-zinc-50 flex items-center justify-between gap-3">
+          <div className="text-xs text-zinc-500">
+            ID: <span className="font-mono text-zinc-700">{o?._id || "—"}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" onClick={() => onClose?.()}>
+              Fechar
+            </Button>
+            {publicUrl ? (
+              <Button onClick={() => onOpenLink?.(publicUrl)}>
+                Abrir link público
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Offers() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -76,6 +544,13 @@ export default function Offers() {
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("ALL");
   const [copiedId, setCopiedId] = useState(null);
+
+  // modal state
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailsBase, setDetailsBase] = useState(null);
+  const [detailsOffer, setDetailsOffer] = useState(null);
+  const [detailsBusy, setDetailsBusy] = useState(false);
+  const [detailsErr, setDetailsErr] = useState("");
 
   async function load() {
     try {
@@ -127,6 +602,57 @@ export default function Offers() {
       setTimeout(() => setCopiedId(null), 1200);
     } catch (err) {}
   };
+
+  async function openDetails(o) {
+    setDetailsOpen(true);
+    setDetailsErr("");
+    setDetailsBase(o || null);
+    setDetailsOffer(o || null);
+
+    const id = o?._id;
+    if (!id) return;
+
+    setDetailsBusy(true);
+    try {
+      const res = await api(`/offers/${id}`);
+
+      if (res?.ok === false) {
+        throw new Error(res?.error || "Falha ao carregar detalhes.");
+      }
+
+      const fullOffer = res?.offer || null;
+      const booking = res?.booking || null;
+
+      if (fullOffer && typeof fullOffer === "object") {
+        // ✅ anexa booking no objeto que o modal consome
+        setDetailsOffer({ ...(o || {}), ...fullOffer, booking });
+      } else {
+        // fallback seguro: pelo menos tenta injetar booking
+        setDetailsOffer({ ...(o || {}), booking });
+      }
+    } catch (e) {
+      setDetailsErr(e?.message || "Não foi possível carregar detalhes.");
+    } finally {
+      setDetailsBusy(false);
+    }
+  }
+
+  function closeDetails() {
+    setDetailsOpen(false);
+    setDetailsBase(null);
+    setDetailsOffer(null);
+    setDetailsErr("");
+    setDetailsBusy(false);
+  }
+
+  function modalCopy(publicUrl) {
+    const full = window.location.origin + publicUrl;
+    handleCopyLink(detailsOffer?._id || detailsBase?._id || "modal", full);
+  }
+
+  function modalOpen(publicUrl) {
+    window.open(publicUrl, "_blank", "noopener,noreferrer");
+  }
 
   return (
     <Shell>
@@ -303,11 +829,7 @@ export default function Offers() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() =>
-                                    alert(
-                                      "Detalhes (MVP): rota em desenvolvimento.",
-                                    )
-                                  }
+                                  onClick={() => openDetails(o)}
                                   className="h-8 w-8 !p-0 flex items-center justify-center hover:bg-zinc-100"
                                   title="Ver Detalhes"
                                 >
@@ -375,7 +897,7 @@ export default function Offers() {
                             variant="ghost"
                             size="sm"
                             className="text-xs h-9 border border-zinc-200"
-                            onClick={() => alert("Detalhes (MVP)")}
+                            onClick={() => openDetails(o)}
                           >
                             Ver
                           </Button>
@@ -388,6 +910,18 @@ export default function Offers() {
             )}
           </CardBody>
         </Card>
+
+        {/* MODAL DETALHES */}
+        <OfferDetailsModal
+          open={detailsOpen}
+          baseOffer={detailsBase}
+          offer={detailsOffer}
+          loading={detailsBusy}
+          error={detailsErr}
+          onClose={closeDetails}
+          onCopyLink={modalCopy}
+          onOpenLink={modalOpen}
+        />
       </div>
     </Shell>
   );

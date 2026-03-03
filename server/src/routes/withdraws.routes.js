@@ -21,7 +21,14 @@ router.use(tenantFromUser);
 const PIX_TYPES = ["CPF", "CNPJ", "PHONE", "EMAIL", "EVP", "RANDOM", "BR_CODE"];
 const PAYOUT_PIX_TYPES = ["CPF", "CNPJ", "PHONE", "EMAIL", "EVP"];
 
-const TERMINAL = new Set(["COMPLETE", "EXPIRED", "CANCELLED", "REFUNDED", "PAID", "FAILED"]);
+const TERMINAL = new Set([
+  "COMPLETE",
+  "EXPIRED",
+  "CANCELLED",
+  "REFUNDED",
+  "PAID",
+  "FAILED",
+]);
 const MIN_NET_CENTS = 350;
 
 // ===== helpers =====
@@ -51,11 +58,15 @@ function onlyDigits(v) {
 }
 
 function normalizeEmail(v) {
-  return String(v || "").trim().toLowerCase();
+  return String(v || "")
+    .trim()
+    .toLowerCase();
 }
 
 function normalizePixKey(type, key) {
-  const t = String(type || "").trim().toUpperCase();
+  const t = String(type || "")
+    .trim()
+    .toUpperCase();
   const raw = String(key || "").trim();
 
   if (!raw) return "";
@@ -66,7 +77,9 @@ function normalizePixKey(type, key) {
 }
 
 function isValidEmail(v) {
-  const s = String(v || "").trim().toLowerCase();
+  const s = String(v || "")
+    .trim()
+    .toLowerCase();
   // simples e suficiente pro MVP
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 }
@@ -80,10 +93,13 @@ function isValidEvp(v) {
 }
 
 function validatePixKey(type, key) {
-  const t = String(type || "").trim().toUpperCase();
+  const t = String(type || "")
+    .trim()
+    .toUpperCase();
   const k = normalizePixKey(t, key);
 
-  if (!PAYOUT_PIX_TYPES.includes(t)) return { ok: false, error: "payoutPixKeyType inválido." };
+  if (!PAYOUT_PIX_TYPES.includes(t))
+    return { ok: false, error: "payoutPixKeyType inválido." };
   if (!k) return { ok: false, error: "payoutPixKey é obrigatório." };
 
   if (t === "CPF") {
@@ -95,7 +111,8 @@ function validatePixKey(type, key) {
     return { ok: true, value: k };
   }
   if (t === "PHONE") {
-    if (k.length < 10 || k.length > 13) return { ok: false, error: "Telefone inválido." };
+    if (k.length < 10 || k.length > 13)
+      return { ok: false, error: "Telefone inválido." };
     return { ok: true, value: k };
   }
   if (t === "EMAIL") {
@@ -123,15 +140,22 @@ function maskEmail(email) {
   const e = normalizeEmail(email);
   if (!e || !e.includes("@")) return "";
   const [user, domain] = e.split("@");
-  const u = user.length <= 2 ? user[0] + "*" : user.slice(0, 2) + "*".repeat(Math.max(1, user.length - 2));
+  const u =
+    user.length <= 2
+      ? user[0] + "*"
+      : user.slice(0, 2) + "*".repeat(Math.max(1, user.length - 2));
   const dparts = String(domain || "").split(".");
-  const d0 = dparts[0] ? dparts[0].slice(0, 2) + "*".repeat(Math.max(1, dparts[0].length - 2)) : "***";
+  const d0 = dparts[0]
+    ? dparts[0].slice(0, 2) + "*".repeat(Math.max(1, dparts[0].length - 2))
+    : "***";
   const rest = dparts.slice(1).join(".");
   return `${u}@${d0}${rest ? "." + rest : ""}`;
 }
 
 function maskPixKey(type, key) {
-  const t = String(type || "").trim().toUpperCase();
+  const t = String(type || "")
+    .trim()
+    .toUpperCase();
   const k = normalizePixKey(t, key);
 
   if (!k) return "";
@@ -148,7 +172,9 @@ function maskPixKey(type, key) {
 }
 
 function gatewayPixTypeFromWorkspaceType(t) {
-  const s = String(t || "").trim().toUpperCase();
+  const s = String(t || "")
+    .trim()
+    .toUpperCase();
   // AbacatePay costuma usar RANDOM para EVP
   if (s === "EVP") return "RANDOM";
   return s;
@@ -177,13 +203,16 @@ function toPublicWithdraw(doc) {
     externalId: doc.externalId,
     status: doc.status,
     requestedBy: doc.requestedBy || "USER",
-    amountCents: Number(doc.amountCents ?? doc.netAmountCents ?? doc.grossAmountCents ?? 0),
+    amountCents: Number(
+      doc.amountCents ?? doc.netAmountCents ?? doc.grossAmountCents ?? 0,
+    ),
     grossAmountCents: doc.grossAmountCents,
     feePct: doc.feePct,
     feeCents: doc.feeCents,
     netAmountCents: doc.netAmountCents,
     destinationPixKeyType: doc.destinationPixKeyType || doc?.pix?.type || null,
-    destinationPixKeyMasked: doc.destinationPixKeyMasked || doc?.pix?.key || null,
+    destinationPixKeyMasked:
+      doc.destinationPixKeyMasked || doc?.pix?.key || null,
     receiptUrl: doc.receiptUrl || "",
     providerTransactionId: doc.providerTransactionId || "",
     createdAt: doc.createdAt,
@@ -197,13 +226,16 @@ function toPublicWithdrawDetail(doc, { includeGateway = false } = {}) {
     status: doc.status,
     requestedBy: doc.requestedBy || "USER",
     method: doc.method,
-    amountCents: Number(doc.amountCents ?? doc.netAmountCents ?? doc.grossAmountCents ?? 0),
+    amountCents: Number(
+      doc.amountCents ?? doc.netAmountCents ?? doc.grossAmountCents ?? 0,
+    ),
     grossAmountCents: doc.grossAmountCents,
     feePct: doc.feePct,
     feeCents: doc.feeCents,
     netAmountCents: doc.netAmountCents,
     destinationPixKeyType: doc.destinationPixKeyType || doc?.pix?.type || null,
-    destinationPixKeyMasked: doc.destinationPixKeyMasked || doc?.pix?.key || null,
+    destinationPixKeyMasked:
+      doc.destinationPixKeyMasked || doc?.pix?.key || null,
     receiptUrl: doc.receiptUrl || "",
     provider: doc.provider,
     providerTransactionId: doc.providerTransactionId || "",
@@ -229,7 +261,10 @@ function makeExternalId(workspaceId) {
 }
 
 function noStore(res) {
-  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.set(
+    "Cache-Control",
+    "no-store, no-cache, must-revalidate, proxy-revalidate",
+  );
   res.set("Pragma", "no-cache");
   res.set("Expires", "0");
 }
@@ -256,13 +291,19 @@ router.get("/withdraw/payout-settings", async (req, res, next) => {
     const tenantId = req.tenantId;
     const ownerUserId = getOwnerUserId(req);
 
-    if (!tenantId || !ownerUserId) return res.status(401).json({ ok: false, error: "Unauthorized" });
+    if (!tenantId || !ownerUserId)
+      return res.status(401).json({ ok: false, error: "Unauthorized" });
 
     const ws = await Workspace.findOne({ _id: tenantId, ownerUserId })
-      .select("walletAvailableCents payoutPixKeyType payoutPixKeyMasked autoPayoutEnabled autoPayoutMinCents payoutUpdatedAt")
+      .select(
+        "walletAvailableCents payoutPixKeyType payoutPixKeyMasked autoPayoutEnabled autoPayoutMinCents payoutUpdatedAt",
+      )
       .lean();
 
-    if (!ws) return res.status(404).json({ ok: false, error: "Workspace não encontrado." });
+    if (!ws)
+      return res
+        .status(404)
+        .json({ ok: false, error: "Workspace não encontrado." });
 
     noStore(res);
     return res.json({
@@ -284,7 +325,8 @@ router.put("/withdraw/payout-settings", async (req, res, next) => {
     const tenantId = req.tenantId;
     const ownerUserId = getOwnerUserId(req);
 
-    if (!tenantId || !ownerUserId) return res.status(401).json({ ok: false, error: "Unauthorized" });
+    if (!tenantId || !ownerUserId)
+      return res.status(401).json({ ok: false, error: "Unauthorized" });
 
     const typeIn = req.body?.payoutPixKeyType;
     const keyIn = req.body?.payoutPixKey;
@@ -293,10 +335,15 @@ router.put("/withdraw/payout-settings", async (req, res, next) => {
 
     // lê estado atual
     const ws = await Workspace.findOne({ _id: tenantId, ownerUserId })
-      .select("payoutPixKeyType payoutPixKey payoutPixKeyMasked autoPayoutEnabled autoPayoutMinCents walletAvailableCents")
+      .select(
+        "payoutPixKeyType payoutPixKey payoutPixKeyMasked autoPayoutEnabled autoPayoutMinCents walletAvailableCents",
+      )
       .lean();
 
-    if (!ws) return res.status(404).json({ ok: false, error: "Workspace não encontrado." });
+    if (!ws)
+      return res
+        .status(404)
+        .json({ ok: false, error: "Workspace não encontrado." });
 
     const $set = {};
     const wantUpdateKey = typeIn !== undefined || keyIn !== undefined;
@@ -306,7 +353,9 @@ router.put("/withdraw/payout-settings", async (req, res, next) => {
     let nextMasked = ws.payoutPixKeyMasked || null;
 
     if (wantUpdateKey) {
-      const t = String(typeIn || nextType || "").trim().toUpperCase();
+      const t = String(typeIn || nextType || "")
+        .trim()
+        .toUpperCase();
       const k = String(keyIn || "").trim();
 
       const v = validatePixKey(t, k);
@@ -327,13 +376,21 @@ router.put("/withdraw/payout-settings", async (req, res, next) => {
     if (minIn !== undefined) {
       const n = Number(minIn);
       if (!Number.isFinite(n) || n < 0) {
-        return res.status(400).json({ ok: false, error: "autoPayoutMinCents inválido." });
+        return res
+          .status(400)
+          .json({ ok: false, error: "autoPayoutMinCents inválido." });
       }
       $set.autoPayoutMinCents = Math.trunc(n);
     }
 
-    const nextAutoEnabled = $set.autoPayoutEnabled !== undefined ? !!$set.autoPayoutEnabled : !!ws.autoPayoutEnabled;
-    const nextAutoMin = $set.autoPayoutMinCents !== undefined ? Number($set.autoPayoutMinCents) : Number(ws.autoPayoutMinCents || 0);
+    const nextAutoEnabled =
+      $set.autoPayoutEnabled !== undefined
+        ? !!$set.autoPayoutEnabled
+        : !!ws.autoPayoutEnabled;
+    const nextAutoMin =
+      $set.autoPayoutMinCents !== undefined
+        ? Number($set.autoPayoutMinCents)
+        : Number(ws.autoPayoutMinCents || 0);
 
     // Se autoPayoutEnabled ON, exigir chave configurada
     const effectiveMasked = wantUpdateKey ? nextMasked : ws.payoutPixKeyMasked;
@@ -344,7 +401,8 @@ router.put("/withdraw/payout-settings", async (req, res, next) => {
       if (!effectiveType || !effectiveKey || !effectiveMasked) {
         return res.status(400).json({
           ok: false,
-          error: "Cadastre uma chave Pix válida para habilitar a transferência automática.",
+          error:
+            "Cadastre uma chave Pix válida para habilitar a transferência automática.",
         });
       }
     }
@@ -356,7 +414,9 @@ router.put("/withdraw/payout-settings", async (req, res, next) => {
       { $set },
       { new: true },
     )
-      .select("walletAvailableCents payoutPixKeyType payoutPixKeyMasked autoPayoutEnabled autoPayoutMinCents payoutUpdatedAt")
+      .select(
+        "walletAvailableCents payoutPixKeyType payoutPixKeyMasked autoPayoutEnabled autoPayoutMinCents payoutUpdatedAt",
+      )
       .lean();
 
     noStore(res);
@@ -396,7 +456,9 @@ router.post("/withdraw/create", async (req, res, next) => {
     const description = String(req.body?.description || "Saque do PayLink");
 
     if (!Number.isFinite(amountCents) || amountCents <= 0) {
-      return res.status(400).json({ ok: false, error: "amountCents inválido." });
+      return res
+        .status(400)
+        .json({ ok: false, error: "amountCents inválido." });
     }
     if (amountCents < MIN_NET_CENTS) {
       return res.status(400).json({
@@ -407,26 +469,35 @@ router.post("/withdraw/create", async (req, res, next) => {
 
     // lê workspace e valida chave Pix
     const ws = await Workspace.findOne({ _id: tenantId, ownerUserId })
-      .select("walletAvailableCents payoutPixKeyType payoutPixKey payoutPixKeyMasked")
+      .select(
+        "walletAvailableCents payoutPixKeyType payoutPixKey payoutPixKeyMasked",
+      )
       .lean();
 
-    if (!ws) return res.status(404).json({ ok: false, error: "Workspace não encontrado." });
+    if (!ws)
+      return res
+        .status(404)
+        .json({ ok: false, error: "Workspace não encontrado." });
 
     if (!ws.payoutPixKeyType || !ws.payoutPixKey || !ws.payoutPixKeyMasked) {
       return res.status(400).json({
         ok: false,
-        error: "Cadastre uma chave Pix de recebimento antes de solicitar saque.",
+        error:
+          "Cadastre uma chave Pix de recebimento antes de solicitar saque.",
       });
     }
 
-    const pixType = String(ws.payoutPixKeyType || "").trim().toUpperCase();
+    const pixType = String(ws.payoutPixKeyType || "")
+      .trim()
+      .toUpperCase();
     const pixKeyRaw = String(ws.payoutPixKey || "").trim();
     const pixKeyMasked = String(ws.payoutPixKeyMasked || "").trim();
 
     if (!PAYOUT_PIX_TYPES.includes(pixType) || !pixKeyRaw) {
       return res.status(400).json({
         ok: false,
-        error: "Chave Pix do workspace inválida. Reconfigure no modal de Saque.",
+        error:
+          "Chave Pix do workspace inválida. Reconfigure no modal de Saque.",
       });
     }
 
@@ -434,7 +505,11 @@ router.post("/withdraw/create", async (req, res, next) => {
 
     // ✅ 1) débito atômico do wallet antes do gateway
     const debitedWs = await Workspace.findOneAndUpdate(
-      { _id: tenantId, ownerUserId, walletAvailableCents: { $gte: amountCents } },
+      {
+        _id: tenantId,
+        ownerUserId,
+        walletAvailableCents: { $gte: amountCents },
+      },
       { $inc: { walletAvailableCents: -amountCents } },
       { new: true },
     )
@@ -442,33 +517,63 @@ router.post("/withdraw/create", async (req, res, next) => {
       .lean();
 
     if (!debitedWs) {
-      return res.status(400).json({ ok: false, error: "Saldo insuficiente para saque." });
+      return res
+        .status(400)
+        .json({ ok: false, error: "Saldo insuficiente para saque." });
     }
 
-    // ✅ 2) cria ledger idempotente do saque manual
+    // ✅ 2) cria ledger idempotente do saque manual (sem 409 por double-submit)
     const debitKey = `manual:withdraw:${externalId}`;
-    const debit = await PixDebit.create({
-      workspaceId: tenantId,
-      withdrawId: null,
-      key: debitKey,
-      kind: "MANUAL_WITHDRAW",
-      amountCents,
-      status: "APPLIED",
-      reason: "",
-      meta: { externalId },
-    }).catch((e) => {
-      // se der conflito (extremamente raro), estorna e retorna
-      if (e?.code === 11000) return null;
-      throw e;
-    });
 
-    if (!debit) {
-      await Workspace.updateOne(
-        { _id: tenantId, ownerUserId },
-        { $inc: { walletAvailableCents: amountCents } },
-      ).catch(() => {});
-      return res.status(409).json({ ok: false, error: "Conflito ao registrar saque. Tente novamente." });
+    let debit;
+    try {
+      debit = await PixDebit.create({
+        workspaceId: tenantId,
+        withdrawId: null,
+        key: debitKey,
+        kind: "MANUAL_WITHDRAW",
+        amountCents,
+        status: "APPLIED",
+        reason: "",
+        meta: { externalId },
+      });
+    } catch (e) {
+      // Se duplicou (double submit / retry), trate como idempotente:
+      if (e?.code === 11000) {
+        debit = await PixDebit.findOne({
+          workspaceId: tenantId,
+          key: debitKey,
+        }).lean();
+
+        // fallback extremo: se não achar, aí sim estorna e falha
+        if (!debit) {
+          await Workspace.updateOne(
+            { _id: tenantId, ownerUserId },
+            { $inc: { walletAvailableCents: amountCents } },
+          ).catch(() => {});
+          return res.status(409).json({
+            ok: false,
+            error: "Conflito ao registrar saque. Tente novamente.",
+          });
+        }
+
+        // Se já existe e já está vinculado a um Withdraw, devolve sucesso idempotente
+        if (debit.withdrawId) {
+          const existing = await Withdraw.findById(debit.withdrawId).lean();
+          if (existing) {
+            return res.json({
+              ok: true,
+              withdraw: toPublicWithdrawDetail(existing),
+            });
+          }
+          // se não encontrou o withdraw por algum motivo, continua o fluxo abaixo
+        }
+      } else {
+        throw e;
+      }
     }
+
+    // A partir daqui, `debit` existe (criado agora ou recuperado) e o fluxo pode continuar.
 
     // ✅ 3) cria Withdraw local ANTES do gateway (para auditoria)
     let doc = await Withdraw.create({
@@ -507,6 +612,30 @@ router.post("/withdraw/create", async (req, res, next) => {
         pix: { type: gatewayPixTypeFromWorkspaceType(pixType), key: pixKeyRaw },
         description,
       });
+
+      // ✅ LOG: retorno do AbacatePay (sem vazar chave PIX)
+      const logSafe = {
+        externalId,
+        request: {
+          method: "PIX",
+          amount: amountCents,
+          pix: {
+            type: gatewayPixTypeFromWorkspaceType(pixType),
+            key: pixKeyMasked,
+          },
+          description,
+        },
+        response: {
+          ok: createResp?.ok,
+          error: createResp?.error ?? null,
+          data: createResp?.data ?? createResp,
+        },
+      };
+
+      console.log(
+        "[abacatepay][withdraw.create] response =",
+        JSON.stringify(logSafe, null, 2),
+      );
     } catch (err) {
       // estorna wallet
       await Workspace.updateOne(
@@ -521,7 +650,10 @@ router.post("/withdraw/create", async (req, res, next) => {
           $set: {
             status: "REVERTED",
             reason: err?.message || "gateway_create_failed",
-            meta: { ...(debit?.meta || {}), gatewayError: err?.details || err?.message || String(err) },
+            meta: {
+              ...(debit?.meta || {}),
+              gatewayError: err?.details || err?.message || String(err),
+            },
           },
         },
         { strict: false },
@@ -540,7 +672,9 @@ router.post("/withdraw/create", async (req, res, next) => {
         { strict: false },
       ).catch(() => {});
 
-      const freshFailed = await Withdraw.findById(doc._id).lean().catch(() => null);
+      const freshFailed = await Withdraw.findById(doc._id)
+        .lean()
+        .catch(() => null);
 
       return res.status(502).json({
         ok: false,

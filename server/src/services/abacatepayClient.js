@@ -13,10 +13,17 @@ function mustAuth() {
   }
 }
 
+/**
+ * Request "cru" para a AbacatePay:
+ * - Loga status + body quando dá erro
+ * - Retorna o JSON completo (sem cortar para json.data)
+ */
 async function request(path, { method = "GET", body } = {}) {
   mustAuth();
 
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const url = `${BASE_URL}${path}`;
+
+  const res = await fetch(url, {
     method,
     headers: {
       accept: "application/json",
@@ -26,19 +33,43 @@ async function request(path, { method = "GET", body } = {}) {
     body: body ? JSON.stringify(body) : undefined,
   });
 
-  const json = await res.json().catch(() => ({}));
+  const text = await res.text().catch(() => "");
+  let json = {};
+  try {
+    json = text ? JSON.parse(text) : {};
+  } catch {
+    json = { raw: text };
+  }
 
   if (!res.ok) {
+    // ✅ log de debug do gateway (não inclui token)
+    console.log(
+      "[abacatepay][http.error]",
+      JSON.stringify(
+        {
+          url,
+          method,
+          status: res.status,
+          response: json,
+        },
+        null,
+        2,
+      ),
+    );
+
     const msg =
-      json?.error?.message || json?.message || `AbacatePay HTTP ${res.status}`;
+      json?.error?.message ||
+      json?.error ||
+      json?.message ||
+      `AbacatePay HTTP ${res.status}`;
+
     const err = new Error(msg);
     err.status = res.status;
     err.details = json;
     throw err;
   }
 
-  // docs retornam { data: {...}, error: ... } em Pix QRCode
-  return json?.data ?? json;
+  return json;
 }
 
 export async function abacateCreatePixQr({
@@ -48,6 +79,7 @@ export async function abacateCreatePixQr({
   customer,
   metadata,
 }) {
+  // mantendo /v1 (como você já usa)
   return request("/v1/pixQrCode/create", {
     method: "POST",
     body: { amount, expiresIn, description, customer, metadata },
@@ -65,7 +97,7 @@ export async function abacateCreateWithdraw({
   pix,
   description,
 }) {
-  // Prefer the path requested (/withdraw/*), fallback to /v1/withdraw/* if needed.
+  // ✅ usar a rota correta direto (igual seu cURL)
   const body = {
     externalId,
     method: "PIX",
@@ -74,27 +106,12 @@ export async function abacateCreateWithdraw({
     description,
   };
 
-  try {
-    return await request("/withdraw/create", { method: "POST", body });
-  } catch (err) {
-    if (err?.status === 404) {
-      return request("/v1/withdraw/create", { method: "POST", body });
-    }
-    throw err;
-  }
+  return request("/v1/withdraw/create", { method: "POST", body });
 }
 
 export async function abacateGetWithdraw({ externalId }) {
   const q = new URLSearchParams({ externalId }).toString();
-
-  try {
-    return await request(`/withdraw/get?${q}`, { method: "GET" });
-  } catch (err) {
-    if (err?.status === 404) {
-      return request(`/v1/withdraw/get?${q}`, { method: "GET" });
-    }
-    throw err;
-  }
+  return request(`/v1/withdraw/get?${q}`, { method: "GET" });
 }
 
 export async function abacateSimulatePixPayment({ pixId }) {
