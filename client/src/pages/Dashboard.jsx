@@ -692,7 +692,7 @@ export default function Dashboard() {
         </div>
 
         {/* ✅ ANALYTICS */}
-        <AnalyticsSection />
+        <AnalyticsSection offers={offers} />
 
         <div className="grid grid-cols-12 gap-6">
           {/* MAIN COLUMN: RECENT LINKS */}
