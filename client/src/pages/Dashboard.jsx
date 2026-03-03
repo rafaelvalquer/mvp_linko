@@ -1,10 +1,21 @@
 // src/pages/Dashboard.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import {
+  FileText,
+  CheckCircle2,
+  CalendarDays,
+  DollarSign,
+  TrendingUp,
+  CreditCard,
+  Wallet as WalletIcon,
+  Clock,
+} from "lucide-react";
+
 import Shell from "../components/layout/Shell.jsx";
 import { api } from "../app/api.js";
 import { listBookings } from "../app/bookingsApi.js";
-import { listWithdraws } from "../app/withdrawApi.js";
+import { listWithdraws, getPayoutSettings } from "../app/withdrawApi.js";
 import PageHeader from "../components/appui/PageHeader.jsx";
 import Card, { CardBody, CardHeader } from "../components/appui/Card.jsx";
 import Button from "../components/appui/Button.jsx";
@@ -197,15 +208,27 @@ const Icons = {
 };
 
 /** ========= HELPERS ========= */
-const normStatus = (s) =>
-  String(s || "")
+const normStatus = (s) => {
+  const v = String(s || "")
     .trim()
     .toUpperCase();
+  if (!v) return "";
+  return v === "CANCELED" ? "CANCELLED" : v;
+};
+
+const isPaidCode = (s) => ["PAID", "CONFIRMED"].includes(normStatus(s));
+const isPaidOffer = (o) =>
+  isPaidCode(o?.paymentStatus) || isPaidCode(o?.status);
+
+const isCancelledOrExpiredOffer = (o) =>
+  ["CANCELLED", "EXPIRED"].includes(normStatus(o?.status)) ||
+  ["CANCELLED", "EXPIRED"].includes(normStatus(o?.paymentStatus));
 
 const fmtBRL = (cents) =>
-  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
-    (cents || 0) / 100,
-  );
+  new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format((Number(cents) || 0) / 100);
 
 const fmtDateTimeBR = (iso) =>
   iso ? new Date(iso).toLocaleString("pt-BR") : "";
@@ -223,6 +246,31 @@ const safeDate = (v) => {
   return isNaN(d.getTime()) ? null : d;
 };
 
+const startOfDay = (d) => {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+};
+
+const inRange = (dt, startInclusive, endExclusive) =>
+  dt && dt >= startInclusive && dt < endExclusive;
+
+const offerPaidDate = (o) =>
+  safeDate(
+    o?.paidAt ||
+      o?.payment?.lastPixUpdatedAt ||
+      o?.updatedAt ||
+      o?.updated_at ||
+      o?.createdAt ||
+      o?.created_at,
+  );
+
+const offerCreatedDate = (o) =>
+  safeDate(o?.createdAt || o?.created_at || o?.updatedAt || o?.updated_at);
+
+const offerPaidAmountCents = (o) =>
+  Number(o?.paidAmountCents ?? o?.totalCents ?? o?.amountCents ?? 0) || 0;
+
 function holdRemainingLabel(holdExpiresAt) {
   const d = safeDate(holdExpiresAt);
   if (!d) return null;
@@ -232,32 +280,88 @@ function holdRemainingLabel(holdExpiresAt) {
 }
 
 /** ========= SUB-COMPONENTS ========= */
-function StatCard({ label, value, meta, icon: Icon, loading }) {
+function StatCard({
+  icon,
+  label,
+  value,
+  subtitle,
+  trend,
+  highlight = false,
+  index = 0,
+  loading,
+}) {
+  const hasTrend =
+    Boolean(trend?.label) &&
+    trend?.value !== undefined &&
+    trend?.value !== null;
+  const t = Number(trend?.value);
+  const tText = Number.isFinite(t) ? `${t > 0 ? "+" : ""}${t}` : "";
+
+  const trendClass =
+    t > 0
+      ? "text-emerald-700 dark:text-emerald-300"
+      : t < 0
+        ? "text-red-700 dark:text-red-300"
+        : "text-zinc-500 dark:text-zinc-400";
+
   return (
-    <Card className="overflow-hidden border-none shadow-sm ring-1 ring-zinc-200">
+    <Card
+      className={[
+        "overflow-hidden border-none shadow-sm ring-1",
+        highlight
+          ? "ring-emerald-200 bg-emerald-50/40 dark:ring-emerald-500/25 dark:bg-emerald-500/10"
+          : "ring-zinc-200 bg-white dark:ring-zinc-800/70 dark:bg-zinc-950/40",
+      ].join(" ")}
+    >
       <CardBody className="p-5">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
-            {label}
-          </span>
-          {Icon && (
-            <div className="p-2 bg-zinc-50 rounded-lg">
-              <Icon />
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+              {label}
             </div>
-          )}
+            {subtitle ? (
+              <div className="mt-1 text-[11px] text-zinc-400 font-medium truncate">
+                {subtitle}
+              </div>
+            ) : null}
+          </div>
+
+          {icon ? (
+            <div
+              className={[
+                "shrink-0 rounded-xl border p-2",
+                "border-zinc-200/70 bg-zinc-50",
+                "dark:border-zinc-800/70 dark:bg-zinc-900/30",
+              ].join(" ")}
+              aria-hidden="true"
+            >
+              {icon}
+            </div>
+          ) : null}
         </div>
+
         <div className="mt-3">
           {loading ? (
             <Skeleton className="h-8 w-24" />
           ) : (
-            <div className="text-2xl font-bold text-zinc-900 tracking-tight">
+            <div className="text-2xl font-bold text-zinc-900 tracking-tight dark:text-zinc-100">
               {value}
             </div>
           )}
         </div>
-        <div className="mt-1 text-xs text-zinc-400 font-medium truncate">
-          {meta}
-        </div>
+
+        {hasTrend ? (
+          <div className="mt-2 flex items-center gap-2 text-xs">
+            <span
+              className={["font-semibold tabular-nums", trendClass].join(" ")}
+            >
+              {tText}
+            </span>
+            <span className="text-zinc-400 dark:text-zinc-500">
+              {trend.label}
+            </span>
+          </div>
+        ) : null}
       </CardBody>
     </Card>
   );
@@ -284,7 +388,6 @@ function QuotaAccordion({ workspace, quota, loading }) {
   }, [workspace]);
 
   const summaryLine = useMemo(() => {
-    // Ex.: "50/50 Pix"
     return `${quota.remaining}/${quota.limit} Pix`;
   }, [quota]);
 
@@ -333,7 +436,6 @@ function QuotaAccordion({ workspace, quota, loading }) {
         </div>
       </button>
 
-      {/* Accordion body */}
       {open ? (
         <CardBody className="px-5 pb-5 pt-0">
           {loading ? (
@@ -401,6 +503,10 @@ export default function Dashboard() {
   const [offers, setOffers] = useState([]);
   const [bookings, setBookings] = useState([]);
   const [withdraws, setWithdraws] = useState([]);
+
+  const [walletAvailableCents, setWalletAvailableCents] = useState(null);
+  const [walletBusy, setWalletBusy] = useState(true);
+
   const [loading, setLoading] = useState(true);
   const [bookingsBusy, setBookingsBusy] = useState(true);
   const [withdrawsBusy, setWithdrawsBusy] = useState(true);
@@ -450,13 +556,25 @@ export default function Dashboard() {
   async function loadWithdraws() {
     try {
       setWithdrawsBusy(true);
-      const d = await listWithdraws({ limit: 5 });
+      const d = await listWithdraws({ limit: 50 });
       setWithdraws(d.items || []);
     } catch (e) {
       if (e?.status === 401) return signOut();
       setWithdrawsErr("Erro nos saques.");
     } finally {
       setWithdrawsBusy(false);
+    }
+  }
+
+  async function loadWallet() {
+    try {
+      setWalletBusy(true);
+      const d = await getPayoutSettings();
+      setWalletAvailableCents(Number(d?.walletAvailableCents || 0));
+    } catch (e) {
+      // fallback será workspace.walletAvailableCents
+    } finally {
+      setWalletBusy(false);
     }
   }
 
@@ -471,8 +589,10 @@ export default function Dashboard() {
           new Date(),
         ),
       );
+
       loadBookings();
       loadWithdraws();
+      loadWallet();
     } catch (e) {
       if (e?.status === 401) return signOut();
       setError("Falha ao carregar dados principais.");
@@ -488,45 +608,134 @@ export default function Dashboard() {
 
   const kpis = useMemo(() => {
     const total = offers.length;
-    const totalValue = offers.reduce((acc, o) => acc + (o.amountCents || 0), 0);
-    const paidOffers = offers.filter((o) =>
-      ["PAID", "CONFIRMED"].includes(normStatus(o.status)),
-    );
-    const paidCount = paidOffers.length;
-    const conversion = total ? Math.round((paidCount / total) * 100) : 0;
+    const last5 = offers.slice(0, 5);
 
-    const bookedCount = bookings.filter((b) =>
-      ["HOLD", "CONFIRMED"].includes(normStatus(b.status)),
+    // Pendente = não pago e não cancelado/expirado
+    const pendingNow = offers.filter(
+      (o) => !isPaidOffer(o) && !isCancelledOrExpiredOffer(o),
     ).length;
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const now = new Date();
+    const today0 = startOfDay(now);
+    const tomorrow0 = new Date(today0);
+    tomorrow0.setDate(tomorrow0.getDate() + 1);
 
-    const paidToday = paidOffers.filter((o) => {
-      const d = safeDate(o?.paidAt || o?.updatedAt || o?.createdAt);
-      if (!d) return false;
-      const t = new Date(d);
-      t.setHours(0, 0, 0, 0);
-      return t.getTime() === today.getTime();
-    });
-
-    const paidTodayCount = paidToday.length;
-    const paidTodayValue = paidToday.reduce(
-      (acc, o) => acc + (o.amountCents || 0),
+    const paidToday = offers.filter(
+      (o) => isPaidOffer(o) && inRange(offerPaidDate(o), today0, tomorrow0),
+    );
+    const paidTodayCents = paidToday.reduce(
+      (acc, o) => acc + offerPaidAmountCents(o),
       0,
     );
 
+    const startNDaysAgo = (n) => {
+      const d = new Date(today0);
+      d.setDate(d.getDate() - (n - 1));
+      return d;
+    };
+
+    const cur7Start = startNDaysAgo(7);
+    const prev7Start = new Date(cur7Start);
+    prev7Start.setDate(prev7Start.getDate() - 7);
+    const prev7End = new Date(cur7Start);
+
+    const cur30Start = startNDaysAgo(30);
+
+    const paidIn = (start, end) =>
+      offers.filter(
+        (o) => isPaidOffer(o) && inRange(offerPaidDate(o), start, end),
+      );
+
+    const createdIn = (start, end) =>
+      offers.filter((o) => inRange(offerCreatedDate(o), start, end));
+
+    const pendingCreatedIn = (start, end) =>
+      offers.filter(
+        (o) =>
+          !isPaidOffer(o) &&
+          !isCancelledOrExpiredOffer(o) &&
+          inRange(offerCreatedDate(o), start, end),
+      );
+
+    const sumCents = (items) =>
+      items.reduce((acc, o) => acc + offerPaidAmountCents(o), 0);
+
+    const paidCur7 = paidIn(cur7Start, tomorrow0);
+    const paidPrev7 = paidIn(prev7Start, prev7End);
+
+    const paidCur7Count = paidCur7.length;
+    const paidPrev7Count = paidPrev7.length;
+
+    const volumeCur7Cents = sumCents(paidCur7);
+    const volumePrev7Cents = sumCents(paidPrev7);
+
+    const pendingCur7 = pendingCreatedIn(cur7Start, tomorrow0).length;
+    const pendingPrev7 = pendingCreatedIn(prev7Start, prev7End).length;
+
+    const pctDelta = (cur, prev) => {
+      const a = Number(cur) || 0;
+      const b = Number(prev) || 0;
+      if (b === 0) return a > 0 ? 100 : 0;
+      return Math.round(((a - b) / b) * 100);
+    };
+
+    const pendingTrend = pctDelta(pendingCur7, pendingPrev7);
+
+    // Conversão (últimos 30d): pagas / criadas
+    const createdCur30 = createdIn(cur30Start, tomorrow0).length;
+    const paidCur30Count = paidIn(cur30Start, tomorrow0).length;
+    const conversionCur =
+      createdCur30 > 0 ? Math.round((paidCur30Count / createdCur30) * 100) : 0;
+
+    // Agendamentos: próximos 7 dias (HOLD/CONFIRMED)
+    const appointments = bookings.filter((b) =>
+      ["HOLD", "CONFIRMED"].includes(normStatus(b.status)),
+    ).length;
+
+    // Pix quota do plano
+    const pixLimit = Number(workspace?.pixMonthlyLimit ?? 0) || 0;
+    const pixUsed = Number(workspace?.pixUsedThisCycle ?? 0) || 0;
+
+    // ✅ Saldo disponível: prioriza getPayoutSettings (igual WithdrawModal)
+    const balanceCents = Number.isFinite(Number(walletAvailableCents))
+      ? Number(walletAvailableCents)
+      : Number(workspace?.walletAvailableCents ?? 0) || 0;
+
+    // Saques processando
+    const withdrawalsProcessing = withdraws.filter((w) => {
+      const s = normStatus(w?.status);
+      return ![
+        "COMPLETE",
+        "COMPLETED",
+        "FAILED",
+        "CANCELLED",
+        "REJECTED",
+        "ERROR",
+      ].includes(s);
+    }).length;
+
     return {
       total,
-      totalValue,
-      paidCount,
-      conversion,
-      bookedCount,
-      paidTodayCount,
-      paidTodayValue,
-      last5: offers.slice(0, 5),
+      last5,
+
+      pendingNow,
+      pendingTrend,
+
+      volumeCur7Cents,
+
+      paidTodayCents,
+
+      conversionCur,
+      paidCur30Count,
+
+      appointments,
+      pixUsed,
+      pixLimit,
+
+      balanceCents,
+      withdrawalsProcessing,
     };
-  }, [offers, bookings]);
+  }, [offers, bookings, withdraws, workspace, walletAvailableCents]);
 
   const quota = useMemo(() => {
     const limit = Number(workspace?.pixMonthlyLimit);
@@ -592,7 +801,6 @@ export default function Dashboard() {
 
               {/* Lado Direito: Ações */}
               <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
-                {/* Botões Secundários (Lado a lado no mobile) */}
                 <div className="flex items-center gap-2 w-full sm:w-auto">
                   <Button
                     variant="secondary"
@@ -620,7 +828,6 @@ export default function Dashboard() {
                   </Button>
                 </div>
 
-                {/* Botão Primário (Destaque total) */}
                 <Link to="/offers/new" className="w-full sm:w-auto">
                   <Button
                     size="sm"
@@ -652,44 +859,86 @@ export default function Dashboard() {
           loading={loadingMe}
         />
 
-        {/* KPI GRID */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        {/* ✅ KPI Cards (no padrão do exemplo) */}
+        <section
+          className="grid grid-cols-2 md:grid-cols-4 gap-3 lg:gap-4 mb-6"
+          aria-label="Indicadores"
+        >
           <StatCard
+            icon={<FileText className="h-5 w-5 text-amber-500" />}
+            label="Aguardando pagamento"
+            value={kpis.pendingNow}
+            trend={{ value: kpis.pendingTrend, label: "vs semana anterior" }}
+            loading={loading}
+            index={0}
+          />
+
+          <StatCard
+            icon={<CheckCircle2 className="h-5 w-5 text-sky-500" />}
             label="Propostas"
             value={kpis.total}
-            meta="Emitidas no total"
-            icon={Icons.TrendUp}
+            subtitle="Emitidas no total"
             loading={loading}
+            index={1}
           />
+
           <StatCard
-            label="Volume"
-            value={fmtBRL(kpis.totalValue)}
-            meta="Valor bruto gerado"
-            icon={Icons.Wallet}
-            loading={loading}
-          />
-          <StatCard
-            label="Conversão"
-            value={`${kpis.conversion}%`}
-            meta={`${kpis.paidCount} pagas`}
-            icon={Icons.TrendUp}
-            loading={loading}
-          />
-          <StatCard
+            icon={<CalendarDays className="h-5 w-5 text-violet-500" />}
             label="Agendamentos"
-            value={kpis.bookedCount}
-            meta="Reservas ativas"
-            icon={Icons.Calendar}
-            loading={loading}
+            value={kpis.appointments}
+            subtitle="próximos 7 dias"
+            loading={bookingsBusy}
+            index={2}
           />
+
           <StatCard
-            label="Vendas Hoje"
-            value={kpis.paidTodayCount}
-            meta={`Total: ${fmtBRL(kpis.paidTodayValue)}`}
-            icon={Icons.Users}
+            icon={<DollarSign className="h-5 w-5 text-emerald-500" />}
+            label="Volume (R$)"
+            value={fmtBRL(kpis.volumeCur7Cents)}
             loading={loading}
+            index={3}
           />
-        </div>
+
+          <StatCard
+            icon={<TrendingUp className="h-5 w-5 text-indigo-500" />}
+            label="Conversão"
+            value={`${kpis.conversionCur}%`}
+            subtitle={`${kpis.paidCur30Count} pagas`}
+            loading={loading}
+            index={4}
+          />
+
+          <StatCard
+            icon={<CreditCard className="h-5 w-5 text-cyan-500" />}
+            label="Pix usados"
+            value={`${kpis.pixUsed}/${kpis.pixLimit}`}
+            subtitle="limite mensal do plano"
+            loading={loadingMe}
+            index={5}
+          />
+
+          <StatCard
+            icon={<WalletIcon className="h-5 w-5 text-emerald-600" />}
+            label="Saldo disponível"
+            value={
+              walletBusy && !Number.isFinite(Number(walletAvailableCents))
+                ? "…"
+                : fmtBRL(kpis.balanceCents)
+            }
+            highlight
+            loading={loadingMe}
+            index={6}
+          />
+
+          <StatCard
+            icon={<Clock className="h-5 w-5 text-orange-500" />}
+            label="Saques processando"
+            value={kpis.withdrawalsProcessing}
+            subtitle="previsão: 1–2 dias úteis"
+            loading={withdrawsBusy}
+            index={7}
+          />
+        </section>
 
         {/* ✅ ANALYTICS */}
         <AnalyticsSection offers={offers} />
@@ -727,9 +976,7 @@ export default function Dashboard() {
                   <div className="divide-y divide-zinc-100">
                     {kpis.last5.map((o) => {
                       const publicUrl = `/p/${o.publicToken}`;
-                      const isPaid = ["PAID", "CONFIRMED"].includes(
-                        normStatus(o.status),
-                      );
+                      const isPaid = isPaidOffer(o);
 
                       return (
                         <div key={o._id} className="p-5 hover:bg-zinc-50">
@@ -859,7 +1106,7 @@ export default function Dashboard() {
                   </div>
                 ) : (
                   <div className="divide-y divide-zinc-50">
-                    {withdraws.map((w) => (
+                    {withdraws.slice(0, 5).map((w) => (
                       <div
                         key={w.externalId}
                         className="p-4 flex justify-between items-center group"
@@ -900,7 +1147,7 @@ export default function Dashboard() {
                   Caixa de Hoje
                 </p>
                 <div className="text-xl font-bold">
-                  {loading ? "..." : fmtBRL(kpis.paidTodayValue)}
+                  {loading ? "..." : fmtBRL(kpis.paidTodayCents)}
                 </div>
               </div>
               <div className="h-10 w-10 bg-zinc-800 rounded-xl flex items-center justify-center">
