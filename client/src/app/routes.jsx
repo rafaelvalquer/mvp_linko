@@ -27,6 +27,9 @@ import BillingPlans from "../pages/BillingPlans.jsx";
 import BillingSuccess from "../pages/BillingSuccess.jsx";
 import BillingCancel from "../pages/BillingCancel.jsx";
 
+// ✅ NOVO: Relatórios
+import Reports from "../pages/Reports.jsx";
+
 export const router = createBrowserRouter(
   [
     { path: "/login", element: <Login /> },
@@ -91,6 +94,17 @@ export const router = createBrowserRouter(
         </RequireAuth>
       ),
     },
+
+    // ✅ NOVO: Reports (área logada)
+    {
+      path: "/reports",
+      element: (
+        <RequireAuth>
+          <Reports />
+        </RequireAuth>
+      ),
+    },
+
     {
       path: "/settings/agenda",
       element: (

@@ -3,6 +3,9 @@ import React, { useMemo, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../app/AuthContext.jsx";
 
+// ✅ NOVO: ícone lucide
+import { FileText } from "lucide-react";
+
 // Ícones SVG Natos (Mesmo design, sem dependências)
 const Icons = {
   Dashboard: () => (
@@ -88,14 +91,12 @@ const Icons = {
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      {/* seta para baixo + linha (saque/retirada) */}
       <path d="M12 3v10" />
       <path d="m8 11 4 4 4-4" />
       <path d="M5 21h14" />
     </svg>
   ),
 
-  // ✅ Ícone de "Configurações" sem SVG (evita corte/risco)
   Settings: () => (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -158,13 +159,10 @@ export default function Sidebar() {
   const nav = useNavigate();
   const loc = useLocation();
 
-  // ✅ Só marca "Propostas" como ativa quando estiver EXATAMENTE em /offers
   const isOffersRoot = useMemo(
     () => loc.pathname === "/offers",
     [loc.pathname],
   );
-
-  // ✅ Mantém o grupo aberto quando estiver dentro de /offers/*
   const isOffersAny = useMemo(
     () => loc.pathname === "/offers" || loc.pathname.startsWith("/offers/"),
     [loc.pathname],
@@ -180,7 +178,6 @@ export default function Sidebar() {
 
   return (
     <div className="flex flex-col gap-4 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
-      {/* Header */}
       <div className="flex items-center justify-between px-2 pb-1">
         <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">
           Painel
@@ -195,7 +192,6 @@ export default function Sidebar() {
           Dashboard
         </Item>
 
-        {/* ✅ Grupo: Propostas (ativa só em /offers; Nova proposta ativa só em /offers/new) */}
         <div className="pt-1">
           <button
             type="button"
@@ -229,7 +225,6 @@ export default function Sidebar() {
             }`}
           >
             <div className="space-y-1">
-              {/* ✅ remove ícone ao lado de "Nova proposta" */}
               <Item to="/offers/new" indent>
                 Nova proposta
               </Item>
@@ -241,7 +236,14 @@ export default function Sidebar() {
           Agenda
         </Item>
 
-        {/* Store (Premium) */}
+        {/* ✅ NOVO: Relatórios */}
+        <Item
+          to="/reports"
+          icon={() => <FileText size={18} className="text-current" />}
+        >
+          Relatórios
+        </Item>
+
         {perms.store && (
           <div className="pt-2">
             <button
@@ -282,7 +284,6 @@ export default function Sidebar() {
           </div>
         )}
 
-        {/* ✅ Configurações da Agenda (item simples, sem mexer em perms.store) */}
         <div className="pt-2">
           <Item to="/settings/agenda" icon={Icons.Settings}>
             Configurações da Agenda
@@ -294,7 +295,6 @@ export default function Sidebar() {
         Saques
       </Item>
 
-      {/* Footer Link Público */}
       <div className="mt-auto pt-4 border-t border-zinc-50">
         <div className="rounded-xl bg-zinc-50 p-3 border border-zinc-100">
           <div className="text-[9px] font-bold uppercase text-zinc-400 mb-1">

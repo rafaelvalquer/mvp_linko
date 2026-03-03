@@ -1,4 +1,3 @@
-// server/src/models/PixDebit.js
 import mongoose from "mongoose";
 
 const { Schema } = mongoose;
@@ -43,9 +42,10 @@ const PixDebitSchema = new Schema(
 
     reason: { type: String, default: "" },
 
-    // compat legado
-    eventId: { type: String, default: null, index: true },
-    cycleKey: { type: String, default: null, index: true }, // YYYY-MM-DD (uso atual)
+    // ✅ compat legado
+    // IMPORTANTE: não usar default:null para não “participar” do unique+sparse
+    eventId: { type: String, default: undefined, index: true },
+    cycleKey: { type: String, default: undefined, index: true }, // YYYY-MM-DD (uso atual)
 
     // idempotência forte por workspace
     key: { type: String, required: true },
@@ -69,6 +69,15 @@ PixDebitSchema.index({ workspaceId: 1, kind: 1, createdAt: -1 });
 
 PixDebitSchema.pre("validate", function (next) {
   try {
+    // ✅ garanta que eventId vazio vire “ausente”
+    if (
+      this.eventId === null ||
+      this.eventId === "" ||
+      this.eventId === false
+    ) {
+      this.eventId = undefined;
+    }
+
     if (!this.key) {
       const ev = String(this.eventId || "").trim();
       if (ev) this.key = `legacy:event:${ev}`;

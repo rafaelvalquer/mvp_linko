@@ -551,6 +551,12 @@ router.post("/withdraw/create", async (req, res, next) => {
             { _id: tenantId, ownerUserId },
             { $inc: { walletAvailableCents: amountCents } },
           ).catch(() => {});
+          console.log(
+            "[pixdebit][dup] keyPattern",
+            e?.keyPattern,
+            "keyValue",
+            e?.keyValue,
+          );
           return res.status(409).json({
             ok: false,
             error: "Conflito ao registrar saque. Tente novamente.",
