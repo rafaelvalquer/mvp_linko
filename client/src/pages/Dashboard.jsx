@@ -725,6 +725,7 @@ export default function Dashboard() {
       pendingTrend,
 
       volumeCur7Cents,
+      volumePrev7Cents,
 
       paidTodayCents,
 
@@ -758,38 +759,30 @@ export default function Dashboard() {
     <Shell>
       <div className="mx-auto max-w-7xl px-4 py-6 space-y-6">
         {/* --- INÍCIO DO NOVO HEADER PREMIUM --- */}
-        <div className="relative mb-8">
-          <div className="bg-white border border-zinc-200 rounded-3xl p-5 sm:p-6 shadow-sm ring-1 ring-zinc-50">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-              {/* Lado Esquerdo: Título e Status */}
-              <div className="space-y-2">
+        <div className="relative">
+          <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/10 via-teal-500/5 to-blue-500/10 rounded-3xl blur-2xl" />
+
+          <div className="relative rounded-3xl border border-gray-200 bg-white/80 backdrop-blur-xl p-6 sm:p-8 shadow-xl">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+              {/* LEFT */}
+              <div className="space-y-3 min-w-0">
                 <div className="flex flex-wrap items-center gap-3">
-                  <h1 className="text-2xl sm:text-3xl font-bold text-zinc-900 tracking-tight">
+                  <h1 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
                     Dashboard
                   </h1>
 
                   {lastUpdate && (
-                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-100">
+                    <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200">
                       <span className="relative flex h-2 w-2">
                         <span
-                          className={`animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 ${loading ? "hidden" : ""}`}
-                        ></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                          className={`animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 ${
+                            loading ? "hidden" : ""
+                          }`}
+                        />
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
                       </span>
-                      <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider flex items-center gap-1">
-                        <svg
-                          className={`w-3 h-3 ${loading ? "animate-spin" : ""}`}
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth="2"
-                            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                          />
-                        </svg>
+
+                      <span className="text-xs font-bold text-emerald-700">
                         {loading
                           ? "Sincronizando..."
                           : `Atualizado: ${lastUpdate}`}
@@ -797,20 +790,20 @@ export default function Dashboard() {
                     </div>
                   )}
                 </div>
-                <p className="text-zinc-500 text-sm sm:text-base leading-relaxed max-w-2xl">
-                  Resumo rápido das suas propostas, agendamentos e saques.
+
+                <p className="text-gray-600 text-sm">
+                  Visão geral de sua plataforma em tempo real
                 </p>
               </div>
 
-              {/* Lado Direito: Ações */}
-              <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
-                <div className="flex items-center gap-2 w-full sm:w-auto">
+              {/* RIGHT (actions) */}
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full lg:w-auto">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto">
                   <Button
-                    variant="secondary"
-                    size="sm"
+                    variant="outline"
                     onClick={load}
                     disabled={loading}
-                    className="flex-1 sm:flex-none justify-center items-center gap-2 h-11 px-4 active:scale-95 transition-all"
+                    className="gap-2 h-11 px-4 active:scale-95 transition-all"
                   >
                     <span className={`${loading ? "animate-spin" : ""}`}>
                       <Icons.Refresh />
@@ -821,29 +814,46 @@ export default function Dashboard() {
                   </Button>
 
                   <Button
-                    variant="secondary"
-                    size="sm"
                     onClick={() => setWithdrawOpen(true)}
-                    className="flex-1 sm:flex-none justify-center items-center gap-2 h-11 px-4 active:scale-95 transition-all"
+                    className="gap-2 h-11 px-4 active:scale-95 transition-all bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600"
                   >
                     <Icons.Withdraw />
-                    <span className="font-semibold">Saque</span>
+                    <span className="font-semibold">Sacar</span>
                   </Button>
-                </div>
 
-                <Link to="/offers/new" className="w-full sm:w-auto">
-                  <Button
-                    size="sm"
-                    className="w-full sm:w-auto justify-center items-center gap-2 h-11 px-6 bg-zinc-900 hover:bg-zinc-800 text-white shadow-md shadow-zinc-200 active:scale-95 transition-all font-bold"
-                  >
-                    <Icons.Plus />
-                    Nova proposta
-                  </Button>
-                </Link>
+                  <Link to="/offers/new" className="w-full sm:w-auto">
+                    <Button
+                      size="sm"
+                      className="
+                w-full sm:w-auto
+                justify-center items-center gap-2
+                h-11 px-6
+                font-bold
+                rounded-xl
+                text-white
+                bg-gradient-to-r from-emerald-600 to-teal-600
+                hover:from-emerald-700 hover:to-teal-700
+                shadow-lg shadow-emerald-200/60
+                ring-1 ring-emerald-500/20
+                active:scale-95 transition-all
+                focus:outline-none focus:ring-2 focus:ring-emerald-300
+                relative overflow-hidden
+              "
+                    >
+                      {/* shine */}
+                      <span className="pointer-events-none absolute inset-0 opacity-0 hover:opacity-100 transition-opacity">
+                        <span className="absolute -left-10 top-0 h-full w-24 rotate-12 bg-white/20 blur-md" />
+                      </span>
+                      <Icons.Plus />
+                      Nova proposta
+                    </Button>
+                  </Link>
+                </div>
               </div>
             </div>
           </div>
         </div>
+
         {/* --- FIM DO NOVO HEADER PREMIUM --- */}
 
         {error && (
@@ -902,6 +912,11 @@ export default function Dashboard() {
             icon={<DollarSign className="h-5 w-5 text-emerald-500" />}
             label="Volume (R$)"
             value={fmtBRL(kpis.volumeCur7Cents)}
+            trend={{
+              label: "vs semana anterior",
+              value: kpis.volumeTrendPct,
+              format: "pct",
+            }}
             loading={loading}
             index={3}
           />

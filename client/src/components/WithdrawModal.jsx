@@ -1,4 +1,10 @@
 // src/components/WithdrawModal.jsx
+// Design Philosophy: Modern, compact, and efficient
+// - Uses tabs to organize settings and manual withdrawal
+// - Optimized spacing and layout to fit on smaller screens
+// - Smooth animations and visual feedback
+// - Gradient accents and refined shadows for polish
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Button from "./appui/Button.jsx";
 import { Input } from "./appui/Input.jsx";
@@ -69,9 +75,7 @@ function parseBRLToCents(input) {
 }
 
 export default function WithdrawModal({ open, onClose, onCreated }) {
-  // === ESTADOS ===
-  const [activeTab, setActiveTab] = useState("manual"); // 'manual' | 'pix' | 'auto'
-
+  // payout settings
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsErr, setSettingsErr] = useState("");
 
@@ -87,13 +91,19 @@ export default function WithdrawModal({ open, onClose, onCreated }) {
   const [savingKey, setSavingKey] = useState(false);
   const [savingAuto, setSavingAuto] = useState(false);
 
+  // saque manual
   const [amountBRL, setAmountBRL] = useState("");
   const [minNetCents, setMinNetCents] = useState(350);
 
+  // status do withdraw
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+
   const [withdraw, setWithdraw] = useState(null);
   const pollRef = useRef(null);
+
+  // Tab state
+  const [activeTab, setActiveTab] = useState("withdraw");
 
   const amountCents = useMemo(() => parseBRLToCents(amountBRL), [amountBRL]);
   const autoMinCents = useMemo(
@@ -114,7 +124,6 @@ export default function WithdrawModal({ open, onClose, onCreated }) {
     return true;
   }, [hasPixKey, amountCents, minNetCents, walletAvailableCents]);
 
-  // === FUNÇÕES ===
   const stopPolling = useCallback(() => {
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = null;
@@ -153,7 +162,6 @@ export default function WithdrawModal({ open, onClose, onCreated }) {
       setWithdraw(null);
       setAmountBRL("");
       setPayoutPixKeyInput("");
-      setActiveTab("manual"); // Resetar a aba ao fechar
       return;
     }
 
@@ -162,7 +170,9 @@ export default function WithdrawModal({ open, onClose, onCreated }) {
         const cfg = await getWithdrawConfig();
         if (Number.isFinite(Number(cfg?.minNetCents)))
           setMinNetCents(Number(cfg.minNetCents));
-      } catch {}
+      } catch {
+        // mantém defaults
+      }
     })();
 
     loadSettings();
@@ -172,6 +182,7 @@ export default function WithdrawModal({ open, onClose, onCreated }) {
   const pollStatus = useCallback(
     (externalId) => {
       stopPolling();
+
       pollRef.current = setInterval(async () => {
         try {
           const w = await getWithdraw(externalId);
@@ -184,7 +195,9 @@ export default function WithdrawModal({ open, onClose, onCreated }) {
               loadSettings();
             }
           }
-        } catch {}
+        } catch {
+          // mantém polling
+        }
       }, 2500);
     },
     [stopPolling, onCreated, loadSettings],
@@ -194,10 +207,12 @@ export default function WithdrawModal({ open, onClose, onCreated }) {
     try {
       setSettingsErr("");
       setSavingKey(true);
+
       const d = await updatePayoutSettings({
         payoutPixKeyType,
         payoutPixKey: payoutPixKeyInput,
       });
+
       setPayoutPixKeyType(String(d?.payoutPixKeyType || payoutPixKeyType));
       setPayoutPixKeyMasked(String(d?.payoutPixKeyMasked || ""));
       setWalletAvailableCents(Number(d?.walletAvailableCents || 0));
@@ -213,10 +228,12 @@ export default function WithdrawModal({ open, onClose, onCreated }) {
     try {
       setSettingsErr("");
       setSavingAuto(true);
+
       const d = await updatePayoutSettings({
         autoPayoutEnabled: !!nextEnabled,
         autoPayoutMinCents: Number.isFinite(autoMinCents) ? autoMinCents : 0,
       });
+
       setAutoPayoutEnabled(!!d?.autoPayoutEnabled);
       setWalletAvailableCents(Number(d?.walletAvailableCents || 0));
     } catch (e) {
@@ -230,19 +247,21 @@ export default function WithdrawModal({ open, onClose, onCreated }) {
     try {
       setErr("");
       setBusy(true);
+
       const d = await createWithdraw({
         amountCents,
         description: "Saque da LuminorPay",
       });
-      const w = d?.withdraw;
-      setWithdraw(w || null);
+
+      setWithdraw(d || null);
+
       await loadSettings();
 
-      if (w?.status && !isTerminal(w.status)) {
-        pollStatus(w.externalId);
+      if (d?.status && !isTerminal(d.status)) {
+        pollStatus(d.externalId);
       } else {
         setBusy(false);
-        onCreated?.(w);
+        onCreated?.(d);
       }
     } catch (e) {
       setBusy(false);
@@ -258,368 +277,382 @@ export default function WithdrawModal({ open, onClose, onCreated }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xl p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-label="Saque"
       onClick={() => (!busy ? onClose?.() : null)}
     >
       <div
-        className="w-full max-w-xl bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] transition-all duration-300 scale-95"
+        className="w-full max-w-lg rounded-2xl bg-white shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* HEADER MODERNO */}
-        <div className="flex items-center justify-between border-b px-6 py-5 bg-zinc-50">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-emerald-100 flex items-center justify-center text-3xl shadow-inner">
-              💸
-            </div>
-            <div>
-              <div className="text-2xl font-semibold text-zinc-900 tracking-tight">
-                Saque
-              </div>
-              <p className="text-sm text-zinc-600 -mt-0.5">
-                Configure Pix e retire seu saldo
-              </p>
-            </div>
+        {/* Header */}
+        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border-b border-emerald-100 px-5 py-4 flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-emerald-900">Saque</h2>
+            <p className="mt-1 text-xs text-emerald-700">
+              Gerencie sua carteira e saques
+            </p>
           </div>
-
           <button
+            className="rounded-lg p-1.5 text-emerald-600 hover:bg-emerald-100 transition-colors"
             onClick={() => (!busy ? onClose?.() : null)}
-            className="w-10 h-10 flex items-center justify-center rounded-2xl hover:bg-zinc-200 text-zinc-500 hover:text-zinc-700 transition-all active:scale-90"
-            disabled={busy}
+            type="button"
             aria-label="Fechar"
           >
-            ✕
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
           </button>
         </div>
 
-        {/* CONTEÚDO ROLÁVEL */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {/* WALLET EM DESTAQUE */}
-          <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="uppercase text-xs font-semibold tracking-widest text-emerald-700">
-                  Saldo disponível
-                </div>
-                <div className="mt-1 text-4xl font-bold text-zinc-900 tracking-tighter">
-                  {settingsLoading ? "R$ •••" : fmtBRL(walletAvailableCents)}
-                </div>
-              </div>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={loadSettings}
-                disabled={settingsLoading || busy}
-              >
-                Atualizar
-              </Button>
+        {/* Wallet Balance Card */}
+        <div className="px-5 py-4 bg-gradient-to-br from-emerald-500 to-teal-600 text-white">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-medium opacity-90">Saldo disponível</p>
+              <p className="mt-1 text-2xl font-bold">
+                {settingsLoading ? "…" : fmtBRL(walletAvailableCents)}
+              </p>
+              <p className="mt-1 text-xs opacity-75">
+                Liberado após confirmação do pagamento
+              </p>
             </div>
-            <p className="mt-3 text-xs text-zinc-500">
-              Liberado após confirmação do pagamento (Pix pago)
-            </p>
-          </div>
-
-          {settingsErr && (
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-              {settingsErr}
-            </div>
-          )}
-
-          {/* TAB NAVIGATION */}
-          <div className="flex p-1 bg-zinc-100 rounded-xl">
             <button
-              className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${
-                activeTab === "manual"
-                  ? "bg-white shadow text-zinc-900"
-                  : "text-zinc-500 hover:text-zinc-700"
-              }`}
-              onClick={() => setActiveTab("manual")}
-              disabled={busy}
+              className="px-3 py-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors text-sm font-medium"
+              type="button"
+              onClick={loadSettings}
+              disabled={settingsLoading || busy}
             >
-              Saque Manual
-            </button>
-            <button
-              className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${
-                activeTab === "pix"
-                  ? "bg-white shadow text-zinc-900"
-                  : "text-zinc-500 hover:text-zinc-700"
-              }`}
-              onClick={() => setActiveTab("pix")}
-              disabled={busy}
-            >
-              Chave Pix
-            </button>
-            <button
-              className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${
-                activeTab === "auto"
-                  ? "bg-white shadow text-zinc-900"
-                  : "text-zinc-500 hover:text-zinc-700"
-              }`}
-              onClick={() => setActiveTab("auto")}
-              disabled={busy}
-            >
-              Automático
+              Atualizar
             </button>
           </div>
+        </div>
 
-          {/* CONTEÚDO DAS ABAS */}
+        {/* Tabs */}
+        <div className="flex border-b border-gray-200 px-5 bg-gray-50">
+          <button
+            onClick={() => setActiveTab("withdraw")}
+            className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 ${
+              activeTab === "withdraw"
+                ? "border-emerald-500 text-emerald-600 bg-white"
+                : "border-transparent text-gray-600 hover:text-gray-900"
+            }`}
+          >
+            Saque
+          </button>
+          <button
+            onClick={() => setActiveTab("settings")}
+            className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 ${
+              activeTab === "settings"
+                ? "border-emerald-500 text-emerald-600 bg-white"
+                : "border-transparent text-gray-600 hover:text-gray-900"
+            }`}
+          >
+            Configurações
+          </button>
+        </div>
 
-          {/* TAB: SAQUE MANUAL */}
-          {activeTab === "manual" && (
-            <div className="rounded-2xl border border-zinc-200 p-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <div className="font-semibold text-zinc-900 text-lg mb-1">
-                Solicitar Saque
-              </div>
-              <p className="text-xs text-zinc-500 mb-5">
-                Mínimo: {fmtBRL(minNetCents)}
-              </p>
-
-              <div className="grid grid-cols-1 gap-5 sm:grid-cols-5">
-                <div className="sm:col-span-3">
-                  <div className="text-xs font-semibold text-zinc-600 mb-1">
-                    Valor (R$)
-                  </div>
-                  <Input
-                    value={amountBRL}
-                    onChange={(e) => setAmountBRL(e.target.value)}
-                    placeholder="100,00"
-                    disabled={locked}
-                    inputMode="decimal"
-                    className="text-lg py-3"
-                  />
-                  {!hasPixKey && (
-                    <p className="mt-2 text-xs text-amber-800">
-                      Cadastre uma chave Pix antes
-                    </p>
-                  )}
-                </div>
-
-                <div className="sm:col-span-2 rounded-2xl bg-zinc-50 border p-5">
-                  <div className="text-xs text-zinc-500">Você receberá</div>
-                  <div className="mt-1 text-3xl font-bold text-zinc-900">
-                    {fmtBRL(amountCents)}
-                  </div>
-                  <div className="mt-3 text-sm text-zinc-600">
-                    Para:{" "}
-                    {hasPixKey ? (
-                      <span className="font-semibold">
-                        {payoutPixKeyType} {payoutPixKeyMasked}
-                      </span>
-                    ) : (
-                      <span className="text-amber-800">sem chave</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {withdraw && (
-                <div className="mt-6 pt-6 border-t">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <div className="text-xs text-zinc-600">Status</div>
-                      <div className="text-lg font-semibold text-zinc-900">
-                        {statusLabel(withdraw.status)}
-                      </div>
-                    </div>
-                    {withdraw.receiptUrl &&
-                      normalizeStatus(withdraw.status) === "COMPLETE" && (
-                        <Button
-                          variant="secondary"
-                          onClick={() =>
-                            window.open(
-                              withdraw.receiptUrl,
-                              "_blank",
-                              "noopener,noreferrer",
-                            )
-                          }
-                        >
-                          Ver comprovante
-                        </Button>
-                      )}
-                  </div>
-                </div>
-              )}
-
-              {err && (
-                <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-                  {err}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TAB: CHAVE PIX */}
-          {activeTab === "pix" && (
-            <div className="rounded-2xl border border-zinc-200 p-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <div className="text-lg font-semibold text-zinc-900 mb-1">
-                Conta Pix
-              </div>
-              <p className="text-xs text-zinc-500 mb-4">
-                Cadastre sua chave para receber saques
-              </p>
-
-              {payoutPixKeyMasked ? (
-                <div className="mb-5 rounded-xl bg-emerald-50 border border-emerald-100 p-4">
-                  <div className="text-xs font-semibold text-emerald-700">
-                    ✓ Chave cadastrada
-                  </div>
-                  <div className="mt-1 font-semibold text-zinc-900">
-                    {payoutPixKeyType}: {payoutPixKeyMasked}
-                  </div>
-                </div>
-              ) : (
-                <div className="mb-5 rounded-xl bg-amber-50 p-4 text-amber-800 text-sm border border-amber-100">
-                  Nenhuma chave Pix cadastrada.
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 gap-4">
-                <div>
-                  <div className="text-xs font-semibold text-zinc-600 mb-1">
-                    Tipo de chave
-                  </div>
-                  <select
-                    className="w-full rounded-2xl border border-zinc-300 bg-white px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                    value={payoutPixKeyType}
-                    onChange={(e) => setPayoutPixKeyType(e.target.value)}
-                    disabled={savingKey || busy}
-                  >
-                    {["CPF", "CNPJ", "PHONE", "EMAIL", "EVP"].map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <div className="text-xs font-semibold text-zinc-600 mb-1">
-                    Chave Pix
-                  </div>
-                  <Input
-                    value={payoutPixKeyInput}
-                    onChange={(e) => setPayoutPixKeyInput(e.target.value)}
-                    placeholder="Digite a chave"
-                    disabled={savingKey || busy}
-                  />
-                </div>
-              </div>
-
-              <div className="mt-5 flex gap-3">
-                <Button
-                  variant="secondary"
-                  className="flex-1"
-                  onClick={() => setPayoutPixKeyInput("")}
-                  disabled={savingKey || busy || !payoutPixKeyInput}
-                >
-                  Limpar
-                </Button>
-                <Button
-                  className="flex-1"
-                  onClick={onSavePixKey}
-                  disabled={savingKey || busy || !payoutPixKeyInput?.trim()}
-                >
-                  {savingKey ? "Salvando…" : "Salvar chave"}
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* TAB: AUTOMÁTICO */}
-          {activeTab === "auto" && (
-            <div className="rounded-2xl border border-zinc-200 p-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <div className="text-lg font-semibold text-zinc-900 mb-1">
-                Transferência automática
-              </div>
-              <p className="text-xs text-zinc-500 mb-4">
-                Saque automático ao receber Pix
-              </p>
-
-              <div className="flex items-center justify-between rounded-2xl border bg-zinc-50 p-4 mb-5">
-                <div>
-                  <div className="font-medium">
-                    Ativar transferência automática
-                  </div>
-                  {!hasPixKey && (
-                    <div className="text-amber-700 text-xs mt-1">
-                      Cadastre uma chave Pix primeiro
-                    </div>
-                  )}
-                </div>
-
-                <button
-                  type="button"
-                  disabled={!hasPixKey || savingAuto || busy}
-                  onClick={() => onSaveAuto(!autoPayoutEnabled)}
-                  className={`relative h-8 w-14 rounded-full border-2 transition-all duration-300 ${
-                    autoPayoutEnabled
-                      ? "bg-emerald-500 border-emerald-500"
-                      : "bg-zinc-200 border-zinc-300"
-                  }`}
-                >
-                  <span
-                    className={`absolute left-0.5 top-0.5 h-7 w-7 rounded-full bg-white shadow transition-all duration-300 ${
-                      autoPayoutEnabled ? "translate-x-6" : ""
-                    }`}
-                  />
-                </button>
-              </div>
-
+        {/* Content */}
+        <div className="px-5 py-4 max-h-96 overflow-y-auto">
+          {/* Withdraw Tab */}
+          {activeTab === "withdraw" && (
+            <div className="space-y-4 animate-fadeIn">
               <div>
-                <div className="text-xs font-semibold text-zinc-600 mb-1">
-                  Valor mínimo (opcional)
-                </div>
+                <label className="block text-xs font-semibold text-gray-700 mb-2">
+                  Valor (R$)
+                </label>
                 <Input
-                  value={autoPayoutMinBRL}
-                  onChange={(e) => setAutoPayoutMinBRL(e.target.value)}
-                  placeholder="0,00"
-                  disabled={savingAuto || busy || !hasPixKey}
+                  value={amountBRL}
+                  onChange={(e) => setAmountBRL(e.target.value)}
+                  placeholder="Ex.: 100,00"
+                  disabled={locked}
                   inputMode="decimal"
+                  className="w-full"
                 />
-                <p className="mt-2 text-[11px] text-zinc-500">
-                  Deixe em branco para qualquer valor
+                {!hasPixKey ? (
+                  <p className="mt-2 text-xs text-amber-700 font-medium">
+                    ⚠️ Cadastre uma chave Pix antes de sacar
+                  </p>
+                ) : null}
+                {hasPixKey && amountCents > walletAvailableCents ? (
+                  <p className="mt-2 text-xs text-amber-700 font-medium">
+                    ⚠️ Saldo insuficiente. Disponível:{" "}
+                    {fmtBRL(walletAvailableCents)}
+                  </p>
+                ) : null}
+              </div>
+
+              {/* Preview Card */}
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                <p className="text-xs text-emerald-700 font-medium">
+                  Você receberá
+                </p>
+                <p className="mt-1 text-xl font-bold text-emerald-900">
+                  {fmtBRL(amountCents)}
+                </p>
+                <p className="mt-2 text-xs text-emerald-700">
+                  Destino:{" "}
+                  {hasPixKey ? (
+                    <span className="font-semibold">
+                      {payoutPixKeyType} {payoutPixKeyMasked}
+                    </span>
+                  ) : (
+                    <span className="text-amber-700 font-semibold">
+                      sem chave Pix
+                    </span>
+                  )}
                 </p>
               </div>
 
-              <div className="mt-6">
-                <Button
-                  variant="secondary"
-                  className="w-full"
-                  onClick={() => onSaveAuto(autoPayoutEnabled)}
-                  disabled={savingAuto || busy || !hasPixKey}
-                >
-                  {savingAuto ? "Salvando…" : "Salvar configuração"}
-                </Button>
+              {/* Status Card */}
+              {withdraw ? (
+                <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-xs text-blue-700 font-medium">
+                        Status
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-blue-900">
+                        {statusLabel(withdraw.status)}
+                      </p>
+                    </div>
+                    {withdraw.receiptUrl &&
+                    normalizeStatus(withdraw.status) === "COMPLETE" ? (
+                      <button
+                        className="px-3 py-1 rounded-lg bg-blue-100 hover:bg-blue-200 text-blue-700 text-xs font-medium transition-colors"
+                        type="button"
+                        onClick={() =>
+                          window.open(
+                            withdraw.receiptUrl,
+                            "_blank",
+                            "noopener,noreferrer",
+                          )
+                        }
+                      >
+                        Comprovante
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Error */}
+              {err ? (
+                <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-800 font-medium">
+                  ⚠️ {err}
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          {/* Settings Tab */}
+          {activeTab === "settings" && (
+            <div className="space-y-4 animate-fadeIn">
+              {/* Pix Key Section */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-gray-900">
+                  Chave Pix
+                </h3>
+
+                {payoutPixKeyMasked ? (
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                    <p className="text-xs text-emerald-700 font-medium">
+                      Cadastrada
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-emerald-900">
+                      {payoutPixKeyType}: {payoutPixKeyMasked}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 font-medium">
+                    Nenhuma chave Pix cadastrada
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                      Tipo
+                    </label>
+                    <select
+                      className="w-full rounded-lg border border-gray-300 bg-white px-2 py-2 text-xs outline-none focus:ring-2 focus:ring-emerald-300 disabled:bg-gray-100"
+                      value={payoutPixKeyType}
+                      onChange={(e) => setPayoutPixKeyType(e.target.value)}
+                      disabled={savingKey || busy}
+                    >
+                      {["CPF", "CNPJ", "PHONE", "EMAIL", "EVP"].map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                      Chave
+                    </label>
+                    <Input
+                      value={payoutPixKeyInput}
+                      onChange={(e) => setPayoutPixKeyInput(e.target.value)}
+                      placeholder="Pix"
+                      disabled={savingKey || busy}
+                      className="text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-2 justify-end">
+                  <button
+                    className="px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 text-xs font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
+                    type="button"
+                    onClick={() => setPayoutPixKeyInput("")}
+                    disabled={savingKey || busy || !payoutPixKeyInput}
+                  >
+                    Limpar
+                  </button>
+                  <Button
+                    type="button"
+                    onClick={onSavePixKey}
+                    disabled={
+                      savingKey ||
+                      busy ||
+                      !String(payoutPixKeyInput || "").trim()
+                    }
+                    className="text-xs"
+                  >
+                    {savingKey ? "Salvando…" : "Salvar"}
+                  </Button>
+                </div>
               </div>
+
+              {/* Auto Transfer Section */}
+              <div className="space-y-3 border-t border-gray-200 pt-4">
+                <h3 className="text-sm font-semibold text-gray-900">
+                  Transferência automática
+                </h3>
+
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                  <div className="flex-1">
+                    <p className="text-xs font-semibold text-gray-700">
+                      Transferir ao receber pagamentos
+                    </p>
+                    {!hasPixKey ? (
+                      <p className="mt-1 text-xs text-amber-700">
+                        Cadastre uma chave Pix para habilitar
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={!hasPixKey || savingAuto || busy}
+                    onClick={() => onSaveAuto(!autoPayoutEnabled)}
+                    className={`h-7 w-12 rounded-full border-2 transition-all ${
+                      autoPayoutEnabled
+                        ? "bg-emerald-500 border-emerald-500"
+                        : "bg-gray-300 border-gray-300"
+                    } ${!hasPixKey || savingAuto || busy ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                    aria-label="Alternar transferência automática"
+                  >
+                    <span
+                      className={`block h-6 w-6 rounded-full bg-white shadow transition-transform ${
+                        autoPayoutEnabled ? "translate-x-5" : "translate-x-0"
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    Valor mínimo (opcional)
+                  </label>
+                  <Input
+                    value={autoPayoutMinBRL}
+                    onChange={(e) => setAutoPayoutMinBRL(e.target.value)}
+                    placeholder="Ex.: 0,00"
+                    disabled={savingAuto || busy || !hasPixKey}
+                    inputMode="decimal"
+                    className="text-xs"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Só transfere quando o Pix for ≥ ao mínimo
+                  </p>
+                </div>
+
+                <div className="flex justify-end">
+                  <Button
+                    variant="secondary"
+                    type="button"
+                    onClick={() => onSaveAuto(autoPayoutEnabled)}
+                    disabled={savingAuto || busy || !hasPixKey}
+                    className="text-xs"
+                  >
+                    {savingAuto ? "Salvando…" : "Salvar"}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Settings Error */}
+              {settingsErr ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800 font-medium">
+                  ⚠️ {settingsErr}
+                </div>
+              ) : null}
             </div>
           )}
         </div>
 
-        {/* FOOTER FIXO */}
-        <div className="border-t px-6 py-5 flex gap-3 bg-white">
+        {/* Footer Actions */}
+        <div className="flex gap-2 justify-end px-5 py-4 border-t border-gray-200 bg-gray-50">
           <Button
             variant="ghost"
-            className={activeTab === "manual" ? "flex-1" : "w-full"}
+            type="button"
             onClick={onClose}
             disabled={busy}
+            className="text-sm"
           >
             Fechar
           </Button>
-
-          {/* Botão de confirmar saque só aparece na aba de saque manual */}
-          {activeTab === "manual" && (
+          {activeTab === "withdraw" && (
             <Button
-              className="flex-1 font-semibold"
+              type="button"
               onClick={onConfirmWithdraw}
               disabled={!canWithdraw || busy}
+              className="text-sm"
             >
               {busy ? "Processando…" : "Confirmar saque"}
             </Button>
           )}
         </div>
       </div>
+
+      <style>{`
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+            transform: translateY(4px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        .animate-fadeIn {
+          animation: fadeIn 0.2s ease-out;
+        }
+      `}</style>
     </div>
   );
 }
