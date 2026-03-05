@@ -19,7 +19,7 @@ function fmtBRL(cents) {
 }
 
 const API_BASE = (
-  import.meta.env.VITE_API_URL || "http://localhost:8011/api"
+  import.meta.env.VITE_API_BASE || "http://localhost:8011/api"
 ).replace(/\/$/, "");
 
 async function sendProof(token, file, note) {
