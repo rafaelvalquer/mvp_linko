@@ -8,7 +8,10 @@ import Booking from "../models/Booking.js";
 import { ensureAuth, tenantFromUser } from "../middleware/auth.js";
 import { Client } from "../models/Client.js";
 import { readPaymentProofBase64 } from "../services/storageLocal.js";
-import { notifyPaymentConfirmed } from "../services/whatsappNotify.js";
+import {
+  notifyPaymentConfirmed,
+  notifyPaymentRejected,
+} from "../services/whatsappNotify.js";
 
 const r = Router();
 
@@ -564,8 +567,31 @@ r.post(
       { strict: false },
     );
 
+    const publicUrl = String(req.body?.publicUrl || "").trim();
+
     const updated = await Offer.findById(offer._id).lean();
-    return res.json({ ok: true, offer: updated });
+
+    let notify = {
+      ok: false,
+      status: "SKIPPED",
+      reason: "OFFER_FLAG_DISABLED",
+    };
+    if (updated?.notifyWhatsAppOnPaid === true) {
+      try {
+        notify = await notifyPaymentRejected(updated._id, {
+          reason,
+          publicUrl,
+        });
+      } catch (e) {
+        notify = {
+          ok: false,
+          status: "FAILED",
+          error: { message: String(e?.message || "Falha ao notificar") },
+        };
+      }
+    }
+
+    return res.json({ ok: true, offer: updated, notify });
   }),
 );
 

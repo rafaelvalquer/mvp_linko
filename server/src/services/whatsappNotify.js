@@ -420,3 +420,175 @@ export async function notifyPaymentConfirmed(offerId) {
     return { ok: false, status: "FAILED", error: err };
   }
 }
+
+function fmtMoneyBRLFromCentsSafe(cents) {
+  const v = Number(cents);
+  if (!Number.isFinite(v)) return "";
+  try {
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+    }).format(v / 100);
+  } catch {
+    const s = (v / 100).toFixed(2).replace(".", ",");
+    return `R$ ${s}`;
+  }
+}
+
+function buildRejectedMessage({ offer, reason, publicUrl }) {
+  const title = String(offer?.title || offer?.name || "sua proposta").trim();
+  const cents = Number(offer?.totalCents ?? offer?.amountCents ?? 0) || 0;
+  const value = fmtMoneyBRLFromCentsSafe(cents);
+
+  const customerName = String(offer?.customerName || "").trim();
+  const name = (customerName && customerName.split(/\s+/)[0]) || "";
+
+  const lines = [];
+  lines.push(name ? `Oi, ${name}! Tudo bem?` : "Olá! Tudo bem?");
+  lines.push("");
+  lines.push("*Comprovante recusado ❌*");
+  lines.push(
+    `Não conseguimos validar o comprovante enviado para *${title}*${
+      value ? ` no valor de *${value}*` : ""
+    }.`,
+  );
+  lines.push("");
+  lines.push("*Mensagem:*");
+  lines.push(String(reason || "").trim() || "Comprovante inválido/ilegível.");
+  lines.push("");
+  if (publicUrl) {
+    lines.push("Para refazer o processo e enviar um novo comprovante, acesse:");
+    lines.push(publicUrl);
+    lines.push("");
+  }
+  lines.push("Se precisar de ajuda, responda esta mensagem.");
+  return lines.join("\n");
+}
+
+export async function notifyPaymentRejected(
+  offerId,
+  { reason, publicUrl } = {},
+) {
+  const id = String(offerId || "").trim();
+  if (!id) return { ok: false, status: "SKIPPED", reason: "NO_OFFER_ID" };
+
+  if (!isWhatsAppNotificationsEnabled()) {
+    return { ok: false, status: "SKIPPED", reason: "FEATURE_DISABLED" };
+  }
+
+  const offer = await Offer.findById(id).lean();
+  if (!offer) return { ok: false, status: "SKIPPED", reason: "NO_OFFER" };
+
+  if (offer?.notifyWhatsAppOnPaid !== true) {
+    return { ok: false, status: "SKIPPED", reason: "OFFER_FLAG_DISABLED" };
+  }
+
+  const to = normalizePhoneBR(offer?.customerWhatsApp);
+  const proofKey = String(offer?.paymentProof?.storage?.key || "").trim();
+  const eventType = proofKey
+    ? `PAYMENT_REJECTED:${proofKey}`
+    : "PAYMENT_REJECTED";
+
+  const msg = buildRejectedMessage({
+    offer,
+    reason: String(reason || "").trim(),
+    publicUrl: String(publicUrl || "").trim(),
+  });
+
+  if (!to) {
+    const filter = { offerId: offer._id, eventType };
+    const base = {
+      workspaceId: offer?.workspaceId || null,
+      offerId: offer._id,
+      bookingId: null,
+      eventType,
+      channel: "WHATSAPP",
+      provider: "whatsapp-web.js",
+      to: "",
+      message: msg,
+      status: "SKIPPED",
+      providerMessageId: null,
+      error: {
+        message: "customerWhatsApp ausente ou inválido",
+        code: "NO_PHONE",
+      },
+      sentAt: null,
+    };
+
+    await MessageLog.findOneAndUpdate(
+      filter,
+      { $setOnInsert: base },
+      { upsert: true, new: true, strict: false },
+    ).catch(() => {});
+    return { ok: false, status: "SKIPPED", reason: "NO_PHONE" };
+  }
+
+  const filter = { offerId: offer._id, eventType };
+  const base = {
+    workspaceId: offer?.workspaceId || null,
+    offerId: offer._id,
+    bookingId: null,
+    eventType,
+    channel: "WHATSAPP",
+    provider: "whatsapp-web.js",
+    to,
+    message: msg,
+    status: "PENDING",
+    providerMessageId: null,
+    error: null,
+    sentAt: null,
+  };
+
+  const raw = await MessageLog.findOneAndUpdate(
+    filter,
+    { $setOnInsert: base },
+    { upsert: true, new: true, includeResultMetadata: true, strict: false },
+  );
+
+  const created = raw?.lastErrorObject?.updatedExisting === false;
+  const doc = raw?.value ?? null;
+
+  if (!created) {
+    return { ok: true, status: "SKIPPED", reason: "IDEMPOTENT", log: doc };
+  }
+
+  try {
+    const resp = await sendWhatsApp({ to, message: msg });
+    const providerMessageId =
+      String(resp?.providerMessageId || "").trim() || null;
+
+    await MessageLog.updateOne(
+      { _id: doc?._id },
+      {
+        $set: {
+          status: "SENT",
+          providerMessageId,
+          sentAt: new Date(),
+          error: null,
+        },
+      },
+      { strict: false },
+    ).catch(() => {});
+
+    return { ok: true, status: "SENT", providerMessageId, log: doc };
+  } catch (err) {
+    await MessageLog.updateOne(
+      { _id: doc?._id },
+      {
+        $set: {
+          status: "FAILED",
+          providerMessageId: null,
+          sentAt: null,
+          error: {
+            message: String(err?.message || "Falha ao enviar WhatsApp"),
+            code: String(err?.code || err?.name || "SEND_FAILED"),
+            details: err?.details || null,
+          },
+        },
+      },
+      { strict: false },
+    ).catch(() => {});
+
+    return { ok: false, status: "FAILED", error: err };
+  }
+}

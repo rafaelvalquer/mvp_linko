@@ -186,6 +186,12 @@ function fmtDT(iso) {
   }
 }
 
+function buildPublicUrl(offer) {
+  const token = offer?.publicToken;
+  if (!token) return "";
+  return `${window.location.origin}/p/${token}`;
+}
+
 export default function Offers() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -209,6 +215,10 @@ export default function Offers() {
   const [proofMime, setProofMime] = useState("");
 
   const [actionBusy, setActionBusy] = useState(false);
+
+  // ✅ novo: UI de recusa no modal
+  const [rejectBoxOpen, setRejectBoxOpen] = useState(false);
+  const [rejectText, setRejectText] = useState("");
 
   const patchOfferInList = useCallback((updated) => {
     if (!updated?._id) return;
@@ -302,6 +312,10 @@ export default function Offers() {
       setProofDataUrl("");
       setProofMime("");
 
+      // reset recusa
+      setRejectBoxOpen(false);
+      setRejectText("");
+
       if (!offer?._id) return;
 
       setActiveBusy(true);
@@ -393,7 +407,7 @@ export default function Offers() {
       setActionBusy(true);
 
       const d = await api(`/offers/${active._id}/confirm-payment`, {
-        method: "POST", // ou PATCH (o backend aceita ambos)
+        method: "POST",
       });
       if (!d?.ok) throw new Error(d?.error || "Falha ao confirmar pagamento.");
 
@@ -406,7 +420,6 @@ export default function Offers() {
       }
 
       const n = d?.notify;
-
       if (n?.status === "SENT") {
         setModalFlash({
           kind: "success",
@@ -430,7 +443,6 @@ export default function Offers() {
         });
       }
 
-      // atualiza detalhes completos (inclui booking e status consistentes)
       await refreshActive();
     } catch (e) {
       setProofErr(e?.message || "Falha ao confirmar pagamento.");
@@ -443,56 +455,86 @@ export default function Offers() {
     }
   }, [active?._id, load, patchOfferInList, refreshActive]);
 
-  const rejectPayment = useCallback(async () => {
-    if (!active?._id) return;
+  const rejectPayment = useCallback(
+    async (reasonText) => {
+      if (!active?._id) return;
 
-    const reason = window.prompt(
-      "Motivo da recusa:",
-      "Comprovante inválido ou ilegível",
-    );
-    if (reason === null) return;
-
-    try {
-      setModalFlash(null);
-      setProofErr("");
-      setActionBusy(true);
-
-      const d = await api(`/offers/${active._id}/reject-payment`, {
-        method: "POST",
-        body: JSON.stringify({ reason }),
-      });
-      if (!d?.ok) throw new Error(d?.error || "Falha ao recusar comprovante.");
-
-      const updated = d?.offer || null;
-      if (updated?._id) {
-        setActive((prev) => ({ ...(prev || {}), ...(updated || {}) }));
-        patchOfferInList(updated);
-      } else {
-        await load();
+      const reason = String(reasonText || "").trim();
+      if (!reason) {
+        setModalFlash({
+          kind: "error",
+          text: "Escreva uma mensagem/motivo para recusar o comprovante.",
+        });
+        return;
       }
 
-      setModalFlash({
-        kind: "success",
-        text: "Comprovante recusado com sucesso.",
-      });
+      try {
+        setModalFlash(null);
+        setProofErr("");
+        setActionBusy(true);
 
-      await refreshActive();
-    } catch (e) {
-      setProofErr(e?.message || "Falha ao recusar comprovante.");
-      setModalFlash({
-        kind: "error",
-        text: e?.message || "Falha ao recusar comprovante.",
-      });
-    } finally {
-      setActionBusy(false);
-    }
-  }, [active?._id, load, patchOfferInList, refreshActive]);
+        const publicUrl = buildPublicUrl(active);
+
+        const d = await api(`/offers/${active._id}/reject-payment`, {
+          method: "POST",
+          body: JSON.stringify({ reason, publicUrl }),
+        });
+        if (!d?.ok)
+          throw new Error(d?.error || "Falha ao recusar comprovante.");
+
+        const updated = d?.offer || null;
+        if (updated?._id) {
+          setActive((prev) => ({ ...(prev || {}), ...(updated || {}) }));
+          patchOfferInList(updated);
+        } else {
+          await load();
+        }
+
+        const n = d?.notify;
+        if (n?.status === "SENT") {
+          setModalFlash({
+            kind: "success",
+            text: "Comprovante recusado e WhatsApp enviado ao cliente.",
+          });
+        } else if (n?.status === "FAILED") {
+          setModalFlash({
+            kind: "error",
+            text: "Comprovante recusado, mas o envio do WhatsApp falhou. Verifique logs/MessageLog.",
+          });
+        } else if (n?.status === "SKIPPED") {
+          const r = n?.reason ? ` (${n.reason})` : "";
+          setModalFlash({
+            kind: "info",
+            text: `Comprovante recusado. Notificação não enviada${r}.`,
+          });
+        } else {
+          setModalFlash({
+            kind: "success",
+            text: "Comprovante recusado com sucesso.",
+          });
+        }
+
+        setRejectBoxOpen(false);
+        setRejectText("");
+
+        await refreshActive();
+      } catch (e) {
+        setProofErr(e?.message || "Falha ao recusar comprovante.");
+        setModalFlash({
+          kind: "error",
+          text: e?.message || "Falha ao recusar comprovante.",
+        });
+      } finally {
+        setActionBusy(false);
+      }
+    },
+    [active, load, patchOfferInList, refreshActive],
+  );
 
   const activePay = useMemo(() => getPaymentLabel(active), [active]);
   const activeHasProof = !!active?.paymentProof?.storage?.key;
   const activeWaiting = norm(active?.paymentStatus) === "WAITING_CONFIRMATION";
   const activePaid = activePay?.tone === "PAID";
-
   const canModerateProof = activeHasProof && activeWaiting && !activePaid;
 
   return (
@@ -780,13 +822,56 @@ export default function Offers() {
                               variant="ghost"
                               size="sm"
                               disabled={actionBusy}
-                              onClick={rejectPayment}
+                              onClick={() => {
+                                setModalFlash(null);
+                                setRejectBoxOpen((v) => !v);
+                              }}
                             >
                               Recusar
                             </Button>
                           </>
                         ) : null}
                       </div>
+
+                      {rejectBoxOpen ? (
+                        <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+                          <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">
+                            Mensagem para o cliente
+                          </div>
+                          <textarea
+                            className="mt-2 w-full min-h-[90px] rounded-xl border border-zinc-200 bg-white p-3 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
+                            placeholder="Explique o motivo da recusa e o que o cliente precisa ajustar..."
+                            value={rejectText}
+                            onChange={(e) => setRejectText(e.target.value)}
+                            disabled={actionBusy}
+                          />
+                          <div className="mt-2 text-xs text-zinc-600">
+                            O cliente receberá esta mensagem no WhatsApp (se a
+                            notificação estiver ativa) + o link para reenviar o
+                            comprovante.
+                          </div>
+                          <div className="mt-3 flex items-center justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={actionBusy}
+                              onClick={() => {
+                                setRejectBoxOpen(false);
+                                setRejectText("");
+                              }}
+                            >
+                              Cancelar
+                            </Button>
+                            <Button
+                              size="sm"
+                              disabled={actionBusy}
+                              onClick={() => rejectPayment(rejectText)}
+                            >
+                              {actionBusy ? "Recusando..." : "Confirmar recusa"}
+                            </Button>
+                          </div>
+                        </div>
+                      ) : null}
 
                       {proofErr ? (
                         <div className="mt-2 text-xs text-red-800">
@@ -898,4 +983,3 @@ export default function Offers() {
     </Shell>
   );
 }
-//teste
