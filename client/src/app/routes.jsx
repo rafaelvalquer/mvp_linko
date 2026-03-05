@@ -1,5 +1,5 @@
 //src/app/routes.jsx
-import { createBrowserRouter } from "react-router-dom";
+import { createBrowserRouter, Navigate } from "react-router-dom";
 
 import Home from "../pages/Home.jsx";
 
@@ -19,7 +19,6 @@ import PublicSchedule from "../pages/PublicSchedule.jsx";
 import PublicPixPayment from "../pages/PublicPixPayment.jsx";
 import PublicOfferDone from "../pages/PublicOfferDone.jsx";
 import PublicPaidGuard from "../pages/PublicPaidGuard.jsx";
-import Withdraws from "../pages/Withdraws.jsx";
 import SettingsAgenda from "../pages/SettingsAgenda.jsx";
 
 // ✅ billing
@@ -36,7 +35,6 @@ export const router = createBrowserRouter(
     { path: "/register", element: <Register /> },
     { path: "/", element: <Home /> },
 
-    // ✅ Billing (protege)
     {
       path: "/billing/plans",
       element: (
@@ -95,7 +93,6 @@ export const router = createBrowserRouter(
       ),
     },
 
-    // ✅ NOVO: Reports (área logada)
     {
       path: "/reports",
       element: (
@@ -114,17 +111,16 @@ export const router = createBrowserRouter(
       ),
     },
 
-    // ✅ Saques devem ser área logada
+    // ✅ /withdraws agora abre o modal de Conta Pix (sem página)
     {
       path: "/withdraws",
       element: (
         <RequireAuth>
-          <Withdraws />
+          <Navigate to="/dashboard" replace state={{ openPixSettings: true }} />
         </RequireAuth>
       ),
     },
 
-    // ✅ Sua Loja deve ser área logada
     {
       path: "/store/products",
       element: (
@@ -176,7 +172,6 @@ export const router = createBrowserRouter(
       ),
     },
 
-    // FINAL IMUTÁVEL
     { path: "/p/:token/done", element: <PublicOfferDone /> },
   ],
   { future: { v7_startTransition: true } },

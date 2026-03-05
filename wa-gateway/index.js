@@ -51,6 +51,15 @@ function setLastError(where, err) {
   if (err?.stack) console.error(err.stack);
 }
 
+function compactForLog(text, max = 280) {
+  const s = String(text ?? "")
+    .replace(/\r/g, "\\r")
+    .replace(/\n/g, "\\n")
+    .trim();
+  if (s.length <= max) return s;
+  return `${s.slice(0, max)}…(+${s.length - max} chars)`;
+}
+
 process.on("unhandledRejection", (reason) => {
   setLastError("unhandledRejection", reason);
   state = "DISCONNECTED";
@@ -132,7 +141,10 @@ app.get("/qr", async (req, res) => {
   const hasQr = !!latestQr;
 
   console.log(
-    `[qr] access ip=${ip} authorized=${authorized} state=${state} isReady=${isReady} hasQr=${hasQr} at=${nowISO()}`,
+    `[qr] access ip=${ip} authorized=${authorized} state=${state} isReady=${isReady} hasQr=${hasQr} ua="${compactForLog(
+      ua,
+      160,
+    )}" at=${nowISO()}`,
   );
 
   if (!authorized) {
@@ -153,7 +165,11 @@ app.get("/qr", async (req, res) => {
     <p><b>Status:</b> ✅ LOGADO (READY)</p>
     <p><b>Número:</b> ${phone || "desconhecido"}</p>
     <p><b>Última atividade:</b> ${lastSeen}</p>
-    ${lastError ? `<hr/><p style="color:#b45309"><b>Último erro:</b> ${lastError}<br/><b>Quando:</b> ${lastErrorAt}</p>` : ""}
+    ${
+      lastError
+        ? `<hr/><p style="color:#b45309"><b>Último erro:</b> ${lastError}<br/><b>Quando:</b> ${lastErrorAt}</p>`
+        : ""
+    }
   </body>
 </html>`);
   }
@@ -215,7 +231,11 @@ app.get("/qr", async (req, res) => {
       Esta página atualiza sozinha.
     </p>
     <p style="color:#777"><b>Última atividade:</b> ${lastSeen}</p>
-    ${lastError ? `<hr/><p style="color:#b45309"><b>Último erro:</b> ${lastError}<br/><b>Quando:</b> ${lastErrorAt}</p>` : ""}
+    ${
+      lastError
+        ? `<hr/><p style="color:#b45309"><b>Último erro:</b> ${lastError}<br/><b>Quando:</b> ${lastErrorAt}</p>`
+        : ""
+    }
   </body>
 </html>`);
 });
@@ -272,7 +292,7 @@ async function initWhatsApp() {
       const widUser =
         waClient?.info?.wid?.user || waClient?.info?.me?.user || null;
 
-      phone = widUser ? `55${widUser}`.replace(/\D/g, "") : widUser;
+      phone = widUser ? `${widUser}`.replace(/\D/g, "") : widUser;
 
       // opcional: limpa QR depois de conectar
       latestQr = null;
@@ -324,13 +344,26 @@ app.post("/send", requireApiKey, async (req, res) => {
       });
     }
 
+    const msg = String(message);
     const chatId = `${toNorm}@c.us`;
+
+    // ✅ LOG: número + mensagem (com preview seguro)
     console.log(
-      `[send] at=${nowISO()} to=${toNorm} chars=${String(message).length}`,
+      `[send] at=${nowISO()} from=${phone || "?"} to=${toNorm} chatId=${chatId} chars=${msg.length} message="${compactForLog(
+        msg,
+        320,
+      )}"`,
     );
 
-    const result = await waClient.sendMessage(chatId, String(message));
+    const result = await waClient.sendMessage(chatId, msg);
     const providerMessageId = result?.id?._serialized || result?.id?.id || null;
+
+    // ✅ LOG: confirmação do envio
+    console.log(
+      `[send] OK at=${nowISO()} to=${toNorm} providerMessageId=${
+        providerMessageId || "?"
+      }`,
+    );
 
     touch();
     return res.json({ ok: true, providerMessageId });

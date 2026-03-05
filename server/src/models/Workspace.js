@@ -8,7 +8,6 @@ const PIX_KEY_TYPES = ["CPF", "CNPJ", "PHONE", "EMAIL", "EVP"];
 
 const PixUsageSchema = new mongoose.Schema(
   {
-    // ciclo por âncora (YYYY-MM-DD em America/Sao_Paulo)
     cycleKey: { type: String, default: "" },
     used: { type: Number, default: 0, min: 0 },
   },
@@ -35,7 +34,6 @@ const SubscriptionSchema = new mongoose.Schema(
     priceId: { type: String, default: "" },
     planAtStripe: { type: String, default: "" },
 
-    // Mudança de plano agendada (ex.: downgrade no fim do ciclo)
     pendingPriceId: { type: String, default: "" },
     pendingPlan: { type: String, default: "" },
     pendingEffectiveAt: { type: Date, default: null },
@@ -67,7 +65,6 @@ const WorkspaceSchema = new mongoose.Schema(
 
     plan: { type: String, enum: PLANS, default: "start", index: true },
 
-    // ✅ status do plano (cadastro -> free, checkout criado -> pending, pago -> active)
     planStatus: {
       type: String,
       enum: PLAN_STATUS,
@@ -76,32 +73,34 @@ const WorkspaceSchema = new mongoose.Schema(
     },
 
     // =========================================================
-    // ✅ PIX QUOTA (já existente)
+    // PIX QUOTA
     // =========================================================
     pixMonthlyLimit: { type: Number, default: 0, min: 0 },
     pixUsage: { type: PixUsageSchema, default: () => ({}) },
 
     // =========================================================
-    // ✅ WALLET / SAQUE
+    // WALLET / SAQUE (legado)
     // =========================================================
-    walletAvailableCents: { type: Number, default: 0, min: 0 }, // saldo liberado para saque
+    walletAvailableCents: { type: Number, default: 0, min: 0 },
 
-    // Configuração de conta Pix (NUNCA retornar a chave crua no front)
-    payoutPixKeyType: {
-      type: String,
-      enum: PIX_KEY_TYPES,
-      default: null,
-    },
-    payoutPixKey: { type: String, default: null }, // chave normalizada (ideal criptografar no futuro)
-    payoutPixKeyMasked: { type: String, default: null }, // sempre retornar isso no front
+    // =========================================================
+    // ✅ CONTA PIX (novo fluxo manual)
+    // =========================================================
+    payoutPixKeyType: { type: String, enum: PIX_KEY_TYPES, default: null },
+    payoutPixKey: { type: String, default: null }, // chave crua (backend only)
+    payoutPixKeyMasked: { type: String, default: null }, // sempre retornar isso no app
 
-    // Auto transferência
-    autoPayoutEnabled: { type: Boolean, default: false },
-    autoPayoutMinCents: { type: Number, default: 0, min: 0 },
+    // opcionais para BRCode (EMV)
+    pixReceiverName: { type: String, default: null, trim: true, maxlength: 25 },
+    pixReceiverCity: { type: String, default: null, trim: true, maxlength: 15 },
+
+    // se quiser permitir “desabilitar temporariamente”
+    pixKeyEnabled: { type: Boolean, default: true },
+
     payoutUpdatedAt: { type: Date, default: null },
 
     // =========================================================
-    // ✅ ASSINATURA
+    // ASSINATURA
     // =========================================================
     subscription: { type: SubscriptionSchema, default: () => ({}) },
   },
@@ -109,8 +108,6 @@ const WorkspaceSchema = new mongoose.Schema(
 );
 
 WorkspaceSchema.index({ ownerUserId: 1, createdAt: -1 });
-
-// evita warning duplicado: índice só aqui
 WorkspaceSchema.index(
   { "subscription.stripeSubscriptionId": 1 },
   { sparse: true },

@@ -11,59 +11,73 @@ const ItemSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const PaymentProofSchema = new mongoose.Schema(
+  {
+    storage: {
+      provider: { type: String, default: "local" }, // local|s3
+      key: { type: String, default: null }, // nome do arquivo (local) ou key (s3)
+      path: { type: String, default: null }, // opcional (local)
+      url: { type: String, default: null }, // opcional (s3/presigned)
+    },
+    originalName: { type: String, default: null },
+    mimeType: { type: String, default: null },
+    size: { type: Number, default: null },
+    uploadedAt: { type: Date, default: null },
+    uploadedBy: { type: String, default: "public" }, // public|user
+    note: { type: String, default: null },
+  },
+  { _id: false },
+);
+
 const OfferSchema = new mongoose.Schema(
   {
     workspaceId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Workspace",
-      required: true,
       index: true,
+      default: null,
     },
     ownerUserId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
       index: true,
+      default: null,
     },
 
-    // ✅ Vendedor (persistido para notificações)
-    sellerEmail: { type: String, trim: true, lowercase: true, default: null },
-    sellerName: { type: String, trim: true, default: null },
+    sellerEmail: { type: String, default: null },
+    sellerName: { type: String, default: null },
 
-    // Cliente (snapshot)
     customerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Client",
       default: null,
     },
     customerName: { type: String, required: true, trim: true },
-    customerEmail: { type: String, trim: true, lowercase: true, default: "" },
-    customerDoc: { type: String, trim: true, default: "" }, // apenas dígitos
-    customerWhatsApp: { type: String, trim: true, default: "" },
+    customerEmail: { type: String, default: "" },
+    customerDoc: { type: String, default: "" },
+    customerWhatsApp: { type: String, default: "" },
 
-    // ✅ WhatsApp (cliente): enviar confirmação quando Pix for pago
     notifyWhatsAppOnPaid: { type: Boolean, default: false },
 
-    // opcional: auditoria/idempotência adicional (não obrigatório no MVP)
-    whatsappNotifiedAt: { type: Date, default: null },
-    whatsappNotifiedTo: { type: String, trim: true, default: null },
-    whatsappNotifiedKey: { type: String, trim: true, default: null },
+    offerType: {
+      type: String,
+      enum: ["service", "product"],
+      default: "service",
+    },
 
-
-    offerType: { type: String, trim: true, default: "service" }, // service|product
-    title: { type: String, required: true, trim: true },
+    title: { type: String, default: "" },
     description: { type: String, default: "" },
 
     items: { type: [ItemSchema], default: [] },
 
-    amountCents: { type: Number, required: true, min: 0 }, // compat
+    amountCents: { type: Number, required: true },
     subtotalCents: { type: Number, default: null },
     discountCents: { type: Number, default: null },
     freightCents: { type: Number, default: null },
     totalCents: { type: Number, default: null },
 
-    depositEnabled: { type: Boolean, default: true },
-    depositPct: { type: Number, default: 0, min: 0, max: 100 },
+    depositEnabled: { type: Boolean, default: false },
+    depositPct: { type: Number, default: 0 },
 
     durationEnabled: { type: Boolean, default: false },
     durationMin: { type: Number, default: null },
@@ -87,10 +101,8 @@ const OfferSchema = new mongoose.Schema(
     freightEnabled: { type: Boolean, default: false },
     freightValue: { type: mongoose.Schema.Types.Mixed, default: null },
 
-    publicToken: { type: String, required: true, unique: true, index: true },
-    token: { type: String, default: null, index: true }, // legado
-    publicId: { type: String, default: null, index: true }, // legado
-    expiresAt: { type: Date, required: true, index: true },
+    publicToken: { type: String, index: true, unique: true, sparse: true },
+    expiresAt: { type: Date, default: null },
 
     status: { type: String, default: "PUBLIC", index: true },
     acceptedAt: { type: Date, default: null },
@@ -98,36 +110,47 @@ const OfferSchema = new mongoose.Schema(
     // ✅ status de pagamento separado do status de fluxo (compat)
     paymentStatus: { type: String, default: "PENDING", index: true },
 
-    publicDoneOnly: { type: Boolean, default: false },
-    publicLockedAt: { type: Date, default: null },
+    // ✅ método de pagamento (novo MVP sem intermediador)
+    paymentMethod: { type: String, default: "MANUAL_PIX", index: true },
 
-    // ✅ pagamento concluído
-    paidAt: { type: Date, default: null },
-    paidAmountCents: { type: Number, default: null },
+    // ✅ comprovante de pagamento (manual)
+    paymentProof: { type: PaymentProofSchema, default: null },
 
-    // ✅ idempotência / notificação
-    paymentNotifiedAt: { type: Date, default: null },
-    paymentNotifiedTo: {
-      type: String,
-      trim: true,
-      lowercase: true,
+    // ✅ confirmação manual (pelo dono do workspace)
+    confirmedAt: { type: Date, default: null },
+    confirmedByUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
+    },
+
+    // ✅ recusa manual (opcional)
+    rejectedAt: { type: Date, default: null },
+    rejectedByUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
       default: null,
     },
-    paymentNotifiedPixId: { type: String, trim: true, default: null },
-    paymentNotifiedKey: { type: String, trim: true, default: null },
+    rejectionNote: { type: String, default: null },
 
+    // compat legado (AbacatePay)
     payment: {
+      provider: { type: String, default: null },
       lastPixId: { type: String, default: null },
       lastPixStatus: { type: String, default: null },
       lastPixExpiresAt: { type: Date, default: null },
       lastPixUpdatedAt: { type: Date, default: null },
     },
+
+    paidAt: { type: Date, default: null },
+    paidAmountCents: { type: Number, default: null },
+
+    // flags públicos (compat)
+    publicDoneOnly: { type: Boolean, default: false },
+    publicLockedAt: { type: String, default: null },
   },
   { timestamps: true },
 );
 
-OfferSchema.index({ workspaceId: 1, ownerUserId: 1, createdAt: -1 });
-OfferSchema.index({ workspaceId: 1, status: 1, createdAt: -1 });
-
-export const Offer =
-  mongoose.models.Offer || mongoose.model("Offer", OfferSchema);
+export const Offer = mongoose.model("Offer", OfferSchema);

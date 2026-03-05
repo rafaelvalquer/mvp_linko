@@ -25,8 +25,6 @@ import path from "path";
 export function createApp() {
   const app = express();
 
-  // Aceita múltiplas origens separadas por vírgula:
-  // Ex: CORS_ORIGIN="http://localhost:5173,https://seuapp.vercel.app"
   const allowlist = String(env.corsOrigin || "")
     .split(",")
     .map((s) => s.trim())
@@ -34,16 +32,9 @@ export function createApp() {
 
   const corsOptions = {
     origin(origin, cb) {
-      // requests sem Origin (curl/postman/webhook server-to-server)
       if (!origin) return cb(null, true);
-
-      // se não configurou allowlist, libera (útil p/ MVP)
       if (allowlist.length === 0) return cb(null, true);
-
-      // permite origin exata
       if (allowlist.includes(origin)) return cb(null, true);
-
-      // opcional: liberar qualquer domínio .vercel.app
       if (origin.endsWith(".vercel.app")) return cb(null, true);
 
       const err = new Error(`CORS blocked for origin: ${origin}`);
@@ -52,13 +43,14 @@ export function createApp() {
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: false, // use false se você autentica por Bearer token (localStorage)
+    credentials: false,
     optionsSuccessStatus: 204,
   };
 
   app.use(cors(corsOptions));
-  app.options("*", cors(corsOptions)); // garante preflight OK
+  app.options("*", cors(corsOptions));
 
+  // JSON + rawBody (webhooks)
   app.use(
     express.json({
       limit: "1mb",
@@ -68,32 +60,37 @@ export function createApp() {
     }),
   );
 
-  // ✅ 1) ROTAS PÚBLICAS PRIMEIRO (sem ensureAuth)
+  // ✅ 1) ROTAS PÚBLICAS PRIMEIRO
   app.use("/api", publicRoutes);
 
-  // arquivos estáticos (imagens de produtos)
+  // static uploads
   app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
 
-  // webhooks (AbacatePay)
-  app.use("/api", webhooksAbacatepayRoutes);
-  // webhooks (Stripe)
+  // ✅ 2) WEBHOOKS EM PREFIXO ESPECÍFICO (não intercepta /api/auth/login)
+  // Se seu webhook do AbacatePay está "desativado" com router.all("*"), isso evita pegar tudo.
+  app.use("/api/webhooks/abacatepay", webhooksAbacatepayRoutes);
+
+  // Stripe (mantém como está no seu projeto)
   app.use("/api", webhooksStripeRoutes);
 
-  // Se tiver Bearer token válido, popula req.user (senão segue)
+  // Auth optional (se tiver Bearer válido popula req.user)
   app.use(authOptional);
 
+  // ✅ Rotas autenticadas / internas
   app.use("/api", healthRoutes);
   app.use("/api", authRoutes);
   app.use("/api", offersRoutes);
   app.use("/api", bookingsRoutes);
+
+  // Mantém withdrawRoutes por enquanto (vamos reutilizar para "Conta Pix")
   app.use("/api", withdrawRoutes);
+
   app.use("/api", productsRoutes);
   app.use("/api", clientsRoutes);
   app.use("/api", settingsRoutes);
   app.use("/api", analyticsRoutes);
   app.use("/api", reportsRoutes);
 
-  // billing (Stripe)
   app.use("/api", billingStripeRoutes);
 
   app.use((err, _req, res, _next) => {

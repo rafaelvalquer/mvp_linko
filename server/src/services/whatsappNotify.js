@@ -1,5 +1,7 @@
 // server/src/services/whatsappNotify.js
 import { Offer } from "../models/Offer.js";
+import Booking from "../models/Booking.js";
+import { Client } from "../models/Client.js";
 import { MessageLog } from "../models/MessageLog.js";
 import { isWhatsAppNotificationsEnabled, sendWhatsApp } from "./waGateway.js";
 
@@ -7,6 +9,7 @@ function onlyDigits(v) {
   return String(v || "").replace(/\D+/g, "");
 }
 
+// ✅ mantém como está (regra do projeto)
 function normalizePhoneBR(raw) {
   const digits = onlyDigits(raw);
   if (!digits) return "";
@@ -15,22 +18,8 @@ function normalizePhoneBR(raw) {
   // Se já vier com 55 (12/13 dígitos), mantém
   if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13))
     return digits;
-  // Caso já venha com código do país diferente, deixa como está (wa-gateway também normaliza)
+  // Caso já venha com código do país diferente, deixa como está
   return digits;
-}
-
-function fmtMoneyBRLFromCents(cents) {
-  const v = Number(cents);
-  if (!Number.isFinite(v)) return "";
-  try {
-    return new Intl.NumberFormat("pt-BR", {
-      style: "currency",
-      currency: "BRL",
-    }).format(v / 100);
-  } catch {
-    const s = (v / 100).toFixed(2).replace(".", ",");
-    return `R$ ${s}`;
-  }
 }
 
 function firstName(name) {
@@ -57,14 +46,21 @@ function fmtDateTimeBR(iso) {
 export function buildPaidMessage({ offer, booking }) {
   const title = String(offer?.title || offer?.name || "sua proposta").trim();
 
+  const cents =
+    typeof offer?.totalCents === "number"
+      ? offer.totalCents
+      : typeof offer?.amountCents === "number"
+        ? offer.amountCents
+        : null;
+
   const value =
     offer?.totalFormatted ||
     offer?.totalBRL ||
-    (typeof offer?.totalCents === "number"
+    (typeof cents === "number"
       ? new Intl.NumberFormat("pt-BR", {
           style: "currency",
           currency: "BRL",
-        }).format(offer.totalCents / 100)
+        }).format(cents / 100)
       : null);
 
   const customerName =
@@ -80,11 +76,9 @@ export function buildPaidMessage({ offer, booking }) {
 
   const lines = [];
 
-  // Saudação
   lines.push(name ? `Oi, ${name}! Tudo bem?` : "Olá! Tudo bem?");
   lines.push("");
 
-  // Título
   lines.push("*Pagamento confirmado ✅*");
   lines.push(
     isProduct
@@ -123,9 +117,8 @@ export function buildPaidMessage({ offer, booking }) {
 }
 
 /**
- * Dispara WhatsApp para o CLIENTE quando o Pix for confirmado.
- * - Não quebra o fluxo de pagamento.
- * - Idempotência forte: 1 envio por (offerId,eventType).
+ * Dispara WhatsApp para o CLIENTE quando o Pix for confirmado (AbacatePay/fluxos existentes).
+ * - Idempotência forte: 1 envio por (offerId,eventType="PIX_PAID").
  */
 export async function maybeNotifyWhatsAppPixPaid({
   offer,
@@ -137,12 +130,10 @@ export async function maybeNotifyWhatsAppPixPaid({
 }) {
   if (!offer) return { ok: false, status: "SKIPPED", reason: "NO_OFFER" };
 
-  // feature flag global
   if (!isWhatsAppNotificationsEnabled()) {
     return { ok: false, status: "SKIPPED", reason: "FEATURE_DISABLED" };
   }
 
-  // marcador por proposta
   if (offer?.notifyWhatsAppOnPaid !== true) {
     return { ok: false, status: "SKIPPED", reason: "OFFER_FLAG_DISABLED" };
   }
@@ -150,7 +141,6 @@ export async function maybeNotifyWhatsAppPixPaid({
   const to = normalizePhoneBR(offer?.customerWhatsApp);
   const message = buildPaidMessage({ offer, booking });
 
-  // Se faltou número, registra SKIPPED (idempotente) e sai
   if (!to) {
     const filter = { offerId: offerId || offer?._id, eventType: "PIX_PAID" };
     const base = {
@@ -181,7 +171,6 @@ export async function maybeNotifyWhatsAppPixPaid({
     return { ok: false, status: "SKIPPED", reason: "NO_PHONE" };
   }
 
-  // Idempotência: cria log apenas na primeira vez
   const filter = { offerId: offerId || offer?._id, eventType: "PIX_PAID" };
 
   const base = {
@@ -205,7 +194,7 @@ export async function maybeNotifyWhatsAppPixPaid({
     {
       upsert: true,
       new: true,
-      includeResultMetadata: true, // <-- IMPORTANTÍSSIMO
+      includeResultMetadata: true,
       strict: false,
     },
   );
@@ -213,13 +202,10 @@ export async function maybeNotifyWhatsAppPixPaid({
   const created = raw?.lastErrorObject?.updatedExisting === false;
   const doc = raw?.value ?? null;
 
-  console.log("created:", created);
   if (!created) {
     return { ok: true, status: "SKIPPED", reason: "IDEMPOTENT", log: doc };
   }
 
-  console.log("############");
-  // Envia (com timeout + 1 retry no client)
   try {
     const resp = await sendWhatsApp({ to, message });
     const providerMessageId =
@@ -238,21 +224,6 @@ export async function maybeNotifyWhatsAppPixPaid({
       { strict: false },
     ).catch(() => {});
 
-    // opcional: gravar no Offer (auditoria)
-    if (offer?._id) {
-      await Offer.updateOne(
-        { _id: offer._id, whatsappNotifiedAt: { $in: [null, undefined] } },
-        {
-          $set: {
-            whatsappNotifiedAt: new Date(),
-            whatsappNotifiedTo: to,
-            whatsappNotifiedKey: String(pixId || "").trim() || null,
-          },
-        },
-        { strict: false },
-      ).catch(() => {});
-    }
-
     return { ok: true, status: "SENT", providerMessageId, log: doc };
   } catch (err) {
     await MessageLog.updateOne(
@@ -268,6 +239,178 @@ export async function maybeNotifyWhatsAppPixPaid({
             details: err?.details || {
               pixId: String(pixId || "").trim() || null,
             },
+          },
+        },
+      },
+      { strict: false },
+    ).catch(() => {});
+
+    return { ok: false, status: "FAILED", error: err };
+  }
+}
+
+/**
+ * ✅ NOVO: disparo quando o pagamento é CONFIRMADO MANUALMENTE no backoffice.
+ * - Só envia se offer.notifyWhatsAppOnPaid === true
+ * - Só envia se customerWhatsApp existir (senão registra SKIPPED)
+ * - Idempotência por (offerId,eventType="PAYMENT_CONFIRMED")
+ */
+export async function notifyPaymentConfirmed(offerId) {
+  const id = String(offerId || "").trim();
+  if (!id) return { ok: false, status: "SKIPPED", reason: "NO_OFFER_ID" };
+
+  if (!isWhatsAppNotificationsEnabled()) {
+    return { ok: false, status: "SKIPPED", reason: "FEATURE_DISABLED" };
+  }
+
+  const offer = await Offer.findById(id).lean();
+  if (!offer) return { ok: false, status: "SKIPPED", reason: "NO_OFFER" };
+
+  if (offer?.notifyWhatsAppOnPaid !== true) {
+    return { ok: false, status: "SKIPPED", reason: "OFFER_FLAG_DISABLED" };
+  }
+
+  // booking (se existir) para enriquecer a mensagem
+  let booking = null;
+  let bookingId = null;
+  try {
+    booking = await Booking.findOne({
+      offerId: offer._id,
+      workspaceId: offer?.workspaceId || null,
+    })
+      .sort({ startAt: -1 })
+      .lean();
+    bookingId = booking?._id || null;
+  } catch {
+    booking = null;
+    bookingId = null;
+  }
+
+  // cliente (se existir) para completar nome/whatsapp caso a offer esteja incompleta
+  let customerName = String(offer?.customerName || "").trim();
+  let customerWhatsApp = String(offer?.customerWhatsApp || "").trim();
+
+  try {
+    if (offer?.customerId) {
+      const c = await Client.findOne({
+        _id: offer.customerId,
+        workspaceId: offer?.workspaceId || null,
+      }).lean();
+
+      if (c) {
+        if (!customerName) customerName = String(c?.name || "").trim();
+        if (!customerWhatsApp) customerWhatsApp = String(c?.phone || "").trim();
+      }
+    }
+  } catch {}
+
+  const offerForMsg = {
+    ...offer,
+    customerName: customerName || offer?.customerName,
+    customerWhatsApp: customerWhatsApp || offer?.customerWhatsApp,
+  };
+
+  const to = normalizePhoneBR(offerForMsg?.customerWhatsApp);
+  const message = buildPaidMessage({ offer: offerForMsg, booking });
+
+  const filter = { offerId: offer._id, eventType: "PAYMENT_CONFIRMED" };
+
+  // Se faltou número, registra SKIPPED (idempotente) e sai
+  if (!to) {
+    const base = {
+      workspaceId: offer?.workspaceId || null,
+      offerId: offer._id,
+      bookingId,
+      eventType: "PAYMENT_CONFIRMED",
+      channel: "WHATSAPP",
+      provider: "whatsapp-web.js",
+      to: "",
+      message,
+      status: "SKIPPED",
+      providerMessageId: null,
+      error: {
+        message: "customerWhatsApp ausente ou inválido",
+        code: "NO_PHONE",
+        details: { offerId: String(offer?._id || "") },
+      },
+      sentAt: null,
+    };
+
+    await MessageLog.findOneAndUpdate(
+      filter,
+      { $setOnInsert: base },
+      { upsert: true, new: true, strict: false },
+    ).catch(() => {});
+
+    return { ok: false, status: "SKIPPED", reason: "NO_PHONE" };
+  }
+
+  // Idempotência: cria log apenas na primeira vez
+  const base = {
+    workspaceId: offer?.workspaceId || null,
+    offerId: offer._id,
+    bookingId,
+    eventType: "PAYMENT_CONFIRMED",
+    channel: "WHATSAPP",
+    provider: "whatsapp-web.js",
+    to,
+    message,
+    status: "PENDING",
+    providerMessageId: null,
+    error: null,
+    sentAt: null,
+  };
+
+  const raw = await MessageLog.findOneAndUpdate(
+    filter,
+    { $setOnInsert: base },
+    {
+      upsert: true,
+      new: true,
+      includeResultMetadata: true,
+      strict: false,
+    },
+  );
+
+  const created = raw?.lastErrorObject?.updatedExisting === false;
+  const doc = raw?.value ?? null;
+
+  if (!created) {
+    return { ok: true, status: "SKIPPED", reason: "IDEMPOTENT", log: doc };
+  }
+
+  // Envia
+  try {
+    const resp = await sendWhatsApp({ to, message });
+    const providerMessageId =
+      String(resp?.providerMessageId || "").trim() || null;
+
+    await MessageLog.updateOne(
+      { _id: doc?._id },
+      {
+        $set: {
+          status: "SENT",
+          providerMessageId,
+          sentAt: new Date(),
+          error: null,
+        },
+      },
+      { strict: false },
+    ).catch(() => {});
+
+    return { ok: true, status: "SENT", providerMessageId, log: doc };
+  } catch (err) {
+    await MessageLog.updateOne(
+      { _id: doc?._id },
+      {
+        $set: {
+          status: "FAILED",
+          providerMessageId: null,
+          sentAt: null,
+          error: {
+            message: String(err?.message || "Falha ao enviar WhatsApp"),
+            code: String(err?.code || err?.name || "SEND_FAILED"),
+            details: err?.details || { offerId: String(offer?._id || "") },
           },
         },
       },

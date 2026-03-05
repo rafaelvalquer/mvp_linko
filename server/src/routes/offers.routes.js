@@ -7,6 +7,8 @@ import { Offer } from "../models/Offer.js";
 import Booking from "../models/Booking.js";
 import { ensureAuth, tenantFromUser } from "../middleware/auth.js";
 import { Client } from "../models/Client.js";
+import { readPaymentProofBase64 } from "../services/storageLocal.js";
+import { notifyPaymentConfirmed } from "../services/whatsappNotify.js";
 
 const r = Router();
 
@@ -37,6 +39,23 @@ function addDays(date, days) {
   const d = new Date(date);
   d.setDate(d.getDate() + days);
   return d;
+}
+
+function computeChargeCentsForManual(offer) {
+  const totalCents = Number(offer?.totalCents ?? offer?.amountCents ?? 0) || 0;
+
+  const depositPctRaw = Number(offer?.depositPct);
+  const depositPct =
+    Number.isFinite(depositPctRaw) && depositPctRaw > 0 ? depositPctRaw : 0;
+
+  const depositEnabled =
+    offer?.depositEnabled === false ? false : depositPct > 0;
+
+  const depositCents = depositEnabled
+    ? Math.round((totalCents * depositPct) / 100)
+    : 0;
+
+  return depositEnabled ? depositCents : totalCents;
 }
 
 async function generateUniquePublicToken() {
@@ -230,6 +249,8 @@ async function createOfferLocal({ tenantId, userId, body }) {
     publicToken,
     expiresAt,
     status: "PUBLIC",
+    paymentMethod: "MANUAL_PIX",
+    paymentStatus: "PENDING",
   };
 
   const offer = await Offer.create(doc);
@@ -255,7 +276,7 @@ r.get(
   }),
 );
 
-// DETAILS ✅ (novo)
+// DETAILS
 r.get(
   "/offers/:id",
   ensureAuth,
@@ -277,7 +298,6 @@ r.get(
       return res.status(404).json({ ok: false, error: "Offer not found" });
     }
 
-    // booking relacionado (se houver)
     let booking = null;
     try {
       booking = await Booking.findOne({
@@ -291,6 +311,261 @@ r.get(
     }
 
     res.json({ ok: true, offer, booking });
+  }),
+);
+
+// ====== MANUAL PIX: comprovante + confirmacao ======
+
+r.get(
+  "/offers/:id/payment-proof",
+  ensureAuth,
+  tenantFromUser,
+  asyncHandler(async (req, res) => {
+    const tenantId = req.tenantId;
+    const userId = req.user?._id;
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ ok: false, error: "invalid id" });
+    }
+
+    const q = { _id: id, workspaceId: tenantId };
+    if (userId) q.ownerUserId = userId;
+
+    const offer = await Offer.findOne(q)
+      .select("paymentProof paymentStatus status")
+      .lean();
+
+    if (!offer) {
+      return res.status(404).json({ ok: false, error: "Offer not found" });
+    }
+
+    const proof = offer?.paymentProof || null;
+    const key = String(proof?.storage?.key || "").trim();
+    if (!key) {
+      return res
+        .status(404)
+        .json({ ok: false, error: "Payment proof not found" });
+    }
+
+    const inline = String(req.query.inline || "") === "1";
+    if (inline) {
+      const base64 = await readPaymentProofBase64(key);
+      return res.json({
+        ok: true,
+        proof: {
+          ...proof,
+          storage: { ...proof.storage, path: undefined },
+        },
+        file: {
+          mimeType: proof?.mimeType || "application/octet-stream",
+          base64,
+        },
+      });
+    }
+
+    return res.json({
+      ok: true,
+      proof: {
+        ...proof,
+        storage: { ...proof.storage, path: undefined },
+      },
+    });
+  }),
+);
+
+async function safeNotifyPaymentConfirmed(offerId) {
+  try {
+    return await notifyPaymentConfirmed(offerId);
+  } catch (err) {
+    return {
+      ok: false,
+      status: "FAILED",
+      error: {
+        message: String(err?.message || "Falha ao notificar WhatsApp"),
+        code: String(err?.code || err?.name || "NOTIFY_FAILED"),
+      },
+    };
+  }
+}
+
+async function confirmPaymentHandler(req, res) {
+  const tenantId = req.tenantId;
+  const userId = req.user?._id;
+  const { id } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ ok: false, error: "invalid id" });
+  }
+
+  const q = { _id: id, workspaceId: tenantId };
+  if (userId) q.ownerUserId = userId;
+
+  const offer = await Offer.findOne(q).lean();
+  if (!offer) {
+    return res.status(404).json({ ok: false, error: "Offer not found" });
+  }
+
+  const ps = String(offer?.paymentStatus || "")
+    .trim()
+    .toUpperCase();
+  const alreadyConfirmed =
+    ps === "CONFIRMED" || ps === "PAID" || !!offer?.paidAt;
+
+  // Se já estava confirmado, ainda assim tenta notificar (idempotente por MessageLog)
+  if (alreadyConfirmed) {
+    const notify =
+      offer?.notifyWhatsAppOnPaid === true
+        ? await safeNotifyPaymentConfirmed(offer._id)
+        : { ok: false, status: "SKIPPED", reason: "OFFER_FLAG_DISABLED" };
+
+    return res.json({ ok: true, offer, notify });
+  }
+
+  const hasProof = !!offer?.paymentProof?.storage?.key;
+  if (!hasProof) {
+    return res.status(409).json({
+      ok: false,
+      error: "Nenhum comprovante enviado para esta proposta.",
+      code: "NO_PROOF",
+    });
+  }
+
+  const now = new Date();
+  const paidAmountCents = computeChargeCentsForManual(offer);
+
+  await Offer.updateOne(
+    { _id: offer._id },
+    {
+      $set: {
+        paymentMethod: "MANUAL_PIX",
+        paymentStatus: "CONFIRMED",
+        status: "CONFIRMED",
+        paidAt: now,
+        paidAmountCents: paidAmountCents || null,
+        confirmedAt: now,
+        confirmedByUserId: userId || null,
+        rejectedAt: null,
+        rejectedByUserId: null,
+        rejectionNote: null,
+        publicDoneOnly: true,
+        publicLockedAt: now.toISOString(),
+      },
+    },
+    { strict: false },
+  );
+
+  try {
+    const b = await Booking.findOne({
+      offerId: offer._id,
+      workspaceId: tenantId,
+    })
+      .sort({ startAt: -1 })
+      .lean();
+
+    if (b?._id) {
+      await Booking.updateOne(
+        { _id: b._id },
+        {
+          $set: {
+            status: "CONFIRMED",
+            "payment.provider": "MANUAL_PIX",
+            "payment.status": "CONFIRMED",
+            "payment.paidAt": now,
+          },
+        },
+        { strict: false },
+      );
+    }
+  } catch {}
+
+  const updated = await Offer.findById(offer._id).lean();
+
+  const notify =
+    updated?.notifyWhatsAppOnPaid === true
+      ? await safeNotifyPaymentConfirmed(updated._id)
+      : { ok: false, status: "SKIPPED", reason: "OFFER_FLAG_DISABLED" };
+
+  return res.json({ ok: true, offer: updated, notify });
+}
+
+r.post(
+  "/offers/:id/confirm-payment",
+  ensureAuth,
+  tenantFromUser,
+  asyncHandler(confirmPaymentHandler),
+);
+
+// Alias PATCH (seu frontend pode preferir PATCH)
+r.patch(
+  "/offers/:id/confirm-payment",
+  ensureAuth,
+  tenantFromUser,
+  asyncHandler(confirmPaymentHandler),
+);
+
+r.post(
+  "/offers/:id/reject-payment",
+  ensureAuth,
+  tenantFromUser,
+  asyncHandler(async (req, res) => {
+    const tenantId = req.tenantId;
+    const userId = req.user?._id;
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ ok: false, error: "invalid id" });
+    }
+
+    const reason = String(req.body?.reason || req.body?.note || "").trim();
+
+    const q = { _id: id, workspaceId: tenantId };
+    if (userId) q.ownerUserId = userId;
+
+    const offer = await Offer.findOne(q).lean();
+    if (!offer) {
+      return res.status(404).json({ ok: false, error: "Offer not found" });
+    }
+
+    const ps = String(offer?.paymentStatus || "")
+      .trim()
+      .toUpperCase();
+    const hasProof = !!offer?.paymentProof?.storage?.key;
+
+    if (!hasProof) {
+      return res.status(409).json({
+        ok: false,
+        error: "Nenhum comprovante enviado para esta proposta.",
+        code: "NO_PROOF",
+      });
+    }
+
+    if (ps === "CONFIRMED" || ps === "PAID" || offer?.paidAt) {
+      return res.status(409).json({
+        ok: false,
+        error: "Pagamento já confirmado — não é possível recusar.",
+        code: "ALREADY_CONFIRMED",
+      });
+    }
+
+    const now = new Date();
+
+    await Offer.updateOne(
+      { _id: offer._id },
+      {
+        $set: {
+          paymentMethod: "MANUAL_PIX",
+          paymentStatus: "REJECTED",
+          rejectedAt: now,
+          rejectedByUserId: userId || null,
+          rejectionNote: reason || null,
+        },
+      },
+      { strict: false },
+    );
+
+    const updated = await Offer.findById(offer._id).lean();
+    return res.json({ ok: true, offer: updated });
   }),
 );
 
