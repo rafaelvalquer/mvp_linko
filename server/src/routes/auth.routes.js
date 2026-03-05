@@ -252,6 +252,10 @@ r.get(
             cycleKey: quota?.cycleKey ?? "",
             pixUsedThisCycle: quota?.used ?? 0,
             pixRemaining: quota?.remaining ?? 0,
+            payoutPixKeyType: ws.payoutPixKeyType || "",
+            payoutPixKeyMasked: ws.payoutPixKeyMasked || "",
+            autoPayoutEnabled: !!ws.autoPayoutEnabled,
+            payoutHoldMinutes: Number(ws.payoutHoldMinutes ?? 0) || 0,
           }
         : null,
     });

@@ -157,6 +157,20 @@ function offerPaidAmountCents(o) {
   );
 }
 
+function pickPixKeyMasked(ws) {
+  const v =
+    ws?.payoutPixKeyMasked ??
+    ws?.payout?.payoutPixKeyMasked ??
+    ws?.payout?.pixKeyMasked ??
+    ws?.payoutPix?.keyMasked ??
+    ws?.payoutPix?.pixKeyMasked ??
+    ws?.pix?.payoutPixKeyMasked ??
+    ws?.pix?.pixKeyMasked ??
+    ws?.payoutPixKey?.masked ??
+    "";
+  return String(v || "").trim();
+}
+
 /** ========= UI: toast ========= */
 function Toast({ message, visible }) {
   return (
@@ -258,10 +272,21 @@ export default function Dashboard() {
   const location = useLocation();
   const toastTimerRef = useRef(null);
 
-  // quando workspace chegar, usa a masked key como base
+  // ✅ Valor final único (state > workspace)
+  const pixKeyMaskedFinal = useMemo(() => {
+    console.log(workspace);
+    return String(
+      payoutPixKeyMasked || pickPixKeyMasked(workspace) || "",
+    ).trim();
+  }, [payoutPixKeyMasked, workspace]);
+
+  // quando workspace chegar, usa a masked key como base (sem sobrescrever state com vazio)
   useEffect(() => {
-    setPayoutPixKeyMasked(String(workspace?.payoutPixKeyMasked || ""));
-  }, [workspace?.payoutPixKeyMasked]);
+    const maskedFromWs = pickPixKeyMasked(workspace);
+    if (!String(payoutPixKeyMasked || "").trim() && maskedFromWs) {
+      setPayoutPixKeyMasked(maskedFromWs);
+    }
+  }, [workspace, payoutPixKeyMasked]);
 
   // abre modal se veio de /withdraws (routes.jsx manda state.openPixSettings)
   useEffect(() => {
@@ -416,9 +441,7 @@ export default function Dashboard() {
       (o) => normStatus(o?.paymentStatus) === "WAITING_CONFIRMATION",
     ).length;
 
-    const pixConfigured = !!String(
-      payoutPixKeyMasked || workspace?.payoutPixKeyMasked || "",
-    ).trim();
+    const pixConfigured = !!pixKeyMaskedFinal;
 
     return {
       total,
@@ -436,7 +459,7 @@ export default function Dashboard() {
       waitingConfirmation,
       pixConfigured,
     };
-  }, [offers, bookings, workspace, payoutPixKeyMasked]);
+  }, [offers, bookings, workspace, pixKeyMaskedFinal]);
 
   const quota = useMemo(() => {
     const limit = Number(workspace?.pixMonthlyLimit);
@@ -630,16 +653,17 @@ export default function Dashboard() {
             index={5}
           />
 
-          {/* ✅ Conta Pix sem request no load */}
+          {/* ✅ Conta Pix */}
           <StatCard
             icon={<WalletIcon className="h-5 w-5 text-emerald-600" />}
             label="Conta Pix"
             value={kpis.pixConfigured ? "Configurada" : "Pendente"}
             subtitle={
               kpis.pixConfigured
-                ? `Chave: ${payoutPixKeyMasked || workspace?.payoutPixKeyMasked || ""}`
+                ? `Chave: ${pixKeyMaskedFinal || "—"}`
                 : "Configure para receber pagamentos"
             }
+            log={console.log(workspace)}
             highlight
             loading={loadingMe}
             index={6}
@@ -657,9 +681,6 @@ export default function Dashboard() {
 
         {/* ANALYTICS */}
         <AnalyticsSection offers={offers} />
-
-        {/* ... resto do seu dashboard permanece igual ... */}
-        {/* (mantive o arquivo inteiro com seu conteúdo atual abaixo, sem alterações de lógica) */}
 
         <div className="grid grid-cols-12 gap-6">
           {/* MAIN COLUMN: RECENT LINKS */}
@@ -895,8 +916,16 @@ export default function Dashboard() {
         open={pixModalOpen}
         onClose={() => setPixModalOpen(false)}
         onSaved={(d) => {
-          const masked = String(d?.payoutPixKeyMasked || "");
-          if (masked) setPayoutPixKeyMasked(masked);
+          const masked = String(
+            d?.payoutPixKeyMasked ??
+              d?.workspace?.payoutPixKeyMasked ??
+              d?.settings?.payoutPixKeyMasked ??
+              d?.data?.payoutPixKeyMasked ??
+              "",
+          ).trim();
+
+          // seta mesmo se vier vazio (permite “remover” a chave)
+          setPayoutPixKeyMasked(masked);
           setPixModalOpen(false);
         }}
       />
