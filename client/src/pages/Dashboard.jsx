@@ -1,5 +1,5 @@
 // src/pages/Dashboard.jsx
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import {
   FileText,
@@ -25,8 +25,14 @@ import { useAuth } from "../app/AuthContext.jsx";
 import QuotaBadge from "../components/QuotaBadge.jsx";
 import { quotaPercent } from "../utils/planQuota.js";
 import AnalyticsSection from "../components/dashboard/AnalyticsSection.jsx";
-
 import PixSettingsModal from "../components/PixSettingsModal.jsx";
+
+import OfferDetailsModal from "../components/offers/OfferDetailsModal.jsx";
+import {
+  fmtBRLFromCents,
+  getAmountCents,
+  getPaymentLabel,
+} from "../components/offers/offerHelpers.js";
 
 /** ========= ICON COMPONENTS (SVG INLINE) ========= */
 const Icons = {
@@ -157,20 +163,6 @@ function offerPaidAmountCents(o) {
   );
 }
 
-function pickPixKeyMasked(ws) {
-  const v =
-    ws?.payoutPixKeyMasked ??
-    ws?.payout?.payoutPixKeyMasked ??
-    ws?.payout?.pixKeyMasked ??
-    ws?.payoutPix?.keyMasked ??
-    ws?.payoutPix?.pixKeyMasked ??
-    ws?.pix?.payoutPixKeyMasked ??
-    ws?.pix?.pixKeyMasked ??
-    ws?.payoutPixKey?.masked ??
-    "";
-  return String(v || "").trim();
-}
-
 /** ========= UI: toast ========= */
 function Toast({ message, visible }) {
   return (
@@ -259,34 +251,57 @@ export default function Dashboard() {
   const [error, setError] = useState("");
   const [bookingsErr, setBookingsErr] = useState("");
 
-  // ✅ NÃO busca payout-settings no load (evita 404)
   const [payoutPixKeyMasked, setPayoutPixKeyMasked] = useState("");
-
   const [pixModalOpen, setPixModalOpen] = useState(false);
 
   const [showToast, setShowToast] = useState(false);
   const [lastUpdate, setLastUpdate] = useState("");
+
   const { signOut, workspace, loadingMe } = useAuth();
 
   const nav = useNavigate();
   const location = useLocation();
   const toastTimerRef = useRef(null);
 
-  // ✅ Valor final único (state > workspace)
-  const pixKeyMaskedFinal = useMemo(() => {
-    console.log(workspace);
-    return String(
-      payoutPixKeyMasked || pickPixKeyMasked(workspace) || "",
-    ).trim();
-  }, [payoutPixKeyMasked, workspace]);
+  // ✅ novo: modal compartilhado de detalhes (igual Offers)
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailsOffer, setDetailsOffer] = useState(null);
+  const [copiedId, setCopiedId] = useState(null);
 
-  // quando workspace chegar, usa a masked key como base (sem sobrescrever state com vazio)
-  useEffect(() => {
-    const maskedFromWs = pickPixKeyMasked(workspace);
-    if (!String(payoutPixKeyMasked || "").trim() && maskedFromWs) {
-      setPayoutPixKeyMasked(maskedFromWs);
+  const patchOfferInList = useCallback((updated) => {
+    if (!updated?._id) return;
+    setOffers((prev) =>
+      (prev || []).map((it) =>
+        it?._id === updated._id ? { ...it, ...updated } : it,
+      ),
+    );
+    setDetailsOffer((prev) =>
+      prev?._id === updated._id ? { ...prev, ...updated } : prev,
+    );
+  }, []);
+
+  const copyLink = useCallback(async (offer) => {
+    const token = offer?.publicToken;
+    if (!token) return;
+
+    const url = `${window.location.origin}/p/${token}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedId(offer._id);
+      setTimeout(() => setCopiedId(null), 1200);
+
+      setShowToast(true);
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = setTimeout(() => setShowToast(false), 2000);
+    } catch (err) {
+      console.error(err);
     }
-  }, [workspace, payoutPixKeyMasked]);
+  }, []);
+
+  const openDetails = useCallback((offer) => {
+    setDetailsOffer(offer || null);
+    setDetailsOpen(true);
+  }, []);
 
   // abre modal se veio de /withdraws (routes.jsx manda state.openPixSettings)
   useEffect(() => {
@@ -295,17 +310,6 @@ export default function Dashboard() {
       nav("/dashboard", { replace: true, state: null });
     }
   }, [location?.state, nav]);
-
-  const handleCopy = async (url) => {
-    try {
-      await navigator.clipboard.writeText(window.location.origin + url);
-      setShowToast(true);
-      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-      toastTimerRef.current = setTimeout(() => setShowToast(false), 2000);
-    } catch (err) {
-      console.error(err);
-    }
-  };
 
   async function loadBookings() {
     try {
@@ -341,7 +345,6 @@ export default function Dashboard() {
       );
 
       loadBookings();
-      // ✅ removido: loadPixSettings()
     } catch (e) {
       if (e?.status === 401) return signOut();
       setError("Falha ao carregar dados principais.");
@@ -441,7 +444,7 @@ export default function Dashboard() {
       (o) => normStatus(o?.paymentStatus) === "WAITING_CONFIRMATION",
     ).length;
 
-    const pixConfigured = !!pixKeyMaskedFinal;
+    const pixConfigured = !!String(payoutPixKeyMasked || "").trim();
 
     return {
       total,
@@ -459,7 +462,7 @@ export default function Dashboard() {
       waitingConfirmation,
       pixConfigured,
     };
-  }, [offers, bookings, workspace, pixKeyMaskedFinal]);
+  }, [offers, bookings, workspace, payoutPixKeyMasked]);
 
   const quota = useMemo(() => {
     const limit = Number(workspace?.pixMonthlyLimit);
@@ -490,7 +493,6 @@ export default function Dashboard() {
 
           <div className="relative rounded-3xl border border-gray-200 bg-white/80 backdrop-blur-xl p-6 sm:p-8 shadow-xl">
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-              {/* LEFT */}
               <div className="space-y-3 min-w-0">
                 <div className="flex flex-wrap items-center gap-3">
                   <h1 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
@@ -499,15 +501,7 @@ export default function Dashboard() {
 
                   {lastUpdate && (
                     <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200">
-                      <span className="relative flex h-2 w-2">
-                        <span
-                          className={`animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 ${
-                            loading ? "hidden" : ""
-                          }`}
-                        />
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-                      </span>
-
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
                       <span className="text-xs font-bold text-emerald-700">
                         {loading
                           ? "Sincronizando..."
@@ -522,7 +516,6 @@ export default function Dashboard() {
                 </p>
               </div>
 
-              {/* RIGHT (actions) */}
               <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full lg:w-auto">
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto">
                   <Button
@@ -539,7 +532,6 @@ export default function Dashboard() {
                     </span>
                   </Button>
 
-                  {/* ✅ Agora abre o modal direto */}
                   <Button
                     onClick={() => setPixModalOpen(true)}
                     className="gap-2 h-11 px-4 active:scale-95 transition-all bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600"
@@ -551,25 +543,8 @@ export default function Dashboard() {
                   <Link to="/offers/new" className="w-full sm:w-auto">
                     <Button
                       size="sm"
-                      className="
-                        w-full sm:w-auto
-                        justify-center items-center gap-2
-                        h-11 px-6
-                        font-bold
-                        rounded-xl
-                        text-white
-                        bg-gradient-to-r from-emerald-600 to-teal-600
-                        hover:from-emerald-700 hover:to-teal-700
-                        shadow-lg shadow-emerald-200/60
-                        ring-1 ring-emerald-500/20
-                        active:scale-95 transition-all
-                        focus:outline-none focus:ring-2 focus:ring-emerald-300
-                        relative overflow-hidden
-                      "
+                      className="w-full sm:w-auto justify-center items-center gap-2 h-11 px-6 font-bold rounded-xl text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-lg shadow-emerald-200/60 ring-1 ring-emerald-500/20 active:scale-95 transition-all"
                     >
-                      <span className="pointer-events-none absolute inset-0 opacity-0 hover:opacity-100 transition-opacity">
-                        <span className="absolute -left-10 top-0 h-full w-24 rotate-12 bg-white/20 blur-md" />
-                      </span>
                       <Icons.Plus />
                       Nova proposta
                     </Button>
@@ -653,17 +628,15 @@ export default function Dashboard() {
             index={5}
           />
 
-          {/* ✅ Conta Pix */}
           <StatCard
             icon={<WalletIcon className="h-5 w-5 text-emerald-600" />}
             label="Conta Pix"
             value={kpis.pixConfigured ? "Configurada" : "Pendente"}
             subtitle={
               kpis.pixConfigured
-                ? `Chave: ${pixKeyMaskedFinal || "—"}`
+                ? `Chave: ${payoutPixKeyMasked || ""}`
                 : "Configure para receber pagamentos"
             }
-            log={console.log(workspace)}
             highlight
             loading={loadingMe}
             index={6}
@@ -714,56 +687,73 @@ export default function Dashboard() {
                 ) : (
                   <div className="divide-y divide-zinc-100">
                     {kpis.last5.map((o) => {
+                      const pay = getPaymentLabel(o);
                       const publicUrl = `/p/${o.publicToken}`;
-                      const isPaid = isPaidOffer(o);
+                      const copied = copiedId === o._id;
 
                       return (
                         <div key={o._id} className="p-5 hover:bg-zinc-50">
                           <div className="flex items-start justify-between gap-4">
                             <div className="min-w-0">
-                              <div className="flex items-center gap-2">
+                              <div className="flex flex-wrap items-center gap-2">
                                 <div className="text-sm font-semibold text-zinc-900 truncate">
                                   {o.title || "Proposta"}
                                 </div>
                                 <Badge
-                                  tone={normStatus(o.status)}
+                                  tone={pay.tone}
                                   size="xs"
                                   className="shrink-0"
-                                />
+                                >
+                                  {pay.text}
+                                </Badge>
+                                {o?.notifyWhatsAppOnPaid ? (
+                                  <span className="text-[10px] font-bold text-emerald-700 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1">
+                                    WA ON
+                                  </span>
+                                ) : null}
                               </div>
+
                               <div className="mt-1 text-xs text-zinc-500">
-                                {fmtBRL(o.amountCents)} •{" "}
-                                {o.customerName || "Cliente"}
+                                {fmtBRLFromCents(getAmountCents(o))} •{" "}
+                                {o.customerName || "Cliente"}{" "}
+                                {o.customerWhatsApp
+                                  ? `• ${o.customerWhatsApp}`
+                                  : ""}
                               </div>
 
                               <div className="mt-2 flex items-center gap-2">
                                 <code className="rounded-lg border bg-white px-2 py-1 text-[11px] text-zinc-700">
                                   {publicUrl}
                                 </code>
-                                <button
-                                  type="button"
-                                  onClick={() => handleCopy(publicUrl)}
-                                  className="rounded-lg border bg-white px-2 py-1 text-[11px] font-semibold text-zinc-700 hover:bg-zinc-50"
-                                >
-                                  Copiar
-                                </button>
                               </div>
-
-                              {isPaid ? (
-                                <div className="mt-2 text-[11px] font-semibold text-emerald-700">
-                                  Pago/Confirmado
-                                </div>
-                              ) : null}
                             </div>
 
-                            <div className="text-right shrink-0">
-                              <Link
-                                to={publicUrl}
-                                target="_blank"
-                                className="text-[11px] font-bold text-emerald-600 hover:underline"
+                            <div className="shrink-0 flex items-center gap-2">
+                              <Button
+                                variant={copied ? "primary" : "secondary"}
+                                size="sm"
+                                onClick={() => copyLink(o)}
                               >
-                                ABRIR
-                              </Link>
+                                {copied ? "Copiado" : "Copiar link"}
+                              </Button>
+
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  window.open(
+                                    publicUrl,
+                                    "_blank",
+                                    "noopener,noreferrer",
+                                  )
+                                }
+                              >
+                                Abrir
+                              </Button>
+
+                              <Button size="sm" onClick={() => openDetails(o)}>
+                                Detalhes
+                              </Button>
                             </div>
                           </div>
                         </div>
@@ -863,7 +853,8 @@ export default function Dashboard() {
                             {o.customerName || "Cliente"}
                           </div>
                           <div className="text-[11px] text-zinc-500 line-clamp-1">
-                            {o.title || "Proposta"} • {fmtBRL(o.amountCents)}
+                            {o.title || "Proposta"} •{" "}
+                            {fmtBRLFromCents(getAmountCents(o))}
                           </div>
                           <div className="text-[10px] text-zinc-400 font-medium uppercase tracking-wider">
                             {fmtDateTimeBR(o.updatedAt || o.createdAt)}
@@ -916,18 +907,23 @@ export default function Dashboard() {
         open={pixModalOpen}
         onClose={() => setPixModalOpen(false)}
         onSaved={(d) => {
-          const masked = String(
-            d?.payoutPixKeyMasked ??
-              d?.workspace?.payoutPixKeyMasked ??
-              d?.settings?.payoutPixKeyMasked ??
-              d?.data?.payoutPixKeyMasked ??
-              "",
-          ).trim();
-
-          // seta mesmo se vier vazio (permite “remover” a chave)
+          const masked = String(d?.payoutPixKeyMasked || "").trim();
           setPayoutPixKeyMasked(masked);
           setPixModalOpen(false);
         }}
+      />
+
+      {/* ✅ Modal compartilhado (mesmo da tela Offers) */}
+      <OfferDetailsModal
+        open={detailsOpen}
+        onClose={() => {
+          setDetailsOpen(false);
+          setDetailsOffer(null);
+        }}
+        offer={detailsOffer}
+        onOfferUpdated={patchOfferInList}
+        copyLink={copyLink}
+        copiedId={copiedId}
       />
     </Shell>
   );
