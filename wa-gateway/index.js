@@ -5,13 +5,14 @@ import dotenv from "dotenv";
 import qrcodePkg from "qrcode-terminal";
 import whatsappPkg from "whatsapp-web.js";
 import QRCode from "qrcode";
+import fs from "fs";
+import path from "path";
 
 dotenv.config();
 
-const qrcode = qrcodePkg?.default ?? qrcodePkg; // compat CJS/ESM
+const qrcode = qrcodePkg?.default ?? qrcodePkg;
 const { Client, LocalAuth } = whatsappPkg?.default ?? whatsappPkg;
 
-// Render usa PORT
 const PORT = Number(process.env.PORT || process.env.WA_PORT || 3010);
 
 const API_KEY = process.env.WA_API_KEY || "";
@@ -20,10 +21,21 @@ const SESSION_PATH = process.env.WA_SESSION_PATH || "./wa-session";
 const HEADLESS =
   String(process.env.WA_PUPPETEER_HEADLESS || "true").toLowerCase() === "true";
 
-// /qr access
 const QR_PUBLIC =
   String(process.env.WA_QR_PUBLIC || "true").toLowerCase() === "true";
-const QR_KEY = process.env.WA_QR_KEY || ""; // opcional (se vazio, usa WA_API_KEY)
+
+const QR_KEY = process.env.WA_QR_KEY || "";
+
+// Prioridade:
+// 1) WA_CHROME_PATH
+// 2) CHROME_BIN
+// 3) PUPPETEER_EXECUTABLE_PATH
+// 4) fallback padrão Linux container
+const CHROME_PATH =
+  process.env.WA_CHROME_PATH ||
+  process.env.CHROME_BIN ||
+  process.env.PUPPETEER_EXECUTABLE_PATH ||
+  "/usr/bin/google-chrome";
 
 let state = "INIT"; // INIT | STARTING | QR | READY | DISCONNECTED
 let phone = null;
@@ -34,6 +46,9 @@ let latestQrAt = null;
 
 let lastError = null;
 let lastErrorAt = null;
+
+let waClient = null;
+let isInitializing = false;
 
 function nowISO() {
   return new Date().toISOString();
@@ -56,8 +71,55 @@ function compactForLog(text, max = 280) {
     .replace(/\r/g, "\\r")
     .replace(/\n/g, "\\n")
     .trim();
+
   if (s.length <= max) return s;
   return `${s.slice(0, max)}…(+${s.length - max} chars)`;
+}
+
+function maskApiKey(value) {
+  const v = String(value || "");
+  if (!v) return "(not set)";
+  if (v.length <= 6) return "***";
+  return `${v.slice(0, 3)}***${v.slice(-3)}`;
+}
+
+function ensureDir(dirPath) {
+  try {
+    fs.mkdirSync(dirPath, { recursive: true });
+  } catch (err) {
+    console.error(`[fs] could not ensure dir ${dirPath}:`, err?.message || err);
+  }
+}
+
+function fileExists(filePath) {
+  try {
+    return fs.existsSync(filePath);
+  } catch {
+    return false;
+  }
+}
+
+function resolveChromePath() {
+  const candidates = [
+    process.env.WA_CHROME_PATH,
+    process.env.CHROME_BIN,
+    process.env.PUPPETEER_EXECUTABLE_PATH,
+    "/usr/bin/google-chrome",
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (fileExists(candidate)) return candidate;
+  }
+
+  return (
+    process.env.WA_CHROME_PATH ||
+    process.env.CHROME_BIN ||
+    process.env.PUPPETEER_EXECUTABLE_PATH ||
+    "/usr/bin/google-chrome"
+  );
 }
 
 process.on("unhandledRejection", (reason) => {
@@ -72,10 +134,12 @@ process.on("uncaughtException", (err) => {
 
 function requireApiKey(req, res, next) {
   const key = req.header("x-api-key");
-  if (!API_KEY)
+  if (!API_KEY) {
     return res.status(500).json({ ok: false, error: "WA_API_KEY_NOT_SET" });
-  if (key !== API_KEY)
+  }
+  if (key !== API_KEY) {
     return res.status(401).json({ ok: false, error: "UNAUTHORIZED" });
+  }
   next();
 }
 
@@ -85,6 +149,7 @@ function allowQrAccess(req) {
   const key = String(req.query.key || req.header("x-api-key") || "");
   const expected = QR_KEY || API_KEY;
   if (!expected) return false;
+
   return key === expected;
 }
 
@@ -104,7 +169,12 @@ app.use(express.json({ limit: "200kb" }));
 
 app.get("/health", (req, res) => {
   res.setHeader("Cache-Control", "no-store");
-  res.json({ ok: true, at: nowISO(), state });
+  res.json({
+    ok: true,
+    at: nowISO(),
+    state,
+    isInitializing,
+  });
 });
 
 app.get("/status", requireApiKey, (req, res) => {
@@ -118,10 +188,13 @@ app.get("/status", requireApiKey, (req, res) => {
     latestQrAt,
     lastError,
     lastErrorAt,
+    isInitializing,
+    chromePathConfigured: CHROME_PATH,
+    chromePathResolved: resolveChromePath(),
+    sessionPath: SESSION_PATH,
   });
 });
 
-// ✅ visualizar QR no navegador
 app.get("/qr", async (req, res) => {
   res.setHeader(
     "Cache-Control",
@@ -134,6 +207,7 @@ app.get("/qr", async (req, res) => {
     req.headers["x-forwarded-for"]?.toString()?.split(",")?.[0]?.trim() ||
     req.socket?.remoteAddress ||
     "unknown";
+
   const ua = req.headers["user-agent"] || "unknown";
 
   const authorized = allowQrAccess(req);
@@ -150,16 +224,19 @@ app.get("/qr", async (req, res) => {
   if (!authorized) {
     res.status(401).setHeader("Content-Type", "text/plain; charset=utf-8");
     return res.send(
-      "UNAUTHORIZED\n\nDefina WA_QR_PUBLIC=true (MVP) ou acesse com ?key=SEU_TOKEN (ou header x-api-key).",
+      "UNAUTHORIZED\n\nDefina WA_QR_PUBLIC=true ou acesse com ?key=SEU_TOKEN (ou header x-api-key).",
     );
   }
 
-  // Se já está logado
   if (isReady) {
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     return res.send(`<!doctype html>
 <html>
-  <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>WhatsApp QR</title></head>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WhatsApp QR</title>
+  </head>
   <body style="font-family: system-ui; padding: 24px;">
     <h2>WhatsApp</h2>
     <p><b>Status:</b> ✅ LOGADO (READY)</p>
@@ -174,7 +251,6 @@ app.get("/qr", async (req, res) => {
 </html>`);
   }
 
-  // Sem QR ainda (ou init falhou)
   if (!latestQr) {
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     return res.send(`<!doctype html>
@@ -189,7 +265,9 @@ app.get("/qr", async (req, res) => {
     <h2>WhatsApp</h2>
     <p><b>Status:</b> ${state}</p>
     <p>QR ainda não foi gerado. Aguarde alguns segundos... (atualiza sozinho)</p>
-    <p style="color:#555"><b>Última atividade:</b> ${lastSeen}</p>
+    <p><b>Última atividade:</b> ${lastSeen}</p>
+    <p><b>Chrome configurado:</b> ${CHROME_PATH}</p>
+    <p><b>Chrome resolvido:</b> ${resolveChromePath()}</p>
     ${
       lastError
         ? `<div style="margin-top:12px;padding:12px;border:1px solid #f59e0b;background:#fffbeb;border-radius:10px;">
@@ -199,13 +277,12 @@ app.get("/qr", async (req, res) => {
     }
     <hr/>
     <p style="color:#666;font-size:13px;">
-      Se o status ficar DISCONNECTED e não aparecer QR, quase sempre é falha ao iniciar o Chromium/Puppeteer no Render.
+      Se o status ficar DISCONNECTED sem QR, normalmente é falha ao iniciar o Chrome/Puppeteer no container.
     </p>
   </body>
 </html>`);
   }
 
-  // Tem QR: renderiza imagem
   const dataUrl = await QRCode.toDataURL(latestQr, {
     margin: 1,
     scale: 8,
@@ -230,7 +307,7 @@ app.get("/qr", async (req, res) => {
       WhatsApp → <b>Dispositivos conectados</b> → <b>Conectar dispositivo</b>.
       Esta página atualiza sozinha.
     </p>
-    <p style="color:#777"><b>Última atividade:</b> ${lastSeen}</p>
+    <p><b>Última atividade:</b> ${lastSeen}</p>
     ${
       lastError
         ? `<hr/><p style="color:#b45309"><b>Último erro:</b> ${lastError}<br/><b>Quando:</b> ${lastErrorAt}</p>`
@@ -240,23 +317,68 @@ app.get("/qr", async (req, res) => {
 </html>`);
 });
 
-let waClient = null;
+app.post("/restart", requireApiKey, async (req, res) => {
+  try {
+    console.log(`[wa] manual restart requested at=${nowISO()}`);
+    await destroyClientSafe();
+    initWhatsApp();
+    return res.json({ ok: true, state, at: nowISO() });
+  } catch (err) {
+    setLastError("restart", err);
+    return res.status(500).json({
+      ok: false,
+      error: "RESTART_FAILED",
+      details: err?.message || String(err),
+    });
+  }
+});
+
+async function destroyClientSafe() {
+  try {
+    if (waClient) {
+      const current = waClient;
+      waClient = null;
+      await current.destroy();
+    }
+  } catch (err) {
+    console.error(`[wa] destroy warning: ${err?.message || err}`);
+  }
+}
 
 async function initWhatsApp() {
+  if (isInitializing) {
+    console.log(`[wa] init skipped because another init is already running`);
+    return;
+  }
+
+  isInitializing = true;
   state = "STARTING";
   touch();
+
+  ensureDir(path.resolve(SESSION_PATH));
+
+  const resolvedChromePath = resolveChromePath();
 
   console.log(
     `[wa] init at=${nowISO()} headless=${HEADLESS} sessionPath=${SESSION_PATH}`,
   );
+  console.log(
+    `[wa] env apiKey=${maskApiKey(API_KEY)} qrPublic=${QR_PUBLIC} chromeConfigured=${CHROME_PATH} chromeResolved=${resolvedChromePath}`,
+  );
+  console.log(
+    `[wa] chromeExists=${fileExists(resolvedChromePath)} port=${PORT}`,
+  );
 
   try {
+    await destroyClientSafe();
+
     waClient = new Client({
-      authStrategy: new LocalAuth({ dataPath: SESSION_PATH }),
+      authStrategy: new LocalAuth({
+        dataPath: SESSION_PATH,
+      }),
       puppeteer: {
         headless: HEADLESS,
-        // Se você usar chromium do sistema, pode setar PUPPETEER_EXECUTABLE_PATH no Render
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+        executablePath: resolvedChromePath,
         args: [
           "--no-sandbox",
           "--disable-setuid-sandbox",
@@ -265,6 +387,7 @@ async function initWhatsApp() {
           "--no-first-run",
           "--no-zygote",
           "--disable-gpu",
+          "--disable-features=site-per-process",
         ],
       },
     });
@@ -294,9 +417,10 @@ async function initWhatsApp() {
 
       phone = widUser ? `${widUser}`.replace(/\D/g, "") : widUser;
 
-      // opcional: limpa QR depois de conectar
       latestQr = null;
       latestQrAt = null;
+      lastError = null;
+      lastErrorAt = null;
 
       console.log(`[wa] READY at=${nowISO()} phone=${phone || widUser || "?"}`);
     });
@@ -304,6 +428,21 @@ async function initWhatsApp() {
     waClient.on("authenticated", () => {
       touch();
       console.log(`[wa] AUTHENTICATED at=${nowISO()}`);
+    });
+
+    waClient.on("loading_screen", (percent, message) => {
+      touch();
+      console.log(
+        `[wa] LOADING at=${nowISO()} percent=${percent} message="${compactForLog(
+          message,
+          120,
+        )}"`,
+      );
+    });
+
+    waClient.on("change_state", (nextState) => {
+      touch();
+      console.log(`[wa] CHANGE_STATE at=${nowISO()} nextState=${nextState}`);
     });
 
     waClient.on("auth_failure", (msg) => {
@@ -320,21 +459,25 @@ async function initWhatsApp() {
   } catch (e) {
     state = "DISCONNECTED";
     setLastError("initWhatsApp", e);
+  } finally {
+    isInitializing = false;
   }
 }
 
 app.post("/send", requireApiKey, async (req, res) => {
   try {
     const { to, message } = req.body || {};
+
     if (!to || !message) {
       return res.status(400).json({ ok: false, error: "INVALID_BODY" });
     }
 
     const toNorm = normalizeToBR(to);
-    if (!toNorm)
+    if (!toNorm) {
       return res.status(400).json({ ok: false, error: "INVALID_TO" });
+    }
 
-    if (state !== "READY") {
+    if (state !== "READY" || !waClient) {
       return res.status(503).json({
         ok: false,
         error: "WHATSAPP_NOT_READY",
@@ -347,7 +490,6 @@ app.post("/send", requireApiKey, async (req, res) => {
     const msg = String(message);
     const chatId = `${toNorm}@c.us`;
 
-    // ✅ LOG: número + mensagem (com preview seguro)
     console.log(
       `[send] at=${nowISO()} from=${phone || "?"} to=${toNorm} chatId=${chatId} chars=${msg.length} message="${compactForLog(
         msg,
@@ -358,7 +500,6 @@ app.post("/send", requireApiKey, async (req, res) => {
     const result = await waClient.sendMessage(chatId, msg);
     const providerMessageId = result?.id?._serialized || result?.id?.id || null;
 
-    // ✅ LOG: confirmação do envio
     console.log(
       `[send] OK at=${nowISO()} to=${toNorm} providerMessageId=${
         providerMessageId || "?"
@@ -366,6 +507,7 @@ app.post("/send", requireApiKey, async (req, res) => {
     );
 
     touch();
+
     return res.json({ ok: true, providerMessageId });
   } catch (err) {
     setLastError("send", err);
