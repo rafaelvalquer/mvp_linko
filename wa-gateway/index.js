@@ -519,7 +519,7 @@ app.post("/send", requireApiKey, async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`[wa-gateway] listening on :${PORT}`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`[wa-gateway] listening on 0.0.0.0:${PORT}`);
   initWhatsApp();
 });
