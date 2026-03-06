@@ -44,6 +44,79 @@ function safeDate(v) {
   return d;
 }
 
+/**
+ * ✅ Resolve status do slot de forma robusta:
+ * - suporta campos alternativos comuns (status/state/availability/etc)
+ * - suporta booleans (available/isAvailable/isFree)
+ * - suporta ids que indicam reserva (bookingId/reservationId/holdId)
+ */
+function resolveSlotStatus(slot) {
+  const raw =
+    normStatus(slot?.status) ||
+    normStatus(slot?.state) ||
+    normStatus(slot?.availability) ||
+    normStatus(slot?.slotStatus) ||
+    normStatus(slot?.bookingStatus) ||
+    normStatus(slot?.booking?.status);
+
+  // booleans / flags
+  const hasBookingRef =
+    !!slot?.bookingId ||
+    !!slot?.reservationId ||
+    !!slot?.holdId ||
+    !!slot?.booking?._id ||
+    !!slot?.booking?.id;
+
+  const isAvailableBool =
+    slot?.isAvailable ?? slot?.available ?? slot?.isFree ?? slot?.free;
+
+  // Se tem referência de booking/reserva, não é FREE
+  if (hasBookingRef) {
+    // tenta inferir confirmado/pago
+    if (
+      ["CONFIRMED", "BOOKED", "PAID", "CONFIRMADO"].includes(raw) ||
+      ["CONFIRMED", "PAID"].includes(normStatus(slot?.booking?.paymentStatus))
+    ) {
+      return "CONFIRMED";
+    }
+    return "HOLD";
+  }
+
+  // Se o slot informa boolean de disponibilidade
+  if (isAvailableBool === false) {
+    // se não tem raw, assume bloqueado/reservado
+    if (!raw) return "HOLD";
+    if (["FREE", "AVAILABLE", "OPEN", "LIVRE"].includes(raw)) return "HOLD";
+    return raw;
+  }
+
+  // Map de sinônimos
+  if (["FREE", "AVAILABLE", "OPEN", "LIVRE"].includes(raw)) return "FREE";
+  if (
+    [
+      "HOLD",
+      "HELD",
+      "RESERVED",
+      "RESERVADO",
+      "PENDING",
+      "WAITING",
+      "WAITING_CONFIRMATION",
+    ].includes(raw)
+  )
+    return "HOLD";
+  if (["CONFIRMED", "BOOKED", "PAID", "CONFIRMADO", "CONFIRMADA"].includes(raw))
+    return "CONFIRMED";
+  if (
+    ["BLOCKED", "UNAVAILABLE", "BUSY", "INDISPONIVEL", "INDISPONÍVEL"].includes(
+      raw,
+    )
+  )
+    return "BLOCKED";
+
+  // fallback
+  return raw || "FREE";
+}
+
 export default function PublicSchedule() {
   const { token } = useParams();
   const navigate = useNavigate();
@@ -144,24 +217,53 @@ export default function PublicSchedule() {
 
   const getSlotUi = useCallback(
     (s) => {
-      const st = normStatus(s?.status);
+      const st = resolveSlotStatus(s);
       const start = safeDate(s?.startAt);
+
       const isPast =
         isToday && start ? start.getTime() <= now.getTime() - pastTolMs : false;
+
+      // ✅ qualquer coisa que não seja FREE = bloqueado (e past também)
       const disabled = st !== "FREE" || isPast;
+
       const label = isPast
         ? "Horário passado"
-        : st === "HOLD"
-          ? "Reservado"
-          : st === "CONFIRMED"
-            ? "Confirmado"
-            : st === "FREE"
-              ? "Livre"
+        : st === "FREE"
+          ? "Livre"
+          : st === "HOLD"
+            ? "Já reservado"
+            : st === "CONFIRMED"
+              ? "Já reservado"
               : "Indisponível";
-      return { st, isPast, disabled, label };
+
+      const tone = isPast
+        ? "PAST"
+        : st === "FREE"
+          ? "FREE"
+          : st === "HOLD"
+            ? "HOLD"
+            : "BLOCKED";
+
+      return { st, isPast, disabled, label, tone };
     },
     [isToday, now, pastTolMs],
   );
+
+  const fetchSlots = useCallback(async () => {
+    if (!offer) return;
+    setLoadingSlots(true);
+    setSlotsErr("");
+    try {
+      const d = await api(`/p/${token}/slots?date=${encodeURIComponent(date)}`);
+      setSlotsNow(d?.now || null);
+      setSlots(Array.isArray(d?.slots) ? d.slots : []);
+    } catch (e) {
+      setSlots([]);
+      setSlotsErr(e?.message || "Falha ao carregar horários.");
+    } finally {
+      setLoadingSlots(false);
+    }
+  }, [offer, token, date]);
 
   // carrega slots quando muda a data
   useEffect(() => {
@@ -170,19 +272,21 @@ export default function PublicSchedule() {
     setSelected(null);
     setBooking(null);
 
-    setLoadingSlots(true);
-    setSlotsErr("");
-    api(`/p/${token}/slots?date=${encodeURIComponent(date)}`)
-      .then((d) => {
-        setSlotsNow(d?.now || null);
-        setSlots(Array.isArray(d.slots) ? d.slots : []);
-      })
-      .catch((e) => {
-        setSlots([]);
-        setSlotsErr(e?.message || "Falha ao carregar horários.");
-      })
-      .finally(() => setLoadingSlots(false));
-  }, [token, date, offer]);
+    fetchSlots();
+  }, [token, date, offer, fetchSlots]);
+
+  // ✅ auto refresh: reflete reservas de outros usuários
+  useEffect(() => {
+    if (!offer) return;
+    if (booking) return; // se já reservou, não precisa
+    if (loadingSlots) return;
+
+    const id = setInterval(() => {
+      fetchSlots();
+    }, 12_000);
+
+    return () => clearInterval(id);
+  }, [offer, booking, loadingSlots, fetchSlots]);
 
   // impede seleção fantasma: slot deixou de ser FREE ou virou passado
   useEffect(() => {
@@ -216,6 +320,7 @@ export default function PublicSchedule() {
       });
       if (!res?.ok) throw new Error(res?.error || "Falha ao criar reserva.");
       setBooking(res.booking);
+
       // reflete HOLD imediatamente
       try {
         const d = await api(
@@ -412,6 +517,21 @@ export default function PublicSchedule() {
                 const ui = getSlotUi(s);
                 const disabled = ui.disabled;
                 const isSel = selected?.startAt === s.startAt;
+
+                const baseCls =
+                  "rounded-xl border px-3 py-2 text-sm font-semibold transition text-left";
+
+                const cls =
+                  ui.tone === "FREE"
+                    ? "bg-white text-zinc-900 hover:bg-zinc-50 border-zinc-200"
+                    : ui.tone === "PAST"
+                      ? "cursor-not-allowed bg-zinc-50 text-zinc-400 border-zinc-200"
+                      : "cursor-not-allowed bg-amber-50 text-amber-900 border-amber-200";
+
+                const selCls = isSel
+                  ? "border-emerald-500 ring-2 ring-emerald-100"
+                  : "";
+
                 return (
                   <button
                     key={s.startAt}
@@ -421,19 +541,21 @@ export default function PublicSchedule() {
                       if (disabled || busy || booking) return;
                       setSelected(s);
                     }}
-                    className={[
-                      "rounded-xl border px-3 py-2 text-sm font-semibold transition",
-                      disabled
-                        ? "cursor-not-allowed bg-zinc-50 text-zinc-400"
-                        : "bg-white text-zinc-900 hover:bg-zinc-50",
-                      isSel
-                        ? "border-emerald-500 ring-2 ring-emerald-100"
-                        : "border-zinc-200",
-                    ].join(" ")}
+                    className={[baseCls, cls, selCls].filter(Boolean).join(" ")}
                     aria-pressed={isSel}
+                    title={disabled && ui.label ? ui.label : ""}
                   >
-                    {fmtTime(s.startAt)}
-                    <div className="text-xs">{ui.label}</div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span>{fmtTime(s.startAt)}</span>
+                      {ui.tone !== "FREE" ? (
+                        <span className="text-[10px] font-bold rounded-full px-2 py-0.5 border border-amber-200 bg-white/60">
+                          BLOQUEADO
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="text-xs font-medium opacity-80">
+                      {ui.label}
+                    </div>
                   </button>
                 );
               })}

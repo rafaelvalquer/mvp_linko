@@ -12,6 +12,10 @@ import {
   notifyPaymentConfirmed,
   notifyPaymentRejected,
 } from "../services/whatsappNotify.js";
+import {
+  notifySellerPixPaid,
+  notifySellerPaymentConfirmedOnPlatform,
+} from "../services/resendEmail.js";
 
 const r = Router();
 
@@ -392,6 +396,41 @@ async function safeNotifyPaymentConfirmed(offerId) {
   }
 }
 
+async function safeNotifySellerPixPaid({ offer, booking, now }) {
+  try {
+    const r2 = await notifySellerPixPaid({
+      offerId: offer._id,
+      offer,
+      booking,
+      pixId: offer?.payment?.lastPixId || null, // manual -> null => key "paid"
+      paidAt: offer?.paidAt || now,
+      paidAmountCents: offer?.paidAmountCents || null,
+      proof: offer?.paymentProof || null, // opcional (anexa se possível)
+    });
+
+    if (r2?.skipped) return { status: "SKIPPED", reason: r2.reason || "" };
+    return { status: "SENT", id: r2?.id || null, to: r2?.to || "" };
+  } catch (e) {
+    return { status: "FAILED", error: String(e?.message || "email_failed") };
+  }
+}
+
+async function safeNotifySellerConfirmedOnPlatform({ offer, booking }) {
+  try {
+    const r3 = await notifySellerPaymentConfirmedOnPlatform({
+      offerId: offer._id,
+      offer,
+      booking,
+      proof: offer?.paymentProof || null,
+    });
+
+    if (r3?.skipped) return { status: "SKIPPED", reason: r3.reason || "" };
+    return { status: "SENT", id: r3?.id || null, to: r3?.to || "" };
+  } catch (e) {
+    return { status: "FAILED", error: String(e?.message || "email_failed") };
+  }
+}
+
 async function confirmPaymentHandler(req, res) {
   const tenantId = req.tenantId;
   const userId = req.user?._id;
@@ -404,10 +443,13 @@ async function confirmPaymentHandler(req, res) {
   const q = { _id: id, workspaceId: tenantId };
   if (userId) q.ownerUserId = userId;
 
-  const offer = await Offer.findOne(q).lean();
-  if (!offer) {
+  const offer0 = await Offer.findOne(q).lean();
+  if (!offer0) {
     return res.status(404).json({ ok: false, error: "Offer not found" });
   }
+
+  // garante campos mais recentes para idempotência (paymentNotifiedAt / confirmedNotifiedAt)
+  const offer = (await Offer.findById(offer0._id).lean()) || offer0;
 
   const ps = String(offer?.paymentStatus || "")
     .trim()
@@ -415,14 +457,47 @@ async function confirmPaymentHandler(req, res) {
   const alreadyConfirmed =
     ps === "CONFIRMED" || ps === "PAID" || !!offer?.paidAt;
 
-  // Se já estava confirmado, ainda assim tenta notificar (idempotente por MessageLog)
+  // booking (para enriquecer os e-mails)
+  let booking = null;
+  try {
+    booking = await Booking.findOne({
+      offerId: offer._id,
+      workspaceId: tenantId,
+    })
+      .sort({ startAt: -1 })
+      .lean();
+  } catch {
+    booking = null;
+  }
+
+  // Se já estava confirmado, ainda assim:
+  // - WhatsApp (idempotente via MessageLog)
+  // - Email 1: "Pix confirmado" (idempotente via paymentNotifiedAt)
+  // - Email 2: "Confirmado na plataforma" (idempotente via confirmedNotifiedAt)
   if (alreadyConfirmed) {
     const notify =
       offer?.notifyWhatsAppOnPaid === true
         ? await safeNotifyPaymentConfirmed(offer._id)
         : { ok: false, status: "SKIPPED", reason: "OFFER_FLAG_DISABLED" };
 
-    return res.json({ ok: true, offer, notify });
+    const email = await safeNotifySellerPixPaid({
+      offer,
+      booking,
+      now: new Date(),
+    });
+
+    const emailConfirmed = await safeNotifySellerConfirmedOnPlatform({
+      offer,
+      booking,
+    });
+
+    console.log("[email] paid confirmed (alreadyConfirmed)", {
+      offerId: String(offer._id),
+      emailStatus: email?.status,
+      emailConfirmedStatus: emailConfirmed?.status,
+    });
+
+    return res.json({ ok: true, offer, notify, email, emailConfirmed });
   }
 
   const hasProof = !!offer?.paymentProof?.storage?.key;
@@ -458,17 +533,11 @@ async function confirmPaymentHandler(req, res) {
     { strict: false },
   );
 
-  try {
-    const b = await Booking.findOne({
-      offerId: offer._id,
-      workspaceId: tenantId,
-    })
-      .sort({ startAt: -1 })
-      .lean();
-
-    if (b?._id) {
+  // atualiza booking, se existir
+  if (booking?._id) {
+    try {
       await Booking.updateOne(
-        { _id: b._id },
+        { _id: booking._id },
         {
           $set: {
             status: "CONFIRMED",
@@ -479,17 +548,39 @@ async function confirmPaymentHandler(req, res) {
         },
         { strict: false },
       );
+    } catch {
+      // silencioso
     }
-  } catch {}
+  }
 
   const updated = await Offer.findById(offer._id).lean();
 
+  // WhatsApp para cliente (se flag ativa)
   const notify =
     updated?.notifyWhatsAppOnPaid === true
       ? await safeNotifyPaymentConfirmed(updated._id)
       : { ok: false, status: "SKIPPED", reason: "OFFER_FLAG_DISABLED" };
 
-  return res.json({ ok: true, offer: updated, notify });
+  // ✅ Email 1: template antigo "Pagamento Pix confirmado" (+ anexo opcional)
+  const email = await safeNotifySellerPixPaid({
+    offer: updated,
+    booking,
+    now,
+  });
+
+  // ✅ Email 2: estilo do "Comprovante recebido", porém "confirmado na plataforma"
+  const emailConfirmed = await safeNotifySellerConfirmedOnPlatform({
+    offer: updated,
+    booking,
+  });
+
+  console.log("[email] paid confirmed", {
+    offerId: String(updated._id),
+    emailStatus: email?.status,
+    emailConfirmedStatus: emailConfirmed?.status,
+  });
+
+  return res.json({ ok: true, offer: updated, notify, email, emailConfirmed });
 }
 
 r.post(

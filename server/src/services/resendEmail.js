@@ -1,5 +1,7 @@
 // server/src/services/resendEmail.js
 import { Offer } from "../models/Offer.js";
+import fs from "fs/promises";
+import path from "path";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 
@@ -114,6 +116,68 @@ function buildProductText(items, totalCents) {
   return lines.join("\n");
 }
 
+function computeChargeCentsForManual(offer) {
+  const totalCents = Number(offer?.totalCents ?? offer?.amountCents ?? 0) || 0;
+
+  const depositPctRaw = Number(offer?.depositPct);
+  const depositPct =
+    Number.isFinite(depositPctRaw) && depositPctRaw > 0 ? depositPctRaw : 0;
+
+  const depositEnabled =
+    offer?.depositEnabled === false ? false : depositPct > 0;
+
+  const depositCents = depositEnabled
+    ? Math.round((totalCents * depositPct) / 100)
+    : 0;
+
+  return {
+    totalCents,
+    depositEnabled,
+    depositPct,
+    depositCents,
+    chargeCents: depositEnabled ? depositCents : totalCents,
+  };
+}
+
+function inferExtFromMime(mime) {
+  const m = String(mime || "").toLowerCase();
+  if (m.includes("pdf")) return ".pdf";
+  if (m.includes("png")) return ".png";
+  if (m.includes("jpeg") || m.includes("jpg")) return ".jpg";
+  return "";
+}
+
+function sanitizeFilename(name, mime) {
+  const ext = inferExtFromMime(mime);
+  let base = String(name || "comprovante").trim();
+  base = base.replace(/[\\\/:*?"<>|]+/g, "-").trim();
+  if (!base) base = "comprovante";
+  if (ext && !base.toLowerCase().endsWith(ext)) base += ext;
+  return base;
+}
+
+async function buildLocalProofAttachment(proof) {
+  const provider = String(proof?.storage?.provider || "local").toLowerCase();
+  if (provider !== "local") return null;
+
+  const key = String(proof?.storage?.key || "").trim();
+  if (!key) return null;
+
+  const rel =
+    String(proof?.storage?.path || "").trim() ||
+    path.posix.join("uploads", "payment-proofs", key);
+
+  // resolve para o cwd do server
+  const abs = path.resolve(process.cwd(), rel);
+
+  const buf = await fs.readFile(abs);
+  const filename = sanitizeFilename(
+    proof?.originalName || key,
+    proof?.mimeType,
+  );
+  return { filename, content: buf.toString("base64") };
+}
+
 function buildPaidEmail({ offer, booking, paidAt, paidAmountCents }) {
   const offerType = inferOfferType(offer);
   const customerName = String(offer?.customerName || "").trim() || "Cliente";
@@ -222,9 +286,252 @@ function buildPaidEmail({ offer, booking, paidAt, paidAmountCents }) {
   return { subject, html, text };
 }
 
+function buildProofSubmittedEmail({ offer, booking, proof, attachWarning }) {
+  const offerType = inferOfferType(offer);
+  const customerName = String(offer?.customerName || "").trim() || "Cliente";
+  const title =
+    String(offer?.title || "").trim() ||
+    (offerType === "product" ? "Orçamento" : "Proposta");
+  const description = String(offer?.description || "").trim();
+
+  const { totalCents, depositEnabled, depositPct, depositCents, chargeCents } =
+    computeChargeCentsForManual(offer);
+
+  const when = fmtDateTimeSP(proof?.uploadedAt || new Date());
+
+  const subject = `Comprovante Pix recebido — ação necessária • ${title} (${fmtBRL(
+    chargeCents || totalCents,
+  )})`;
+
+  const header = `
+    <div style="padding:18px 18px 10px;">
+      <div style="font-size:18px; font-weight:800; color:#111827;">Comprovante Pix recebido — ação necessária</div>
+      <div style="margin-top:8px; font-size:13px; color:#4b5563;">
+        Cliente: <strong>${escapeHtml(customerName)}</strong><br/>
+        Valor: <strong>${fmtBRL(chargeCents || totalCents)}</strong>${
+          depositEnabled
+            ? ` <span style="color:#6b7280;">(sinal de ${depositPct}% • total ${fmtBRL(
+                totalCents,
+              )} • restante ${fmtBRL(Math.max(0, totalCents - depositCents))})</span>`
+            : ""
+        }<br/>
+        Data/hora: <strong>${escapeHtml(when)}</strong>
+      </div>
+
+      <div style="margin-top:12px; padding:12px 12px; border:1px solid #fde68a; background:#fffbeb; border-radius:12px; color:#92400e; font-size:13px;">
+        O cliente enviou um comprovante de pagamento Pix. <strong>Confirme manualmente o crédito na sua conta Pix</strong> e, em seguida, marque como pago na plataforma (botão <strong>Confirmar</strong>).
+      </div>
+
+      ${
+        attachWarning
+          ? `<div style="margin-top:10px; padding:10px 12px; border:1px solid #fecaca; background:#fef2f2; border-radius:12px; color:#991b1b; font-size:12px;">
+              Não foi possível anexar o comprovante neste e-mail. Você pode visualizar/baixar o arquivo no painel.
+            </div>`
+          : ""
+      }
+    </div>`;
+
+  let detailHtml = "";
+  let detailText = "";
+
+  if (offerType === "service") {
+    const bookingLine =
+      booking?.startAt && booking?.endAt
+        ? `Agendamento: ${fmtDateTimeSP(booking.startAt)} → ${fmtDateTimeSP(
+            booking.endAt,
+          )}`
+        : "";
+
+    detailHtml = `
+      <div style="padding:0 18px 18px;">
+        <div style="margin-top:6px; font-size:14px; font-weight:800; color:#111827;">Serviço</div>
+        <div style="margin-top:6px; font-size:13px; color:#111827;">
+          <strong>${escapeHtml(title)}</strong>
+        </div>
+        ${
+          description
+            ? `<div style="margin-top:6px; font-size:13px; color:#4b5563;">${nl2br(
+                description,
+              )}</div>`
+            : ""
+        }
+        ${
+          bookingLine
+            ? `<div style="margin-top:10px; font-size:13px; color:#111827;"><strong>${escapeHtml(
+                bookingLine,
+              )}</strong></div>`
+            : ""
+        }
+      </div>`;
+
+    detailText =
+      `SERVIÇO\n` +
+      `${title}\n` +
+      (description ? `${description}\n` : "") +
+      (bookingLine ? `${bookingLine}\n` : "");
+  } else {
+    const items = normalizeItems(offer);
+
+    detailHtml = `<div style="padding:0 18px 18px;">
+      <div style="margin-top:6px; font-size:14px; font-weight:800; color:#111827;">Produtos</div>
+      <div style="margin-top:10px;">${buildProductHtml(items, totalCents)}</div>
+    </div>`;
+
+    detailText = `PRODUTOS\n${buildProductText(items, totalCents)}\n`;
+  }
+
+  const footer = `
+    <div style="padding:14px 18px; border-top:1px solid #e5e7eb; font-size:12px; color:#6b7280;">
+      Esta mensagem foi enviada automaticamente.
+    </div>`;
+
+  const html = `
+  <div style="background:#f3f4f6; padding:24px;">
+    <div style="max-width:640px; margin:0 auto; background:#ffffff; border:1px solid #e5e7eb; border-radius:16px; overflow:hidden; font-family:ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;">
+      ${header}
+      ${detailHtml}
+      ${footer}
+    </div>
+  </div>`;
+
+  const text =
+    `Comprovante Pix recebido — ação necessária\n` +
+    `Cliente: ${customerName}\n` +
+    `Valor: ${fmtBRL(chargeCents || totalCents)}\n` +
+    `Data/hora: ${when}\n\n` +
+    `O cliente enviou um comprovante. Confirme manualmente o crédito na sua conta Pix e marque como pago na plataforma.\n\n` +
+    detailText +
+    `\n`;
+
+  return { subject, html, text };
+}
+
 /**
- * Envia e-mail (Resend) para o vendedor quando Pix fica PAID.
+ * OBJETIVO 1
+ * Envia e-mail (Resend) para o vendedor quando o cliente envia comprovante (WAITING_CONFIRMATION).
+ * - Idempotência por offerId + proof.storage.key
+ * - Persiste proofNotified* na Offer somente após envio bem sucedido.
+ */
+export async function notifySellerPaymentProofSubmitted({
+  offerId,
+  offer,
+  booking,
+  proof,
+}) {
+  const apiKey = String(process.env.RESEND_API_KEY || "").trim();
+  const from = String(process.env.RESEND_FROM || "").trim();
+  const fallbackTo = String(process.env.PAYMENT_NOTIFY_EMAIL || "").trim();
+
+  const sellerEmail = String(offer?.sellerEmail || "").trim();
+  const to = (sellerEmail || fallbackTo || "").trim();
+
+  if (!apiKey) {
+    console.warn("[resend] RESEND_API_KEY missing; skipping proof email");
+    return { ok: false, skipped: true, reason: "missing_api_key" };
+  }
+  if (!from) {
+    console.warn("[resend] RESEND_FROM missing; skipping proof email");
+    return { ok: false, skipped: true, reason: "missing_from" };
+  }
+  if (!to) {
+    console.warn(
+      "[resend] sellerEmail and PAYMENT_NOTIFY_EMAIL missing; skipping proof email",
+    );
+    return { ok: false, skipped: true, reason: "missing_to" };
+  }
+
+  const proofKey = String(proof?.storage?.key || "").trim();
+  if (!proofKey) {
+    console.warn("[resend] missing proof.storage.key; skipping proof email");
+    return { ok: false, skipped: true, reason: "missing_proof_key" };
+  }
+
+  // ✅ não duplicar para o mesmo arquivo
+  if (
+    String(offer?.proofNotifiedFileKey || "").trim() === proofKey &&
+    offer?.proofNotifiedAt
+  ) {
+    return { ok: true, skipped: true, reason: "already_notified_same_file" };
+  }
+
+  const key = `${String(offerId)}:proof:${proofKey}`;
+
+  let attachments = undefined;
+  let attachWarning = false;
+
+  try {
+    const att = await buildLocalProofAttachment(proof);
+    if (att) attachments = [att];
+  } catch (e) {
+    attachWarning = true;
+    console.warn("[email] proof attachment read failed", {
+      offerId: String(offerId),
+      key: proofKey,
+      err: e?.message || String(e),
+    });
+  }
+
+  const { subject, html, text } = buildProofSubmittedEmail({
+    offer,
+    booking,
+    proof,
+    attachWarning,
+  });
+
+  const payload = { from, to, subject, html, text };
+  if (attachments && attachments.length) payload.attachments = attachments;
+
+  const resp = await fetch(RESEND_ENDPOINT, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": key,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await resp.json().catch(() => ({}));
+
+  if (!resp.ok) {
+    const msg =
+      data?.message ||
+      data?.error ||
+      data?.details ||
+      `Resend error (${resp.status})`;
+    const err = new Error(msg);
+    err.statusCode = resp.status;
+    err.data = data;
+    throw err;
+  }
+
+  await Offer.updateOne(
+    {
+      _id: offerId,
+      $or: [
+        { proofNotifiedFileKey: { $exists: false } },
+        { proofNotifiedFileKey: { $ne: proofKey } },
+      ],
+    },
+    {
+      $set: {
+        proofNotifiedAt: new Date(),
+        proofNotifiedTo: to,
+        proofNotifiedKey: key,
+        proofNotifiedFileKey: proofKey,
+      },
+    },
+    { strict: false },
+  ).catch(() => {});
+
+  return { ok: true, id: data?.id || data?.data?.id || null, to, key };
+}
+
+/**
+ * OBJETIVO 2
+ * Envia e-mail (Resend) para o vendedor quando Pix fica PAID/CONFIRMED.
  * - Persiste paymentNotifiedAt/paymentNotifiedTo na Offer somente após envio bem sucedido.
+ * - Opcional: anexa comprovante (proof) se enviado.
  */
 export async function notifySellerPixPaid({
   offerId,
@@ -233,6 +540,7 @@ export async function notifySellerPixPaid({
   pixId,
   paidAt,
   paidAmountCents,
+  proof, // ✅ opcional
 }) {
   const apiKey = String(process.env.RESEND_API_KEY || "").trim();
   const from = String(process.env.RESEND_FROM || "").trim();
@@ -262,12 +570,29 @@ export async function notifySellerPixPaid({
 
   const key = `${String(offerId)}:${String(pixId || "").trim() || "paid"}`;
 
+  let attachments = undefined;
+  if (proof?.storage?.key) {
+    try {
+      const att = await buildLocalProofAttachment(proof);
+      if (att) attachments = [att];
+    } catch (e) {
+      console.warn("[email] paid attachment read failed", {
+        offerId: String(offerId),
+        key: String(proof?.storage?.key || ""),
+        err: e?.message || String(e),
+      });
+    }
+  }
+
   const { subject, html, text } = buildPaidEmail({
     offer,
     booking,
     paidAt,
     paidAmountCents,
   });
+
+  const payload = { from, to, subject, html, text };
+  if (attachments && attachments.length) payload.attachments = attachments;
 
   const resp = await fetch(RESEND_ENDPOINT, {
     method: "POST",
@@ -276,7 +601,7 @@ export async function notifySellerPixPaid({
       "Content-Type": "application/json",
       "Idempotency-Key": key,
     },
-    body: JSON.stringify({ from, to, subject, html, text }),
+    body: JSON.stringify(payload),
   });
 
   const data = await resp.json().catch(() => ({}));
@@ -306,5 +631,228 @@ export async function notifySellerPixPaid({
     { strict: false },
   ).catch(() => {});
 
-  return { ok: true, id: data?.id || data?.data?.id || null };
+  return { ok: true, id: data?.id || data?.data?.id || null, to, key };
+}
+
+// ✅ NOVO: e-mail “confirmado pelo vendedor” (estilo do “proof recebido”, mas final)
+function buildPaymentConfirmedBySellerEmail({
+  offer,
+  booking,
+  proof,
+  attachWarning,
+}) {
+  const offerType = inferOfferType(offer);
+  const customerName = String(offer?.customerName || "").trim() || "Cliente";
+  const title =
+    String(offer?.title || "").trim() ||
+    (offerType === "product" ? "Orçamento" : "Proposta");
+  const description = String(offer?.description || "").trim();
+
+  const { totalCents, depositEnabled, depositPct, depositCents, chargeCents } =
+    computeChargeCentsForManual(offer);
+
+  const paidCents = Number.isFinite(Number(offer?.paidAmountCents))
+    ? Number(offer.paidAmountCents)
+    : chargeCents || totalCents;
+
+  const when = fmtDateTimeSP(offer?.paidAt || offer?.confirmedAt || new Date());
+
+  const subject = `Pagamento Pix confirmado — confirmado na plataforma • ${title} (${fmtBRL(
+    paidCents || totalCents,
+  )})`;
+
+  const header = `
+    <div style="padding:18px 18px 10px;">
+      <div style="font-size:18px; font-weight:800; color:#111827;">Pagamento Pix confirmado — confirmado na plataforma</div>
+      <div style="margin-top:8px; font-size:13px; color:#4b5563;">
+        Cliente: <strong>${escapeHtml(customerName)}</strong><br/>
+        Valor: <strong>${fmtBRL(paidCents || totalCents)}</strong>${
+          depositEnabled
+            ? ` <span style="color:#6b7280;">(sinal de ${depositPct}% • total ${fmtBRL(
+                totalCents,
+              )} • restante ${fmtBRL(Math.max(0, totalCents - depositCents))})</span>`
+            : ""
+        }<br/>
+        Data/hora: <strong>${escapeHtml(when)}</strong>
+      </div>
+
+      <div style="margin-top:12px; padding:12px 12px; border:1px solid #bbf7d0; background:#ecfdf5; border-radius:12px; color:#065f46; font-size:13px;">
+        O pagamento foi <strong>confirmado manualmente</strong> pelo usuário da plataforma e a proposta foi marcada como <strong>paga</strong>.
+      </div>
+
+      ${
+        attachWarning
+          ? `<div style="margin-top:10px; padding:10px 12px; border:1px solid #fecaca; background:#fef2f2; border-radius:12px; color:#991b1b; font-size:12px;">
+              Não foi possível anexar o comprovante neste e-mail. Você pode visualizar/baixar o arquivo no painel.
+            </div>`
+          : ""
+      }
+    </div>`;
+
+  let detailHtml = "";
+  let detailText = "";
+
+  if (offerType === "service") {
+    const bookingLine =
+      booking?.startAt && booking?.endAt
+        ? `Agendamento: ${fmtDateTimeSP(booking.startAt)} → ${fmtDateTimeSP(
+            booking.endAt,
+          )}`
+        : "";
+
+    detailHtml = `
+      <div style="padding:0 18px 18px;">
+        <div style="margin-top:6px; font-size:14px; font-weight:800; color:#111827;">Serviço</div>
+        <div style="margin-top:6px; font-size:13px; color:#111827;">
+          <strong>${escapeHtml(title)}</strong>
+        </div>
+        ${
+          description
+            ? `<div style="margin-top:6px; font-size:13px; color:#4b5563;">${nl2br(
+                description,
+              )}</div>`
+            : ""
+        }
+        ${
+          bookingLine
+            ? `<div style="margin-top:10px; font-size:13px; color:#111827;"><strong>${escapeHtml(
+                bookingLine,
+              )}</strong></div>`
+            : ""
+        }
+      </div>`;
+
+    detailText =
+      `SERVIÇO\n` +
+      `${title}\n` +
+      (description ? `${description}\n` : "") +
+      (bookingLine ? `${bookingLine}\n` : "");
+  } else {
+    const items = normalizeItems(offer);
+
+    detailHtml = `<div style="padding:0 18px 18px;">
+      <div style="margin-top:6px; font-size:14px; font-weight:800; color:#111827;">Produtos</div>
+      <div style="margin-top:10px;">${buildProductHtml(items, totalCents)}</div>
+    </div>`;
+
+    detailText = `PRODUTOS\n${buildProductText(items, totalCents)}\n`;
+  }
+
+  const footer = `
+    <div style="padding:14px 18px; border-top:1px solid #e5e7eb; font-size:12px; color:#6b7280;">
+      Esta mensagem foi enviada automaticamente.
+    </div>`;
+
+  const html = `
+  <div style="background:#f3f4f6; padding:24px;">
+    <div style="max-width:640px; margin:0 auto; background:#ffffff; border:1px solid #e5e7eb; border-radius:16px; overflow:hidden; font-family:ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;">
+      ${header}
+      ${detailHtml}
+      ${footer}
+    </div>
+  </div>`;
+
+  const text =
+    `Pagamento Pix confirmado — confirmado na plataforma\n` +
+    `Cliente: ${customerName}\n` +
+    `Valor: ${fmtBRL(paidCents || totalCents)}\n` +
+    `Data/hora: ${when}\n\n` +
+    `O pagamento foi confirmado manualmente pelo usuário da plataforma e a proposta foi marcada como paga.\n\n` +
+    detailText +
+    `\n`;
+
+  return { subject, html, text };
+}
+
+/**
+ * ✅ NOVO: notifica vendedor que o pagamento foi confirmado no painel (template “estilo proof”, mas final)
+ * Idempotência separada: offerId + "confirmed" + proofKey (ou paidAt)
+ */
+export async function notifySellerPaymentConfirmedOnPlatform({
+  offerId,
+  offer,
+  booking,
+  proof,
+}) {
+  const apiKey = String(process.env.RESEND_API_KEY || "").trim();
+  const from = String(process.env.RESEND_FROM || "").trim();
+  const fallbackTo = String(process.env.PAYMENT_NOTIFY_EMAIL || "").trim();
+
+  const sellerEmail = String(offer?.sellerEmail || "").trim();
+  const to = (sellerEmail || fallbackTo || "").trim();
+
+  if (!apiKey) return { ok: false, skipped: true, reason: "missing_api_key" };
+  if (!from) return { ok: false, skipped: true, reason: "missing_from" };
+  if (!to) return { ok: false, skipped: true, reason: "missing_to" };
+
+  // ✅ evita duplicar esse “segundo e-mail”
+  if (offer?.confirmedNotifiedAt) {
+    return { ok: true, skipped: true, reason: "already_notified" };
+  }
+
+  const proofKey = String(proof?.storage?.key || "").trim();
+  const paidKey = offer?.paidAt ? new Date(offer.paidAt).toISOString() : "";
+  const seed = proofKey || paidKey || "confirmed";
+
+  const key = `${String(offerId)}:confirmed:${seed}`;
+
+  let attachments = undefined;
+  let attachWarning = false;
+
+  if (proofKey) {
+    try {
+      const att = await buildLocalProofAttachment(proof);
+      if (att) attachments = [att];
+    } catch {
+      attachWarning = true;
+    }
+  }
+
+  const { subject, html, text } = buildPaymentConfirmedBySellerEmail({
+    offer,
+    booking,
+    proof,
+    attachWarning,
+  });
+
+  const payload = { from, to, subject, html, text };
+  if (attachments && attachments.length) payload.attachments = attachments;
+
+  const resp = await fetch(RESEND_ENDPOINT, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": key,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    const msg =
+      data?.message ||
+      data?.error ||
+      data?.details ||
+      `Resend error (${resp.status})`;
+    const err = new Error(msg);
+    err.statusCode = resp.status;
+    err.data = data;
+    throw err;
+  }
+
+  await Offer.updateOne(
+    { _id: offerId, confirmedNotifiedAt: { $exists: false } },
+    {
+      $set: {
+        confirmedNotifiedAt: new Date(),
+        confirmedNotifiedTo: to,
+        confirmedNotifiedKey: key,
+        confirmedNotifiedProofKey: proofKey || null,
+      },
+    },
+    { strict: false },
+  ).catch(() => {});
+
+  return { ok: true, id: data?.id || data?.data?.id || null, to, key };
 }

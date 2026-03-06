@@ -146,6 +146,18 @@ const OfferSchema = new mongoose.Schema(
     paidAt: { type: Date, default: null },
     paidAmountCents: { type: Number, default: null },
 
+    // e-mail (pago confirmado)
+    paymentNotifiedAt: { type: Date, default: null },
+    paymentNotifiedTo: { type: String, default: null },
+    paymentNotifiedPixId: { type: String, default: null },
+    paymentNotifiedKey: { type: String, default: null },
+
+    // e-mail (comprovante enviado)
+    proofNotifiedAt: { type: Date, default: null },
+    proofNotifiedTo: { type: String, default: null },
+    proofNotifiedKey: { type: String, default: null },
+    proofNotifiedFileKey: { type: String, default: null },
+
     // flags públicos (compat)
     publicDoneOnly: { type: Boolean, default: false },
     publicLockedAt: { type: String, default: null },
