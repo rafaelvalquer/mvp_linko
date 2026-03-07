@@ -28,6 +28,17 @@ function setToken(token) {
   } catch {}
 }
 
+function extractToken(data) {
+  return (
+    data?.token ||
+    data?.accessToken ||
+    data?.authToken ||
+    data?.auth_token ||
+    data?.jwt ||
+    ""
+  );
+}
+
 function normalizeWorkspace(wsRaw) {
   const ws = wsRaw && typeof wsRaw === "object" ? wsRaw : null;
   if (!ws) return null;
@@ -78,7 +89,7 @@ export function AuthProvider({ children }) {
   const [workspace, setWorkspace] = useState(null);
   const [billing, setBilling] = useState(null);
 
-  const signOut = useCallback(() => {
+  const clearSession = useCallback(() => {
     setToken("");
     setUser(null);
     setWorkspace(null);
@@ -86,6 +97,10 @@ export function AuthProvider({ children }) {
     setLoadingMe(false);
     setLoadingBilling(false);
   }, []);
+
+  const signOut = useCallback(() => {
+    clearSession();
+  }, [clearSession]);
 
   const refreshBilling = useCallback(async () => {
     const t = getToken();
@@ -139,79 +154,82 @@ export function AuthProvider({ children }) {
     try {
       const d = await authApi.me();
       const ws = normalizeWorkspace(d?.workspace || d?.user?.workspace);
+
       setUser(d?.user || null);
       setWorkspace(ws);
 
-      // carrega billing em paralelo
       refreshBilling().catch(() => {});
       return ws;
     } catch (e) {
-      if (e?.status === 401) signOut();
+      if (e?.status === 401) clearSession();
       return null;
     } finally {
       setLoadingMe(false);
     }
-  }, [refreshBilling, signOut]);
+  }, [refreshBilling, clearSession]);
 
-  const signIn = useCallback(
-    async ({ email, password }) => {
-      const d = await authApi.login({ email, password });
-
-      const token =
-        d?.token ||
-        d?.accessToken ||
-        d?.authToken ||
-        d?.auth_token ||
-        d?.jwt ||
-        "";
-
+  const applyAuthenticatedSession = useCallback(
+    async (data) => {
+      const token = extractToken(data);
       if (token) setToken(token);
 
-      const ws = normalizeWorkspace(d?.workspace || d?.user?.workspace);
-      setUser(d?.user || null);
+      const ws = normalizeWorkspace(data?.workspace || data?.user?.workspace);
+      setUser(data?.user || null);
       setWorkspace(ws);
       setLoadingMe(false);
 
-      // se login não vier completo, busca /me
-      if (!ws) await refreshWorkspace();
+      if (!ws && token) {
+        await refreshWorkspace();
+      }
 
-      // atualiza billing (status assinatura/limites)
-      refreshBilling().catch(() => {});
-      return d;
+      if (token) {
+        refreshBilling().catch(() => {});
+      }
+
+      return data;
     },
     [refreshWorkspace, refreshBilling],
   );
 
+  const signIn = useCallback(
+    async ({ email, password }) => {
+      const d = await authApi.login({ email, password });
+      return applyAuthenticatedSession(d);
+    },
+    [applyAuthenticatedSession],
+  );
+
   const signUp = useCallback(
     async ({ name, email, password, workspaceName }) => {
-      const d = await authApi.register({
+      setLoadingMe(false);
+
+      return authApi.register({
         name,
         email,
         password,
         workspaceName,
       });
-
-      const token =
-        d?.token ||
-        d?.accessToken ||
-        d?.authToken ||
-        d?.auth_token ||
-        d?.jwt ||
-        "";
-
-      if (token) setToken(token);
-
-      const ws = normalizeWorkspace(d?.workspace || d?.user?.workspace);
-      setUser(d?.user || null);
-      setWorkspace(ws);
-      setLoadingMe(false);
-
-      if (!ws) await refreshWorkspace();
-
-      refreshBilling().catch(() => {});
-      return d;
     },
-    [refreshWorkspace, refreshBilling],
+    [],
+  );
+
+  const resendRegisterCode = useCallback(async ({ email }) => {
+    return api("/auth/register/resend-code", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+  }, []);
+
+  const verifyRegisterCode = useCallback(
+    async ({ email, code }) => {
+      const d = await api("/auth/register/verify-code", {
+        method: "POST",
+        body: JSON.stringify({ email, code }),
+      });
+
+      return applyAuthenticatedSession(d);
+    },
+    [applyAuthenticatedSession],
   );
 
   useEffect(() => {
@@ -229,6 +247,7 @@ export function AuthProvider({ children }) {
     const plan = workspace?.plan || "start";
     const store =
       plan === "pro" || plan === "business" || plan === "enterprise";
+
     return {
       plan,
       store,
@@ -243,14 +262,24 @@ export function AuthProvider({ children }) {
       user,
       workspace,
       billing,
+      isAuthenticated: !!user,
       subscriptionStatus,
       canCreatePix,
       perms,
       signIn,
+      login: signIn,
       signUp,
+      register: signUp,
+      requestRegisterCode: signUp,
+      resendRegisterCode,
+      verifyRegisterCode,
+      completeSignUp: verifyRegisterCode,
       signOut,
+      logout: signOut,
       refreshWorkspace,
+      refreshMe: refreshWorkspace,
       refreshBilling,
+      refreshSession: refreshWorkspace,
     }),
     [
       loadingMe,
@@ -263,6 +292,8 @@ export function AuthProvider({ children }) {
       perms,
       signIn,
       signUp,
+      resendRegisterCode,
+      verifyRegisterCode,
       signOut,
       refreshWorkspace,
       refreshBilling,
