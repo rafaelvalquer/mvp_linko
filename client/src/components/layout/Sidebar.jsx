@@ -436,35 +436,28 @@ export default function Sidebar({
       >
         <div
           className={[
-            "flex items-center gap-3 px-2 pb-3",
-            collapsed ? "justify-center" : "justify-between",
+            "pb-3",
+            collapsed
+              ? "flex justify-center px-0"
+              : "flex items-center justify-between gap-3 px-2",
           ].join(" ")}
         >
-          <div
-            className={[
-              "flex min-w-0 items-center gap-3",
-              collapsed ? "justify-center" : "",
-            ].join(" ")}
-          >
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#111827_0%,#374151_100%)] text-white shadow-lg shadow-zinc-900/10">
-              <span className="text-sm font-bold">L</span>
-            </div>
+          {!collapsed ? (
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#111827_0%,#374151_100%)] text-white shadow-lg shadow-zinc-900/10">
+                <span className="text-sm font-bold">L</span>
+              </div>
 
-            <div className="min-w-0">
-              <AnimatedText
-                collapsed={collapsed}
-                className="block text-[11px] font-bold uppercase tracking-[0.22em] text-zinc-400"
-              >
-                Painel
-              </AnimatedText>
-              <AnimatedText
-                collapsed={collapsed}
-                className="mt-1 block text-sm font-semibold text-zinc-900"
-              >
-                Luminor
-              </AnimatedText>
+              <div className="min-w-0">
+                <div className="block text-[11px] font-bold uppercase tracking-[0.22em] text-zinc-400">
+                  Painel
+                </div>
+                <div className="mt-1 block text-sm font-semibold text-zinc-900">
+                  Luminor
+                </div>
+              </div>
             </div>
-          </div>
+          ) : null}
 
           <button
             type="button"
