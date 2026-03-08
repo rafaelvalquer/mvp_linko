@@ -1,6 +1,6 @@
 // src/pages/Dashboard.jsx
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   FileText,
   CheckCircle2,
@@ -9,21 +9,17 @@ import {
   TrendingUp,
   CreditCard,
   Wallet as WalletIcon,
-  Clock,
 } from "lucide-react";
 
 import Shell from "../components/layout/Shell.jsx";
 import { api } from "../app/api.js";
 import { listBookings } from "../app/bookingsApi.js";
-import PageHeader from "../components/appui/PageHeader.jsx";
 import Card, { CardBody, CardHeader } from "../components/appui/Card.jsx";
 import Button from "../components/appui/Button.jsx";
 import Skeleton from "../components/appui/Skeleton.jsx";
 import Badge from "../components/appui/Badge.jsx";
 import EmptyState from "../components/appui/EmptyState.jsx";
 import { useAuth } from "../app/AuthContext.jsx";
-import QuotaBadge from "../components/QuotaBadge.jsx";
-import { quotaPercent } from "../utils/planQuota.js";
 import AnalyticsSection from "../components/dashboard/AnalyticsSection.jsx";
 import PixSettingsModal from "../components/PixSettingsModal.jsx";
 
@@ -33,8 +29,12 @@ import {
   getAmountCents,
   getPaymentLabel,
 } from "../components/offers/offerHelpers.js";
+import {
+  getEffectivePixKeyMasked,
+  guardOfferCreation,
+  hasPixAccountConfigured,
+} from "../utils/guardOfferCreation.js";
 
-/** ========= ICON COMPONENTS (SVG INLINE) ========= */
 const Icons = {
   Refresh: () => (
     <svg
@@ -107,7 +107,6 @@ const Icons = {
   ),
 };
 
-/** ========= HELPERS ========= */
 const normStatus = (s) => {
   const v = String(s || "")
     .trim()
@@ -163,25 +162,23 @@ function offerPaidAmountCents(o) {
   );
 }
 
-/** ========= UI: toast ========= */
 function Toast({ message, visible }) {
   return (
     <div
       className={[
-        "fixed bottom-4 left-1/2 -translate-x-1/2 z-[9999] transition-all",
+        "fixed bottom-4 left-1/2 z-[9999] -translate-x-1/2 transition-all",
         visible
-          ? "opacity-100 translate-y-0"
-          : "opacity-0 translate-y-2 pointer-events-none",
+          ? "translate-y-0 opacity-100"
+          : "pointer-events-none translate-y-2 opacity-0",
       ].join(" ")}
     >
-      <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 shadow-xl text-sm text-zinc-800">
+      <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-800 shadow-xl">
         {message}
       </div>
     </div>
   );
 }
 
-/** ========= StatCard ========= */
 function StatCard({
   icon,
   label,
@@ -196,12 +193,12 @@ function StatCard({
     <div
       className={[
         "rounded-2xl border bg-white p-4 shadow-sm ring-1 ring-zinc-200/70",
-        highlight ? "ring-emerald-200 border-emerald-200" : "border-zinc-200",
+        highlight ? "border-emerald-200 ring-emerald-200" : "border-zinc-200",
       ].join(" ")}
       style={{ animationDelay: `${index * 60}ms` }}
     >
       <div className="flex items-start justify-between">
-        <div className="h-10 w-10 rounded-xl bg-zinc-50 border border-zinc-200 flex items-center justify-center">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-zinc-200 bg-zinc-50">
           {icon}
         </div>
       </div>
@@ -211,7 +208,7 @@ function StatCard({
           {label}
         </div>
 
-        <div className="mt-1 text-2xl font-extrabold text-zinc-900 tabular-nums">
+        <div className="mt-1 text-2xl font-extrabold tabular-nums text-zinc-900">
           {loading ? "…" : value}
         </div>
 
@@ -241,7 +238,6 @@ function holdRemainingLabel(iso) {
   return `reserva expira em ${min} min`;
 }
 
-/** ========= MAIN DASHBOARD ========= */
 export default function Dashboard() {
   const [offers, setOffers] = useState([]);
   const [bookings, setBookings] = useState([]);
@@ -251,22 +247,37 @@ export default function Dashboard() {
   const [error, setError] = useState("");
   const [bookingsErr, setBookingsErr] = useState("");
 
-  const [payoutPixKeyMasked, setPayoutPixKeyMasked] = useState("");
-  const [pixModalOpen, setPixModalOpen] = useState(false);
+  const [localPayoutPixKeyMasked, setLocalPayoutPixKeyMasked] = useState("");
+  const [pixModalState, setPixModalState] = useState({
+    open: false,
+    title: "",
+    description: "",
+    redirectTo: null,
+  });
 
   const [showToast, setShowToast] = useState(false);
   const [lastUpdate, setLastUpdate] = useState("");
 
-  const { signOut, workspace, loadingMe } = useAuth();
+  const { signOut, workspace, loadingMe, refreshWorkspace } = useAuth();
 
   const nav = useNavigate();
   const location = useLocation();
   const toastTimerRef = useRef(null);
 
-  // ✅ novo: modal compartilhado de detalhes (igual Offers)
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsOffer, setDetailsOffer] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
+
+  const effectivePayoutPixKeyMasked = useMemo(
+    () => getEffectivePixKeyMasked(workspace, localPayoutPixKeyMasked),
+    [workspace, localPayoutPixKeyMasked],
+  );
+
+  useEffect(() => {
+    setLocalPayoutPixKeyMasked(
+      String(workspace?.payoutPixKeyMasked || "").trim(),
+    );
+  }, [workspace?.payoutPixKeyMasked]);
 
   const patchOfferInList = useCallback((updated) => {
     if (!updated?._id) return;
@@ -303,10 +314,53 @@ export default function Dashboard() {
     setDetailsOpen(true);
   }, []);
 
-  // abre modal se veio de /withdraws (routes.jsx manda state.openPixSettings)
+  function openPixModal(context = {}) {
+    setPixModalState({
+      open: true,
+      title: String(context?.title || ""),
+      description: String(context?.description || ""),
+      redirectTo: context?.redirectTo || null,
+    });
+  }
+
+  function closePixModal() {
+    setPixModalState({
+      open: false,
+      title: "",
+      description: "",
+      redirectTo: null,
+    });
+  }
+
+  async function handlePixSaved(data) {
+    const masked = String(data?.payoutPixKeyMasked || "").trim();
+    setLocalPayoutPixKeyMasked(masked);
+
+    try {
+      await refreshWorkspace?.();
+    } catch {}
+
+    const redirectTo = pixModalState.redirectTo;
+    closePixModal();
+
+    if (redirectTo) {
+      nav(redirectTo);
+    }
+  }
+
+  const handleCreateOffer = useCallback(() => {
+    guardOfferCreation({
+      workspace,
+      payoutPixKeyMasked: effectivePayoutPixKeyMasked,
+      navigate: nav,
+      openPixModal,
+      targetPath: "/offers/new",
+    });
+  }, [workspace, effectivePayoutPixKeyMasked, nav]);
+
   useEffect(() => {
     if (location?.state?.openPixSettings) {
-      setPixModalOpen(true);
+      openPixModal();
       nav("/dashboard", { replace: true, state: null });
     }
   }, [location?.state, nav]);
@@ -444,7 +498,10 @@ export default function Dashboard() {
       (o) => normStatus(o?.paymentStatus) === "WAITING_CONFIRMATION",
     ).length;
 
-    const pixConfigured = !!String(payoutPixKeyMasked || "").trim();
+    const pixConfigured = hasPixAccountConfigured(
+      workspace,
+      effectivePayoutPixKeyMasked,
+    );
 
     return {
       total,
@@ -462,21 +519,7 @@ export default function Dashboard() {
       waitingConfirmation,
       pixConfigured,
     };
-  }, [offers, bookings, workspace, payoutPixKeyMasked]);
-
-  const quota = useMemo(() => {
-    const limit = Number(workspace?.pixMonthlyLimit);
-    const used = Number(workspace?.pixUsedThisCycle);
-    const remaining = Number(workspace?.pixRemaining);
-
-    return {
-      cycleKey: workspace?.cycleKey || "",
-      limit: Number.isFinite(limit) ? limit : 0,
-      used: Number.isFinite(used) ? used : 0,
-      remaining: Number.isFinite(remaining) ? remaining : 0,
-      pct: quotaPercent(used, limit),
-    };
-  }, [workspace]);
+  }, [offers, bookings, workspace, effectivePayoutPixKeyMasked]);
 
   const waitingOffers = useMemo(() => {
     return offers
@@ -486,22 +529,21 @@ export default function Dashboard() {
 
   return (
     <Shell>
-      <div className="mx-auto max-w-7xl px-4 py-6 space-y-6">
-        {/* --- HEADER PREMIUM --- */}
+      <div className="mx-auto max-w-7xl space-y-6 px-4 py-6">
         <div className="relative">
-          <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/10 via-teal-500/5 to-blue-500/10 rounded-3xl blur-2xl" />
+          <div className="absolute inset-0 rounded-3xl bg-gradient-to-r from-emerald-500/10 via-teal-500/5 to-blue-500/10 blur-2xl" />
 
-          <div className="relative rounded-3xl border border-gray-200 bg-white/80 backdrop-blur-xl p-6 sm:p-8 shadow-xl">
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-              <div className="space-y-3 min-w-0">
+          <div className="relative rounded-3xl border border-gray-200 bg-white/80 p-6 shadow-xl backdrop-blur-xl sm:p-8">
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0 space-y-3">
                 <div className="flex flex-wrap items-center gap-3">
-                  <h1 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
+                  <h1 className="bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-3xl font-bold text-transparent sm:text-4xl">
                     Dashboard
                   </h1>
 
                   {lastUpdate && (
-                    <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200">
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                    <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50 px-3 py-1.5">
+                      <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
                       <span className="text-xs font-bold text-emerald-700">
                         {loading
                           ? "Sincronizando..."
@@ -511,18 +553,18 @@ export default function Dashboard() {
                   )}
                 </div>
 
-                <p className="text-gray-600 text-sm">
+                <p className="text-sm text-gray-600">
                   Visão geral de sua plataforma em tempo real
                 </p>
               </div>
 
-              <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full lg:w-auto">
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto">
+              <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center lg:w-auto">
+                <div className="flex w-full flex-col items-stretch gap-2 sm:flex-row sm:items-center lg:w-auto">
                   <Button
                     variant="outline"
                     onClick={load}
                     disabled={loading}
-                    className="gap-2 h-11 px-4 active:scale-95 transition-all"
+                    className="h-11 gap-2 px-4 transition-all active:scale-95"
                   >
                     <span className={`${loading ? "animate-spin" : ""}`}>
                       <Icons.Refresh />
@@ -533,22 +575,21 @@ export default function Dashboard() {
                   </Button>
 
                   <Button
-                    onClick={() => setPixModalOpen(true)}
-                    className="gap-2 h-11 px-4 active:scale-95 transition-all bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600"
+                    onClick={() => openPixModal()}
+                    className="h-11 gap-2 px-4 transition-all active:scale-95 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600"
                   >
                     <WalletIcon className="h-5 w-5" />
                     <span className="font-semibold">Conta Pix</span>
                   </Button>
 
-                  <Link to="/offers/new" className="w-full sm:w-auto">
-                    <Button
-                      size="sm"
-                      className="w-full sm:w-auto justify-center items-center gap-2 h-11 px-6 font-bold rounded-xl text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-lg shadow-emerald-200/60 ring-1 ring-emerald-500/20 active:scale-95 transition-all"
-                    >
-                      <Icons.Plus />
-                      Nova proposta
-                    </Button>
-                  </Link>
+                  <Button
+                    size="sm"
+                    onClick={handleCreateOffer}
+                    className="h-11 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-6 font-bold text-white shadow-lg shadow-emerald-200/60 ring-1 ring-emerald-500/20 transition-all active:scale-95 hover:from-emerald-700 hover:to-teal-700"
+                  >
+                    <Icons.Plus />
+                    Nova proposta
+                  </Button>
                 </div>
               </div>
             </div>
@@ -556,7 +597,7 @@ export default function Dashboard() {
         </div>
 
         {error && (
-          <div className="p-4 rounded-xl bg-red-50 border border-red-100 text-sm text-red-700 flex justify-between items-center">
+          <div className="flex items-center justify-between rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-700">
             <span>{error}</span>
             <Button variant="secondary" onClick={load}>
               Tentar novamente
@@ -564,7 +605,6 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* KPIs */}
         <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <StatCard
             icon={<FileText className="h-5 w-5 text-amber-500" />}
@@ -634,7 +674,7 @@ export default function Dashboard() {
             value={kpis.pixConfigured ? "Configurada" : "Pendente"}
             subtitle={
               kpis.pixConfigured
-                ? `Chave: ${payoutPixKeyMasked || ""}`
+                ? `Chave: ${effectivePayoutPixKeyMasked || ""}`
                 : "Configure para receber pagamentos"
             }
             highlight
@@ -652,13 +692,11 @@ export default function Dashboard() {
           />
         </section>
 
-        {/* ANALYTICS */}
         <AnalyticsSection offers={offers} />
 
         <div className="grid grid-cols-12 gap-6">
-          {/* MAIN COLUMN: RECENT LINKS */}
-          <div className="col-span-12 lg:col-span-8 space-y-6">
-            <Card className="border-none shadow-sm ring-1 ring-zinc-200 overflow-hidden">
+          <div className="col-span-12 space-y-6 lg:col-span-8">
+            <Card className="overflow-hidden border-none shadow-sm ring-1 ring-zinc-200">
               <CardHeader
                 title="Links Recentes"
                 subtitle="Acompanhe o status e envie links rapidamente."
@@ -670,7 +708,7 @@ export default function Dashboard() {
               />
               <CardBody className="p-0">
                 {loading ? (
-                  <div className="p-6 space-y-4">
+                  <div className="space-y-4 p-6">
                     {[1, 2, 3].map((i) => (
                       <Skeleton key={i} className="h-20 w-full rounded-xl" />
                     ))}
@@ -681,7 +719,7 @@ export default function Dashboard() {
                       title="Tudo limpo por aqui"
                       description="Comece criando sua primeira proposta comercial."
                       ctaLabel="Criar Proposta"
-                      onCta={() => nav("/offers/new")}
+                      onCta={handleCreateOffer}
                     />
                   </div>
                 ) : (
@@ -696,7 +734,7 @@ export default function Dashboard() {
                           <div className="flex items-start justify-between gap-4">
                             <div className="min-w-0">
                               <div className="flex flex-wrap items-center gap-2">
-                                <div className="text-sm font-semibold text-zinc-900 truncate">
+                                <div className="truncate text-sm font-semibold text-zinc-900">
                                   {o.title || "Proposta"}
                                 </div>
                                 <Badge
@@ -707,7 +745,7 @@ export default function Dashboard() {
                                   {pay.text}
                                 </Badge>
                                 {o?.notifyWhatsAppOnPaid ? (
-                                  <span className="text-[10px] font-bold text-emerald-700 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1">
+                                  <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700">
                                     WA ON
                                   </span>
                                 ) : null}
@@ -728,7 +766,7 @@ export default function Dashboard() {
                               </div>
                             </div>
 
-                            <div className="shrink-0 flex items-center gap-2">
+                            <div className="flex shrink-0 items-center gap-2">
                               <Button
                                 variant={copied ? "primary" : "secondary"}
                                 size="sm"
@@ -765,9 +803,7 @@ export default function Dashboard() {
             </Card>
           </div>
 
-          {/* RIGHT COLUMN */}
-          <div className="col-span-12 lg:col-span-4 space-y-6">
-            {/* AGENDA */}
+          <div className="col-span-12 space-y-6 lg:col-span-4">
             <Card className="border-none shadow-sm ring-1 ring-zinc-200">
               <CardHeader
                 title="Agenda (7 dias)"
@@ -785,8 +821,8 @@ export default function Dashboard() {
                 {bookingsBusy ? (
                   <Skeleton className="h-32 w-full rounded-xl" />
                 ) : bookings.length === 0 ? (
-                  <div className="text-center py-4">
-                    <p className="text-xs text-zinc-400 font-medium">
+                  <div className="py-4 text-center">
+                    <p className="text-xs font-medium text-zinc-400">
                       Sem compromissos em breve
                     </p>
                   </div>
@@ -794,19 +830,19 @@ export default function Dashboard() {
                   bookings.slice(0, 3).map((b) => (
                     <div
                       key={b._id}
-                      className="relative pl-4 border-l-2 border-zinc-100 hover:border-indigo-400 transition-colors py-1"
+                      className="relative border-l-2 border-zinc-100 py-1 pl-4 transition-colors hover:border-indigo-400"
                     >
-                      <div className="text-[11px] font-bold text-indigo-600 uppercase tracking-tighter">
+                      <div className="text-[11px] font-bold uppercase tracking-tighter text-indigo-600">
                         {fmtTimeBR(b.startAt)} — {fmtTimeBR(b.endAt)}
                       </div>
-                      <div className="text-sm font-semibold text-zinc-900 truncate">
+                      <div className="truncate text-sm font-semibold text-zinc-900">
                         {b.customerName || "Cliente"}
                       </div>
-                      <div className="text-[11px] text-zinc-500 line-clamp-1">
+                      <div className="line-clamp-1 text-[11px] text-zinc-500">
                         {b?.offer?.title}
                       </div>
                       {normStatus(b.status) === "HOLD" && (
-                        <div className="mt-1 text-[10px] font-bold text-amber-600 italic">
+                        <div className="mt-1 text-[10px] font-bold italic text-amber-600">
                           {holdRemainingLabel(b.holdExpiresAt)}
                         </div>
                       )}
@@ -816,7 +852,6 @@ export default function Dashboard() {
               </CardBody>
             </Card>
 
-            {/* WAITING CONFIRMATION */}
             <Card className="border-none shadow-sm ring-1 ring-zinc-200">
               <CardHeader
                 title="Aguardando confirmação"
@@ -846,17 +881,17 @@ export default function Dashboard() {
                     {waitingOffers.map((o) => (
                       <div
                         key={o._id}
-                        className="p-4 flex justify-between items-center group"
+                        className="group flex items-center justify-between p-4"
                       >
                         <div className="min-w-0">
-                          <div className="text-sm font-bold text-zinc-900 truncate">
+                          <div className="truncate text-sm font-bold text-zinc-900">
                             {o.customerName || "Cliente"}
                           </div>
-                          <div className="text-[11px] text-zinc-500 line-clamp-1">
+                          <div className="line-clamp-1 text-[11px] text-zinc-500">
                             {o.title || "Proposta"} •{" "}
                             {fmtBRLFromCents(getAmountCents(o))}
                           </div>
-                          <div className="text-[10px] text-zinc-400 font-medium uppercase tracking-wider">
+                          <div className="text-[10px] font-medium uppercase tracking-wider text-zinc-400">
                             {fmtDateTimeBR(o.updatedAt || o.createdAt)}
                           </div>
                         </div>
@@ -866,7 +901,7 @@ export default function Dashboard() {
                           </Badge>
                           <button
                             onClick={() => nav("/offers")}
-                            className="p-1.5 text-zinc-400 hover:text-zinc-900 transition-colors"
+                            className="p-1.5 text-zinc-400 transition-colors hover:text-zinc-900"
                             title="Abrir propostas"
                           >
                             <Icons.External />
@@ -879,17 +914,16 @@ export default function Dashboard() {
               </CardBody>
             </Card>
 
-            {/* CAIXA HOJE */}
-            <div className="p-5 rounded-2xl bg-zinc-900 text-white shadow-xl flex items-center justify-between">
+            <div className="flex items-center justify-between rounded-2xl bg-zinc-900 p-5 text-white shadow-xl">
               <div>
-                <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1">
+                <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-zinc-400">
                   Caixa de Hoje
                 </p>
                 <div className="text-xl font-bold">
                   {loading ? "..." : fmtBRL(kpis.paidTodayCents)}
                 </div>
               </div>
-              <div className="h-10 w-10 bg-zinc-800 rounded-xl flex items-center justify-center">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-800">
                 <Icons.Wallet />
               </div>
             </div>
@@ -902,18 +936,14 @@ export default function Dashboard() {
         visible={showToast}
       />
 
-      {/* ✅ Modal Conta Pix */}
       <PixSettingsModal
-        open={pixModalOpen}
-        onClose={() => setPixModalOpen(false)}
-        onSaved={(d) => {
-          const masked = String(d?.payoutPixKeyMasked || "").trim();
-          setPayoutPixKeyMasked(masked);
-          setPixModalOpen(false);
-        }}
+        open={pixModalState.open}
+        onClose={closePixModal}
+        onSaved={handlePixSaved}
+        contextTitle={pixModalState.title}
+        contextDescription={pixModalState.description}
       />
 
-      {/* ✅ Modal compartilhado (mesmo da tela Offers) */}
       <OfferDetailsModal
         open={detailsOpen}
         onClose={() => {

@@ -6,7 +6,13 @@ import { getPayoutSettings, updatePayoutSettings } from "../app/withdrawApi.js";
 
 const PIX_TYPES = ["CPF", "CNPJ", "PHONE", "EMAIL", "EVP"];
 
-export default function PixSettingsModal({ open, onClose, onSaved }) {
+export default function PixSettingsModal({
+  open,
+  onClose,
+  onSaved,
+  contextTitle = "",
+  contextDescription = "",
+}) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
@@ -18,6 +24,13 @@ export default function PixSettingsModal({ open, onClose, onSaved }) {
   const hasKey = useMemo(
     () => !!String(payoutPixKeyMasked || "").trim(),
     [payoutPixKeyMasked],
+  );
+
+  const hasContext = useMemo(
+    () =>
+      !!String(contextTitle || "").trim() ||
+      !!String(contextDescription || "").trim(),
+    [contextTitle, contextDescription],
   );
 
   async function load() {
@@ -55,7 +68,7 @@ export default function PixSettingsModal({ open, onClose, onSaved }) {
       setPayoutPixKeyMasked(String(d?.payoutPixKeyMasked || ""));
       setPayoutPixKeyInput("");
 
-      onSaved?.(d);
+      await onSaved?.(d);
     } catch (e) {
       setErr(e?.message || "Falha ao salvar chave Pix.");
     } finally {
@@ -76,11 +89,10 @@ export default function PixSettingsModal({ open, onClose, onSaved }) {
       onClick={() => (!locked ? onClose?.() : null)}
     >
       <div
-        className="w-full max-w-lg rounded-2xl bg-white shadow-2xl overflow-hidden"
+        className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border-b border-emerald-100 px-5 py-4 flex items-start justify-between gap-3">
+        <div className="flex items-start justify-between gap-3 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 to-teal-50 px-5 py-4">
           <div>
             <h2 className="text-lg font-bold text-emerald-900">Conta Pix</h2>
             <p className="mt-1 text-xs text-emerald-700">
@@ -88,14 +100,14 @@ export default function PixSettingsModal({ open, onClose, onSaved }) {
             </p>
           </div>
           <button
-            className="rounded-lg p-1.5 text-emerald-600 hover:bg-emerald-100 transition-colors disabled:opacity-60"
+            className="rounded-lg p-1.5 text-emerald-600 transition-colors hover:bg-emerald-100 disabled:opacity-60"
             onClick={() => (!locked ? onClose?.() : null)}
             type="button"
             aria-label="Fechar"
             disabled={locked}
           >
             <svg
-              className="w-5 h-5"
+              className="h-5 w-5"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -110,8 +122,7 @@ export default function PixSettingsModal({ open, onClose, onSaved }) {
           </button>
         </div>
 
-        {/* Status */}
-        <div className="px-5 py-4 bg-gradient-to-br from-emerald-500 to-teal-600 text-white">
+        <div className="bg-gradient-to-br from-emerald-500 to-teal-600 px-5 py-4 text-white">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-xs font-medium opacity-90">Status</p>
@@ -123,12 +134,11 @@ export default function PixSettingsModal({ open, onClose, onSaved }) {
                     : "Chave pendente"}
               </p>
               <p className="mt-1 text-xs opacity-80">
-                Pagamento cai direto no Pix do vendedor (sem saque na
-                plataforma)
+                Pagamento cai direto no Pix do vendedor
               </p>
             </div>
             <button
-              className="px-3 py-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors text-sm font-medium disabled:opacity-60"
+              className="rounded-lg bg-white/20 px-3 py-2 text-sm font-medium transition-colors hover:bg-white/30 disabled:opacity-60"
               type="button"
               onClick={load}
               disabled={locked}
@@ -138,11 +148,25 @@ export default function PixSettingsModal({ open, onClose, onSaved }) {
           </div>
         </div>
 
-        {/* Content */}
-        <div className="px-5 py-4 space-y-4">
+        <div className="space-y-4 px-5 py-4">
+          {hasContext ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+              {contextTitle ? (
+                <div className="text-sm font-semibold text-amber-900">
+                  {contextTitle}
+                </div>
+              ) : null}
+              {contextDescription ? (
+                <div className="mt-1 text-xs text-amber-800">
+                  {contextDescription}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
           {hasKey ? (
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-              <p className="text-xs text-emerald-700 font-medium">
+              <p className="text-xs font-medium text-emerald-700">
                 Chave atual
               </p>
               <p className="mt-1 text-sm font-semibold text-emerald-900">
@@ -150,14 +174,14 @@ export default function PixSettingsModal({ open, onClose, onSaved }) {
               </p>
             </div>
           ) : (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 font-medium">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-900">
               Nenhuma chave Pix cadastrada
             </div>
           )}
 
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">
+              <label className="mb-1 block text-xs font-semibold text-gray-700">
                 Tipo
               </label>
               <select
@@ -175,7 +199,7 @@ export default function PixSettingsModal({ open, onClose, onSaved }) {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">
+              <label className="mb-1 block text-xs font-semibold text-gray-700">
                 Nova chave
               </label>
               <Input
@@ -190,7 +214,7 @@ export default function PixSettingsModal({ open, onClose, onSaved }) {
 
           <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs text-zinc-700">
             <div className="font-semibold text-zinc-900">Como funciona</div>
-            <ul className="mt-2 list-disc pl-5 space-y-1">
+            <ul className="mt-2 list-disc space-y-1 pl-5">
               <li>O cliente paga para sua chave Pix.</li>
               <li>O cliente anexa o comprovante no link público.</li>
               <li>Você confirma manualmente o recebimento na proposta.</li>
@@ -198,16 +222,15 @@ export default function PixSettingsModal({ open, onClose, onSaved }) {
           </div>
 
           {err ? (
-            <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-800 font-medium">
+            <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-medium text-red-800">
               ⚠️ {err}
             </div>
           ) : null}
         </div>
 
-        {/* Footer */}
-        <div className="px-5 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between gap-2">
+        <div className="flex items-center justify-between gap-2 border-t border-gray-200 bg-gray-50 px-5 py-4">
           <button
-            className="px-3 py-2 rounded-lg border border-gray-300 text-gray-700 text-xs font-medium hover:bg-white transition-colors disabled:opacity-60"
+            className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-white disabled:opacity-60"
             type="button"
             onClick={() => (!locked ? onClose?.() : null)}
             disabled={locked}
