@@ -14,17 +14,40 @@ const ItemSchema = new mongoose.Schema(
 const PaymentProofSchema = new mongoose.Schema(
   {
     storage: {
-      provider: { type: String, default: "local" }, // local|s3
-      key: { type: String, default: null }, // nome do arquivo (local) ou key (s3)
-      path: { type: String, default: null }, // opcional (local)
-      url: { type: String, default: null }, // opcional (s3/presigned)
+      provider: { type: String, default: "local" },
+      key: { type: String, default: null },
+      path: { type: String, default: null },
+      url: { type: String, default: null },
     },
     originalName: { type: String, default: null },
     mimeType: { type: String, default: null },
     size: { type: Number, default: null },
     uploadedAt: { type: Date, default: null },
-    uploadedBy: { type: String, default: "public" }, // public|user
+    uploadedBy: { type: String, default: "public" },
     note: { type: String, default: null },
+  },
+  { _id: false },
+);
+
+const PaymentRemindersSchema = new mongoose.Schema(
+  {
+    enabled24h: { type: Boolean, default: false },
+    enabled3d: { type: Boolean, default: false },
+    enabledDueDate: { type: Boolean, default: false },
+    enabledAfterDueDate: { type: Boolean, default: false },
+    lastSentAt: { type: Date, default: null },
+    lastSentKind: {
+      type: String,
+      enum: [
+        "manual",
+        "after_24h",
+        "after_3d",
+        "due_date",
+        "after_due_date",
+        null,
+      ],
+      default: null,
+    },
   },
   { _id: false },
 );
@@ -107,16 +130,13 @@ const OfferSchema = new mongoose.Schema(
     status: { type: String, default: "PUBLIC", index: true },
     acceptedAt: { type: Date, default: null },
 
-    // ✅ status de pagamento separado do status de fluxo (compat)
     paymentStatus: { type: String, default: "PENDING", index: true },
-
-    // ✅ método de pagamento (novo MVP sem intermediador)
     paymentMethod: { type: String, default: "MANUAL_PIX", index: true },
 
-    // ✅ comprovante de pagamento (manual)
     paymentProof: { type: PaymentProofSchema, default: null },
 
-    // ✅ confirmação manual (pelo dono do workspace)
+    paymentReminders: { type: PaymentRemindersSchema, default: () => ({}) },
+
     confirmedAt: { type: Date, default: null },
     confirmedByUserId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -125,7 +145,6 @@ const OfferSchema = new mongoose.Schema(
       index: true,
     },
 
-    // ✅ recusa manual (opcional)
     rejectedAt: { type: Date, default: null },
     rejectedByUserId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -134,7 +153,6 @@ const OfferSchema = new mongoose.Schema(
     },
     rejectionNote: { type: String, default: null },
 
-    // compat legado (AbacatePay)
     payment: {
       provider: { type: String, default: null },
       lastPixId: { type: String, default: null },
@@ -146,23 +164,21 @@ const OfferSchema = new mongoose.Schema(
     paidAt: { type: Date, default: null },
     paidAmountCents: { type: Number, default: null },
 
-    // e-mail (pago confirmado)
     paymentNotifiedAt: { type: Date, default: null },
     paymentNotifiedTo: { type: String, default: null },
     paymentNotifiedPixId: { type: String, default: null },
     paymentNotifiedKey: { type: String, default: null },
 
-    // e-mail (comprovante enviado)
     proofNotifiedAt: { type: Date, default: null },
     proofNotifiedTo: { type: String, default: null },
     proofNotifiedKey: { type: String, default: null },
     proofNotifiedFileKey: { type: String, default: null },
 
-    // flags públicos (compat)
     publicDoneOnly: { type: Boolean, default: false },
     publicLockedAt: { type: String, default: null },
   },
   { timestamps: true },
 );
 
-export const Offer = mongoose.model("Offer", OfferSchema);
+export const Offer =
+  mongoose.models.Offer || mongoose.model("Offer", OfferSchema);

@@ -1,4 +1,3 @@
-// src/components/offers/OfferDetailsModal.jsx
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../../app/api.js";
 
@@ -44,7 +43,7 @@ function Modal({ open, onClose, title, children, footer }) {
       onClick={() => onClose?.()}
     >
       <div
-        className="flex w-full max-w-3xl max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl transition-transform"
+        className="flex w-full max-w-4xl max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl transition-transform"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-zinc-100 px-5 py-4 bg-white">
@@ -88,6 +87,119 @@ function AlertInline({ kind = "info", children }) {
   );
 }
 
+function humanReminderKind(kind) {
+  const k = String(kind || "")
+    .trim()
+    .toLowerCase();
+  if (k === "manual") return "Manual";
+  if (k === "after_24h") return "24h sem pagamento";
+  if (k === "after_3d") return "3 dias após envio";
+  if (k === "due_date") return "No dia do vencimento";
+  if (k === "after_due_date") return "Após vencimento";
+  return "Lembrete";
+}
+
+function humanReminderStatus(status) {
+  const s = String(status || "")
+    .trim()
+    .toLowerCase();
+  if (s === "sent") return { label: "WhatsApp enviado", tone: "PAID" };
+  if (s === "failed") return { label: "Falha no envio", tone: "CANCELLED" };
+  if (s === "skipped") return { label: "Não enviado", tone: "EXPIRED" };
+  return { label: "Processando", tone: "PUBLIC" };
+}
+
+function fmtReminderDate(iso) {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "—";
+
+    const now = new Date();
+    const sameDay =
+      d.getDate() === now.getDate() &&
+      d.getMonth() === now.getMonth() &&
+      d.getFullYear() === now.getFullYear();
+
+    const y = new Date(now);
+    y.setDate(now.getDate() - 1);
+    const yesterday =
+      d.getDate() === y.getDate() &&
+      d.getMonth() === y.getMonth() &&
+      d.getFullYear() === y.getFullYear();
+
+    const time = d.toLocaleTimeString("pt-BR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "America/Sao_Paulo",
+    });
+
+    if (sameDay) return `Hoje às ${time}`;
+    if (yesterday) return `Ontem às ${time}`;
+
+    return d.toLocaleString("pt-BR", {
+      timeZone: "America/Sao_Paulo",
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return "—";
+  }
+}
+
+function canSendReminder(offer) {
+  const paymentStatus = norm(offer?.paymentStatus);
+  const status = norm(offer?.status);
+  const hasProof = !!offer?.paymentProof?.storage?.key;
+  const paid =
+    ["PAID", "CONFIRMED"].includes(paymentStatus) ||
+    ["PAID", "CONFIRMED"].includes(status);
+
+  if (hasProof) {
+    return {
+      ok: false,
+      reason:
+        "O cliente já enviou comprovante. Não é possível lembrar novamente.",
+    };
+  }
+
+  if (paid) {
+    return { ok: false, reason: "O pagamento já foi confirmado." };
+  }
+
+  if (["WAITING_CONFIRMATION", "REJECTED"].includes(paymentStatus)) {
+    return {
+      ok: false,
+      reason: "A proposta não está mais apenas aguardando pagamento.",
+    };
+  }
+
+  if (["EXPIRED", "CANCELLED"].includes(status)) {
+    return {
+      ok: false,
+      reason: "A proposta não pode receber lembretes agora.",
+    };
+  }
+
+  if (paymentStatus !== "PENDING") {
+    return {
+      ok: false,
+      reason: "Lembretes só podem ser enviados para propostas pendentes.",
+    };
+  }
+
+  if (!String(offer?.customerWhatsApp || "").trim()) {
+    return {
+      ok: false,
+      reason: "Cliente sem WhatsApp cadastrado para receber o lembrete.",
+    };
+  }
+
+  return { ok: true, reason: "" };
+}
+
 export default function OfferDetailsModal({
   open,
   onClose,
@@ -102,7 +214,7 @@ export default function OfferDetailsModal({
   const [activeBusy, setActiveBusy] = useState(false);
   const [activeErr, setActiveErr] = useState("");
 
-  const [modalFlash, setModalFlash] = useState(null); // { kind, text }
+  const [modalFlash, setModalFlash] = useState(null);
 
   const [proofBusy, setProofBusy] = useState(false);
   const [proofErr, setProofErr] = useState("");
@@ -113,6 +225,19 @@ export default function OfferDetailsModal({
 
   const [rejectBoxOpen, setRejectBoxOpen] = useState(false);
   const [rejectText, setRejectText] = useState("");
+
+  const [remindersTab, setRemindersTab] = useState("config");
+  const [remindersBusy, setRemindersBusy] = useState(false);
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const [remindersErr, setRemindersErr] = useState("");
+  const [remindersFlash, setRemindersFlash] = useState(null);
+  const [remindersHistory, setRemindersHistory] = useState([]);
+  const [reminderSettings, setReminderSettings] = useState({
+    enabled24h: false,
+    enabled3d: false,
+    enabledDueDate: false,
+    enabledAfterDueDate: false,
+  });
 
   const offerId = offer?._id;
 
@@ -129,6 +254,19 @@ export default function OfferDetailsModal({
 
     setRejectBoxOpen(false);
     setRejectText("");
+
+    setRemindersTab("config");
+    setRemindersBusy(false);
+    setHistoryBusy(false);
+    setRemindersErr("");
+    setRemindersFlash(null);
+    setRemindersHistory([]);
+    setReminderSettings({
+      enabled24h: false,
+      enabled3d: false,
+      enabledDueDate: false,
+      enabledAfterDueDate: false,
+    });
   }, []);
 
   const fetchDetails = useCallback(async (id) => {
@@ -139,7 +277,22 @@ export default function OfferDetailsModal({
     return { offer: d?.offer || null, booking: d?.booking || null };
   }, []);
 
-  // abre + carrega detalhes
+  const loadReminderHistory = useCallback(async (id) => {
+    if (!id) return;
+    try {
+      setHistoryBusy(true);
+      setRemindersErr("");
+      const d = await api(`/offers/${id}/payment-reminders/history`);
+      setRemindersHistory(Array.isArray(d?.items) ? d.items : []);
+    } catch (e) {
+      setRemindersErr(
+        e?.message || "Falha ao carregar histórico de lembretes.",
+      );
+    } finally {
+      setHistoryBusy(false);
+    }
+  }, []);
+
   useEffect(() => {
     let alive = true;
 
@@ -148,6 +301,15 @@ export default function OfferDetailsModal({
     setActive(offer || null);
     setBooking(offer?.booking || null);
     resetTransient();
+
+    if (offer?.paymentReminders) {
+      setReminderSettings({
+        enabled24h: !!offer.paymentReminders.enabled24h,
+        enabled3d: !!offer.paymentReminders.enabled3d,
+        enabledDueDate: !!offer.paymentReminders.enabledDueDate,
+        enabledAfterDueDate: !!offer.paymentReminders.enabledAfterDueDate,
+      });
+    }
 
     if (!offerId) return;
 
@@ -158,11 +320,28 @@ export default function OfferDetailsModal({
         if (!alive) return;
         setActive((prev) => ({ ...(prev || {}), ...(d.offer || {}) }));
         setBooking(d.booking || null);
+        setReminderSettings({
+          enabled24h: !!d?.offer?.paymentReminders?.enabled24h,
+          enabled3d: !!d?.offer?.paymentReminders?.enabled3d,
+          enabledDueDate: !!d?.offer?.paymentReminders?.enabledDueDate,
+          enabledAfterDueDate:
+            !!d?.offer?.paymentReminders?.enabledAfterDueDate,
+        });
       } catch (e) {
         if (!alive) return;
         setActiveErr(e?.message || "Falha ao carregar detalhes.");
       } finally {
         if (alive) setActiveBusy(false);
+      }
+    })();
+
+    (async () => {
+      try {
+        const d = await api(`/offers/${offerId}/payment-reminders/history`);
+        if (!alive) return;
+        setRemindersHistory(Array.isArray(d?.items) ? d.items : []);
+      } catch {
+        if (!alive) return;
       }
     })();
 
@@ -179,6 +358,12 @@ export default function OfferDetailsModal({
       const d = await fetchDetails(offerId);
       setActive((prev) => ({ ...(prev || {}), ...(d.offer || {}) }));
       setBooking(d.booking || null);
+      setReminderSettings({
+        enabled24h: !!d?.offer?.paymentReminders?.enabled24h,
+        enabled3d: !!d?.offer?.paymentReminders?.enabled3d,
+        enabledDueDate: !!d?.offer?.paymentReminders?.enabledDueDate,
+        enabledAfterDueDate: !!d?.offer?.paymentReminders?.enabledAfterDueDate,
+      });
       if (d?.offer?._id && typeof onOfferUpdated === "function") {
         onOfferUpdated(d.offer);
       }
@@ -260,7 +445,6 @@ export default function OfferDetailsModal({
         if (typeof onOfferUpdated === "function") onOfferUpdated(updated);
       }
 
-      // feedback consolidado (WhatsApp + e-mails)
       const wa = d?.notify;
       const email1 = d?.email;
       const email2 = d?.emailConfirmed;
@@ -383,15 +567,115 @@ export default function OfferDetailsModal({
     [offerId, active, onOfferUpdated, refreshActive],
   );
 
+  const saveReminderSettings = useCallback(async () => {
+    if (!offerId) return;
+    try {
+      setRemindersBusy(true);
+      setRemindersErr("");
+      setRemindersFlash(null);
+
+      const d = await api(`/offers/${offerId}/payment-reminders`, {
+        method: "PATCH",
+        body: JSON.stringify(reminderSettings),
+      });
+
+      const updated = d?.offer || null;
+      if (updated?._id) {
+        setActive((prev) => ({ ...(prev || {}), ...(updated || {}) }));
+        if (typeof onOfferUpdated === "function") onOfferUpdated(updated);
+      }
+
+      setRemindersFlash({
+        kind: "success",
+        text: "Configurações de lembretes automáticos salvas com sucesso.",
+      });
+    } catch (e) {
+      setRemindersErr(e?.message || "Falha ao salvar lembretes automáticos.");
+      setRemindersFlash({
+        kind: "error",
+        text: e?.message || "Falha ao salvar lembretes automáticos.",
+      });
+    } finally {
+      setRemindersBusy(false);
+    }
+  }, [offerId, reminderSettings, onOfferUpdated]);
+
+  const sendReminderNow = useCallback(async () => {
+    if (!offerId) return;
+    try {
+      setRemindersBusy(true);
+      setRemindersErr("");
+      setRemindersFlash(null);
+
+      const d = await api(`/offers/${offerId}/send-payment-reminder`, {
+        method: "POST",
+      });
+
+      const result = d?.result || {};
+      const updated = d?.offer || null;
+      if (updated?._id) {
+        setActive((prev) => ({ ...(prev || {}), ...(updated || {}) }));
+        if (typeof onOfferUpdated === "function") onOfferUpdated(updated);
+      }
+
+      if (result.status === "sent") {
+        setRemindersFlash({
+          kind: "success",
+          text: "Lembrete enviado com sucesso via WhatsApp.",
+        });
+      } else if (result.status === "skipped") {
+        setRemindersFlash({
+          kind: "info",
+          text:
+            result.reason === "NO_PHONE"
+              ? "O cliente não possui WhatsApp válido cadastrado."
+              : result.reason === "FEATURE_DISABLED"
+                ? "O envio por WhatsApp está desabilitado na configuração do ambiente."
+                : "O lembrete não foi enviado.",
+        });
+      } else {
+        setRemindersFlash({
+          kind: "error",
+          text: result.error || "Falha ao enviar lembrete.",
+        });
+      }
+
+      await loadReminderHistory(offerId);
+    } catch (e) {
+      setRemindersErr(e?.message || "Falha ao enviar lembrete.");
+      setRemindersFlash({
+        kind: "error",
+        text: e?.message || "Falha ao enviar lembrete.",
+      });
+    } finally {
+      setRemindersBusy(false);
+    }
+  }, [offerId, onOfferUpdated, loadReminderHistory]);
+
   const activePay = useMemo(() => getPaymentLabel(active), [active]);
   const activeHasProof = !!active?.paymentProof?.storage?.key;
   const activeWaiting = norm(active?.paymentStatus) === "WAITING_CONFIRMATION";
   const activePaid = activePay?.tone === "PAID";
   const canModerateProof = activeHasProof && activeWaiting && !activePaid;
+  const reminderGuard = useMemo(() => canSendReminder(active), [active]);
 
   const title = active?.customerName
     ? `Detalhes • ${active.customerName}`
     : "Detalhes";
+  const lastReminderAt = active?.paymentReminders?.lastSentAt || null;
+  const lastReminderKind = active?.paymentReminders?.lastSentKind || "";
+  const remindersDirty = useMemo(() => {
+    const current = active?.paymentReminders || {};
+    return (
+      !!current &&
+      (Boolean(current.enabled24h) !== Boolean(reminderSettings.enabled24h) ||
+        Boolean(current.enabled3d) !== Boolean(reminderSettings.enabled3d) ||
+        Boolean(current.enabledDueDate) !==
+          Boolean(reminderSettings.enabledDueDate) ||
+        Boolean(current.enabledAfterDueDate) !==
+          Boolean(reminderSettings.enabledAfterDueDate))
+    );
+  }, [active, reminderSettings]);
 
   return (
     <Modal
@@ -444,7 +728,6 @@ export default function OfferDetailsModal({
         </div>
       ) : !active ? null : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          {/* LEFT */}
           <div className="lg:col-span-1 space-y-4">
             <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4">
               <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">
@@ -478,7 +761,6 @@ export default function OfferDetailsModal({
                   <div className="mt-2 flex flex-wrap gap-2">
                     <Button
                       variant="secondary"
-                      size="sm"
                       disabled={proofBusy || actionBusy}
                       onClick={loadProof}
                     >
@@ -487,7 +769,6 @@ export default function OfferDetailsModal({
 
                     <Button
                       variant="secondary"
-                      size="sm"
                       disabled={proofBusy || actionBusy}
                       onClick={downloadProof}
                     >
@@ -496,17 +777,12 @@ export default function OfferDetailsModal({
 
                     {canModerateProof ? (
                       <>
-                        <Button
-                          size="sm"
-                          disabled={actionBusy}
-                          onClick={confirmPayment}
-                        >
+                        <Button disabled={actionBusy} onClick={confirmPayment}>
                           {actionBusy ? "Processando..." : "Confirmar"}
                         </Button>
 
                         <Button
                           variant="ghost"
-                          size="sm"
                           disabled={actionBusy}
                           onClick={() => {
                             setModalFlash(null);
@@ -539,7 +815,6 @@ export default function OfferDetailsModal({
                       <div className="mt-3 flex items-center justify-end gap-2">
                         <Button
                           variant="ghost"
-                          size="sm"
                           disabled={actionBusy}
                           onClick={() => {
                             setRejectBoxOpen(false);
@@ -549,7 +824,6 @@ export default function OfferDetailsModal({
                           Cancelar
                         </Button>
                         <Button
-                          size="sm"
                           disabled={actionBusy}
                           onClick={() => rejectPayment(rejectText)}
                         >
@@ -585,7 +859,6 @@ export default function OfferDetailsModal({
             </div>
           </div>
 
-          {/* RIGHT */}
           <div className="lg:col-span-2 space-y-4">
             <div className="rounded-2xl border border-zinc-200 bg-white p-4">
               <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">
@@ -625,7 +898,6 @@ export default function OfferDetailsModal({
                   </div>
 
                   <Button
-                    size="sm"
                     variant="secondary"
                     className="mt-2"
                     onClick={() => copyLink?.(active)}
@@ -634,6 +906,218 @@ export default function OfferDetailsModal({
                     {copiedId === active?._id ? "Copiado" : "Copiar link"}
                   </Button>
                 </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-zinc-200 bg-white overflow-hidden">
+              <div className="border-b border-zinc-200 px-4 py-4">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">
+                      Lembretes de pagamento
+                    </div>
+                    <div className="mt-2 text-sm font-semibold text-zinc-900">
+                      Status: {activePay?.text}
+                    </div>
+                    <div className="mt-1 text-xs text-zinc-500">
+                      Último lembrete enviado:{" "}
+                      <span className="font-medium text-zinc-700">
+                        {lastReminderAt
+                          ? fmtReminderDate(lastReminderAt)
+                          : "Nenhum lembrete enviado"}
+                      </span>
+                      {lastReminderKind ? (
+                        <span className="text-zinc-500">
+                          {" "}
+                          • {humanReminderKind(lastReminderKind)}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col items-stretch gap-2 md:items-end">
+                    <Button
+                      onClick={sendReminderNow}
+                      disabled={remindersBusy || !reminderGuard.ok}
+                    >
+                      {remindersBusy ? "Enviando..." : "Enviar lembrete"}
+                    </Button>
+                    {!reminderGuard.ok ? (
+                      <span className="max-w-xs text-[11px] text-zinc-500 md:text-right">
+                        {reminderGuard.reason}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex border-b border-zinc-200 bg-zinc-50 px-4">
+                <button
+                  type="button"
+                  onClick={() => setRemindersTab("config")}
+                  className={`flex-1 border-b-2 px-4 py-3 text-sm font-medium transition-colors ${
+                    remindersTab === "config"
+                      ? "border-emerald-500 bg-white text-emerald-600"
+                      : "border-transparent text-zinc-600 hover:text-zinc-900"
+                  }`}
+                >
+                  Configurações
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRemindersTab("history");
+                    loadReminderHistory(offerId);
+                  }}
+                  className={`flex-1 border-b-2 px-4 py-3 text-sm font-medium transition-colors ${
+                    remindersTab === "history"
+                      ? "border-emerald-500 bg-white text-emerald-600"
+                      : "border-transparent text-zinc-600 hover:text-zinc-900"
+                  }`}
+                >
+                  Histórico de lembretes
+                </button>
+              </div>
+
+              <div className="p-4 space-y-4">
+                {remindersFlash?.text ? (
+                  <AlertInline kind={remindersFlash.kind}>
+                    {remindersFlash.text}
+                  </AlertInline>
+                ) : null}
+                {remindersErr ? (
+                  <AlertInline kind="error">{remindersErr}</AlertInline>
+                ) : null}
+
+                {remindersTab === "config" ? (
+                  <div className="space-y-4">
+                    <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4">
+                      <div className="text-sm font-semibold text-zinc-900">
+                        Lembretes automáticos
+                      </div>
+                      <p className="mt-1 text-xs text-zinc-500">
+                        Ative automações para lembrar o cliente enquanto a
+                        proposta estiver pendente.
+                      </p>
+
+                      <div className="mt-4 space-y-3">
+                        {[
+                          {
+                            key: "enabled24h",
+                            label: "Lembrar cliente após 24h sem pagamento",
+                          },
+                          {
+                            key: "enabled3d",
+                            label:
+                              "Lembrar cliente 3 dias após envio da proposta",
+                          },
+                          {
+                            key: "enabledDueDate",
+                            label: "Lembrar cliente no dia do vencimento",
+                          },
+                          {
+                            key: "enabledAfterDueDate",
+                            label: "Lembrar cliente após vencimento",
+                          },
+                        ].map((item) => (
+                          <label
+                            key={item.key}
+                            className="flex items-start gap-3 rounded-xl border border-zinc-200 bg-white px-3 py-3 text-sm text-zinc-700"
+                          >
+                            <input
+                              type="checkbox"
+                              className="mt-1 rounded border-zinc-300 text-emerald-600 focus:ring-emerald-500"
+                              checked={!!reminderSettings[item.key]}
+                              onChange={(e) =>
+                                setReminderSettings((prev) => ({
+                                  ...prev,
+                                  [item.key]: e.target.checked,
+                                }))
+                              }
+                            />
+                            <span>{item.label}</span>
+                          </label>
+                        ))}
+                      </div>
+
+                      <div className="mt-4 flex items-center justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          disabled={remindersBusy || !remindersDirty}
+                          onClick={() => {
+                            setReminderSettings({
+                              enabled24h:
+                                !!active?.paymentReminders?.enabled24h,
+                              enabled3d: !!active?.paymentReminders?.enabled3d,
+                              enabledDueDate:
+                                !!active?.paymentReminders?.enabledDueDate,
+                              enabledAfterDueDate:
+                                !!active?.paymentReminders?.enabledAfterDueDate,
+                            });
+                          }}
+                        >
+                          Descartar
+                        </Button>
+                        <Button
+                          disabled={remindersBusy || !remindersDirty}
+                          onClick={saveReminderSettings}
+                        >
+                          {remindersBusy ? "Salvando..." : "Salvar automações"}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ) : historyBusy ? (
+                  <div className="space-y-3">
+                    <Skeleton className="h-16 w-full rounded-xl" />
+                    <Skeleton className="h-16 w-full rounded-xl" />
+                  </div>
+                ) : remindersHistory.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50 p-6 text-center text-sm text-zinc-500">
+                    Nenhum lembrete registrado para esta proposta.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {remindersHistory.map((item) => {
+                      const st = humanReminderStatus(item?.status);
+                      return (
+                        <div
+                          key={item?._id}
+                          className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3"
+                        >
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                              <div className="text-sm font-semibold text-zinc-900">
+                                {fmtReminderDate(
+                                  item?.sentAt || item?.createdAt,
+                                )}
+                              </div>
+                              <div className="mt-1 text-xs text-zinc-500">
+                                {humanReminderKind(item?.kind)} •{" "}
+                                {String(
+                                  item?.channel || "whatsapp",
+                                ).toUpperCase()}
+                              </div>
+                            </div>
+                            <Badge tone={st.tone}>{st.label}</Badge>
+                          </div>
+
+                          {item?.message ? (
+                            <div className="mt-3 rounded-lg border border-zinc-200 bg-white p-3 text-xs text-zinc-600 whitespace-pre-line">
+                              {item.message}
+                            </div>
+                          ) : null}
+
+                          {item?.error?.message ? (
+                            <div className="mt-2 text-xs text-red-700">
+                              Erro: {item.error.message}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
 

@@ -207,6 +207,8 @@ export default function Offers() {
                       const pay = getPaymentLabel(o);
                       const publicUrl = `/p/${o.publicToken}`;
                       const copied = copiedId === o._id;
+                      const isPendingAlert =
+                        norm(o?.paymentStatus) === "PENDING";
 
                       return (
                         <tr key={o._id} className="hover:bg-zinc-50/50">
@@ -231,7 +233,14 @@ export default function Offers() {
                           </td>
                           <td className="py-3 pr-4">
                             <div className="flex items-center gap-2">
-                              <Badge tone={pay.tone}>{pay.text}</Badge>
+                              {isPendingAlert ? (
+                                <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700">
+                                  Aguardando pagamento
+                                </span>
+                              ) : (
+                                <Badge tone={pay.tone}>{pay.text}</Badge>
+                              )}
+
                               {o?.notifyWhatsAppOnPaid ? (
                                 <span className="text-[10px] font-bold text-emerald-700 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1">
                                   WA ON

@@ -5,6 +5,7 @@ import { env } from "./config/env.js";
 
 import healthRoutes from "./routes/health.routes.js";
 import offersRoutes from "./routes/offers.routes.js";
+import offerRemindersRoutes from "./routes/offer-reminders.routes.js";
 import publicRoutes from "./routes/public.routes.js";
 import webhooksAbacatepayRoutes from "./routes/webhooks.abacatepay.routes.js";
 import authRoutes from "./routes/auth.routes.js";
@@ -80,6 +81,7 @@ export function createApp() {
   app.use("/api", healthRoutes);
   app.use("/api", authRoutes);
   app.use("/api", offersRoutes);
+  app.use("/api", offerRemindersRoutes);
   app.use("/api", bookingsRoutes);
 
   // Mantém withdrawRoutes por enquanto (vamos reutilizar para "Conta Pix")
