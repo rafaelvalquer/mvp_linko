@@ -9,8 +9,10 @@ import { env } from "../config/env.js";
 import { User } from "../models/User.js";
 import { Workspace } from "../models/Workspace.js";
 import { PendingRegistration } from "../models/PendingRegistration.js";
+import { PasswordResetCode } from "../models/PasswordResetCode.js";
 import { authOptional, ensureAuth } from "../middleware/auth.js";
 import { sendRegistrationVerificationEmail } from "../services/emailVerification.js";
+import { sendForgotPasswordCode } from "../services/resendEmail.js";
 
 const r = Router();
 
@@ -18,6 +20,11 @@ const REGISTER_CODE_LENGTH = 4;
 const REGISTER_CODE_TTL_MS = 10 * 60 * 1000;
 const REGISTER_RESEND_COOLDOWN_MS = 60 * 1000;
 const REGISTER_MAX_ATTEMPTS = 10;
+
+const PASSWORD_RESET_CODE_LENGTH = 4;
+const PASSWORD_RESET_CODE_TTL_MS = 10 * 60 * 1000;
+const PASSWORD_RESET_RESEND_COOLDOWN_MS = 60 * 1000;
+const PASSWORD_RESET_MAX_ATTEMPTS = 10;
 
 r.use(authOptional);
 
@@ -40,6 +47,19 @@ function normEmail(v) {
 
 function isValidEmail(v) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v || ""));
+}
+
+function hasMinPasswordLength(v) {
+  return String(v || "").length >= 8;
+}
+
+function hasSpecialPasswordChar(v) {
+  return /[^A-Za-z0-9]/.test(String(v || ""));
+}
+
+function validateResetPassword(v) {
+  const password = String(v || "");
+  return hasMinPasswordLength(password) && hasSpecialPasswordChar(password);
 }
 
 function toSlug(v) {
@@ -78,11 +98,11 @@ function signToken(user) {
   );
 }
 
-function makeCode() {
+function makeCode(length = REGISTER_CODE_LENGTH) {
   return crypto
-    .randomInt(0, 10 ** REGISTER_CODE_LENGTH)
+    .randomInt(0, 10 ** length)
     .toString()
-    .padStart(REGISTER_CODE_LENGTH, "0");
+    .padStart(length, "0");
 }
 
 function getWorkspaceName(name, workspaceName) {
@@ -148,6 +168,24 @@ function buildPendingRegistrationResponse(pending) {
     canResendAt: canResendAt.toISOString(),
     cooldownSeconds: Math.floor(REGISTER_RESEND_COOLDOWN_MS / 1000),
     codeLength: REGISTER_CODE_LENGTH,
+  };
+}
+
+function buildPasswordResetResponse(resetDoc) {
+  const lastSentAt = resetDoc?.lastSentAt
+    ? new Date(resetDoc.lastSentAt)
+    : new Date();
+  const canResendAt = new Date(
+    lastSentAt.getTime() + PASSWORD_RESET_RESEND_COOLDOWN_MS,
+  );
+  const expiresAt = resetDoc?.expiresAt ? new Date(resetDoc.expiresAt) : null;
+
+  return {
+    email: String(resetDoc?.email || ""),
+    expiresAt: expiresAt ? expiresAt.toISOString() : null,
+    canResendAt: canResendAt.toISOString(),
+    cooldownSeconds: Math.floor(PASSWORD_RESET_RESEND_COOLDOWN_MS / 1000),
+    codeLength: PASSWORD_RESET_CODE_LENGTH,
   };
 }
 
@@ -227,6 +265,157 @@ async function createPendingRegistration(data) {
   });
 
   return pending;
+}
+
+async function findUserForPasswordReset(email) {
+  const user = await User.findOne({ email }).select(
+    "_id name email status passwordHash workspaceId role",
+  );
+
+  if (!user) {
+    return {
+      user: null,
+      error: {
+        status: 404,
+        code: "ACCOUNT_NOT_FOUND",
+        message: "Nenhuma conta foi encontrada para este e-mail.",
+      },
+    };
+  }
+
+  if (user.status !== "active") {
+    return {
+      user: null,
+      error: {
+        status: 403,
+        code: "ACCOUNT_DISABLED",
+        message: "Esta conta está indisponível para redefinição de senha.",
+      },
+    };
+  }
+
+  return { user, error: null };
+}
+
+async function createPasswordResetCode(user) {
+  const now = new Date();
+  const code = makeCode(PASSWORD_RESET_CODE_LENGTH);
+  const expiresAt = new Date(now.getTime() + PASSWORD_RESET_CODE_TTL_MS);
+
+  const resetDoc = await PasswordResetCode.findOneAndUpdate(
+    { email: user.email },
+    {
+      $set: {
+        email: user.email,
+        code,
+        expiresAt,
+        lastSentAt: now,
+        attempts: 0,
+        usedAt: null,
+      },
+    },
+    {
+      new: true,
+      upsert: true,
+      setDefaultsOnInsert: true,
+      runValidators: true,
+    },
+  );
+
+  await sendForgotPasswordCode({
+    to: user.email,
+    name: user.name,
+    code,
+    expiresAt,
+  });
+
+  return resetDoc;
+}
+
+async function loadPasswordResetByEmail(email) {
+  return PasswordResetCode.findOne({ email }).select("+code");
+}
+
+function validatePasswordResetRequestPayload(email) {
+  if (!isValidEmail(email)) {
+    const err = new Error("E-mail inválido.");
+    err.status = 400;
+    err.code = "EMAIL_INVALID";
+    throw err;
+  }
+}
+
+function ensurePasswordResetCanBeUsed(resetDoc) {
+  if (!resetDoc) {
+    const err = new Error(
+      "Nenhuma solicitação de redefinição foi encontrada para este e-mail.",
+    );
+    err.status = 404;
+    err.code = "NO_PASSWORD_RESET_REQUEST";
+    throw err;
+  }
+
+  if (resetDoc.usedAt) {
+    const err = new Error("Este código já foi utilizado. Solicite um novo.");
+    err.status = 410;
+    err.code = "CODE_ALREADY_USED";
+    throw err;
+  }
+
+  if (resetDoc.expiresAt && resetDoc.expiresAt.getTime() <= Date.now()) {
+    const err = new Error("O código expirou. Solicite um novo envio.");
+    err.status = 410;
+    err.code = "CODE_EXPIRED";
+    throw err;
+  }
+
+  if (Number(resetDoc.attempts || 0) >= PASSWORD_RESET_MAX_ATTEMPTS) {
+    const err = new Error(
+      "Número máximo de tentativas excedido. Solicite um novo código.",
+    );
+    err.status = 429;
+    err.code = "TOO_MANY_ATTEMPTS";
+    throw err;
+  }
+}
+
+async function assertValidPasswordResetCode({
+  email,
+  code,
+  incrementOnFail = true,
+}) {
+  const cleanEmail = normEmail(email);
+  const cleanCode = String(code || "")
+    .replace(/\D+/g, "")
+    .slice(0, PASSWORD_RESET_CODE_LENGTH);
+
+  validatePasswordResetRequestPayload(cleanEmail);
+
+  if (cleanCode.length !== PASSWORD_RESET_CODE_LENGTH) {
+    const err = new Error("Digite o código de 4 dígitos corretamente.");
+    err.status = 400;
+    err.code = "CODE_INVALID_FORMAT";
+    throw err;
+  }
+
+  const resetDoc = await loadPasswordResetByEmail(cleanEmail);
+  ensurePasswordResetCanBeUsed(resetDoc);
+
+  if (String(resetDoc.code || "") !== cleanCode) {
+    if (incrementOnFail) {
+      await PasswordResetCode.updateOne(
+        { _id: resetDoc._id },
+        { $inc: { attempts: 1 } },
+      ).catch(() => {});
+    }
+
+    const err = new Error("Código inválido.");
+    err.status = 400;
+    err.code = "INVALID_CODE";
+    throw err;
+  }
+
+  return resetDoc;
 }
 
 async function handleRegisterRequestCode(req, res) {
@@ -453,6 +642,166 @@ r.post(
 
     const ws = await Workspace.findById(workspaceId).lean();
     return res.json(buildAuthResponse(userDoc, ws));
+  }),
+);
+
+r.post(
+  "/auth/forgot-password/request-code",
+  asyncHandler(async (req, res) => {
+    const email = normEmail(req.body?.email);
+    validatePasswordResetRequestPayload(email);
+
+    const { user, error } = await findUserForPasswordReset(email);
+    if (error) {
+      return sendError(res, error.status, error.message, error.code);
+    }
+
+    const resetDoc = await createPasswordResetCode(user);
+
+    return res.json({
+      ok: true,
+      passwordReset: buildPasswordResetResponse(resetDoc),
+      message: "Enviamos um código de 4 dígitos para o seu e-mail.",
+    });
+  }),
+);
+
+r.post(
+  "/auth/forgot-password/resend-code",
+  asyncHandler(async (req, res) => {
+    const email = normEmail(req.body?.email);
+    validatePasswordResetRequestPayload(email);
+
+    const { user, error } = await findUserForPasswordReset(email);
+    if (error) {
+      return sendError(res, error.status, error.message, error.code);
+    }
+
+    const resetDoc = await loadPasswordResetByEmail(email);
+    if (!resetDoc) {
+      return sendError(
+        res,
+        404,
+        "Nenhuma solicitação de redefinição foi encontrada para este e-mail.",
+        "NO_PASSWORD_RESET_REQUEST",
+      );
+    }
+
+    if (resetDoc.usedAt) {
+      return sendError(
+        res,
+        410,
+        "Este código já foi utilizado. Solicite um novo envio.",
+        "CODE_ALREADY_USED",
+      );
+    }
+
+    const lastSentAt = resetDoc.lastSentAt ? new Date(resetDoc.lastSentAt) : null;
+    const now = Date.now();
+    const retryAt = lastSentAt
+      ? lastSentAt.getTime() + PASSWORD_RESET_RESEND_COOLDOWN_MS
+      : 0;
+    const retryAfterMs = retryAt - now;
+
+    if (retryAfterMs > 0) {
+      return sendError(
+        res,
+        429,
+        "Aguarde 1 minuto para reenviar o código.",
+        "RESEND_COOLDOWN",
+        {
+          retryAfterSeconds: Math.ceil(retryAfterMs / 1000),
+          canResendAt: new Date(retryAt).toISOString(),
+        },
+      );
+    }
+
+    const refreshedReset = await createPasswordResetCode(user);
+
+    return res.json({
+      ok: true,
+      passwordReset: buildPasswordResetResponse(refreshedReset),
+      message: "Enviamos um novo código para o seu e-mail.",
+    });
+  }),
+);
+
+r.post(
+  "/auth/forgot-password/verify-code",
+  asyncHandler(async (req, res) => {
+    const email = normEmail(req.body?.email);
+    const code = req.body?.code;
+
+    try {
+      const resetDoc = await assertValidPasswordResetCode({ email, code });
+      return res.json({
+        ok: true,
+        passwordReset: buildPasswordResetResponse(resetDoc),
+        message: "Código validado com sucesso.",
+      });
+    } catch (err) {
+      return sendError(
+        res,
+        err.status || 400,
+        err.message || "Falha ao validar o código.",
+        err.code || "PASSWORD_RESET_VERIFY_FAILED",
+      );
+    }
+  }),
+);
+
+r.post(
+  "/auth/forgot-password/reset-password",
+  asyncHandler(async (req, res) => {
+    const email = normEmail(req.body?.email);
+    const code = req.body?.code;
+    const newPassword = String(req.body?.newPassword || "");
+
+    validatePasswordResetRequestPayload(email);
+
+    if (!validateResetPassword(newPassword)) {
+      return sendError(
+        res,
+        400,
+        "A nova senha deve ter no mínimo 8 caracteres e pelo menos 1 caractere especial.",
+        "PASSWORD_RULES_INVALID",
+      );
+    }
+
+    try {
+      const resetDoc = await assertValidPasswordResetCode({ email, code });
+      const { user, error } = await findUserForPasswordReset(email);
+
+      if (error) {
+        return sendError(res, error.status, error.message, error.code);
+      }
+
+      const passwordHash = await bcrypt.hash(newPassword, 10);
+
+      await User.updateOne({ _id: user._id }, { $set: { passwordHash } });
+
+      await PasswordResetCode.updateOne(
+        { _id: resetDoc._id, usedAt: null },
+        {
+          $set: {
+            usedAt: new Date(),
+            expiresAt: new Date(),
+          },
+        },
+      ).catch(() => {});
+
+      return res.json({
+        ok: true,
+        message: "Senha redefinida com sucesso. Faça login com sua nova senha.",
+      });
+    } catch (err) {
+      return sendError(
+        res,
+        err.status || 400,
+        err.message || "Falha ao redefinir a senha.",
+        err.code || "PASSWORD_RESET_FAILED",
+      );
+    }
   }),
 );
 

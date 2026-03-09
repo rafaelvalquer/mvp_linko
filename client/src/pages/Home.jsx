@@ -225,7 +225,6 @@ export default function Home() {
           "Tudo do Start",
           "Cadastro de clientes",
           "Cadastro de produtos e serviços",
-          "Sinal/entrada e condições de pagamento",
           "Dashboard avançado",
           "Agenda com mais controle",
         ],

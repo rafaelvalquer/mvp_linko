@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../app/AuthContext.jsx";
+import ForgotPasswordModal from "../components/auth/ForgotPasswordModal.jsx";
 
 function safeNextPath(value, fallback = null) {
   const raw = String(value || "").trim();
@@ -84,6 +85,21 @@ function Alert({ children }) {
   );
 }
 
+function SuccessAlert({ children }) {
+  if (!children) return null;
+
+  return (
+    <div className="mb-5 rounded-2xl border border-emerald-200 bg-[linear-gradient(180deg,#ecfdf5_0%,#f0fdf4_100%)] px-4 py-3 text-sm text-emerald-700 shadow-sm">
+      <div className="flex gap-3">
+        <span className="mt-0.5 inline-flex h-5 w-5 flex-none items-center justify-center rounded-full bg-emerald-100 text-[11px] font-bold text-emerald-700">
+          ✓
+        </span>
+        <div className="leading-6">{children}</div>
+      </div>
+    </div>
+  );
+}
+
 function Field({
   label,
   type = "text",
@@ -141,7 +157,9 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
 
   const nav = useNavigate();
   const loc = useLocation();
@@ -151,11 +169,22 @@ export default function Login() {
     [loc.search],
   );
 
+  useEffect(() => {
+    if (!successMessage) return undefined;
+
+    const timer = window.setTimeout(() => {
+      setSuccessMessage("");
+    }, 6000);
+
+    return () => window.clearTimeout(timer);
+  }, [successMessage]);
+
   if (user) return <Navigate to="/dashboard" replace />;
 
   async function onSubmit(e) {
     e.preventDefault();
     setError("");
+    setSuccessMessage("");
     setLoading(true);
 
     try {
@@ -193,53 +222,94 @@ export default function Login() {
     }
   }
 
+  function handleForgotPasswordSuccess(message) {
+    setError("");
+    setSuccessMessage(message || "Senha redefinida com sucesso.");
+    setPassword("");
+  }
+
   return (
-    <AuthShell>
-      <AuthCard
-        title="Entrar"
-        subtitle="Acesse sua conta para continuar sua experiência na plataforma."
-        footer={
-          <div className="rounded-2xl border border-zinc-200 bg-zinc-50/80 px-4 py-3 text-sm text-zinc-600">
-            Não tem conta?{" "}
-            <Link
-              className="font-medium text-zinc-950 underline underline-offset-4 transition hover:text-zinc-700"
-              to="/register"
-            >
-              Criar conta
-            </Link>
-          </div>
-        }
-      >
-        <Alert>{error}</Alert>
+    <>
+      <AuthShell>
+        <AuthCard
+          title="Entrar"
+          subtitle="Acesse sua conta para continuar sua experiência na plataforma."
+          footer={
+            <div className="rounded-2xl border border-zinc-200 bg-zinc-50/80 px-4 py-3 text-sm text-zinc-600">
+              Não tem conta?{" "}
+              <Link
+                className="font-medium text-zinc-950 underline underline-offset-4 transition hover:text-zinc-700"
+                to="/register"
+              >
+                Criar conta
+              </Link>
+            </div>
+          }
+        >
+          <Alert>{error}</Alert>
+          <SuccessAlert>{successMessage}</SuccessAlert>
 
-        <form className="space-y-4" onSubmit={onSubmit}>
-          <Field
-            label="Email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            autoComplete="email"
-            placeholder="voce@empresa.com"
-            disabled={loading}
-          />
+          <form className="space-y-4" onSubmit={onSubmit}>
+            <Field
+              label="Email"
+              type="email"
+              value={email}
+              onChange={(e) => {
+                setError("");
+                setSuccessMessage("");
+                setEmail(e.target.value);
+              }}
+              autoComplete="email"
+              placeholder="voce@empresa.com"
+              disabled={loading}
+            />
 
-          <Field
-            label="Senha"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
-            placeholder="Digite sua senha"
-            disabled={loading}
-          />
+            <div>
+              <Field
+                label="Senha"
+                type="password"
+                value={password}
+                onChange={(e) => {
+                  setError("");
+                  setSuccessMessage("");
+                  setPassword(e.target.value);
+                }}
+                autoComplete="current-password"
+                placeholder="Digite sua senha"
+                disabled={loading}
+              />
 
-          <div className="rounded-2xl border border-zinc-200 bg-zinc-50/80 px-4 py-3 text-sm text-zinc-500">
-            Entre para acessar seu workspace e continuar o fluxo da plataforma.
-          </div>
+              <div className="mt-3 flex justify-end">
+                <button
+                  type="button"
+                  className="text-sm font-medium text-zinc-600 underline underline-offset-4 transition hover:text-zinc-950 disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={() => {
+                    setError("");
+                    setSuccessMessage("");
+                    setIsForgotPasswordOpen(true);
+                  }}
+                  disabled={loading}
+                >
+                  Esqueceu a senha?
+                </button>
+              </div>
+            </div>
 
-          <SubmitButton loading={loading} />
-        </form>
-      </AuthCard>
-    </AuthShell>
+            <div className="rounded-2xl border border-zinc-200 bg-zinc-50/80 px-4 py-3 text-sm text-zinc-500">
+              Entre para acessar seu workspace e continuar o fluxo da plataforma.
+            </div>
+
+            <SubmitButton loading={loading} />
+          </form>
+        </AuthCard>
+      </AuthShell>
+
+      <ForgotPasswordModal
+        isOpen={isForgotPasswordOpen}
+        initialEmail={email}
+        onClose={() => setIsForgotPasswordOpen(false)}
+        onSuccess={handleForgotPasswordSuccess}
+      />
+    </>
   );
 }

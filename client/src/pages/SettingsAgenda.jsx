@@ -436,10 +436,17 @@ export default function SettingsAgenda() {
             </div>
 
             <div className="border-t pt-4">
-              <div className="flex justify-between items-center mb-3">
-                <label className="text-sm font-bold text-zinc-700">
-                  Horários de Fallback
-                </label>
+              <div className="flex flex-wrap justify-between items-start gap-3 mb-3">
+                <div>
+                  <label className="text-sm font-bold text-zinc-700">
+                    Horários padrão disponíveis
+                  </label>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Esses horários serão usados como base da sua agenda quando
+                    não houver regras específicas para o dia.
+                  </p>
+                </div>
+
                 <Button
                   variant="ghost"
                   size="sm"
@@ -450,6 +457,7 @@ export default function SettingsAgenda() {
                   Restaurar Recomendado
                 </Button>
               </div>
+
               <SlotPicker
                 value={agenda.defaultSlots}
                 step={agenda.slotMinutes}

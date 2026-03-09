@@ -587,14 +587,6 @@ export default function Sidebar({
                   >
                     Clientes
                   </SidebarItem>
-                  <SidebarItem
-                    to="/store/pay-links"
-                    collapsed={collapsed}
-                    indent
-                    onNavigate={onNavigate}
-                  >
-                    Links de Pagamento
-                  </SidebarItem>
                 </div>
               </div>
             </div>
