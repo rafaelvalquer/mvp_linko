@@ -6,14 +6,6 @@ const PLAN_STATUS = ["free", "pending", "active"];
 
 const PIX_KEY_TYPES = ["CPF", "CNPJ", "PHONE", "EMAIL", "EVP"];
 
-const PixUsageSchema = new mongoose.Schema(
-  {
-    cycleKey: { type: String, default: "" },
-    used: { type: Number, default: 0, min: 0 },
-  },
-  { _id: false },
-);
-
 const SubscriptionSchema = new mongoose.Schema(
   {
     provider: { type: String, default: "stripe" },
@@ -73,28 +65,20 @@ const WorkspaceSchema = new mongoose.Schema(
     },
 
     // =========================================================
-    // PIX QUOTA
-    // =========================================================
-    pixMonthlyLimit: { type: Number, default: 0, min: 0 },
-    pixUsage: { type: PixUsageSchema, default: () => ({}) },
-
-    // =========================================================
-    // WALLET / SAQUE (legado)
+    // WALLET / SAQUE
     // =========================================================
     walletAvailableCents: { type: Number, default: 0, min: 0 },
 
     // =========================================================
-    // ✅ CONTA PIX (novo fluxo manual)
+    // CONTA PIX (fluxo manual)
     // =========================================================
     payoutPixKeyType: { type: String, enum: PIX_KEY_TYPES, default: null },
-    payoutPixKey: { type: String, default: null }, // chave crua (backend only)
-    payoutPixKeyMasked: { type: String, default: null }, // sempre retornar isso no app
+    payoutPixKey: { type: String, default: null },
+    payoutPixKeyMasked: { type: String, default: null },
 
-    // opcionais para BRCode (EMV)
     pixReceiverName: { type: String, default: null, trim: true, maxlength: 25 },
     pixReceiverCity: { type: String, default: null, trim: true, maxlength: 15 },
 
-    // se quiser permitir “desabilitar temporariamente”
     pixKeyEnabled: { type: Boolean, default: true },
 
     payoutUpdatedAt: { type: Date, default: null },

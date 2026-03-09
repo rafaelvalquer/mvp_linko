@@ -3,9 +3,28 @@ import { Router } from "express";
 import { getStripe, planForPriceId } from "../services/stripeClient.js";
 import { StripeEvent } from "../models/StripeEvent.js";
 import { Workspace } from "../models/Workspace.js";
-import { PLAN_LIMITS, normalizePlan, cycleKeySP } from "../utils/pixQuota.js";
 
 const r = Router();
+
+function normalizePlan(v) {
+  const p = String(v || "")
+    .trim()
+    .toLowerCase();
+
+  if (!p) return "start";
+  if (p === "start" || p === "pro" || p === "business" || p === "enterprise") {
+    return p;
+  }
+  return "start";
+}
+
+function planRank(plan) {
+  const p = normalizePlan(plan);
+  if (p === "enterprise") return 4;
+  if (p === "business") return 3;
+  if (p === "pro") return 2;
+  return 1;
+}
 
 function wsStatusFromStripeStatus(stripeStatus) {
   const s = String(stripeStatus || "").toLowerCase();
@@ -13,12 +32,6 @@ function wsStatusFromStripeStatus(stripeStatus) {
   if (s === "past_due" || s === "unpaid") return "past_due";
   if (s === "canceled" || s === "incomplete_expired") return "canceled";
   return "inactive";
-}
-
-function limitForPlan(plan) {
-  const p = normalizePlan(plan);
-  if (p === "enterprise") return 0;
-  return PLAN_LIMITS[p] ?? PLAN_LIMITS.start;
 }
 
 async function loadSubscription(subscriptionId) {
@@ -110,7 +123,6 @@ async function markSubscriptionProblem({
   const patch = {
     "subscription.status": status,
     planStatus: "active",
-    pixMonthlyLimit: 0,
     ...(invoiceId ? { "subscription.lastInvoiceId": String(invoiceId) } : {}),
   };
 
@@ -150,7 +162,6 @@ async function applyInvoicePaid(invoice) {
     return;
   }
 
-  // Preferir o priceId atual do subscription (invoice pode ter linhas de proration)
   let sub = null;
   if (subscriptionId) {
     try {
@@ -161,16 +172,13 @@ async function applyInvoicePaid(invoice) {
   const wsSubStatus = wsStatusFromStripeStatus(
     sub?.status || ws?.subscription?.status,
   );
-  const isActive = wsSubStatus === "active";
 
   const priceIdFromSub = pickPriceIdFromSubscription(sub);
   const priceIdFromInvoice = pickPriceIdFromInvoice(invoice);
   const priceId = priceIdFromSub || priceIdFromInvoice || "";
 
   const plan = normalizePlan(planForPriceId(priceId) || ws.plan || "start");
-  const nextLimit = limitForPlan(plan);
 
-  // Período preferencial do subscription; fallback para invoice line period
   const periodStart = sub?.current_period_start
     ? new Date(sub.current_period_start * 1000)
     : pickPeriodFromInvoice(invoice).start;
@@ -179,22 +187,19 @@ async function applyInvoicePaid(invoice) {
     ? new Date(sub.current_period_end * 1000)
     : pickPeriodFromInvoice(invoice).end;
 
-  const ck = cycleKeySP(periodStart || new Date());
-
-  const currentLimit = limitForPlan(ws.plan);
+  const currentRank = planRank(ws.plan);
+  const nextRank = planRank(plan);
   const billingReason = String(invoice?.billing_reason || "").toLowerCase();
 
   const isCycle = isNewCycleInvoice(invoice);
   const isUpdate = billingReason === "subscription_update";
 
-  // Regras:
-  // - Novo ciclo: aplica plano atual do Stripe (inclui downgrade) e reseta uso.
-  // - Update: aplica SOMENTE se for upgrade (nextLimit > currentLimit). Não reseta uso.
-  const shouldApplyPlan = isCycle || (isUpdate && nextLimit > currentLimit);
-  const shouldResetUsage = isCycle || !ws?.pixUsage?.cycleKey;
+  // Mantém a regra atual:
+  // - Novo ciclo: aplica o plano atual do Stripe (inclui downgrade).
+  // - Update: aplica somente se for upgrade.
+  const shouldApplyPlan = isCycle || (isUpdate && nextRank > currentRank);
 
   if (!shouldApplyPlan) {
-    // downgrade em update: mantém plano atual até o próximo ciclo
     await Workspace.updateOne(
       { _id: ws._id },
       {
@@ -236,19 +241,8 @@ async function applyInvoicePaid(invoice) {
     return;
   }
 
-  const nextUsage = shouldResetUsage
-    ? { cycleKey: ck, used: 0 }
-    : {
-        cycleKey: ws?.pixUsage?.cycleKey || ck,
-        used: Number.isFinite(Number(ws?.pixUsage?.used))
-          ? Number(ws.pixUsage.used)
-          : 0,
-      };
-
   ws.plan = plan;
   ws.planStatus = "active";
-  ws.pixMonthlyLimit = isActive ? nextLimit : 0;
-  ws.pixUsage = nextUsage;
 
   ws.subscription = {
     ...(ws.subscription?.toObject?.() || ws.subscription || {}),
@@ -278,9 +272,6 @@ async function applyInvoicePaid(invoice) {
     subscriptionId: ws.subscription?.stripeSubscriptionId,
     status: ws.subscription?.status,
     plan: ws.plan,
-    limit: ws.pixMonthlyLimit,
-    cycleKey: ws.pixUsage?.cycleKey,
-    resetUsage: shouldResetUsage,
     billingReason,
   });
 }
@@ -323,13 +314,12 @@ async function applySubscriptionUpdated(sub) {
 
   const scheduleId = pickScheduleIdFromSubscription(sub);
 
-  const currentLimit = limitForPlan(ws.plan);
-  const nextLimit = limitForPlan(plan);
+  const currentRank = planRank(ws.plan);
+  const nextRank = planRank(plan);
 
-  const isDowngrade = nextLimit < currentLimit;
-  const isUpgrade = nextLimit > currentLimit;
+  const isDowngrade = nextRank < currentRank;
+  const isUpgrade = nextRank > currentRank;
 
-  // Upgrade só se latest_invoice já estiver PAID (senão aplica no invoice.paid)
   let latestInvoicePaid = false;
   const latestInvoiceId =
     typeof sub?.latest_invoice === "string"
@@ -362,10 +352,6 @@ async function applySubscriptionUpdated(sub) {
     "subscription.scheduleId": scheduleId || "",
   };
 
-  if (!isActive) {
-    patch.pixMonthlyLimit = 0;
-  }
-
   if (isDowngrade) {
     patch["subscription.pendingPriceId"] = priceId || "";
     patch["subscription.pendingPlan"] = plan;
@@ -379,8 +365,7 @@ async function applySubscriptionUpdated(sub) {
 
   if (isUpgrade && latestInvoicePaid) {
     patch.plan = plan;
-    patch.planStatus = "active";
-    patch.pixMonthlyLimit = isActive ? nextLimit : 0;
+    patch.planStatus = isActive ? "active" : ws.planStatus || "pending";
   }
 
   await Workspace.updateOne({ _id: ws._id }, { $set: patch });
@@ -419,7 +404,6 @@ r.post("/webhooks/stripe", async (req, res) => {
     });
   }
 
-  // idempotência
   try {
     await StripeEvent.create({
       provider: "stripe",
@@ -465,15 +449,11 @@ r.post("/webhooks/stripe", async (req, res) => {
         ? new Date(sub.current_period_end * 1000)
         : null;
 
-      const ck = cycleKeySP(periodStart || new Date());
-
       const status = wsStatusFromStripeStatus(sub?.status);
       const isActive = status === "active";
 
       ws.plan = plan;
       ws.planStatus = isActive ? "active" : "pending";
-      ws.pixMonthlyLimit = isActive ? limitForPlan(plan) : 0;
-      ws.pixUsage = { cycleKey: ck, used: 0 };
 
       ws.subscription = {
         ...(ws.subscription?.toObject?.() || ws.subscription || {}),
@@ -537,7 +517,6 @@ r.post("/webhooks/stripe", async (req, res) => {
           $set: {
             "subscription.status": "canceled",
             planStatus: "active",
-            pixMonthlyLimit: 0,
             "subscription.pendingPriceId": "",
             "subscription.pendingPlan": "",
             "subscription.pendingEffectiveAt": null,

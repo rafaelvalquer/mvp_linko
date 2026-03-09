@@ -6,14 +6,14 @@ const PLANS = [
   {
     key: "start",
     title: "Start",
-    desc: "20 Pix por ciclo",
+    desc: "Plano para começar",
     badge: "Para começar",
   },
-  { key: "pro", title: "Pro", desc: "50 Pix por ciclo", badge: "Mais vendas" },
+  { key: "pro", title: "Pro", desc: "Mais recursos para crescer", badge: "Mais vendas" },
   {
     key: "business",
     title: "Business",
-    desc: "120 Pix por ciclo",
+    desc: "Estrutura para escalar a operação",
     badge: "Escala",
   },
 ];
@@ -45,8 +45,8 @@ export default function BillingPlans() {
       <div className="mx-auto w-full max-w-5xl">
         <h1 className="text-2xl font-semibold text-zinc-900">Planos</h1>
         <p className="mt-1 text-sm text-zinc-600">
-          Assine com cartão. A renovação é automática a cada ciclo mensal e sua
-          cota é resetada quando a fatura é paga.
+          Assine com cartão. A renovação é automática e o gerenciamento da
+          assinatura é feito pelo Stripe.
         </p>
 
         {error ? (

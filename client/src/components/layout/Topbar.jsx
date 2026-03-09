@@ -1,9 +1,8 @@
 // src/components/layout/Topbar.jsx
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../app/AuthContext.jsx";
 import { api } from "../../app/api.js";
-import QuotaBadge from "../QuotaBadge.jsx";
 import brandLogo from "../../assets/brand.png";
 
 function StatusBadge({ status, loading }) {
@@ -39,27 +38,14 @@ function StatusBadge({ status, loading }) {
 }
 
 export default function Topbar({ title = "LuminorPay" }) {
-  const {
-    user,
-    workspace,
-    loadingMe,
-    loadingBilling,
-    subscriptionStatus,
-    signOut,
-  } = useAuth();
+  const { user, workspace, loadingBilling, subscriptionStatus, signOut } =
+    useAuth();
 
   const navigate = useNavigate();
   const [portalLoading, setPortalLoading] = useState(false);
 
   const displayName =
     (user?.name && String(user.name).trim()) || user?.email || "";
-
-  const remaining = workspace?.pixRemaining;
-  const flags = useMemo(() => {
-    const r = Number(remaining);
-    if (!Number.isFinite(r)) return { low: false, empty: false };
-    return { low: r > 0 && r <= 5, empty: r === 0 };
-  }, [remaining]);
 
   const stripeCustomerId = workspace?.subscription?.stripeCustomerId || "";
   const hasPortal = !!stripeCustomerId;
@@ -115,37 +101,9 @@ export default function Topbar({ title = "LuminorPay" }) {
             </div>
           </div>
 
-          {flags.low ? (
-            <span className="hidden sm:inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
-              Poucos Pix restantes
-            </span>
-          ) : null}
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="hidden sm:block">
-            <QuotaBadge
-              plan={workspace?.plan}
-              remaining={workspace?.pixRemaining}
-              limit={workspace?.pixMonthlyLimit}
-              used={workspace?.pixUsedThisCycle}
-              cycleKey={workspace?.cycleKey}
-              loading={loadingMe}
-            />
-          </div>
-
-          <div className="sm:hidden">
-            <QuotaBadge
-              plan={workspace?.plan}
-              remaining={workspace?.pixRemaining}
-              limit={workspace?.pixMonthlyLimit}
-              used={workspace?.pixUsedThisCycle}
-              cycleKey={workspace?.cycleKey}
-              loading={loadingMe}
-              compact
-            />
-          </div>
-
           <div className="hidden md:block">
             <StatusBadge status={subscriptionStatus} loading={loadingBilling} />
           </div>

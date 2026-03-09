@@ -1,5 +1,5 @@
 // src/app/AuthContext.jsx
-import React, {
+import {
   createContext,
   useCallback,
   useContext,
@@ -9,7 +9,6 @@ import React, {
 } from "react";
 import * as authApi from "./authApi.js";
 import { api } from "./api.js";
-import { getMonthlyLimit, normalizePlan } from "../utils/planQuota.js";
 
 const AuthCtx = createContext(null);
 
@@ -43,24 +42,8 @@ function normalizeWorkspace(wsRaw) {
   const ws = wsRaw && typeof wsRaw === "object" ? wsRaw : null;
   if (!ws) return null;
 
-  const plan = normalizePlan(ws.plan);
-  const limit = getMonthlyLimit(plan, ws.pixMonthlyLimit);
-
-  const used = Number(ws.pixUsedThisCycle);
-  const remaining = Number(ws.pixRemaining);
-
-  const pixUsedThisCycle = Number.isFinite(used) ? used : 0;
-  const pixRemaining = Number.isFinite(remaining)
-    ? remaining
-    : Math.max(0, limit - pixUsedThisCycle);
-
   return {
     ...ws,
-    plan,
-    pixMonthlyLimit: limit,
-    pixUsedThisCycle,
-    pixRemaining,
-    cycleKey: ws.cycleKey || "",
     planStatus: ws.planStatus || "free",
     subscription: ws.subscription || null,
   };
@@ -72,10 +55,6 @@ function normalizeBilling(bRaw) {
   return {
     ok: true,
     plan: b.plan,
-    pixMonthlyLimit: b.pixMonthlyLimit,
-    pixUsedThisCycle: b.pixUsedThisCycle,
-    pixRemaining: b.pixRemaining,
-    cycleKey: b.cycleKey,
     planStatus: b.planStatus,
     subscription: b.subscription || null,
   };
@@ -121,10 +100,6 @@ export function AuthProvider({ children }) {
           return normalizeWorkspace({
             ...base,
             plan: b.plan ?? base.plan,
-            pixMonthlyLimit: b.pixMonthlyLimit ?? base.pixMonthlyLimit,
-            pixUsedThisCycle: b.pixUsedThisCycle ?? base.pixUsedThisCycle,
-            pixRemaining: b.pixRemaining ?? base.pixRemaining,
-            cycleKey: b.cycleKey ?? base.cycleKey,
             planStatus: b.planStatus ?? base.planStatus,
             subscription: b.subscription ?? base.subscription,
           });

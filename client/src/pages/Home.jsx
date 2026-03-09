@@ -85,13 +85,10 @@ function useThemeToggle() {
 }
 
 function AetherBackdrop() {
-  // Background layers kept lightweight (no canvas/three.js)
   return (
     <div className="absolute inset-0 -z-10 overflow-hidden">
-      {/* Base gradient */}
       <div className="absolute inset-0 bg-[radial-gradient(1200px_circle_at_50%_-10%,rgb(var(--accent)/0.18),transparent_55%),radial-gradient(900px_circle_at_90%_10%,rgb(56_189_248/0.10),transparent_55%),radial-gradient(700px_circle_at_10%_90%,rgb(15_23_42/0.06),transparent_55%)] dark:bg-[radial-gradient(1200px_circle_at_50%_-10%,rgb(var(--accent)/0.22),transparent_55%),radial-gradient(900px_circle_at_90%_10%,rgb(56_189_248/0.12),transparent_55%),radial-gradient(700px_circle_at_10%_90%,rgb(0_0_0/0.35),transparent_55%)]" />
 
-      {/* Grid */}
       <div
         className="absolute inset-0 opacity-[0.22] dark:opacity-[0.18]"
         style={{
@@ -105,7 +102,6 @@ function AetherBackdrop() {
         }}
       />
 
-      {/* Soft vignette */}
       <div className="absolute inset-0 bg-gradient-to-b from-[rgb(var(--bg))] via-[rgb(var(--bg))] to-[rgb(var(--surface-2))]" />
     </div>
   );
@@ -160,8 +156,8 @@ export default function Home() {
       },
       {
         icon: Wallet,
-        title: "Saques e taxas",
-        desc: "Visão clara de repasses via Pix organizados por workspace.",
+        title: "Saques e repasses",
+        desc: "Visão clara dos recebimentos e movimentações do workspace.",
       },
       {
         icon: ShieldCheck,
@@ -193,61 +189,62 @@ export default function Home() {
     [],
   );
 
-  const ENTERPRISE_CONTACT = "/contact"; // ou: "mailto:contato@luminorpay.com"
+  const ENTERPRISE_CONTACT = "/contact";
 
   const plans = useMemo(
     () => [
       {
         name: "Start",
-        subtitle: "Básico",
+        subtitle: "Essencial",
         price: "R$ 35,90",
-        includedPix: 20,
-        extraPix: "R$ 1,59 / Pix",
-        microcopy: "Para começar a fechar e receber via Pix em minutos.",
-        badges: [],
+        description:
+          "Para quem quer sair do improviso e começar com uma operação profissional.",
+        audience: "Autônomos e iniciantes",
+        badge: "Entrada ideal",
         cta: { label: "Começar agora", to: "/register" },
         benefits: [
-          "Propostas/Orçamentos (serviço ou produtos)",
-          "Link público para o cliente (sem login)",
-          "Pix com QR Code + copia e cola",
-          "Status do pagamento (pendente/pago/expirado/cancelado)",
-          "Agenda básica para serviços (criar e visualizar agendamentos)",
-          "Dashboard básico (pendentes, pagos, agendados)",
-          "Histórico da proposta e ações rápidas (copiar link / abrir)",
+          "Propostas e orçamentos",
+          "Link público sem login",
+          "Pix com QR Code",
+          "Status de pagamento",
+          "Agenda básica",
+          "Dashboard essencial",
         ],
       },
       {
         name: "Pro",
         subtitle: "Profissional",
-        popular: true,
         price: "R$ 99,90",
-        includedPix: 50,
-        extraPix: "R$ 1,39 / Pix",
-        microcopy: "Para quem quer velocidade com clientes e catálogo.",
-        badges: [],
+        popular: true,
+        description:
+          "Mais velocidade comercial, organização e apresentação para vender melhor.",
+        audience: "Prestadores em crescimento",
+        badge: "Mais escolhido",
         cta: { label: "Começar agora", to: "/register" },
         benefits: [
           "Tudo do Start",
-          "Cadastro de Clientes (busca rápida e histórico)",
-          "Cadastro de Produtos/Serviços (itens e preços salvos)",
-          "Sinal/entrada (%) e condições de pagamento",
-          "Dashboard avançado (conversão, volume, pagos do dia)",
-          "Organização de agenda com status (hold/confirmado)",
+          "Cadastro de clientes",
+          "Cadastro de produtos e serviços",
+          "Sinal/entrada e condições de pagamento",
+          "Dashboard avançado",
+          "Agenda com mais controle",
         ],
       },
       {
         name: "Business",
-        subtitle: "PME",
+        subtitle: "Equipe",
         price: "R$ 279,90",
-        includedPix: 120,
-        extraPix: "R$ 1,19 / Pix",
-        microcopy: "Para equipes que precisam de controle e escala.",
+        description:
+          "Para operações com equipe, mais volume e necessidade de visão consolidada.",
+        audience: "Pequenas empresas e times",
+        badge: "Escala operacional",
         cta: { label: "Começar agora", to: "/register" },
         benefits: [
           "Tudo do Pro",
-          "Multiusuário / equipe (perfis e permissões)",
-          "Relatórios e indicadores mais completos (período, performance)",
-          "Gestão de operação: visão consolidada de propostas, agenda e pagamentos",
+          "Multiusuário com permissões",
+          "Relatórios mais completos",
+          "Visão consolidada da operação",
+          "Mais controle para o time",
           "Prioridade no suporte",
         ],
       },
@@ -255,14 +252,61 @@ export default function Home() {
         name: "Enterprise",
         subtitle: "Sob medida",
         price: null,
-        microcopy: "Personalizado para alto volume e integrações.",
+        description:
+          "Modelo personalizado para fluxos robustos, integrações e operação avançada.",
+        audience: "Empresas com alta complexidade",
+        badge: "Customizado",
         cta: { label: "Falar com especialista", to: ENTERPRISE_CONTACT },
         benefits: [
-          "Limites e taxas personalizados para alto volume",
-          "Integrações e automações (WhatsApp, ERP/CRM, webhooks)",
+          "Implantação personalizada",
+          "Integrações e automações",
           "SLA e suporte dedicado",
-          "Regras e permissões avançadas",
+          "Permissões e regras avançadas",
+          "Arquitetura orientada à operação",
+          "Condições sob consulta",
         ],
+      },
+    ],
+    [],
+  );
+
+  const comparisonRows = useMemo(
+    () => [
+      {
+        label: "Propostas e link público",
+        values: [true, true, true, true],
+      },
+      {
+        label: "Pix ilimitado",
+        values: [true, true, true, true],
+      },
+      {
+        label: "Agenda integrada",
+        values: [true, true, true, true],
+      },
+      {
+        label: "Cadastro de clientes",
+        values: [false, true, true, true],
+      },
+      {
+        label: "Cadastro de produtos/serviços",
+        values: [false, true, true, true],
+      },
+      {
+        label: "Dashboard avançado",
+        values: [false, true, true, true],
+      },
+      {
+        label: "Multiusuário e permissões",
+        values: [false, false, true, true],
+      },
+      {
+        label: "Relatórios mais completos",
+        values: [false, false, true, true],
+      },
+      {
+        label: "Suporte dedicado / sob medida",
+        values: [false, false, false, true],
       },
     ],
     [],
@@ -293,7 +337,6 @@ export default function Home() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // Lock scroll + ESC para menu mobile
   useEffect(() => {
     if (!mobileMenuOpen) return;
 
@@ -327,7 +370,6 @@ export default function Home() {
 
   return (
     <div className={ui.page}>
-      {/* Skip link (acessibilidade) */}
       <a
         href="#conteudo"
         className={cx(
@@ -353,7 +395,6 @@ export default function Home() {
         )}
       >
         <nav className={cx(ui.container, "flex items-center")}>
-          {/* Left: Logo */}
           <div className="relative flex items-center gap-3">
             <div
               className={cx(
@@ -361,7 +402,7 @@ export default function Home() {
                 "text-[10px] font-extrabold uppercase tracking-[0.22em] whitespace-nowrap",
                 "text-emerald-700/90 dark:text-emerald-300/90",
               )}
-            ></div>
+            />
 
             <Link
               to="/"
@@ -384,7 +425,7 @@ export default function Home() {
               </span>
             </Link>
           </div>
-          {/* Center: Nav links (desktop) */}
+
           <div className="hidden lg:flex lg:gap-x-10 ml-10">
             {navLinks.map((item) => (
               <a
@@ -402,9 +443,8 @@ export default function Home() {
               </a>
             ))}
           </div>
-          {/* Right: Auth buttons (always right) */}
+
           <div className="ml-auto flex items-center gap-2 sm:gap-3">
-            {/* Theme toggle */}
             <button
               type="button"
               onClick={() => setIsDark((v) => !v)}
@@ -455,7 +495,6 @@ export default function Home() {
               Criar conta
             </Link>
 
-            {/* Mobile: menu button */}
             <button
               onClick={() => setMobileMenuOpen(true)}
               className={cx(
@@ -473,7 +512,6 @@ export default function Home() {
         </nav>
       </header>
 
-      {/* HERO */}
       <main id="conteudo" className="relative pt-32 sm:pt-36 pb-20 lg:pt-44">
         <AetherBackdrop />
 
@@ -519,6 +557,7 @@ export default function Home() {
                     "bg-emerald-500 hover:bg-emerald-600",
                     "shadow-[0_22px_50px_-24px_rgb(var(--accent)/0.75)]",
                     "transition-colors overflow-hidden",
+                    "inline-flex items-center justify-center gap-2",
                     ui.focusRing,
                   )}
                 >
@@ -544,7 +583,6 @@ export default function Home() {
                 </a>
               </div>
 
-              {/* Trust row */}
               <div className="mt-10 grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-3xl mx-auto">
                 {[
                   { icon: Lock, label: "Sem cartão de crédito" },
@@ -588,7 +626,6 @@ export default function Home() {
         </div>
       </main>
 
-      {/* RECURSOS */}
       <section
         id="recursos"
         className="py-24 sm:py-28 scroll-mt-28 bg-[rgb(var(--surface-2))]"
@@ -638,7 +675,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* COMO FUNCIONA */}
       <section id="como-funciona" className="py-24 sm:py-28 scroll-mt-28">
         <div className={ui.container}>
           <div className="text-center mb-14 sm:mb-16">
@@ -678,22 +714,45 @@ export default function Home() {
         </div>
       </section>
 
-      {/* PLANOS */}
       <section
         id="planos"
-        className="py-24 sm:py-28 scroll-mt-28 bg-[rgb(var(--surface-2))]"
+        className="relative py-24 sm:py-28 scroll-mt-28 bg-[rgb(var(--surface-2))]"
       >
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div className="absolute left-1/2 top-10 h-72 w-72 -translate-x-1/2 rounded-full bg-emerald-500/10 blur-3xl" />
+          <div className="absolute right-0 top-1/3 h-56 w-56 rounded-full bg-sky-400/10 blur-3xl" />
+        </div>
+
         <div className={ui.container}>
           <div className="text-center mb-14 sm:mb-16">
-            <h2 className="text-3xl font-black lg:text-5xl">
-              Planos transparentes
+            <div
+              className={cx(
+                "inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-extrabold",
+                ui.glass,
+                "text-emerald-700 dark:text-emerald-300",
+              )}
+            >
+              <Sparkles className="h-4 w-4" />
+              Pix ilimitado em todos os planos
+            </div>
+
+            <h2 className="mt-6 text-3xl font-black lg:text-5xl">
+              Escolha o plano certo para o seu momento
             </h2>
-            <p className={cx("mt-5 text-base sm:text-lg", ui.subtleText)}>
-              Escolha o plano ideal e evolua conforme crescer.
+
+            <p
+              className={cx(
+                "mt-5 text-base sm:text-lg max-w-3xl mx-auto",
+                ui.subtleText,
+              )}
+            >
+              Todos os planos mantêm a mesma experiência profissional para o
+              cliente. O que muda é o nível de estrutura, gestão e escala para
+              sua operação.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 gap-5 sm:gap-6 md:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-4">
             {plans.map((plan, i) => {
               const isEnterprise = !plan.price;
               const ctaTo = plan.cta?.to || "/register";
@@ -714,62 +773,53 @@ export default function Home() {
                 <AnimatedSection
                   key={i}
                   className={cx(
-                    "relative flex flex-col rounded-[28px] p-8 sm:p-9 transition-all",
+                    "relative flex h-full flex-col overflow-hidden rounded-[30px] p-8 sm:p-9",
                     ui.glass,
-                    plan.popular ? "pt-11 sm:pt-12" : "", // + espaço no topo para não colidir com a pill
                     plan.popular
-                      ? "border-2 border-emerald-500/90 shadow-[0_26px_70px_-55px_rgb(var(--accent)/0.85)] lg:-translate-y-1"
-                      : "hover:shadow-[0_24px_60px_-50px_rgba(0,0,0,0.55)]",
+                      ? "border-2 border-emerald-500/90 shadow-[0_26px_70px_-55px_rgb(var(--accent)/0.85)] lg:-translate-y-2"
+                      : "hover:-translate-y-1 hover:shadow-[0_24px_60px_-50px_rgba(0,0,0,0.55)]",
                   )}
                 >
+                  <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-emerald-500/10 to-transparent" />
+
                   {plan.popular && (
-                    <span className="absolute -top-4 left-1/2 -translate-x-1/2 bg-emerald-500 text-white text-xs font-extrabold px-4 py-2 rounded-full uppercase tracking-[0.18em] shadow-[0_18px_40px_-24px_rgb(var(--accent)/0.75)]">
-                      Mais Popular
-                    </span>
+                    <div className="absolute right-5 top-5">
+                      <span className="inline-flex items-center rounded-full bg-emerald-500 px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.18em] text-white shadow-[0_18px_40px_-24px_rgb(var(--accent)/0.75)]">
+                        Mais popular
+                      </span>
+                    </div>
                   )}
 
-                  <div className="mb-6">
-                    <div className="flex items-start justify-between gap-3">
+                  <div className="relative">
+                    <div className="inline-flex items-center rounded-full bg-emerald-500/10 px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.18em] text-emerald-700 dark:text-emerald-300">
+                      {plan.subtitle}
+                    </div>
+
+                    <div className="mt-5 flex items-start justify-between gap-3">
                       <div>
-                        <h3 className="font-black text-2xl leading-tight">
+                        <h3 className="text-2xl font-black leading-tight">
                           {plan.name}
                         </h3>
-                        {plan.subtitle && (
-                          <div
-                            className={cx(
-                              "mt-1 text-sm font-semibold",
-                              ui.subtleText,
-                            )}
-                          >
-                            {plan.subtitle}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* badges */}
-                      <div className="flex flex-col items-end gap-2 mt-1">
-                        {Array.isArray(plan.badges) &&
-                          plan.badges.slice(0, 2).map((b) => (
-                            <span
-                              key={b}
-                              className="inline-flex items-center rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-[11px] font-black text-emerald-700"
-                            >
-                              {b}
-                            </span>
-                          ))}
+                        <p
+                          className={cx(
+                            "mt-3 text-sm leading-relaxed",
+                            ui.subtleText,
+                          )}
+                        >
+                          {plan.description}
+                        </p>
                       </div>
                     </div>
 
-                    {/* price */}
-                    <div className="mt-5">
-                      <div className="flex items-baseline gap-2">
+                    <div className="mt-6">
+                      <div className="flex items-end gap-2">
                         <span className="text-4xl font-black">
-                          {plan.price || "Fale com a gente"}
+                          {plan.price || "Sob consulta"}
                         </span>
                         {plan.price && (
                           <span
                             className={cx(
-                              "text-base font-semibold",
+                              "pb-1 text-base font-semibold",
                               ui.subtleText,
                             )}
                           >
@@ -778,52 +828,31 @@ export default function Home() {
                         )}
                       </div>
 
-                      {/* included pix + extra */}
-                      {!isEnterprise && (
-                        <div className="mt-3 flex flex-wrap items-center gap-2">
-                          <span className="inline-flex items-center gap-2 rounded-full bg-emerald-500/10 px-3 py-1.5 text-xs font-extrabold text-emerald-600 dark:text-emerald-300">
-                            <QrCode className="h-4 w-4" />
-                            {plan.includedPix} Pix/mês
-                          </span>
-                          <span
-                            className={cx(
-                              "inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold",
-                              ui.glassSoft,
-                              ui.subtleText,
-                            )}
-                          >
-                            Pix extra:{" "}
-                            <span className="font-black text-[rgb(var(--text))]">
-                              {plan.extraPix}
-                            </span>
-                          </span>
-                        </div>
-                      )}
+                      <div className="mt-4 inline-flex items-center rounded-full border border-emerald-500/15 bg-emerald-500/8 px-3 py-1.5 text-xs font-extrabold text-emerald-700 dark:text-emerald-300">
+                        {plan.badge}
+                      </div>
+                    </div>
 
-                      {/* microcopy */}
-                      {plan.microcopy && (
-                        <p
-                          className={cx(
-                            "mt-4 text-sm leading-relaxed",
-                            ui.subtleText,
-                          )}
-                        >
-                          {plan.microcopy}
-                        </p>
+                    <div
+                      className={cx(
+                        "mt-6 rounded-2xl p-4",
+                        "border border-[rgb(var(--border)/0.65)] bg-[rgb(var(--surface)/0.75)]",
                       )}
+                    >
+                      <div className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-[rgb(var(--muted-2))]">
+                        Ideal para
+                      </div>
+                      <div className="mt-2 text-sm font-semibold text-[rgb(var(--text))]">
+                        {plan.audience}
+                      </div>
                     </div>
                   </div>
 
-                  {/* benefits */}
-                  <div className="flex-1">
-                    <div
-                      className={cx(
-                        "text-xs font-extrabold uppercase tracking-[0.22em] mb-3",
-                        "text-[rgb(var(--muted-2))]",
-                      )}
-                    >
-                      Benefícios
+                  <div className="mt-7 flex-1">
+                    <div className="mb-3 text-xs font-extrabold uppercase tracking-[0.22em] text-[rgb(var(--muted-2))]">
+                      Recursos principais
                     </div>
+
                     <ul className="space-y-3">
                       {plan.benefits.map((item, idx) => (
                         <li
@@ -839,20 +868,17 @@ export default function Home() {
                     </ul>
                   </div>
 
-                  {/* CTA */}
                   <div className="mt-8">
                     <CTA
                       className={cx(
-                        "group relative w-full text-center py-4 rounded-2xl font-extrabold text-base transition-colors block overflow-hidden",
+                        "group relative block w-full overflow-hidden rounded-2xl py-4 text-center text-base font-extrabold transition-colors",
                         ui.focusRing,
                         plan.popular
                           ? "bg-emerald-500 text-white hover:bg-emerald-600 shadow-[0_18px_40px_-24px_rgb(var(--accent)/0.75)]"
-                          : isEnterprise
-                            ? "bg-[rgb(var(--text))] text-[rgb(var(--bg))] hover:opacity-95"
-                            : "bg-[rgb(var(--text))] text-[rgb(var(--bg))] hover:opacity-95",
+                          : "bg-[rgb(var(--text))] text-[rgb(var(--bg))] hover:opacity-95",
                       )}
                     >
-                      <span className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <span className="pointer-events-none absolute inset-0 opacity-0 transition-opacity group-hover:opacity-100">
                         <span className="absolute -inset-y-10 -left-28 w-28 rotate-12 bg-white/25 blur-md group-hover:animate-[sheen_1.1s_ease-in-out] motion-reduce:animate-none" />
                       </span>
                       {plan.cta?.label ||
@@ -860,21 +886,99 @@ export default function Home() {
                           ? "Falar com especialista"
                           : "Começar agora")}
                     </CTA>
-
-                    {!isEnterprise && (
-                      <div className="mt-3 text-[11px] text-[rgb(var(--muted-2))] text-center">
-                        Inclui {plan.includedPix} Pix/mês • Pix extra disponível
-                      </div>
-                    )}
                   </div>
                 </AnimatedSection>
               );
             })}
           </div>
+
+          <div
+            className={cx(
+              "mt-8 rounded-[28px] p-4 sm:p-5 lg:p-6 overflow-hidden",
+              ui.glass,
+            )}
+          >
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between mb-5">
+              <div>
+                <div className="text-xs font-extrabold uppercase tracking-[0.22em] text-[rgb(var(--muted-2))]">
+                  Comparativo rápido
+                </div>
+                <h3 className="mt-2 text-xl sm:text-2xl font-black">
+                  Compare os planos lado a lado
+                </h3>
+              </div>
+
+              <div className={cx("text-sm", ui.subtleText)}>
+                Mesmo fluxo de propostas, pagamentos e Pix ilimitado em toda a
+                plataforma.
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <div className="min-w-[840px]">
+                <div className="grid grid-cols-[1.5fr_repeat(4,1fr)] gap-3 mb-3">
+                  <div />
+                  {plans.map((plan) => (
+                    <div
+                      key={plan.name}
+                      className={cx(
+                        "rounded-2xl px-4 py-4 text-center",
+                        plan.popular
+                          ? "border border-emerald-500/40 bg-emerald-500/10"
+                          : "border border-[rgb(var(--border)/0.65)] bg-[rgb(var(--surface)/0.72)]",
+                      )}
+                    >
+                      <div className="text-sm font-black">{plan.name}</div>
+                      <div className={cx("mt-1 text-xs", ui.subtleText)}>
+                        {plan.price || "Sob consulta"}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="space-y-3">
+                  {comparisonRows.map((row) => (
+                    <div
+                      key={row.label}
+                      className="grid grid-cols-[1.5fr_repeat(4,1fr)] gap-3"
+                    >
+                      <div
+                        className={cx(
+                          "rounded-2xl px-4 py-4 text-sm font-semibold",
+                          "border border-[rgb(var(--border)/0.65)] bg-[rgb(var(--surface)/0.72)]",
+                        )}
+                      >
+                        {row.label}
+                      </div>
+
+                      {row.values.map((value, idx) => (
+                        <div
+                          key={`${row.label}-${idx}`}
+                          className={cx(
+                            "rounded-2xl px-4 py-4 flex items-center justify-center",
+                            "border border-[rgb(var(--border)/0.65)] bg-[rgb(var(--surface)/0.72)]",
+                          )}
+                        >
+                          {value ? (
+                            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-300">
+                              <Check className="h-4 w-4" />
+                            </span>
+                          ) : (
+                            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[rgb(var(--surface-2))] text-[rgb(var(--muted-2))]">
+                              <X className="h-4 w-4" />
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* FAQ (Accordion) */}
       <section id="faq" className="py-24 sm:py-28 scroll-mt-28">
         <div className="mx-auto max-w-4xl px-5 sm:px-6">
           <h2 className="text-center text-3xl font-black mb-12 sm:mb-14 lg:text-5xl">
@@ -965,7 +1069,6 @@ export default function Home() {
         </div>
       </footer>
 
-      {/* MOBILE MENU (overlay + drawer) */}
       <AnimatePresence>
         {mobileMenuOpen && (
           <>

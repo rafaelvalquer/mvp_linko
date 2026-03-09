@@ -7,7 +7,6 @@ import {
   CalendarDays,
   DollarSign,
   TrendingUp,
-  CreditCard,
   Wallet as WalletIcon,
 } from "lucide-react";
 
@@ -491,9 +490,6 @@ export default function Dashboard() {
       ["HOLD", "CONFIRMED"].includes(normStatus(b.status)),
     ).length;
 
-    const pixLimit = Number(workspace?.pixMonthlyLimit ?? 0) || 0;
-    const pixUsed = Number(workspace?.pixUsedThisCycle ?? 0) || 0;
-
     const waitingConfirmation = offers.filter(
       (o) => normStatus(o?.paymentStatus) === "WAITING_CONFIRMATION",
     ).length;
@@ -514,8 +510,6 @@ export default function Dashboard() {
       conversionCur,
       paidCur30Count,
       appointments,
-      pixUsed,
-      pixLimit,
       waitingConfirmation,
       pixConfigured,
     };
@@ -660,15 +654,6 @@ export default function Dashboard() {
           />
 
           <StatCard
-            icon={<CreditCard className="h-5 w-5 text-cyan-500" />}
-            label="Pix usados"
-            value={`${kpis.pixUsed}/${kpis.pixLimit}`}
-            subtitle="limite mensal do plano"
-            loading={loadingMe}
-            index={5}
-          />
-
-          <StatCard
             icon={<WalletIcon className="h-5 w-5 text-emerald-600" />}
             label="Conta Pix"
             value={kpis.pixConfigured ? "Configurada" : "Pendente"}
@@ -679,7 +664,7 @@ export default function Dashboard() {
             }
             highlight
             loading={loadingMe}
-            index={6}
+            index={5}
           />
 
           <StatCard
@@ -688,7 +673,7 @@ export default function Dashboard() {
             value={kpis.waitingConfirmation}
             subtitle="comprovantes enviados"
             loading={loading}
-            index={7}
+            index={6}
           />
         </section>
 

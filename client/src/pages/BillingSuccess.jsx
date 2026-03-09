@@ -98,8 +98,7 @@ export default function BillingSuccess() {
               Status: <b>{status.subscription.status}</b>
             </div>
             <div className="mt-1">
-              Pix restantes: <b>{status.pixRemaining}</b> /{" "}
-              {status.pixMonthlyLimit}
+              Plano: <b>{status.plan || "—"}</b>
             </div>
           </div>
         ) : null}

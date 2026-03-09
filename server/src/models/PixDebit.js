@@ -4,10 +4,10 @@ const { Schema } = mongoose;
 
 /**
  * PixDebit: ledger para:
- * - PIX_QUOTA (1 por pagamento Pix confirmado)
- * - WALLET_CREDIT (crédito de wallet após PAID)
- * - AUTO_PAYOUT (saque automático)
+ * - WALLET_CREDIT (crédito de wallet após pagamento confirmado)
  * - WITHDRAW (débito para saque)
+ * - AUTO_PAYOUT (saque automático)
+ * - MANUAL_WITHDRAW (saque manual)
  */
 const PixDebitSchema = new Schema(
   {
@@ -15,19 +15,12 @@ const PixDebitSchema = new Schema(
     offerId: { type: Schema.Types.ObjectId, default: null, index: true },
     withdrawId: { type: Schema.Types.ObjectId, default: null, index: true },
 
-    // id do pagamento (pixId/txid/chargeId/logId)
     paymentId: { type: String, default: null, index: true },
 
     kind: {
       type: String,
-      enum: [
-        "PIX_QUOTA",
-        "WALLET_CREDIT",
-        "WITHDRAW",
-        "AUTO_PAYOUT",
-        "MANUAL_WITHDRAW",
-      ],
-      default: "PIX_QUOTA",
+      enum: ["WALLET_CREDIT", "WITHDRAW", "AUTO_PAYOUT", "MANUAL_WITHDRAW"],
+      default: undefined,
       index: true,
     },
 
@@ -42,10 +35,8 @@ const PixDebitSchema = new Schema(
 
     reason: { type: String, default: "" },
 
-    // ✅ compat legado
-    // IMPORTANTE: não usar default:null para não “participar” do unique+sparse
+    // compat/idempotência legado
     eventId: { type: String, default: undefined, index: true },
-    cycleKey: { type: String, default: undefined, index: true }, // YYYY-MM-DD (uso atual)
 
     // idempotência forte por workspace
     key: { type: String, required: true },
@@ -55,21 +46,15 @@ const PixDebitSchema = new Schema(
   { timestamps: true },
 );
 
-// idempotência principal
 PixDebitSchema.index({ workspaceId: 1, key: 1 }, { unique: true });
-
-// compat/idempotência legado
 PixDebitSchema.index(
   { workspaceId: 1, eventId: 1 },
   { unique: true, sparse: true },
 );
-
-// acessos comuns
 PixDebitSchema.index({ workspaceId: 1, kind: 1, createdAt: -1 });
 
 PixDebitSchema.pre("validate", function (next) {
   try {
-    // ✅ garanta que eventId vazio vire “ausente”
     if (
       this.eventId === null ||
       this.eventId === "" ||
@@ -83,15 +68,14 @@ PixDebitSchema.pre("validate", function (next) {
       if (ev) this.key = `legacy:event:${ev}`;
     }
 
-    // ✅ compat: se código legado enviar só eventId (quota), derive paymentId
     if (!this.paymentId) {
       const ev = String(this.eventId || "").trim();
       if (ev) this.paymentId = ev;
     }
 
-    if (!this.kind) this.kind = "PIX_QUOTA";
-    if (!this.status)
-      this.status = this.kind === "PIX_QUOTA" ? "DEBITED" : "APPLIED";
+    if (!this.status) {
+      this.status = this.kind === "WALLET_CREDIT" ? "APPLIED" : "DEBITED";
+    }
   } catch {}
   next();
 });

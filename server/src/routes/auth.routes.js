@@ -11,12 +11,6 @@ import { Workspace } from "../models/Workspace.js";
 import { PendingRegistration } from "../models/PendingRegistration.js";
 import { authOptional, ensureAuth } from "../middleware/auth.js";
 import { sendRegistrationVerificationEmail } from "../services/emailVerification.js";
-import {
-  normalizePlan,
-  ensureWorkspaceCycle,
-  summarizeWorkspaceQuota,
-  ensurePixMonthlyLimit,
-} from "../utils/pixQuota.js";
 
 const r = Router();
 
@@ -26,6 +20,17 @@ const REGISTER_RESEND_COOLDOWN_MS = 60 * 1000;
 const REGISTER_MAX_ATTEMPTS = 10;
 
 r.use(authOptional);
+
+function normalizePlan(v) {
+  const p = String(v || "")
+    .trim()
+    .toLowerCase();
+  if (!p) return "start";
+  if (p === "start" || p === "pro" || p === "business" || p === "enterprise") {
+    return p;
+  }
+  return "start";
+}
 
 function normEmail(v) {
   return String(v || "")
@@ -146,8 +151,24 @@ function buildPendingRegistrationResponse(pending) {
   };
 }
 
+function buildWorkspacePayload(ws) {
+  if (!ws) return null;
+
+  return {
+    _id: ws._id,
+    name: ws.name,
+    slug: ws.slug,
+    plan: normalizePlan(ws.plan),
+    planStatus: ws.planStatus || "free",
+    subscription: ws.subscription || null,
+    payoutPixKeyType: ws.payoutPixKeyType || "",
+    payoutPixKeyMasked: ws.payoutPixKeyMasked || "",
+    autoPayoutEnabled: !!ws.autoPayoutEnabled,
+    payoutHoldMinutes: Number(ws.payoutHoldMinutes ?? 0) || 0,
+  };
+}
+
 function buildAuthResponse(user, ws) {
-  const quota = ws ? summarizeWorkspaceQuota(ws) : null;
   const token = signToken(user);
 
   return {
@@ -161,24 +182,7 @@ function buildAuthResponse(user, ws) {
       role: user.role,
       status: user.status,
     },
-    workspace: ws
-      ? {
-          _id: ws._id,
-          name: ws.name,
-          slug: ws.slug,
-          plan: normalizePlan(ws.plan),
-          planStatus: ws.planStatus || "free",
-          subscription: ws.subscription || null,
-          pixMonthlyLimit: quota?.limit ?? ws.pixMonthlyLimit,
-          cycleKey: quota?.cycleKey ?? "",
-          pixUsedThisCycle: quota?.used ?? 0,
-          pixRemaining: quota?.remaining ?? 0,
-          payoutPixKeyType: ws.payoutPixKeyType || "",
-          payoutPixKeyMasked: ws.payoutPixKeyMasked || "",
-          autoPayoutEnabled: !!ws.autoPayoutEnabled,
-          payoutHoldMinutes: Number(ws.payoutHoldMinutes ?? 0) || 0,
-        }
-      : null,
+    workspace: buildWorkspacePayload(ws),
   };
 }
 
@@ -413,8 +417,6 @@ r.post(
               ownerUserId: userId,
               plan: normalizePlan(pending.plan || "start"),
               planStatus: "free",
-              pixMonthlyLimit: 0,
-              pixUsage: { cycleKey: "", used: 0 },
               subscription: {
                 provider: "stripe",
                 status: "inactive",
@@ -472,9 +474,6 @@ r.post(
     if (!ok)
       return res.status(401).json({ ok: false, error: "invalid credentials" });
 
-    await ensureWorkspaceCycle(user.workspaceId);
-    await ensurePixMonthlyLimit(user.workspaceId);
-
     const ws = await Workspace.findById(user.workspaceId).lean();
     return res.json(buildAuthResponse(user, ws));
   }),
@@ -484,11 +483,7 @@ r.get(
   "/auth/me",
   ensureAuth,
   asyncHandler(async (req, res) => {
-    await ensureWorkspaceCycle(req.user.workspaceId);
-    await ensurePixMonthlyLimit(req.user.workspaceId);
-
     const ws = await Workspace.findById(req.user.workspaceId).lean();
-    const quota = ws ? summarizeWorkspaceQuota(ws) : null;
 
     return res.json({
       ok: true,
@@ -500,24 +495,7 @@ r.get(
         role: req.user.role,
         status: req.user.status,
       },
-      workspace: ws
-        ? {
-            _id: ws._id,
-            name: ws.name,
-            slug: ws.slug,
-            plan: normalizePlan(ws.plan),
-            planStatus: ws.planStatus || "free",
-            subscription: ws.subscription || null,
-            pixMonthlyLimit: quota?.limit ?? ws.pixMonthlyLimit,
-            cycleKey: quota?.cycleKey ?? "",
-            pixUsedThisCycle: quota?.used ?? 0,
-            pixRemaining: quota?.remaining ?? 0,
-            payoutPixKeyType: ws.payoutPixKeyType || "",
-            payoutPixKeyMasked: ws.payoutPixKeyMasked || "",
-            autoPayoutEnabled: !!ws.autoPayoutEnabled,
-            payoutHoldMinutes: Number(ws.payoutHoldMinutes ?? 0) || 0,
-          }
-        : null,
+      workspace: buildWorkspacePayload(ws),
     });
   }),
 );

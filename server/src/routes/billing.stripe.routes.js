@@ -14,22 +14,24 @@ import {
   priceIdForPlan,
 } from "../services/stripeClient.js";
 
-import {
-  PLAN_LIMITS,
-  normalizePlan,
-  summarizeWorkspaceQuota,
-  ensureWorkspaceCycle,
-  ensurePixMonthlyLimit,
-  httpError,
-  cycleKeySP,
-} from "../utils/pixQuota.js";
-
 const r = Router();
 
-function limitForPlan(plan) {
-  const p = normalizePlan(plan);
-  if (p === "enterprise") return 0;
-  return PLAN_LIMITS[p] ?? PLAN_LIMITS.start;
+function normalizePlan(v) {
+  const p = String(v || "")
+    .trim()
+    .toLowerCase();
+  if (!p) return "start";
+  if (p === "start" || p === "pro" || p === "business" || p === "enterprise") {
+    return p;
+  }
+  return "start";
+}
+
+function httpError(status, message, details) {
+  const err = new Error(message);
+  err.status = status;
+  if (details) err.details = details;
+  return err;
 }
 
 /**
@@ -52,12 +54,12 @@ r.post(
     }
 
     const ws = await Workspace.findById(workspaceId);
-    if (!ws)
+    if (!ws) {
       return res
         .status(404)
         .json({ ok: false, error: "Workspace não encontrado." });
+    }
 
-    // se já tem subscriptionId, força portal
     if (ws?.subscription?.stripeSubscriptionId) {
       return res.status(409).json({
         ok: false,
@@ -65,7 +67,6 @@ r.post(
       });
     }
 
-    // valida env priceId antes de criar checkout
     const pid = priceIdForPlan(plan);
     if (!pid) {
       return res
@@ -75,7 +76,6 @@ r.post(
 
     const stripe = getStripe();
 
-    // garante Customer
     let stripeCustomerId = ws?.subscription?.stripeCustomerId || "";
     if (!stripeCustomerId) {
       const email = String(req.user?.email || "")
@@ -88,7 +88,6 @@ r.post(
       stripeCustomerId = customer.id;
     }
 
-    // cria checkout
     const session = await createCheckoutSession({
       workspaceId,
       plan,
@@ -99,10 +98,8 @@ r.post(
           .toLowerCase() || undefined,
     });
 
-    // marca como pending (sem liberar Pix ainda)
     ws.plan = plan;
     ws.planStatus = "pending";
-    ws.pixMonthlyLimit = 0;
 
     ws.subscription = {
       ...(ws.subscription?.toObject?.() || ws.subscription || {}),
@@ -131,11 +128,11 @@ r.get(
     const workspaceId = String(req.user?.workspaceId || "");
     const sessionId = String(req.query?.session_id || "").trim();
 
-    if (!sessionId)
+    if (!sessionId) {
       return res.status(400).json({ ok: false, error: "session_id required" });
+    }
 
     const stripe = getStripe();
-
     const session = await retrieveCheckoutSession(sessionId);
 
     if (session?.mode !== "subscription") {
@@ -155,17 +152,13 @@ r.get(
       });
     }
 
-    // se já estiver ativo no banco, só retorna status
-    await ensureWorkspaceCycle(workspaceId);
-    await ensurePixMonthlyLimit(workspaceId);
-
     let ws = await Workspace.findById(workspaceId).lean();
-    if (!ws)
+    if (!ws) {
       return res
         .status(404)
         .json({ ok: false, error: "Workspace não encontrado." });
+    }
 
-    // fallback: se session completou, sincroniza assinatura do Stripe
     const isComplete =
       String(session?.status || "").toLowerCase() === "complete";
     const subscriptionId =
@@ -190,8 +183,6 @@ r.get(
         ? new Date(sub.current_period_end * 1000)
         : null;
 
-      const ck = cycleKeySP(periodStart || new Date());
-
       const nextStatus = String(sub?.status || "").toLowerCase();
       const active = nextStatus === "active" || nextStatus === "trialing";
 
@@ -210,7 +201,6 @@ r.get(
         customerFromSub ||
         String(ws?.subscription?.stripeCustomerId || "").trim();
 
-      // só grava se for cus_
       const finalCustomerId = safeCustomerId.startsWith("cus_")
         ? safeCustomerId
         : "";
@@ -221,9 +211,6 @@ r.get(
           $set: {
             plan,
             planStatus: active ? "active" : "pending",
-            pixMonthlyLimit: active ? limitForPlan(plan) : 0,
-            pixUsage: { cycleKey: ck, used: 0 },
-
             "subscription.provider": "stripe",
             "subscription.stripeCustomerId": finalCustomerId,
             "subscription.stripeSubscriptionId": String(subscriptionId),
@@ -239,16 +226,10 @@ r.get(
       ws = await Workspace.findById(workspaceId).lean();
     }
 
-    const quota = summarizeWorkspaceQuota(ws);
-
     return res.json({
       ok: true,
       plan: ws.plan,
       planStatus: ws.planStatus || "free",
-      pixMonthlyLimit: quota.limit,
-      pixUsedThisCycle: quota.used,
-      pixRemaining: quota.remaining,
-      cycleKey: quota.cycleKey,
       subscription: ws.subscription || { status: "inactive" },
     });
   }),
@@ -264,28 +245,20 @@ r.get(
     const workspaceId = req.user?.workspaceId;
     if (!workspaceId) throw httpError(400, "workspaceId ausente no usuário.");
 
-    await ensureWorkspaceCycle(workspaceId);
-    await ensurePixMonthlyLimit(workspaceId);
-
     const ws = await Workspace.findById(workspaceId)
-      .select("plan planStatus pixMonthlyLimit pixUsage subscription")
+      .select("plan planStatus subscription")
       .lean();
 
-    if (!ws)
+    if (!ws) {
       return res
         .status(404)
         .json({ ok: false, error: "Workspace não encontrado." });
-
-    const quota = summarizeWorkspaceQuota(ws);
+    }
 
     return res.json({
       ok: true,
       plan: ws.plan,
       planStatus: ws.planStatus || "free",
-      pixMonthlyLimit: quota.limit,
-      pixUsedThisCycle: quota.used,
-      pixRemaining: quota.remaining,
-      cycleKey: quota.cycleKey,
       subscription: {
         provider: ws.subscription?.provider || "stripe",
         status: ws.subscription?.status || "inactive",
@@ -317,10 +290,11 @@ r.post(
     const ws = await Workspace.findById(workspaceId)
       .select("subscription")
       .lean();
-    if (!ws)
+    if (!ws) {
       return res
         .status(404)
         .json({ ok: false, error: "Workspace não encontrado." });
+    }
 
     const stripeCustomerId = ws.subscription?.stripeCustomerId;
     if (!stripeCustomerId) {
@@ -332,11 +306,9 @@ r.post(
     }
 
     const frontendUrl = getFrontendUrl();
-
     const defaultReturnUrl = `${frontendUrl}/dashboard`;
     const rawReturnUrl = String(req.body?.returnUrl || "").trim();
 
-    // evita open redirect: só aceita returnUrl no mesmo origin do FRONTEND_URL
     let returnUrl = defaultReturnUrl;
     if (rawReturnUrl) {
       try {
