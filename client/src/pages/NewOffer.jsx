@@ -244,6 +244,9 @@ export default function NewOffer() {
 
   // "premium features" agora = pro/business/enterprise (mantém compat com "premium" antigo)
   const isPremium = ["pro", "business", "enterprise"].includes(plan);
+  const canUseNotifyWhatsAppOnPaid = ["pro", "business", "enterprise"].includes(
+    plan,
+  );
 
   const [form, setForm] = useState({
     policyEnabled: false,
@@ -328,6 +331,15 @@ export default function NewOffer() {
   const [prodOpen, setProdOpen] = useState(false);
 
   const resultRef = useRef(null);
+
+  useEffect(() => {
+    if (canUseNotifyWhatsAppOnPaid) return;
+    setForm((prev) =>
+      prev.notifyWhatsAppOnPaid
+        ? { ...prev, notifyWhatsAppOnPaid: false }
+        : prev,
+    );
+  }, [canUseNotifyWhatsAppOnPaid]);
 
   useEffect(() => {
     if (result && resultRef.current) {
@@ -660,7 +672,9 @@ export default function NewOffer() {
         sellerName,
         customerName: form.customerName,
         customerWhatsApp: form.customerWhatsApp,
-        notifyWhatsAppOnPaid: !!form.notifyWhatsAppOnPaid,
+        notifyWhatsAppOnPaid: canUseNotifyWhatsAppOnPaid
+          ? !!form.notifyWhatsAppOnPaid
+          : false,
 
         // ✅ envia snapshot + vínculo
         customerId: isPremium ? form.customerId || null : null,
@@ -978,37 +992,39 @@ export default function NewOffer() {
                 ) : null}
               </div>
 
-              <div className="mt-3 rounded-xl border bg-zinc-50 p-3">
-                <label className="flex items-start gap-3">
-                  <input
-                    type="checkbox"
-                    className="mt-1 h-4 w-4 accent-emerald-600"
-                    checked={!!form.notifyWhatsAppOnPaid}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        notifyWhatsAppOnPaid: e.target.checked,
-                      })
-                    }
-                  />
-                  <div>
-                    <div className="text-sm font-semibold text-zinc-900">
-                      Enviar confirmação de pagamento por WhatsApp
-                    </div>
-                    <div className="text-xs text-zinc-600">
-                      Quando o Pix for confirmado, enviaremos uma mensagem para
-                      o cliente.
-                    </div>
-                    {form.notifyWhatsAppOnPaid &&
-                    !onlyDigits(form.customerWhatsApp) ? (
-                      <div className="mt-1 text-xs text-amber-700">
-                        Para enviar WhatsApp, preencha o WhatsApp do cliente na
-                        proposta.
+              {canUseNotifyWhatsAppOnPaid ? (
+                <div className="mt-3 rounded-xl border bg-zinc-50 p-3">
+                  <label className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      className="mt-1 h-4 w-4 accent-emerald-600"
+                      checked={!!form.notifyWhatsAppOnPaid}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          notifyWhatsAppOnPaid: e.target.checked,
+                        })
+                      }
+                    />
+                    <div>
+                      <div className="text-sm font-semibold text-zinc-900">
+                        Enviar confirmação de pagamento por WhatsApp
                       </div>
-                    ) : null}
-                  </div>
-                </label>
-              </div>
+                      <div className="text-xs text-zinc-600">
+                        Quando o Pix for confirmado, enviaremos uma mensagem para
+                        o cliente.
+                      </div>
+                      {form.notifyWhatsAppOnPaid &&
+                      !onlyDigits(form.customerWhatsApp) ? (
+                        <div className="mt-1 text-xs text-amber-700">
+                          Para enviar WhatsApp, preencha o WhatsApp do cliente na
+                          proposta.
+                        </div>
+                      ) : null}
+                    </div>
+                  </label>
+                </div>
+              ) : null}
             </CardBody>
           </Card>
 

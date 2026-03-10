@@ -7,6 +7,7 @@ import { Offer } from "../models/Offer.js";
 import Booking from "../models/Booking.js";
 import { ensureAuth, tenantFromUser } from "../middleware/auth.js";
 import { Client } from "../models/Client.js";
+import { Workspace } from "../models/Workspace.js";
 import { readPaymentProofBase64 } from "../services/storageLocal.js";
 import {
   notifyPaymentConfirmed,
@@ -40,6 +41,18 @@ function clampInt(n, min, max) {
 
 function safeBool(v) {
   return v === true;
+}
+
+function normalizePlan(v) {
+  const p = String(v || "").trim().toLowerCase();
+  if (!p) return "start";
+  return ["start", "pro", "business", "enterprise"].includes(p)
+    ? p
+    : "start";
+}
+
+function canUseNotifyWhatsAppOnPaid(plan) {
+  return ["pro", "business", "enterprise"].includes(normalizePlan(plan));
 }
 
 function addDays(date, days) {
@@ -94,7 +107,7 @@ function normalizeItems(raw) {
     .filter((it) => isNonEmpty(it.description));
 }
 
-async function createOfferLocal({ tenantId, userId, body }) {
+async function createOfferLocal({ tenantId, userId, workspacePlan, body }) {
   const b = body || {};
   let sellerEmail = String(b.sellerEmail || "")
     .trim()
@@ -106,7 +119,9 @@ async function createOfferLocal({ tenantId, userId, body }) {
   let customerEmail = String(b.customerEmail || "").trim();
   let customerDoc = onlyDigits(b.customerDoc);
   let customerWhatsApp = String(b.customerWhatsApp || "").trim();
-  const notifyWhatsAppOnPaid = safeBool(b.notifyWhatsAppOnPaid);
+  const notifyWhatsAppOnPaid = canUseNotifyWhatsAppOnPaid(workspacePlan)
+    ? safeBool(b.notifyWhatsAppOnPaid)
+    : false;
 
   if (customerId) {
     const c = await Client.findOne({
@@ -715,9 +730,14 @@ r.post(
       return res.status(400).json({ ok: false, error: "amountCents invalid" });
     }
 
+    const workspace = req.tenantId
+      ? await Workspace.findById(req.tenantId).select("plan").lean()
+      : null;
+
     const offer = await createOfferLocal({
       tenantId: req.tenantId,
       userId: req.user?._id,
+      workspacePlan: workspace?.plan || "start",
       body: req.body,
     });
 

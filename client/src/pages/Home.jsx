@@ -227,6 +227,8 @@ export default function Home() {
           "Cadastro de produtos e serviços",
           "Dashboard avançado",
           "Agenda com mais controle",
+          "Notificações por WhatsApp",
+          "Aviso automático de pagamento confirmado",
         ],
       },
       {
@@ -245,6 +247,8 @@ export default function Home() {
           "Visão consolidada da operação",
           "Mais controle para o time",
           "Prioridade no suporte",
+          "Lembretes de pagamento por WhatsApp",
+          "Histórico de lembretes enviados",
         ],
       },
       {
@@ -263,6 +267,8 @@ export default function Home() {
           "Permissões e regras avançadas",
           "Arquitetura orientada à operação",
           "Condições sob consulta",
+          "Fluxos avançados de WhatsApp",
+          "Automações sob medida para cobrança e operação",
         ],
       },
     ],
@@ -294,6 +300,22 @@ export default function Home() {
       {
         label: "Dashboard avançado",
         values: [false, true, true, true],
+      },
+      {
+        label: "Notificações por WhatsApp",
+        values: [false, true, true, true],
+      },
+      {
+        label: "Confirmação de pagamento via WhatsApp",
+        values: [false, true, true, true],
+      },
+      {
+        label: "Lembretes de pagamento por WhatsApp",
+        values: [false, false, true, true],
+      },
+      {
+        label: "Histórico de lembretes",
+        values: [false, false, true, true],
       },
       {
         label: "Multiusuário e permissões",
