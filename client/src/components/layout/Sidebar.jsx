@@ -424,6 +424,23 @@ export default function Sidebar({
     }
   }
 
+  function handleCreateRecurring() {
+    const allowed = guardOfferCreation({
+      workspace,
+      payoutPixKeyMasked: getEffectivePixKeyMasked(
+        workspace,
+        localPayoutPixKeyMasked,
+      ),
+      navigate: nav,
+      openPixModal,
+      targetPath: "/offers/new?mode=recurring",
+    });
+
+    if (allowed) {
+      onNavigate?.();
+    }
+  }
+
   const planLabel = String(perms.plan || "free").toUpperCase();
 
   return (
@@ -517,19 +534,37 @@ export default function Sidebar({
             <div
               className={`overflow-hidden transition-all duration-300 ease-out ${
                 !collapsed && isOffersOpen
-                  ? "mt-1 max-h-28 opacity-100"
+                  ? "mt-1 max-h-44 opacity-100"
                   : "mt-0 max-h-0 opacity-0"
               }`}
             >
               <div className="space-y-1">
+                <SidebarItem
+                  to="/offers"
+                  collapsed={collapsed}
+                  indent
+                  onNavigate={onNavigate}
+                >
+                  Todas as propostas
+                </SidebarItem>
+
                 <SidebarActionItem
                   collapsed={collapsed}
                   indent
-                  active={loc.pathname === "/offers/new"}
+                  active={loc.pathname === "/offers/new" && !loc.search.includes("mode=recurring")}
                   onClick={handleCreateOffer}
                 >
                   Nova proposta
                 </SidebarActionItem>
+
+                <SidebarItem
+                  to="/offers/recurring"
+                  collapsed={collapsed}
+                  indent
+                  onNavigate={onNavigate}
+                >
+                  Recorrências
+                </SidebarItem>
               </div>
             </div>
           </div>

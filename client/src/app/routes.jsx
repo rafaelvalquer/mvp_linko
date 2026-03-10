@@ -6,6 +6,8 @@ import Home from "../pages/Home.jsx";
 import Dashboard from "../pages/Dashboard.jsx";
 import Offers from "../pages/Offers.jsx";
 import NewOffer from "../pages/NewOffer.jsx";
+import RecurringOffers from "../pages/RecurringOffers.jsx";
+import RecurringOfferDetails from "../pages/RecurringOfferDetails.jsx";
 import Calendar from "../pages/Calendar.jsx";
 import Login from "../pages/Login.jsx";
 import Register from "../pages/Register.jsx";
@@ -81,6 +83,22 @@ export const router = createBrowserRouter(
       element: (
         <RequireAuth>
           <NewOffer />
+        </RequireAuth>
+      ),
+    },
+    {
+      path: "/offers/recurring",
+      element: (
+        <RequireAuth>
+          <RecurringOffers />
+        </RequireAuth>
+      ),
+    },
+    {
+      path: "/offers/recurring/:id",
+      element: (
+        <RequireAuth>
+          <RecurringOfferDetails />
         </RequireAuth>
       ),
     },

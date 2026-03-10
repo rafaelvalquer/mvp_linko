@@ -27,6 +27,7 @@ export default function Offers() {
 
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("ALL");
+  const [originFilter, setOriginFilter] = useState("ALL");
   const [copiedId, setCopiedId] = useState(null);
 
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -65,33 +66,41 @@ export default function Offers() {
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
 
-    const base =
-      filter === "ALL"
-        ? items
-        : (items || []).filter((o) => {
-            const pay = norm(o?.paymentStatus);
-            const flow = norm(o?.status || "PUBLIC");
-            const paid =
-              ["PAID", "CONFIRMED"].includes(pay) ||
-              ["PAID", "CONFIRMED"].includes(flow);
+    let base = filter === "ALL"
+      ? items
+      : (items || []).filter((o) => {
+          const pay = norm(o?.paymentStatus);
+          const flow = norm(o?.status || "PUBLIC");
+          const paid =
+            ["PAID", "CONFIRMED"].includes(pay) ||
+            ["PAID", "CONFIRMED"].includes(flow);
 
-            if (filter === "PAID") return paid;
-            if (
-              ["PENDING", "WAITING_CONFIRMATION", "REJECTED"].includes(filter)
-            )
-              return pay === filter;
+          if (filter === "PAID") return paid;
+          if (["PENDING", "WAITING_CONFIRMATION", "REJECTED"].includes(filter)) {
+            return pay === filter;
+          }
 
-            return flow === filter;
-          });
+          return flow === filter;
+        });
+
+    if (originFilter !== "ALL") {
+      base = base.filter((o) => {
+        const generatedBy = String(o?.generatedBy || "manual").toLowerCase();
+        if (originFilter === "RECURRING") return generatedBy === "recurring";
+        if (originFilter === "MANUAL") return generatedBy !== "recurring";
+        return true;
+      });
+    }
 
     if (!query) return base;
 
     return base.filter((o) => {
       const a = String(o?.customerName || "").toLowerCase();
       const b = String(o?.title || "").toLowerCase();
-      return a.includes(query) || b.includes(query);
+      const c = String(o?.recurringNameSnapshot || "").toLowerCase();
+      return a.includes(query) || b.includes(query) || c.includes(query);
     });
-  }, [items, q, filter]);
+  }, [items, q, filter, originFilter]);
 
   const copyLink = useCallback(async (offer) => {
     const token = offer?.publicToken;
@@ -117,8 +126,8 @@ export default function Offers() {
       <div className="space-y-6">
         <PageHeader
           title="Propostas"
-          subtitle="Gerencie propostas e confirmações de pagamento."
-          right={
+          subtitle="Gerencie propostas avulsas, cobranças recorrentes e confirmações de pagamento."
+          actions={
             <Link to="/offers/new">
               <Button>Nova proposta</Button>
             </Link>
@@ -127,17 +136,15 @@ export default function Offers() {
 
         <Card>
           <CardBody className="p-5">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div className="flex gap-2">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex flex-col gap-2 md:flex-row md:items-center">
                 <select
                   className="h-10 rounded-xl border border-zinc-200 bg-white px-3 text-sm"
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
                 >
-                  <option value="ALL">Todos</option>
-                  <option value="WAITING_CONFIRMATION">
-                    Aguardando confirmação
-                  </option>
+                  <option value="ALL">Todos os status</option>
+                  <option value="WAITING_CONFIRMATION">Aguardando confirmação</option>
                   <option value="PENDING">Aguardando pagamento</option>
                   <option value="REJECTED">Comprovante recusado</option>
                   <option value="PAID">Pago (confirmado)</option>
@@ -147,11 +154,21 @@ export default function Offers() {
                   <option value="CANCELLED">Cancelado</option>
                 </select>
 
+                <select
+                  className="h-10 rounded-xl border border-zinc-200 bg-white px-3 text-sm"
+                  value={originFilter}
+                  onChange={(e) => setOriginFilter(e.target.value)}
+                >
+                  <option value="ALL">Todas as origens</option>
+                  <option value="MANUAL">Avulsas</option>
+                  <option value="RECURRING">Recorrentes</option>
+                </select>
+
                 <div className="w-full md:w-80">
                   <Input
                     value={q}
                     onChange={(e) => setQ(e.target.value)}
-                    placeholder="Buscar cliente ou proposta…"
+                    placeholder="Buscar cliente, proposta ou recorrência…"
                     className="h-10"
                   />
                 </div>
@@ -175,7 +192,7 @@ export default function Offers() {
               <div className="mt-8">
                 <EmptyState
                   title="Nenhuma proposta"
-                  description="Ajuste filtros ou crie uma nova."
+                  description="Ajuste filtros ou crie uma nova proposta."
                   ctaLabel="Criar proposta"
                   onCta={() => (window.location.href = "/offers/new")}
                 />
@@ -185,21 +202,11 @@ export default function Offers() {
                 <table className="w-full text-left text-sm">
                   <thead className="text-[11px] uppercase tracking-wider text-zinc-400">
                     <tr>
-                      <th className="border-b border-zinc-100 py-3 pr-4">
-                        Cliente
-                      </th>
-                      <th className="border-b border-zinc-100 py-3 pr-4">
-                        Proposta
-                      </th>
-                      <th className="border-b border-zinc-100 py-3 pr-4">
-                        Valor
-                      </th>
-                      <th className="border-b border-zinc-100 py-3 pr-4">
-                        Status
-                      </th>
-                      <th className="border-b border-zinc-100 py-3 text-right">
-                        Ações
-                      </th>
+                      <th className="border-b border-zinc-100 py-3 pr-4">Cliente</th>
+                      <th className="border-b border-zinc-100 py-3 pr-4">Proposta</th>
+                      <th className="border-b border-zinc-100 py-3 pr-4">Valor</th>
+                      <th className="border-b border-zinc-100 py-3 pr-4">Status</th>
+                      <th className="border-b border-zinc-100 py-3 text-right">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-100">
@@ -207,26 +214,37 @@ export default function Offers() {
                       const pay = getPaymentLabel(o);
                       const publicUrl = `/p/${o.publicToken}`;
                       const copied = copiedId === o._id;
-                      const isPendingAlert =
-                        norm(o?.paymentStatus) === "PENDING";
+                      const isPendingAlert = norm(o?.paymentStatus) === "PENDING";
+                      const isRecurring = String(o?.generatedBy || "manual").toLowerCase() === "recurring";
 
                       return (
                         <tr key={o._id} className="hover:bg-zinc-50/50">
                           <td className="py-3 pr-4">
-                            <div className="font-semibold text-zinc-900">
-                              {o.customerName || "—"}
-                            </div>
-                            <div className="text-xs text-zinc-500">
-                              {o.customerWhatsApp || "—"}
-                            </div>
+                            <div className="font-semibold text-zinc-900">{o.customerName || "—"}</div>
+                            <div className="text-xs text-zinc-500">{o.customerWhatsApp || "—"}</div>
                           </td>
                           <td className="py-3 pr-4">
-                            <div className="text-zinc-900">
-                              {o.title || "Proposta"}
+                            <div className="flex flex-wrap items-center gap-2 text-zinc-900">
+                              <span>{o.title || "Proposta"}</span>
+                              {isRecurring ? (
+                                <span className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-700">
+                                  Recorrente
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-zinc-600">
+                                  Avulsa
+                                </span>
+                              )}
                             </div>
-                            <div className="text-xs text-zinc-500 line-clamp-1">
-                              {o.description || ""}
-                            </div>
+                            <div className="text-xs text-zinc-500 line-clamp-1">{o.description || ""}</div>
+                            {isRecurring && o?.recurringOfferId ? (
+                              <Link
+                                to={`/offers/recurring/${o.recurringOfferId}`}
+                                className="mt-1 inline-flex text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                              >
+                                {o?.recurringNameSnapshot || "Ver recorrência"}
+                              </Link>
+                            ) : null}
                           </td>
                           <td className="py-3 pr-4 font-semibold text-zinc-900 tabular-nums">
                             {fmtBRLFromCents(getAmountCents(o))}
@@ -242,7 +260,7 @@ export default function Offers() {
                               )}
 
                               {o?.notifyWhatsAppOnPaid ? (
-                                <span className="text-[10px] font-bold text-emerald-700 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1">
+                                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700">
                                   WA ON
                                 </span>
                               ) : null}
@@ -262,11 +280,7 @@ export default function Offers() {
                                 variant="ghost"
                                 size="sm"
                                 onClick={() =>
-                                  window.open(
-                                    publicUrl,
-                                    "_blank",
-                                    "noopener,noreferrer",
-                                  )
+                                  window.open(publicUrl, "_blank", "noopener,noreferrer")
                                 }
                               >
                                 Abrir

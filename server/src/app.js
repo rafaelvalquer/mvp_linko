@@ -1,11 +1,11 @@
-// server/src/app.js
+// src/app.js
 import express from "express";
 import cors from "cors";
 import { env } from "./config/env.js";
 
 import healthRoutes from "./routes/health.routes.js";
 import offersRoutes from "./routes/offers.routes.js";
-import offerRemindersRoutes from "./routes/offer-reminders.routes.js";
+import recurringOffersRoutes from "./routes/recurring-offers.routes.js";
 import publicRoutes from "./routes/public.routes.js";
 import webhooksAbacatepayRoutes from "./routes/webhooks.abacatepay.routes.js";
 import authRoutes from "./routes/auth.routes.js";
@@ -16,10 +16,12 @@ import productsRoutes from "./routes/products.routes.js";
 import clientsRoutes from "./routes/clients.routes.js";
 import settingsRoutes from "./routes/settings.routes.js";
 import reportsRoutes from "./routes/reports.routes.js";
+import offerRemindersRoutes from "./routes/offer-reminders.routes.js";
 
 import billingStripeRoutes from "./routes/billing.stripe.routes.js";
 import webhooksStripeRoutes from "./routes/webhooks.stripe.routes.js";
 import analyticsRoutes from "./routes/analytics.routes.js";
+import { startRecurringOffersRunner } from "./services/recurring-offers.runner.js";
 
 import path from "path";
 
@@ -51,7 +53,6 @@ export function createApp() {
   app.use(cors(corsOptions));
   app.options("*", cors(corsOptions));
 
-  // JSON + rawBody (webhooks)
   app.use(
     express.json({
       limit: "1mb",
@@ -61,39 +62,35 @@ export function createApp() {
     }),
   );
 
-  // ✅ 1) ROTAS PÚBLICAS PRIMEIRO
   app.use("/api", publicRoutes);
-
-  // static uploads
   app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
-
-  // ✅ 2) WEBHOOKS EM PREFIXO ESPECÍFICO (não intercepta /api/auth/login)
-  // Se seu webhook do AbacatePay está "desativado" com router.all("*"), isso evita pegar tudo.
   app.use("/api/webhooks/abacatepay", webhooksAbacatepayRoutes);
-
-  // Stripe (mantém como está no seu projeto)
   app.use("/api", webhooksStripeRoutes);
 
-  // Auth optional (se tiver Bearer válido popula req.user)
   app.use(authOptional);
 
-  // ✅ Rotas autenticadas / internas
   app.use("/api", healthRoutes);
   app.use("/api", authRoutes);
   app.use("/api", offersRoutes);
-  app.use("/api", offerRemindersRoutes);
+  app.use("/api", recurringOffersRoutes);
   app.use("/api", bookingsRoutes);
-
-  // Mantém withdrawRoutes por enquanto (vamos reutilizar para "Conta Pix")
   app.use("/api", withdrawRoutes);
-
   app.use("/api", productsRoutes);
   app.use("/api", clientsRoutes);
   app.use("/api", settingsRoutes);
   app.use("/api", analyticsRoutes);
   app.use("/api", reportsRoutes);
-
   app.use("/api", billingStripeRoutes);
+
+  startRecurringOffersRunner({
+    origin:
+      String(env.corsOrigin || "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)[0] || "",
+  });
+
+  app.use("/api", offerRemindersRoutes);
 
   app.use((err, _req, res, _next) => {
     console.error(err);

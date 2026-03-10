@@ -1,6 +1,8 @@
 import Shell from "../components/layout/Shell.jsx";
 import { useMemo, useState, useEffect, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api } from "../app/api.js";
+import { createRecurringOffer } from "../app/recurringOffersApi.js";
 import PageHeader from "../components/appui/PageHeader.jsx";
 import Card, { CardBody, CardHeader } from "../components/appui/Card.jsx";
 import Button from "../components/appui/Button.jsx";
@@ -238,17 +240,29 @@ function clampInt(n, min, max) {
 
 export default function NewOffer() {
   const { user, perms } = useAuth();
+  const [searchParams] = useSearchParams();
+  const initialRecurringMode =
+    String(searchParams.get("mode") || "").trim().toLowerCase() === "recurring";
   const plan = String(
     perms?.plan || user?.plan || user?.workspace?.plan || "start",
   ).toLowerCase();
 
   // "premium features" agora = pro/business/enterprise (mantém compat com "premium" antigo)
   const isPremium = ["pro", "business", "enterprise"].includes(plan);
-  const canUseNotifyWhatsAppOnPaid = ["pro", "business", "enterprise"].includes(
-    plan,
-  );
 
   const [form, setForm] = useState({
+    creationMode: initialRecurringMode ? "recurring" : "single",
+    recurringName: "",
+    recurringIntervalDays: 30,
+    recurringStartDate: new Date().toISOString().slice(0, 10),
+    recurringTimeOfDay: "09:00",
+    recurringEndMode: "never",
+    recurringEndsAt: "",
+    recurringMaxOccurrences: 12,
+    recurringGenerateFirstNow: true,
+    recurringAutoSendToCustomer: false,
+    recurringInitialStatus: "active",
+
     policyEnabled: false,
     policyText: "",
 
@@ -333,13 +347,11 @@ export default function NewOffer() {
   const resultRef = useRef(null);
 
   useEffect(() => {
-    if (canUseNotifyWhatsAppOnPaid) return;
+    const nextMode = initialRecurringMode ? "recurring" : "single";
     setForm((prev) =>
-      prev.notifyWhatsAppOnPaid
-        ? { ...prev, notifyWhatsAppOnPaid: false }
-        : prev,
+      prev.creationMode === nextMode ? prev : { ...prev, creationMode: nextMode },
     );
-  }, [canUseNotifyWhatsAppOnPaid]);
+  }, [initialRecurringMode]);
 
   useEffect(() => {
     if (result && resultRef.current) {
@@ -653,6 +665,27 @@ export default function NewOffer() {
           throw new Error("Total do orçamento inválido.");
       }
 
+      if (form.creationMode === "recurring") {
+        if (!String(form.recurringName || "").trim()) {
+          throw new Error("Informe um nome interno para a recorrência.");
+        }
+        if (!Number.isFinite(Number(form.recurringIntervalDays)) || Number(form.recurringIntervalDays) < 1) {
+          throw new Error("Informe um intervalo válido em dias para a recorrência.");
+        }
+        if (!String(form.recurringStartDate || "").trim()) {
+          throw new Error("Informe a data de início da recorrência.");
+        }
+        if (!String(form.recurringTimeOfDay || "").trim()) {
+          throw new Error("Informe o horário da execução da recorrência.");
+        }
+        if (form.recurringEndMode === "until_date" && !String(form.recurringEndsAt || "").trim()) {
+          throw new Error("Informe a data final da recorrência.");
+        }
+        if (form.recurringEndMode === "until_count" && (!Number.isFinite(Number(form.recurringMaxOccurrences)) || Number(form.recurringMaxOccurrences) < 1)) {
+          throw new Error("Informe a quantidade máxima de cobranças.");
+        }
+      }
+
       // build payload (send only enabled optional fields)
       const sellerEmail = String(
         user?.email || user?.mail || user?.loginEmail || user?.username || "",
@@ -672,9 +705,7 @@ export default function NewOffer() {
         sellerName,
         customerName: form.customerName,
         customerWhatsApp: form.customerWhatsApp,
-        notifyWhatsAppOnPaid: canUseNotifyWhatsAppOnPaid
-          ? !!form.notifyWhatsAppOnPaid
-          : false,
+        notifyWhatsAppOnPaid: !!form.notifyWhatsAppOnPaid,
 
         // ✅ envia snapshot + vínculo
         customerId: isPremium ? form.customerId || null : null,
@@ -767,12 +798,45 @@ export default function NewOffer() {
         }));
       }
 
-      const res = await api("/offers", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
+      if (form.creationMode === "recurring") {
+        const startsAt = new Date(
+          `${form.recurringStartDate}T${form.recurringTimeOfDay}:00`,
+        );
 
-      setResult(res);
+        const recurringPayload = {
+          ...payload,
+          name: String(form.recurringName || "").trim(),
+          status: String(form.recurringInitialStatus || "active").trim().toLowerCase(),
+          recurrence: {
+            intervalDays: clampInt(form.recurringIntervalDays, 1),
+            startsAt: startsAt.toISOString(),
+            timeOfDay: String(form.recurringTimeOfDay || "09:00"),
+            endMode: String(form.recurringEndMode || "never"),
+            endsAt:
+              form.recurringEndMode === "until_date" && form.recurringEndsAt
+                ? new Date(`${form.recurringEndsAt}T${form.recurringTimeOfDay}:00`).toISOString()
+                : null,
+            maxOccurrences:
+              form.recurringEndMode === "until_count"
+                ? clampInt(form.recurringMaxOccurrences, 1)
+                : null,
+          },
+          automation: {
+            generateFirstNow: !!form.recurringGenerateFirstNow,
+            autoSendToCustomer: !!form.recurringAutoSendToCustomer,
+          },
+        };
+
+        const res = await createRecurringOffer(recurringPayload);
+        setResult({ ...res, kind: "recurring" });
+      } else {
+        const res = await api("/offers", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+
+        setResult({ ...res, kind: "single" });
+      }
     } catch (e2) {
       setErr(e2.message || "Erro");
     } finally {
@@ -781,9 +845,13 @@ export default function NewOffer() {
   }
 
   const isProduct = form.offerType === "product";
+  const isRecurring = form.creationMode === "recurring";
 
-  const offerPublicUrl = result?.offer?.publicToken
-    ? `${window.location.origin}/p/${result.offer.publicToken}`
+  const createdRecurring = result?.recurring || null;
+  const createdOffer = result?.firstOffer || result?.offer || null;
+
+  const offerPublicUrl = createdOffer?.publicToken
+    ? `${window.location.origin}/p/${createdOffer.publicToken}`
     : "";
 
   const waShareUrl = offerPublicUrl
@@ -811,6 +879,54 @@ export default function NewOffer() {
         />
 
         <form onSubmit={onSubmit} className="space-y-4">
+          <Card>
+            <CardHeader
+              title="Tipo de criação"
+              subtitle="Escolha se deseja gerar uma proposta avulsa ou configurar uma cobrança recorrente."
+            />
+            <CardBody className="space-y-4">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setForm((prev) => ({ ...prev, creationMode: "single" }))
+                  }
+                  className={`rounded-2xl border p-4 text-left transition-colors ${
+                    form.creationMode === "single"
+                      ? "border-emerald-300 bg-emerald-50"
+                      : "border-zinc-200 bg-white hover:bg-zinc-50"
+                  }`}
+                >
+                  <div className="text-sm font-semibold text-zinc-900">
+                    Proposta avulsa
+                  </div>
+                  <div className="mt-1 text-xs text-zinc-500">
+                    Mantém o fluxo atual da plataforma e gera uma única proposta.
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setForm((prev) => ({ ...prev, creationMode: "recurring" }))
+                  }
+                  className={`rounded-2xl border p-4 text-left transition-colors ${
+                    form.creationMode === "recurring"
+                      ? "border-emerald-300 bg-emerald-50"
+                      : "border-zinc-200 bg-white hover:bg-zinc-50"
+                  }`}
+                >
+                  <div className="text-sm font-semibold text-zinc-900">
+                    Cobrança recorrente
+                  </div>
+                  <div className="mt-1 text-xs text-zinc-500">
+                    Cria uma automação que gera novas propostas ao longo do tempo.
+                  </div>
+                </button>
+              </div>
+            </CardBody>
+          </Card>
+
           {/* Cliente */}
           <Card>
             <CardHeader
@@ -992,39 +1108,37 @@ export default function NewOffer() {
                 ) : null}
               </div>
 
-              {canUseNotifyWhatsAppOnPaid ? (
-                <div className="mt-3 rounded-xl border bg-zinc-50 p-3">
-                  <label className="flex items-start gap-3">
-                    <input
-                      type="checkbox"
-                      className="mt-1 h-4 w-4 accent-emerald-600"
-                      checked={!!form.notifyWhatsAppOnPaid}
-                      onChange={(e) =>
-                        setForm({
-                          ...form,
-                          notifyWhatsAppOnPaid: e.target.checked,
-                        })
-                      }
-                    />
-                    <div>
-                      <div className="text-sm font-semibold text-zinc-900">
-                        Enviar confirmação de pagamento por WhatsApp
-                      </div>
-                      <div className="text-xs text-zinc-600">
-                        Quando o Pix for confirmado, enviaremos uma mensagem para
-                        o cliente.
-                      </div>
-                      {form.notifyWhatsAppOnPaid &&
-                      !onlyDigits(form.customerWhatsApp) ? (
-                        <div className="mt-1 text-xs text-amber-700">
-                          Para enviar WhatsApp, preencha o WhatsApp do cliente na
-                          proposta.
-                        </div>
-                      ) : null}
+              <div className="mt-3 rounded-xl border bg-zinc-50 p-3">
+                <label className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    className="mt-1 h-4 w-4 accent-emerald-600"
+                    checked={!!form.notifyWhatsAppOnPaid}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        notifyWhatsAppOnPaid: e.target.checked,
+                      })
+                    }
+                  />
+                  <div>
+                    <div className="text-sm font-semibold text-zinc-900">
+                      Enviar confirmação de pagamento por WhatsApp
                     </div>
-                  </label>
-                </div>
-              ) : null}
+                    <div className="text-xs text-zinc-600">
+                      Quando o Pix for confirmado, enviaremos uma mensagem para
+                      o cliente.
+                    </div>
+                    {form.notifyWhatsAppOnPaid &&
+                    !onlyDigits(form.customerWhatsApp) ? (
+                      <div className="mt-1 text-xs text-amber-700">
+                        Para enviar WhatsApp, preencha o WhatsApp do cliente na
+                        proposta.
+                      </div>
+                    ) : null}
+                  </div>
+                </label>
+              </div>
             </CardBody>
           </Card>
 
@@ -1727,6 +1841,193 @@ export default function NewOffer() {
             </CardBody>
           </Card>
 
+          {isRecurring ? (
+            <Card>
+              <CardHeader
+                title="Configuração da recorrência"
+                subtitle="Defina quando a cobrança será gerada e como a automação deve se comportar."
+              />
+              <CardBody className="space-y-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="text-xs font-semibold text-zinc-600">
+                      Nome interno da recorrência
+                    </label>
+                    <Input
+                      value={form.recurringName}
+                      onChange={(e) =>
+                        setForm({ ...form, recurringName: e.target.value })
+                      }
+                      placeholder="Ex.: Mensalidade João • Manutenção"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-zinc-600">
+                      Repetir a cada (dias)
+                    </label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={form.recurringIntervalDays}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          recurringIntervalDays: clampInt(e.target.value, 1),
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div>
+                    <label className="text-xs font-semibold text-zinc-600">
+                      Data de início
+                    </label>
+                    <Input
+                      type="date"
+                      value={form.recurringStartDate}
+                      onChange={(e) =>
+                        setForm({ ...form, recurringStartDate: e.target.value })
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-zinc-600">
+                      Horário da execução
+                    </label>
+                    <Input
+                      type="time"
+                      value={form.recurringTimeOfDay}
+                      onChange={(e) =>
+                        setForm({ ...form, recurringTimeOfDay: e.target.value })
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-zinc-600">
+                      Status inicial
+                    </label>
+                    <select
+                      className="w-full rounded-xl border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      value={form.recurringInitialStatus}
+                      onChange={(e) =>
+                        setForm({ ...form, recurringInitialStatus: e.target.value })
+                      }
+                    >
+                      <option value="active">Ativa</option>
+                      <option value="draft">Rascunho</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div>
+                    <label className="text-xs font-semibold text-zinc-600">
+                      Término
+                    </label>
+                    <select
+                      className="w-full rounded-xl border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      value={form.recurringEndMode}
+                      onChange={(e) =>
+                        setForm({ ...form, recurringEndMode: e.target.value })
+                      }
+                    >
+                      <option value="never">Sem término</option>
+                      <option value="until_date">Até data</option>
+                      <option value="until_count">Até X cobranças</option>
+                    </select>
+                  </div>
+
+                  {form.recurringEndMode === "until_date" ? (
+                    <div>
+                      <label className="text-xs font-semibold text-zinc-600">
+                        Encerrar em
+                      </label>
+                      <Input
+                        type="date"
+                        value={form.recurringEndsAt}
+                        onChange={(e) =>
+                          setForm({ ...form, recurringEndsAt: e.target.value })
+                        }
+                      />
+                    </div>
+                  ) : form.recurringEndMode === "until_count" ? (
+                    <div>
+                      <label className="text-xs font-semibold text-zinc-600">
+                        Máximo de cobranças
+                      </label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={form.recurringMaxOccurrences}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            recurringMaxOccurrences: clampInt(e.target.value, 1),
+                          })
+                        }
+                      />
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50 p-3 text-xs text-zinc-500 sm:col-span-2">
+                      A recorrência continuará ativa até você pausar ou encerrar manualmente.
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <label className="flex items-start gap-3 rounded-xl border bg-zinc-50 p-3">
+                    <input
+                      type="checkbox"
+                      className="mt-1 h-4 w-4 accent-emerald-600"
+                      checked={!!form.recurringGenerateFirstNow}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          recurringGenerateFirstNow: e.target.checked,
+                        })
+                      }
+                    />
+                    <div>
+                      <div className="text-sm font-semibold text-zinc-900">
+                        Gerar primeira cobrança imediatamente
+                      </div>
+                      <div className="text-xs text-zinc-600">
+                        Se marcado, a primeira proposta recorrente já será criada ao salvar.
+                      </div>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start gap-3 rounded-xl border bg-zinc-50 p-3">
+                    <input
+                      type="checkbox"
+                      className="mt-1 h-4 w-4 accent-emerald-600"
+                      checked={!!form.recurringAutoSendToCustomer}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          recurringAutoSendToCustomer: e.target.checked,
+                        })
+                      }
+                    />
+                    <div>
+                      <div className="text-sm font-semibold text-zinc-900">
+                        Enviar automaticamente ao cliente
+                      </div>
+                      <div className="text-xs text-zinc-600">
+                        Quando a cobrança for gerada, o sistema tentará enviar o link pelo WhatsApp usando o fluxo já existente.
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              </CardBody>
+            </Card>
+          ) : null}
+
           {/* Pagamento */}
           <Card>
             <CardHeader
@@ -1890,74 +2191,143 @@ export default function NewOffer() {
               Limpar textos
             </Button>
             <Button type="submit" disabled={busy}>
-              {busy ? "Gerando…" : "Gerar link"}
+              {busy ? (isRecurring ? "Criando recorrência..." : "Gerando…") : isRecurring ? "Criar recorrência" : "Gerar link"}
             </Button>
           </div>
 
-          {/* Adicionamos a div com o ref para o scroll encontrar este lugar */}
-          {result?.offer ? (
+          {result ? (
             <div ref={resultRef} className="pt-4">
               <Card className="border-emerald-200 bg-emerald-50/50">
                 <CardHeader
-                  title="Link gerado com sucesso!"
-                  subtitle="Envie para o cliente e acompanhe o status no painel."
+                  title={
+                    result?.kind === "recurring"
+                      ? "Recorrência criada com sucesso!"
+                      : "Link gerado com sucesso!"
+                  }
+                  subtitle={
+                    result?.kind === "recurring"
+                      ? "Sua automação foi salva e passará a gerar novas propostas conforme a configuração definida."
+                      : "Envie para o cliente e acompanhe o status no painel."
+                  }
                 />
                 <CardBody className="space-y-3">
-                  <div className="rounded-xl border border-emerald-200 bg-white p-3 text-sm shadow-sm">
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-600">
-                      Link da Proposta
+                  {result?.kind === "recurring" ? (
+                    <>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div className="rounded-xl border border-emerald-200 bg-white p-3 text-sm shadow-sm">
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-600">
+                            Recorrência
+                          </div>
+                          <div className="mt-1 font-semibold text-zinc-900 break-all">
+                            {createdRecurring?.name || form.recurringName}
+                          </div>
+                          <div className="mt-1 text-xs text-zinc-500">
+                            A cada {clampInt(form.recurringIntervalDays, 1)} dias
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-emerald-200 bg-white p-3 text-sm shadow-sm">
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-600">
+                            Próxima execução
+                          </div>
+                          <div className="mt-1 font-semibold text-zinc-900 break-all">
+                            {createdRecurring?.recurrence?.nextRunAt
+                              ? new Date(createdRecurring.recurrence.nextRunAt).toLocaleString("pt-BR", {
+                                  timeZone: "America/Sao_Paulo",
+                                })
+                              : "Sem próxima execução definida"}
+                          </div>
+                        </div>
+                      </div>
+
+                      {createdOffer?.publicToken ? (
+                        <div className="rounded-xl border border-emerald-200 bg-white p-3 text-sm shadow-sm">
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-600">
+                            Primeira proposta gerada
+                          </div>
+                          <div className="mt-1 font-mono text-sm text-zinc-900 break-all">
+                            {window.location.origin}/p/{createdOffer.publicToken}
+                          </div>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : (
+                    <div className="rounded-xl border border-emerald-200 bg-white p-3 text-sm shadow-sm">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-600">
+                        Link da Proposta
+                      </div>
+                      <div className="mt-1 font-mono text-sm text-zinc-900 break-all">
+                        {window.location.origin}/p/{createdOffer?.publicToken}
+                      </div>
                     </div>
-                    <div className="mt-1 font-mono text-sm text-zinc-900 break-all">
-                      {window.location.origin}/p/{result.offer.publicToken}
-                    </div>
-                  </div>
+                  )}
 
                   <div className="flex flex-wrap gap-2">
-                    <Button
-                      variant="secondary"
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          await navigator.clipboard.writeText(offerPublicUrl);
-                          alert("Link copiado!");
-                        } catch {}
-                      }}
-                    >
-                      Copiar link
-                    </Button>
+                    {result?.kind === "recurring" && createdRecurring?._id ? (
+                      <Button
+                        variant="secondary"
+                        type="button"
+                        onClick={() =>
+                          (window.location.href = `/offers/recurring/${createdRecurring._id}`)
+                        }
+                      >
+                        Abrir recorrência
+                      </Button>
+                    ) : null}
 
-                    <Button
-                      variant="ghost"
-                      type="button"
-                      onClick={() =>
-                        window.open(
-                          offerPublicUrl,
-                          "_blank",
-                          "noopener,noreferrer",
-                        )
-                      }
-                    >
-                      Visualizar Proposta
-                    </Button>
+                    {createdOffer?.publicToken ? (
+                      <>
+                        <Button
+                          variant="secondary"
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(offerPublicUrl);
+                              alert("Link copiado!");
+                            } catch {}
+                          }}
+                        >
+                          Copiar link
+                        </Button>
 
-                    <Button
-                      variant="secondary"
-                      type="button"
-                      disabled={!waShareUrl}
-                      title={
-                        waShareUrl
-                          ? "Abrir WhatsApp com a mensagem pronta"
-                          : "Preencha o WhatsApp do cliente para usar este botão"
-                      }
-                      onClick={() =>
-                        window.open(waShareUrl, "_blank", "noopener,noreferrer")
-                      }
-                    >
-                      <span className="inline-flex items-center gap-2">
-                        <MessageCircle className="h-4 w-4" />
-                        WhatsApp
-                      </span>
-                    </Button>
+                        <Button
+                          variant="ghost"
+                          type="button"
+                          onClick={() =>
+                            window.open(
+                              offerPublicUrl,
+                              "_blank",
+                              "noopener,noreferrer",
+                            )
+                          }
+                        >
+                          Visualizar proposta
+                        </Button>
+
+                        <Button
+                          variant="secondary"
+                          type="button"
+                          disabled={!waShareUrl}
+                          title={
+                            waShareUrl
+                              ? "Abrir WhatsApp com a mensagem pronta"
+                              : "Preencha o WhatsApp do cliente para usar este botão"
+                          }
+                          onClick={() =>
+                            window.open(
+                              waShareUrl,
+                              "_blank",
+                              "noopener,noreferrer",
+                            )
+                          }
+                        >
+                          <span className="inline-flex items-center gap-2">
+                            <MessageCircle className="h-4 w-4" />
+                            WhatsApp
+                          </span>
+                        </Button>
+                      </>
+                    ) : null}
                   </div>
                 </CardBody>
               </Card>
