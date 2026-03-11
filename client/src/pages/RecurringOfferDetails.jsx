@@ -21,6 +21,12 @@ import {
 import { fmtBRLFromCents, getPaymentLabel } from "../components/offers/offerHelpers.js";
 import { useAuth } from "../app/AuthContext.jsx";
 import { canUseRecurringPlan } from "../utils/planFeatures.js";
+import {
+  getRecurringHistoryStatusLabel,
+  getRecurringHistoryTone,
+  getRecurringStatusLabel,
+  getRecurringStatusTone,
+} from "../utils/recurringStatus.js";
 
 function fmtDT(value) {
   if (!value) return "—";
@@ -31,24 +37,6 @@ function fmtDT(value) {
   } catch {
     return "—";
   }
-}
-
-function mapStatusTone(status) {
-  const s = String(status || "").trim().toUpperCase();
-  if (s === "ACTIVE") return "PAID";
-  if (s === "PAUSED") return "ACCEPTED";
-  if (s === "ENDED") return "EXPIRED";
-  if (s === "ERROR") return "CANCELLED";
-  return "DRAFT";
-}
-
-function historyTone(status) {
-  const s = String(status || "").trim().toLowerCase();
-  if (s === "generated" || s === "sent") return "PAID";
-  if (s === "skipped" || s === "paused") return "ACCEPTED";
-  if (s === "ended") return "EXPIRED";
-  if (s === "failed") return "CANCELLED";
-  return "PUBLIC";
 }
 
 function DetailsTab({ active, onClick, children }) {
@@ -311,7 +299,9 @@ export default function RecurringOfferDetails() {
                       <div className="mt-2 text-sm font-semibold text-zinc-900">{recurring.title || "Proposta recorrente"}</div>
                       <div className="mt-1 text-sm text-zinc-600">{recurring.description || "Sem descrição adicional."}</div>
                       <div className="mt-4 flex flex-wrap items-center gap-2">
-                        <Badge tone={mapStatusTone(recurring.status)}>{String(recurring.status || "draft").toUpperCase()}</Badge>
+                        <Badge tone={getRecurringStatusTone(recurring.status)}>
+                          {getRecurringStatusLabel(recurring.status)}
+                        </Badge>
                         <span className="rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-xs font-semibold text-zinc-700">
                           {fmtBRLFromCents(recurring.totalCents ?? recurring.amountCents ?? 0)}
                         </span>
@@ -332,7 +322,7 @@ export default function RecurringOfferDetails() {
                       <div className="mt-3 space-y-2">
                         <div><span className="font-semibold text-zinc-900">Nome interno:</span> {recurring.name}</div>
                         <div><span className="font-semibold text-zinc-900">Tipo:</span> {recurring.offerType === "product" ? "Produto" : "Serviço"}</div>
-                        <div><span className="font-semibold text-zinc-900">Status inicial/atual:</span> {recurring.status}</div>
+                        <div><span className="font-semibold text-zinc-900">Status inicial/atual:</span> {getRecurringStatusLabel(recurring.status)}</div>
                         <div><span className="font-semibold text-zinc-900">Repetição:</span> a cada {Number(recurring?.recurrence?.intervalDays || 0)} dias</div>
                         <div><span className="font-semibold text-zinc-900">Horário:</span> {recurring?.recurrence?.timeOfDay || "09:00"}</div>
                         <div><span className="font-semibold text-zinc-900">Fim:</span> {recurring?.recurrence?.endMode === "until_date" ? `até ${fmtDT(recurring?.recurrence?.endsAt)}` : recurring?.recurrence?.endMode === "until_count" ? `até ${recurring?.recurrence?.maxOccurrences || 0} cobranças` : "sem término"}</div>
@@ -423,7 +413,9 @@ export default function RecurringOfferDetails() {
                               <div className="text-sm font-semibold text-zinc-900">{fmtDT(item?.ranAt || item?.createdAt)}</div>
                               <div className="mt-1 text-xs text-zinc-500">{String(item?.source || "automatic").toUpperCase()} • {item?.message || "Execução registrada."}</div>
                             </div>
-                            <Badge tone={historyTone(item?.status)}>{String(item?.status || "generated").toUpperCase()}</Badge>
+                            <Badge tone={getRecurringHistoryTone(item?.status)}>
+                              {getRecurringHistoryStatusLabel(item?.status)}
+                            </Badge>
                           </div>
                           {item?.offerId ? (
                             <div className="mt-3 text-xs text-zinc-600">Oferta gerada: <span className="font-mono">{String(item.offerId)}</span></div>
@@ -442,7 +434,7 @@ export default function RecurringOfferDetails() {
                     <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-700">
                       <div className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Saúde da automação</div>
                       <div className="mt-3 space-y-2">
-                        <div><span className="font-semibold text-zinc-900">Status:</span> {recurring.status}</div>
+                        <div><span className="font-semibold text-zinc-900">Status:</span> {getRecurringStatusLabel(recurring.status)}</div>
                         <div><span className="font-semibold text-zinc-900">Execuções totais:</span> {recurring.runCount || 0}</div>
                         <div><span className="font-semibold text-zinc-900">Sucessos:</span> {recurring.successCount || 0}</div>
                         <div><span className="font-semibold text-zinc-900">Falhas:</span> {recurring.failureCount || 0}</div>

@@ -13,6 +13,10 @@ import PixSettingsModal from "../components/PixSettingsModal.jsx";
 import { useAuth } from "../app/AuthContext.jsx";
 import { canUseRecurringPlan } from "../utils/planFeatures.js";
 import {
+  getRecurringStatusLabel,
+  getRecurringStatusTone,
+} from "../utils/recurringStatus.js";
+import {
   duplicateRecurringOffer,
   endRecurringOffer,
   listRecurringOffers,
@@ -41,15 +45,6 @@ function fmtDT(value) {
   } catch {
     return "—";
   }
-}
-
-function mapStatusTone(status) {
-  const s = String(status || "").trim().toUpperCase();
-  if (s === "ACTIVE") return "PAID";
-  if (s === "PAUSED") return "ACCEPTED";
-  if (s === "ENDED") return "EXPIRED";
-  if (s === "ERROR") return "CANCELLED";
-  return "DRAFT";
 }
 
 export default function RecurringOffers() {
@@ -319,63 +314,75 @@ export default function RecurringOffers() {
                           <td className="py-3 pr-4 text-zinc-700">{fmtDT(item?.recurrence?.nextRunAt)}</td>
                           <td className="py-3 pr-4 text-zinc-700">{fmtDT(item?.lastRunAt || item?.summary?.lastGeneratedAt)}</td>
                           <td className="py-3 pr-4">
-                            <Badge tone={mapStatusTone(item?.status)}>{String(item?.status || "draft").toUpperCase()}</Badge>
+                            <Badge tone={getRecurringStatusTone(item?.status)}>
+                              {getRecurringStatusLabel(item?.status)}
+                            </Badge>
                           </td>
                           <td className="py-3 pr-4 text-zinc-700">
                             <div className="font-semibold text-zinc-900">{Number(item?.summary?.generatedCount || 0)}</div>
                             <div className="mt-1 text-xs text-zinc-500">{Number(item?.summary?.pendingCount || 0)} pendente(s)</div>
                           </td>
                           <td className="py-3 text-right">
-                            <div className="flex flex-wrap items-center justify-end gap-2">
-                              <Link to={`/offers/recurring/${item._id}`}>
-                                <Button variant="secondary">Detalhes</Button>
-                              </Link>
+                            <div className="ml-auto flex w-[320px] flex-col items-end gap-2">
+                              <div className="flex flex-wrap justify-end gap-2">
+                                <Link to={`/offers/recurring/${item._id}`}>
+                                  <Button variant="secondary" className="min-w-[108px]">
+                                    Detalhes
+                                  </Button>
+                                </Link>
 
-                              {!isEnded ? (
-                                <Button
-                                  variant="secondary"
-                                  disabled={actionBusy("run")}
-                                  onClick={() => runAction(item, "run")}
-                                >
-                                  {actionBusy("run") ? "Gerando..." : "Gerar agora"}
-                                </Button>
-                              ) : null}
+                                {!isEnded ? (
+                                  <Button
+                                    disabled={actionBusy("run")}
+                                    onClick={() => runAction(item, "run")}
+                                    className="min-w-[122px]"
+                                  >
+                                    {actionBusy("run") ? "Gerando..." : "Gerar agora"}
+                                  </Button>
+                                ) : null}
+                              </div>
 
-                              {isPaused ? (
-                                <Button
-                                  variant="ghost"
-                                  disabled={actionBusy("resume")}
-                                  onClick={() => runAction(item, "resume")}
-                                >
-                                  {actionBusy("resume") ? "Reativando..." : "Reativar"}
-                                </Button>
-                              ) : !isEnded ? (
-                                <Button
-                                  variant="ghost"
-                                  disabled={actionBusy("pause")}
-                                  onClick={() => runAction(item, "pause")}
-                                >
-                                  {actionBusy("pause") ? "Pausando..." : "Pausar"}
-                                </Button>
-                              ) : null}
+                              <div className="flex flex-wrap justify-end gap-2 rounded-2xl border border-zinc-200 bg-zinc-50 p-2">
+                                {isPaused ? (
+                                  <Button
+                                    variant="ghost"
+                                    className="px-3 py-1.5 text-xs"
+                                    disabled={actionBusy("resume")}
+                                    onClick={() => runAction(item, "resume")}
+                                  >
+                                    {actionBusy("resume") ? "Reativando..." : "Reativar"}
+                                  </Button>
+                                ) : !isEnded ? (
+                                  <Button
+                                    variant="ghost"
+                                    className="px-3 py-1.5 text-xs"
+                                    disabled={actionBusy("pause")}
+                                    onClick={() => runAction(item, "pause")}
+                                  >
+                                    {actionBusy("pause") ? "Pausando..." : "Pausar"}
+                                  </Button>
+                                ) : null}
 
-                              <Button
-                                variant="ghost"
-                                disabled={actionBusy("duplicate")}
-                                onClick={() => runAction(item, "duplicate")}
-                              >
-                                {actionBusy("duplicate") ? "Duplicando..." : "Duplicar"}
-                              </Button>
-
-                              {!isEnded ? (
                                 <Button
                                   variant="ghost"
-                                  disabled={actionBusy("end")}
-                                  onClick={() => runAction(item, "end")}
+                                  className="px-3 py-1.5 text-xs"
+                                  disabled={actionBusy("duplicate")}
+                                  onClick={() => runAction(item, "duplicate")}
                                 >
-                                  {actionBusy("end") ? "Encerrando..." : "Encerrar"}
+                                  {actionBusy("duplicate") ? "Duplicando..." : "Duplicar"}
                                 </Button>
-                              ) : null}
+
+                                {!isEnded ? (
+                                  <Button
+                                    variant="ghost"
+                                    className="px-3 py-1.5 text-xs text-red-700 hover:bg-red-50"
+                                    disabled={actionBusy("end")}
+                                    onClick={() => runAction(item, "end")}
+                                  >
+                                    {actionBusy("end") ? "Encerrando..." : "Encerrar"}
+                                  </Button>
+                                ) : null}
+                              </div>
                             </div>
                           </td>
                         </tr>
