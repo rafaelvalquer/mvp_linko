@@ -11,6 +11,7 @@ import Skeleton from "../components/appui/Skeleton.jsx";
 import EmptyState from "../components/appui/EmptyState.jsx";
 import PixSettingsModal from "../components/PixSettingsModal.jsx";
 import { useAuth } from "../app/AuthContext.jsx";
+import { canUseRecurringPlan } from "../utils/planFeatures.js";
 import {
   duplicateRecurringOffer,
   endRecurringOffer,
@@ -53,7 +54,10 @@ function mapStatusTone(status) {
 
 export default function RecurringOffers() {
   const nav = useNavigate();
-  const { workspace, refreshWorkspace } = useAuth();
+  const { workspace, perms, user, refreshWorkspace } = useAuth();
+  const canUseRecurringFeatures = canUseRecurringPlan(
+    perms?.plan || workspace?.plan || user?.plan || user?.workspace?.plan || "start",
+  );
 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -77,6 +81,12 @@ export default function RecurringOffers() {
       String(workspace?.payoutPixKeyMasked || "").trim(),
     );
   }, [workspace?.payoutPixKeyMasked]);
+
+  useEffect(() => {
+    if (!canUseRecurringFeatures) {
+      nav("/offers", { replace: true });
+    }
+  }, [canUseRecurringFeatures, nav]);
 
   const openPixModal = useCallback((context = {}) => {
     setPixModalState({
@@ -107,6 +117,12 @@ export default function RecurringOffers() {
   );
 
   const load = useCallback(async () => {
+    if (!canUseRecurringFeatures) {
+      setItems([]);
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       setError("");
@@ -122,13 +138,18 @@ export default function RecurringOffers() {
     } finally {
       setLoading(false);
     }
-  }, [filter, q]);
+  }, [canUseRecurringFeatures, filter, q]);
 
   useEffect(() => {
     load();
   }, [load]);
 
   const handleNewRecurring = useCallback(() => {
+    if (!canUseRecurringFeatures) {
+      nav("/offers/new", { replace: true });
+      return;
+    }
+
     guardOfferCreation({
       workspace,
       payoutPixKeyMasked: getEffectivePixKeyMasked(
@@ -139,11 +160,11 @@ export default function RecurringOffers() {
       openPixModal,
       targetPath: "/offers/new?mode=recurring",
     });
-  }, [localPayoutPixKeyMasked, nav, openPixModal, workspace]);
+  }, [canUseRecurringFeatures, localPayoutPixKeyMasked, nav, openPixModal, workspace]);
 
   const runAction = useCallback(
     async (item, action) => {
-      if (!item?._id) return;
+      if (!canUseRecurringFeatures || !item?._id) return;
       try {
         setBusyId(`${item._id}:${action}`);
         setError("");
@@ -175,12 +196,16 @@ export default function RecurringOffers() {
 
         await load();
       } catch (e) {
+        if (e?.status === 403) {
+          nav("/offers", { replace: true });
+          return;
+        }
         setFlash({ kind: "error", text: e?.message || "Falha ao executar ação." });
       } finally {
         setBusyId("");
       }
     },
-    [load, nav],
+    [canUseRecurringFeatures, load, nav],
   );
 
   const rows = useMemo(() => items || [], [items]);

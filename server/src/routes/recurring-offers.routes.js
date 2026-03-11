@@ -4,6 +4,7 @@ import mongoose from "mongoose";
 import { ensureAuth, tenantFromUser } from "../middleware/auth.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import {
+  assertRecurringFeatureForTenant,
   createRecurringOffer,
   duplicateRecurringOffer,
   endRecurringOffer,
@@ -20,6 +21,14 @@ import {
 const r = Router();
 
 r.use(ensureAuth, tenantFromUser);
+
+r.use(
+  "/recurring-offers",
+  asyncHandler(async (req, res, next) => {
+    await assertRecurringFeatureForTenant(req.tenantId);
+    next();
+  }),
+);
 
 function ensureId(req, res) {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) {

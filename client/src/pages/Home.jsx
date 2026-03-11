@@ -227,6 +227,7 @@ export default function Home() {
           "Cadastro de produtos e serviços",
           "Dashboard avançado",
           "Agenda com mais controle",
+          "Cobranças recorrentes",
           "Notificações por WhatsApp",
           "Aviso automático de pagamento confirmado",
         ],
@@ -242,6 +243,7 @@ export default function Home() {
         cta: { label: "Começar agora", to: "/register" },
         benefits: [
           "Tudo do Pro",
+          "Cobranças recorrentes",
           "Multiusuário com permissões",
           "Relatórios mais completos",
           "Visão consolidada da operação",
@@ -262,6 +264,7 @@ export default function Home() {
         cta: { label: "Falar com especialista", to: ENTERPRISE_CONTACT },
         benefits: [
           "Implantação personalizada",
+          "Cobranças recorrentes",
           "Integrações e automações",
           "SLA e suporte dedicado",
           "Permissões e regras avançadas",
@@ -288,6 +291,10 @@ export default function Home() {
       {
         label: "Agenda integrada",
         values: [true, true, true, true],
+      },
+      {
+        label: "Cobranças recorrentes",
+        values: [false, true, true, true],
       },
       {
         label: "Cadastro de clientes",
@@ -346,6 +353,10 @@ export default function Home() {
       {
         q: "Como recebo o dinheiro?",
         a: "Os pagamentos via Pix caem direto na sua conta configurada na plataforma.",
+      },
+      {
+        q: "Posso criar cobranças recorrentes?",
+        a: "Sim. A funcionalidade de recorrências está disponível nos planos Pro, Business e Enterprise.",
       },
     ],
     [],

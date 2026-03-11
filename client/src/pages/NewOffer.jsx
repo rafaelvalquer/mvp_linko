@@ -10,6 +10,7 @@ import { Input, Textarea } from "../components/appui/Input.jsx";
 import { useAuth } from "../app/AuthContext.jsx";
 import { listClients } from "../app/clientsApi.js";
 import { listProducts } from "../app/productsApi.js";
+import { canUseRecurringPlan } from "../utils/planFeatures.js";
 
 import { MessageCircle } from "lucide-react";
 
@@ -246,12 +247,14 @@ export default function NewOffer() {
   const plan = String(
     perms?.plan || user?.plan || user?.workspace?.plan || "start",
   ).toLowerCase();
+  const canUseRecurringFeatures = canUseRecurringPlan(plan);
 
   // "premium features" agora = pro/business/enterprise (mantém compat com "premium" antigo)
-  const isPremium = ["pro", "business", "enterprise"].includes(plan);
+  const isPremium = canUseRecurringFeatures;
 
   const [form, setForm] = useState({
-    creationMode: initialRecurringMode ? "recurring" : "single",
+    creationMode:
+      canUseRecurringFeatures && initialRecurringMode ? "recurring" : "single",
     recurringName: "",
     recurringIntervalDays: 30,
     recurringStartDate: new Date().toISOString().slice(0, 10),
@@ -347,11 +350,12 @@ export default function NewOffer() {
   const resultRef = useRef(null);
 
   useEffect(() => {
-    const nextMode = initialRecurringMode ? "recurring" : "single";
+    const nextMode =
+      canUseRecurringFeatures && initialRecurringMode ? "recurring" : "single";
     setForm((prev) =>
       prev.creationMode === nextMode ? prev : { ...prev, creationMode: nextMode },
     );
-  }, [initialRecurringMode]);
+  }, [canUseRecurringFeatures, initialRecurringMode]);
 
   useEffect(() => {
     if (result && resultRef.current) {
@@ -665,7 +669,11 @@ export default function NewOffer() {
           throw new Error("Total do orçamento inválido.");
       }
 
-      if (form.creationMode === "recurring") {
+      const creationMode = canUseRecurringFeatures
+        ? form.creationMode
+        : "single";
+
+      if (creationMode === "recurring") {
         if (!String(form.recurringName || "").trim()) {
           throw new Error("Informe um nome interno para a recorrência.");
         }
@@ -798,7 +806,7 @@ export default function NewOffer() {
         }));
       }
 
-      if (form.creationMode === "recurring") {
+      if (creationMode === "recurring") {
         const startsAt = new Date(
           `${form.recurringStartDate}T${form.recurringTimeOfDay}:00`,
         );
@@ -845,7 +853,8 @@ export default function NewOffer() {
   }
 
   const isProduct = form.offerType === "product";
-  const isRecurring = form.creationMode === "recurring";
+  const isRecurring =
+    canUseRecurringFeatures && form.creationMode === "recurring";
 
   const createdRecurring = result?.recurring || null;
   const createdOffer = result?.firstOffer || result?.offer || null;
@@ -879,53 +888,55 @@ export default function NewOffer() {
         />
 
         <form onSubmit={onSubmit} className="space-y-4">
-          <Card>
-            <CardHeader
-              title="Tipo de criação"
-              subtitle="Escolha se deseja gerar uma proposta avulsa ou configurar uma cobrança recorrente."
-            />
-            <CardBody className="space-y-4">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setForm((prev) => ({ ...prev, creationMode: "single" }))
-                  }
-                  className={`rounded-2xl border p-4 text-left transition-colors ${
-                    form.creationMode === "single"
-                      ? "border-emerald-300 bg-emerald-50"
-                      : "border-zinc-200 bg-white hover:bg-zinc-50"
-                  }`}
-                >
-                  <div className="text-sm font-semibold text-zinc-900">
-                    Proposta avulsa
-                  </div>
-                  <div className="mt-1 text-xs text-zinc-500">
-                    Mantém o fluxo atual da plataforma e gera uma única proposta.
-                  </div>
-                </button>
+          {canUseRecurringFeatures ? (
+            <Card>
+              <CardHeader
+                title="Tipo de criação"
+                subtitle="Escolha se deseja gerar uma proposta avulsa ou configurar uma cobrança recorrente."
+              />
+              <CardBody className="space-y-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setForm((prev) => ({ ...prev, creationMode: "single" }))
+                    }
+                    className={`rounded-2xl border p-4 text-left transition-colors ${
+                      form.creationMode === "single"
+                        ? "border-emerald-300 bg-emerald-50"
+                        : "border-zinc-200 bg-white hover:bg-zinc-50"
+                    }`}
+                  >
+                    <div className="text-sm font-semibold text-zinc-900">
+                      Proposta avulsa
+                    </div>
+                    <div className="mt-1 text-xs text-zinc-500">
+                      Mantém o fluxo atual da plataforma e gera uma única proposta.
+                    </div>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() =>
-                    setForm((prev) => ({ ...prev, creationMode: "recurring" }))
-                  }
-                  className={`rounded-2xl border p-4 text-left transition-colors ${
-                    form.creationMode === "recurring"
-                      ? "border-emerald-300 bg-emerald-50"
-                      : "border-zinc-200 bg-white hover:bg-zinc-50"
-                  }`}
-                >
-                  <div className="text-sm font-semibold text-zinc-900">
-                    Cobrança recorrente
-                  </div>
-                  <div className="mt-1 text-xs text-zinc-500">
-                    Cria uma automação que gera novas propostas ao longo do tempo.
-                  </div>
-                </button>
-              </div>
-            </CardBody>
-          </Card>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setForm((prev) => ({ ...prev, creationMode: "recurring" }))
+                    }
+                    className={`rounded-2xl border p-4 text-left transition-colors ${
+                      form.creationMode === "recurring"
+                        ? "border-emerald-300 bg-emerald-50"
+                        : "border-zinc-200 bg-white hover:bg-zinc-50"
+                    }`}
+                  >
+                    <div className="text-sm font-semibold text-zinc-900">
+                      Cobrança recorrente
+                    </div>
+                    <div className="mt-1 text-xs text-zinc-500">
+                      Cria uma automação que gera novas propostas ao longo do tempo.
+                    </div>
+                  </button>
+                </div>
+              </CardBody>
+            </Card>
+          ) : null}
 
           {/* Cliente */}
           <Card>

@@ -19,6 +19,8 @@ import {
   runRecurringOfferNow,
 } from "../app/recurringOffersApi.js";
 import { fmtBRLFromCents, getPaymentLabel } from "../components/offers/offerHelpers.js";
+import { useAuth } from "../app/AuthContext.jsx";
+import { canUseRecurringPlan } from "../utils/planFeatures.js";
 
 function fmtDT(value) {
   if (!value) return "—";
@@ -68,6 +70,10 @@ function DetailsTab({ active, onClick, children }) {
 export default function RecurringOfferDetails() {
   const { id } = useParams();
   const nav = useNavigate();
+  const { workspace, perms, user } = useAuth();
+  const canUseRecurringFeatures = canUseRecurringPlan(
+    perms?.plan || workspace?.plan || user?.plan || user?.workspace?.plan || "start",
+  );
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -81,6 +87,11 @@ export default function RecurringOfferDetails() {
   const [history, setHistory] = useState([]);
 
   const load = useCallback(async () => {
+    if (!canUseRecurringFeatures) {
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       setError("");
@@ -95,18 +106,32 @@ export default function RecurringOfferDetails() {
       setOffers(offersRes?.items || detail?.offers || []);
       setHistory(historyRes?.items || detail?.history || []);
     } catch (e) {
+      if (e?.status === 403) {
+        nav("/offers", { replace: true });
+        return;
+      }
       setError(e?.message || "Falha ao carregar recorrência.");
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [canUseRecurringFeatures, id, nav]);
 
   useEffect(() => {
+    if (!canUseRecurringFeatures) {
+      nav("/offers", { replace: true });
+      return;
+    }
+
     load();
-  }, [load]);
+  }, [canUseRecurringFeatures, load, nav]);
 
   const runAction = useCallback(
     async (action) => {
+      if (!canUseRecurringFeatures) {
+        nav("/offers", { replace: true });
+        return;
+      }
+
       try {
         setBusyAction(action);
         setFlash(null);
@@ -138,12 +163,16 @@ export default function RecurringOfferDetails() {
 
         await load();
       } catch (e) {
+        if (e?.status === 403) {
+          nav("/offers", { replace: true });
+          return;
+        }
         setFlash({ kind: "error", text: e?.message || "Falha ao executar ação." });
       } finally {
         setBusyAction("");
       }
     },
-    [id, load, nav],
+    [canUseRecurringFeatures, id, load, nav],
   );
 
   const isPaused = String(recurring?.status || "").toLowerCase() === "paused";

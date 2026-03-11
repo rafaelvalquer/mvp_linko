@@ -5,6 +5,11 @@ import { Offer } from "../models/Offer.js";
 import { Workspace } from "../models/Workspace.js";
 import { RecurringOffer } from "../models/RecurringOffer.js";
 import { isWhatsAppNotificationsEnabled, sendWhatsApp } from "./waGateway.js";
+import {
+  assertRecurringPlanAllowed,
+  canUseNotifyWhatsAppOnPaid,
+  canUseRecurring,
+} from "../utils/planFeatures.js";
 
 const LINK_TTL_DAYS = Number(process.env.OFFER_LINK_TTL_DAYS || 90);
 const RUNNER_LOCK_TTL_MS = Number(
@@ -32,18 +37,6 @@ function clampInt(value, min, max) {
   if (!Number.isFinite(num)) return min;
   const intVal = Math.trunc(num);
   return Math.max(min, max != null ? Math.min(max, intVal) : intVal);
-}
-
-export function normalizePlan(value) {
-  const plan = String(value || "").trim().toLowerCase();
-  if (!plan) return "start";
-  return ["start", "pro", "business", "enterprise"].includes(plan)
-    ? plan
-    : "start";
-}
-
-export function canUseNotifyWhatsAppOnPaid(plan) {
-  return ["pro", "business", "enterprise"].includes(normalizePlan(plan));
 }
 
 function normalizeStatus(value) {
@@ -500,6 +493,11 @@ async function getWorkspacePlan(workspaceId) {
   return workspace?.plan || "start";
 }
 
+export async function assertRecurringFeatureForTenant(workspaceId) {
+  const workspacePlan = await getWorkspacePlan(workspaceId);
+  return assertRecurringPlanAllowed(workspacePlan);
+}
+
 function validateRecurringCreationInput(body) {
   const input = body || {};
   if (!isNonEmpty(input.name || input.recurringName)) {
@@ -531,7 +529,7 @@ export async function createRecurringOffer({ tenantId, userId, body, origin = ""
   validateRecurringCreationInput(body);
 
   const input = body || {};
-  const workspacePlan = await getWorkspacePlan(tenantId);
+  const workspacePlan = await assertRecurringFeatureForTenant(tenantId);
   const customer = await resolveCustomerSnapshot({ tenantId, body: input });
   const snapshot = buildOfferSnapshotFields({ body: input, workspacePlan, customer });
   validateOfferSnapshotFields(snapshot);
@@ -1170,7 +1168,9 @@ export async function executeRecurringOffer({
       };
     }
 
-    const workspacePlan = await getWorkspacePlan(recurring.workspaceId);
+    const workspacePlan = await assertRecurringFeatureForTenant(
+      recurring.workspaceId,
+    );
     const nextSequence = Number(recurring.runCount || 0) + 1;
 
     const offer = await createOfferFromPayload({
@@ -1320,8 +1320,27 @@ export async function runRecurringOfferNow({ recurringId, tenantId, userId, orig
 }
 
 export async function processDueRecurringOffers({ now = new Date(), origin = "" } = {}) {
+  const allowedWorkspaceRows = await Workspace.find({
+    plan: { $in: ["pro", "business", "enterprise"] },
+  })
+    .select("_id plan")
+    .lean();
+
+  const allowedWorkspaceIds = allowedWorkspaceRows
+    .filter((row) => canUseRecurring(row?.plan))
+    .map((row) => row._id);
+
+  if (!allowedWorkspaceIds.length) {
+    return {
+      ok: true,
+      scanned: 0,
+      items: [],
+    };
+  }
+
   const dueRows = await RecurringOffer.find({
     status: "active",
+    workspaceId: { $in: allowedWorkspaceIds },
     "recurrence.nextRunAt": { $ne: null, $lte: now },
   })
     .select("_id")

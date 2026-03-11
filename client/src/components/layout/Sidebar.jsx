@@ -8,6 +8,7 @@ import {
   getEffectivePixKeyMasked,
   guardOfferCreation,
 } from "../../utils/guardOfferCreation.js";
+import { canUseRecurringPlan } from "../../utils/planFeatures.js";
 
 const Icons = {
   Menu: ({ className = "" }) => (
@@ -441,6 +442,9 @@ export default function Sidebar({
     }
   }
 
+  const canUseRecurringFeatures = canUseRecurringPlan(
+    perms?.plan || workspace?.plan || "start",
+  );
   const planLabel = String(perms.plan || "free").toUpperCase();
 
   return (
@@ -534,7 +538,9 @@ export default function Sidebar({
             <div
               className={`overflow-hidden transition-all duration-300 ease-out ${
                 !collapsed && isOffersOpen
-                  ? "mt-1 max-h-44 opacity-100"
+                  ? canUseRecurringFeatures
+                    ? "mt-1 max-h-44 opacity-100"
+                    : "mt-1 max-h-32 opacity-100"
                   : "mt-0 max-h-0 opacity-0"
               }`}
             >
@@ -551,20 +557,25 @@ export default function Sidebar({
                 <SidebarActionItem
                   collapsed={collapsed}
                   indent
-                  active={loc.pathname === "/offers/new" && !loc.search.includes("mode=recurring")}
+                  active={
+                    loc.pathname === "/offers/new" &&
+                    (!loc.search.includes("mode=recurring") || !canUseRecurringFeatures)
+                  }
                   onClick={handleCreateOffer}
                 >
                   Nova proposta
                 </SidebarActionItem>
 
-                <SidebarItem
-                  to="/offers/recurring"
-                  collapsed={collapsed}
-                  indent
-                  onNavigate={onNavigate}
-                >
-                  Recorrências
-                </SidebarItem>
+                {canUseRecurringFeatures ? (
+                  <SidebarItem
+                    to="/offers/recurring"
+                    collapsed={collapsed}
+                    indent
+                    onNavigate={onNavigate}
+                  >
+                    Recorrências
+                  </SidebarItem>
+                ) : null}
               </div>
             </div>
           </div>

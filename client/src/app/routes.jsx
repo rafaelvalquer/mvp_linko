@@ -12,6 +12,7 @@ import Calendar from "../pages/Calendar.jsx";
 import Login from "../pages/Login.jsx";
 import Register from "../pages/Register.jsx";
 import RequireAuth from "../components/auth/RequireAuth.jsx";
+import RequireRecurringPlan from "../components/auth/RequireRecurringPlan.jsx";
 import Products from "../pages/Products.jsx";
 import ProductDetails from "../pages/ProductDetails.jsx";
 import Clients from "../pages/Clients.jsx";
@@ -90,7 +91,9 @@ export const router = createBrowserRouter(
       path: "/offers/recurring",
       element: (
         <RequireAuth>
-          <RecurringOffers />
+          <RequireRecurringPlan>
+            <RecurringOffers />
+          </RequireRecurringPlan>
         </RequireAuth>
       ),
     },
@@ -98,7 +101,9 @@ export const router = createBrowserRouter(
       path: "/offers/recurring/:id",
       element: (
         <RequireAuth>
-          <RecurringOfferDetails />
+          <RequireRecurringPlan>
+            <RecurringOfferDetails />
+          </RequireRecurringPlan>
         </RequireAuth>
       ),
     },
