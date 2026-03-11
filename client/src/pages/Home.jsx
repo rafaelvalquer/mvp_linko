@@ -43,80 +43,80 @@ const NAV_LINKS = [
 ];
 
 const HERO_METRICS = [
-  { value: "+32%", label: "mais conversao com proposta e Pix no mesmo fluxo" },
-  { value: "24h", label: "para sair do caos manual e padronizar a operacao" },
-  { value: "100%", label: "visibilidade do que foi enviado, pago e agendado" },
+  { value: "+32%", label: "mais chances de fechar com proposta e Pix no mesmo fluxo" },
+  { value: "24h", label: "para organizar cobranca, agenda e acompanhamento" },
+  { value: "1 lugar", label: "para vender, receber e acompanhar cada cliente" },
 ];
 
 const TRUST_POINTS = [
-  "Checkout Pix com confirmacao em tempo real",
-  "Pagina publica sem login e otimizada para celular",
-  "Agenda integrada para servicos e reservas",
+  "Envie proposta e receba no mesmo link",
+  "Pix com confirmacao em tempo real",
+  "Agenda integrada para servicos e atendimentos",
 ];
 
 const FEATURES = [
   {
     icon: Link2,
-    title: "Proposta que transmite confianca",
+    title: "Orcamentos que ajudam a vender",
     description:
-      "Monte uma apresentacao comercial limpa, profissional e pronta para ser enviada em segundos.",
-    highlight: "Link publico com identidade forte",
+      "Monte propostas claras, com boa apresentacao e prontas para enviar em segundos pelo WhatsApp.",
+    highlight: "Mais rapidez no atendimento",
   },
   {
     icon: QrCode,
-    title: "Pix direto no momento da decisao",
+    title: "Pix sem complicacao",
     description:
-      "O cliente aprova e paga sem trocar de canal, reduzindo atrito e encurtando o ciclo de venda.",
-    highlight: "QR Code e status automatico",
+      "O cliente aprova e paga no mesmo fluxo, sem perder tempo com comprovante, copia e cola ou mensagem solta.",
+    highlight: "Receba no momento da decisao",
   },
   {
     icon: CalendarClock,
-    title: "Agenda conectada a venda",
+    title: "Agenda junto com a proposta",
     description:
-      "Para servicos, a reserva acontece no mesmo fluxo da proposta, evitando perda de horario e retrabalho.",
-    highlight: "Proposta, aceite e reserva",
+      "Para servicos, o cliente ja escolhe horario e confirma a reserva sem gerar ida e volta no atendimento.",
+    highlight: "Menos retrabalho no dia a dia",
   },
   {
     icon: BarChart3,
-    title: "Gestao com visao executiva",
+    title: "Controle simples do que esta acontecendo",
     description:
-      "Acompanhe propostas enviadas, receita confirmada, taxas de conversao e operacao do dia em um painel so.",
-    highlight: "KPIs claros para decidir rapido",
+      "Veja propostas enviadas, pagamentos recebidos e andamento do dia em um painel facil de acompanhar.",
+    highlight: "Tudo visivel em poucos cliques",
   },
   {
     icon: Wallet,
-    title: "Recebimentos organizados",
+    title: "Recebimentos mais organizados",
     description:
-      "Veja o que entrou, o que esta pendente e o que precisa de acao, sem depender de planilhas paralelas.",
-    highlight: "Fluxo financeiro mais previsivel",
+      "Saiba o que entrou, o que esta pendente e o que falta cobrar sem depender de planilha paralela.",
+    highlight: "Mais previsao de caixa",
   },
   {
     icon: ShieldCheck,
-    title: "Rastreabilidade ponta a ponta",
+    title: "Historico de ponta a ponta",
     description:
-      "Cada envio, pagamento e atualizacao fica registrado para dar seguranca a operacao e ao atendimento.",
-    highlight: "Mais controle e menos ruido",
+      "Cada envio, pagamento e atualizacao fica salvo para voce ter mais controle e menos desencontro com clientes.",
+    highlight: "Mais organizacao e seguranca",
   },
 ];
 
 const STEPS = [
   {
     icon: MousePointer2,
-    title: "Configure a proposta em minutos",
+    title: "Monte a proposta em minutos",
     description:
-      "Adicione itens, condicoes, datas e contexto comercial com uma apresentacao que valoriza o servico.",
+      "Adicione itens, valores e condicoes de forma simples para responder mais rapido e nao perder venda.",
   },
   {
     icon: Send,
-    title: "Envie um link com experiencia premium",
+    title: "Envie um link pronto para vender",
     description:
-      "O cliente recebe um link elegante, pronto para abrir no WhatsApp, celular ou desktop.",
+      "O cliente abre no celular, entende a proposta e segue o atendimento sem precisar criar conta.",
   },
   {
     icon: CreditCard,
-    title: "Receba via Pix e siga o fluxo",
+    title: "Receba via Pix e acompanhe o status",
     description:
-      "Depois da aprovacao, pagamento e agenda seguem no mesmo ambiente, com status claro para todos.",
+      "Depois da aprovacao, voce acompanha pagamento e agenda no mesmo lugar, sem perder o controle.",
   },
 ];
 
@@ -127,8 +127,8 @@ const PLANS = [
     price: "R$ 35,90",
     badge: "Para estruturar a base",
     description:
-      "A porta de entrada para sair do improviso e profissionalizar a experiencia comercial.",
-    audience: "Autonomos e operacoes em fase inicial",
+      "Ideal para quem quer parar de improvisar, vender com mais organizacao e receber no Pix com facilidade.",
+    audience: "MEI, autonomos e quem esta comecando",
     ctaLabel: "Comecar agora",
     ctaTo: "/register",
     benefits: [
@@ -147,8 +147,8 @@ const PLANS = [
     badge: "Mais escolhido",
     popular: true,
     description:
-      "Mais controle comercial, melhor apresentacao e automacao suficiente para ganhar velocidade.",
-    audience: "Prestadores em crescimento",
+      "Mais recursos para quem vende toda semana e quer ganhar velocidade sem perder o controle do atendimento.",
+    audience: "MEI e pequenos negocios em crescimento",
     ctaLabel: "Escalar operacao",
     ctaTo: "/register",
     benefits: [
@@ -167,7 +167,7 @@ const PLANS = [
     price: "R$ 279,90",
     badge: "Mais governanca",
     description:
-      "Pensado para quem ja tem equipe, volume recorrente e precisa padronizar a operacao com consistencia.",
+      "Pensado para pequenas empresas com equipe, mais volume de vendas e necessidade de padronizar a operacao.",
     audience: "Pequenas empresas e times comerciais",
     ctaLabel: "Ativar time",
     ctaTo: "/register",
@@ -187,7 +187,7 @@ const PLANS = [
     price: "Sob consulta",
     badge: "Projeto customizado",
     description:
-      "Para fluxos robustos, integracoes e uma jornada desenhada ao redor da sua operacao real.",
+      "Para operacoes com regras proprias, maior volume e necessidade de integracoes e processos personalizados.",
     audience: "Empresas com alta complexidade",
     ctaLabel: "Solicitar demonstracao",
     ctaTo: "/register",
@@ -307,7 +307,7 @@ function NavBrand({ onClick, focusRing }) {
       </div>
       <div>
         <div className="text-[0.72rem] font-semibold uppercase tracking-[0.28em] text-[rgb(var(--muted-2))]">
-          Revenue OS
+          Vendas e Pix
         </div>
         <div className="text-lg font-black tracking-tight text-[rgb(var(--text))]">
           LuminorPay
@@ -517,12 +517,12 @@ export default function Home() {
                   )}
                 >
                   <Sparkles className="h-4 w-4" />
-                  Receita, operacao e experiencia do cliente no mesmo fluxo
+                  Proposta, cobranca e agenda no mesmo lugar
                 </div>
 
                 <h1 className="mt-7 max-w-4xl text-5xl font-black leading-[0.96] tracking-[-0.05em] sm:text-6xl lg:text-7xl">
-                  Venda com uma interface a altura da sua marca e receba no
-                  ritmo da decisao.
+                  Envie orcamentos, feche mais vendas e receba no Pix sem
+                  complicacao.
                 </h1>
 
                 <p
@@ -531,9 +531,9 @@ export default function Home() {
                     ui.mutedText,
                   )}
                 >
-                  O LuminorPay transforma proposta, aceite, Pix e agenda em uma
-                  jornada elegante, confiavel e pronta para operacoes que querem
-                  parecer premium desde o primeiro contato.
+                  O LuminorPay foi feito para MEI e pequenas empresas que
+                  precisam vender com mais organizacao, passar confianca e
+                  acompanhar cada proposta ate o pagamento.
                 </p>
 
                 <div className="mt-10 flex flex-col items-stretch gap-4 sm:flex-row sm:items-center">
@@ -545,7 +545,7 @@ export default function Home() {
                       ui.focusRing,
                     )}
                   >
-                    Comecar agora sua operação
+                    Comecar a vender
                     <ArrowRight className="h-4 w-4" />
                   </Link>
 
@@ -709,16 +709,16 @@ export default function Home() {
             >
               {[
                 {
-                  title: "Experiencia comercial premium",
-                  text: "Apresente orcamento, cobranca e proximos passos em um ambiente com aparencia de produto solido.",
+                  title: "Mais organizacao na venda",
+                  text: "Centralize proposta, cobranca e proximos passos para nao depender de conversa espalhada no WhatsApp.",
                 },
                 {
-                  title: "Menos troca de mensagem",
-                  text: "O cliente entende, aceita e paga sem depender de uma sequencia infinita de confirmacoes manuais.",
+                  title: "Menos enrolacao para receber",
+                  text: "O cliente entende a proposta e paga no mesmo fluxo, sem voce precisar cobrar varias vezes por mensagem.",
                 },
                 {
-                  title: "Mais previsibilidade na operacao",
-                  text: "Tudo fica centralizado para o time acompanhar o que entrou, o que falta e o que precisa de acao.",
+                  title: "Mais controle no dia a dia",
+                  text: "Tudo fica em um so lugar para voce acompanhar o que foi enviado, pago, agendado e o que ainda falta fechar.",
                 },
               ].map((item) => (
                 <div
@@ -749,8 +749,8 @@ export default function Home() {
                 Recursos
               </div>
               <h2 className="mt-4 text-3xl font-black tracking-[-0.04em] sm:text-4xl lg:text-5xl">
-                Uma pagina bonita impressiona. Um fluxo bonito que recebe,
-                agenda e organiza impressiona mais.
+                Menos improviso nas vendas. Mais clareza para cobrar, receber e
+                acompanhar.
               </h2>
               <p
                 className={cx(
@@ -758,9 +758,9 @@ export default function Home() {
                   ui.mutedText,
                 )}
               >
-                O valor do produto esta em unir apresentacao, cobranca e
-                operacao em um sistema que transmite consistencia do primeiro
-                clique ao pos-venda.
+                O LuminorPay ajuda MEI e pequenos negocios a transformar
+                conversas em vendas fechadas, com proposta online, Pix e status
+                claros em cada etapa.
               </p>
             </div>
 
@@ -816,7 +816,7 @@ export default function Home() {
                   Como funciona
                 </div>
                 <h2 className="mt-5 text-3xl font-black tracking-[-0.04em] sm:text-4xl">
-                  Mais elegante na frente. Mais previsivel por tras.
+                  Simples para voce vender. Simples para o cliente pagar.
                 </h2>
                 <p
                   className={cx(
@@ -824,24 +824,24 @@ export default function Home() {
                     ui.mutedText,
                   )}
                 >
-                  O desenho da jornada foi pensado para reduzir friccao no lado
-                  do cliente e dar clareza operacional para quem vende todos os
-                  dias.
+                  Tudo foi pensado para facilitar a rotina de quem vende todos
+                  os dias e precisa responder rapido, cobrar certo e manter a
+                  operacao organizada.
                 </p>
 
                 <div className="mt-8 space-y-4">
                   {[
                     {
-                      title: "Melhor percepcao de valor",
-                      text: "A proposta deixa de parecer improvisada e passa a refletir profissionalismo e seguranca.",
+                      title: "Passe mais confianca",
+                      text: "Uma proposta clara e bem apresentada ajuda o cliente a entender melhor e decidir mais rapido.",
                     },
                     {
-                      title: "Menos tarefas repetitivas",
-                      text: "Cobranca, confirmacao de pagamento e proximos passos ficam amarrados no mesmo fluxo.",
+                      title: "Economize tempo no atendimento",
+                      text: "Cobranca, confirmacao de pagamento e proximos passos ficam no mesmo fluxo, com menos trabalho manual.",
                     },
                     {
-                      title: "Escala sem perder controle",
-                      text: "Com dashboard, historico e papeis claros, a operacao cresce com menos ruido.",
+                      title: "Cresca com organizacao",
+                      text: "Com historico, painel e status claros, fica mais facil vender mais sem perder o controle.",
                     },
                   ].map((item) => (
                     <div
@@ -919,9 +919,9 @@ export default function Home() {
                   ui.mutedText,
                 )}
               >
-                A experiencia premium para o cliente permanece em todos os
-                planos. O que evolui e a profundidade de gestao, automacao e
-                escala.
+                Escolha o plano que faz sentido para o momento da sua operacao.
+                Todos ajudam voce a vender com mais organizacao, cobrar no Pix
+                e acompanhar o que foi fechado.
               </p>
             </div>
 
@@ -1035,11 +1035,11 @@ export default function Home() {
               <div className="grid items-center gap-8 lg:grid-cols-[minmax(0,1fr)_auto]">
                 <div>
                   <div className="text-sm font-bold uppercase tracking-[0.28em] text-[rgb(var(--accent))]">
-                    Pronto para elevar a percepcao do produto?
+                    Pronto para vender com mais organizacao?
                   </div>
                   <h2 className="mt-4 max-w-3xl text-3xl font-black tracking-[-0.04em] sm:text-4xl lg:text-5xl">
-                    Uma operacao mais premium comeca por uma experiencia mais
-                    clara, bonita e convincente.
+                    Troque planilha, mensagem solta e cobranca manual por um
+                    fluxo simples de venda.
                   </h2>
                   <p
                     className={cx(
@@ -1047,8 +1047,8 @@ export default function Home() {
                       ui.mutedText,
                     )}
                   >
-                    Se a venda acontece no digital, a interface precisa
-                    sustentar valor. O LuminorPay foi desenhado para isso.
+                    Centralize proposta, Pix e agenda em um lugar so e ganhe
+                    tempo para atender melhor e faturar mais.
                   </p>
                 </div>
                 <div className="flex flex-col gap-3 sm:flex-row">
@@ -1170,7 +1170,7 @@ export default function Home() {
               <div className="font-black text-[rgb(var(--text))]">
                 LuminorPay
               </div>
-              <div>Propostas, Pix e agenda com uma experiencia premium.</div>
+              <div>Propostas, Pix e agenda para MEI e pequenas empresas.</div>
             </div>
           </div>
 
@@ -1301,3 +1301,4 @@ export default function Home() {
     </div>
   );
 }
+
