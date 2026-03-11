@@ -161,7 +161,7 @@ function normalizeToBR(toRaw) {
   if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13))
     return digits;
 
-  return digits;
+  return null;
 }
 
 const app = express();
