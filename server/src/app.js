@@ -22,11 +22,18 @@ import billingStripeRoutes from "./routes/billing.stripe.routes.js";
 import webhooksStripeRoutes from "./routes/webhooks.stripe.routes.js";
 import analyticsRoutes from "./routes/analytics.routes.js";
 import { startRecurringOffersRunner } from "./services/recurring-offers.runner.js";
+import { startPaymentRemindersRunner } from "./services/payment-reminders.runner.js";
+import { startWhatsAppOutboxRunner } from "./services/whatsappOutbox.runner.js";
 
 import path from "path";
 
 export function createApp() {
   const app = express();
+  const publicOrigin =
+    String(env.corsOrigin || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)[0] || "";
 
   const allowlist = String(env.corsOrigin || "")
     .split(",")
@@ -83,12 +90,10 @@ export function createApp() {
   app.use("/api", billingStripeRoutes);
 
   startRecurringOffersRunner({
-    origin:
-      String(env.corsOrigin || "")
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean)[0] || "",
+    origin: publicOrigin,
   });
+  startPaymentRemindersRunner({ origin: publicOrigin });
+  startWhatsAppOutboxRunner();
 
   app.use("/api", offerRemindersRoutes);
 

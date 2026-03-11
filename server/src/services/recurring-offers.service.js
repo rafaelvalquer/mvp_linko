@@ -4,7 +4,8 @@ import { Client } from "../models/Client.js";
 import { Offer } from "../models/Offer.js";
 import { Workspace } from "../models/Workspace.js";
 import { RecurringOffer } from "../models/RecurringOffer.js";
-import { isWhatsAppNotificationsEnabled, sendWhatsApp } from "./waGateway.js";
+import { isWhatsAppNotificationsEnabled } from "./waGateway.js";
+import { queueOrSendWhatsApp } from "./whatsappOutbox.service.js";
 import {
   assertRecurringPlanAllowed,
   canUseNotifyWhatsAppOnPaid,
@@ -384,7 +385,7 @@ function buildOfferAutoSendMessage({ recurring, offer, origin }) {
   };
 }
 
-async function tryAutoSendRecurringOffer({ recurring, offer, origin }) {
+async function tryAutoSendRecurringOfferLegacy({ recurring, offer, origin }) {
   if (recurring?.automation?.autoSendToCustomer !== true) {
     return {
       status: "generated",
@@ -411,6 +412,65 @@ async function tryAutoSendRecurringOffer({ recurring, offer, origin }) {
   }
 
   const payload = buildOfferAutoSendMessage({ recurring, offer, origin });
+
+  const result = await queueOrSendWhatsApp({
+    workspaceId: recurring?.workspaceId || null,
+    to,
+    message: payload.message,
+    dedupeKey: `recurring-offer:${offer?._id}:auto-send`,
+    sourceType: "recurring_offer",
+    sourceId: recurring?._id || null,
+    meta: {
+      offerId: offer?._id || null,
+      recurringSequence: offer?.recurringSequence || null,
+      recurringName: recurring?.name || "",
+      publicUrl: payload.publicUrl,
+    },
+  });
+
+  if (result?.status === "sent") {
+    return {
+      status: "sent",
+      message:
+        "CobranÃ§a gerada e enviada automaticamente ao cliente por WhatsApp.",
+      meta: {
+        to,
+        publicUrl: payload.publicUrl,
+        outboxId: result?.outbox?._id || null,
+      },
+    };
+  }
+
+  if (result?.status === "queued") {
+    return {
+      status: "queued",
+      message:
+        "CobranÃ§a gerada e colocada na fila do WhatsApp para envio automÃ¡tico.",
+      meta: {
+        to,
+        publicUrl: payload.publicUrl,
+        outboxId: result?.outbox?._id || null,
+      },
+    };
+  }
+
+  return {
+    status: "failed",
+    message:
+      "CobranÃ§a gerada, mas o envio automÃ¡tico por WhatsApp falhou.",
+    error: {
+      code: String(result?.error?.code || result?.error?.name || "SEND_FAILED"),
+      message: String(
+        result?.error?.message || "Falha ao enviar WhatsApp",
+      ),
+      details: result?.error?.details || null,
+    },
+    meta: {
+      to,
+      publicUrl: payload.publicUrl,
+      outboxId: result?.outbox?._id || null,
+    },
+  };
 
   try {
     await sendWhatsApp({ to, message: payload.message });
@@ -447,6 +507,90 @@ async function appendRecurringHistory(recurringId, entry, patch = {}) {
     { strict: false },
   );
   return RecurringOffer.findById(recurringId).lean();
+}
+
+async function tryAutoSendRecurringOfferOutbox({ recurring, offer, origin }) {
+  if (recurring?.automation?.autoSendToCustomer !== true) {
+    return {
+      status: "generated",
+      message: "Cobranca gerada sem envio automatico.",
+    };
+  }
+
+  if (!isWhatsAppNotificationsEnabled()) {
+    return {
+      status: "skipped",
+      message:
+        "Cobranca gerada, mas o envio automatico por WhatsApp esta desabilitado.",
+      error: { code: "FEATURE_DISABLED", message: "WhatsApp desabilitado." },
+    };
+  }
+
+  const to = normalizePhoneForWa(recurring?.customerWhatsApp);
+  if (!to) {
+    return {
+      status: "skipped",
+      message: "Cobranca gerada, mas o cliente nao possui WhatsApp valido.",
+      error: { code: "NO_PHONE", message: "Cliente sem WhatsApp valido." },
+    };
+  }
+
+  const payload = buildOfferAutoSendMessage({ recurring, offer, origin });
+  const result = await queueOrSendWhatsApp({
+    workspaceId: recurring?.workspaceId || null,
+    to,
+    message: payload.message,
+    dedupeKey: `recurring-offer:${offer?._id}:auto-send`,
+    sourceType: "recurring_offer",
+    sourceId: recurring?._id || null,
+    meta: {
+      offerId: offer?._id || null,
+      recurringSequence: offer?.recurringSequence || null,
+      recurringName: recurring?.name || "",
+      publicUrl: payload.publicUrl,
+    },
+  });
+
+  if (result?.status === "sent") {
+    return {
+      status: "sent",
+      message:
+        "Cobranca gerada e enviada automaticamente ao cliente por WhatsApp.",
+      meta: {
+        to,
+        publicUrl: payload.publicUrl,
+        outboxId: result?.outbox?._id || null,
+      },
+    };
+  }
+
+  if (result?.status === "queued") {
+    return {
+      status: "queued",
+      message:
+        "Cobranca gerada e colocada na fila do WhatsApp para envio automatico.",
+      meta: {
+        to,
+        publicUrl: payload.publicUrl,
+        outboxId: result?.outbox?._id || null,
+      },
+    };
+  }
+
+  return {
+    status: "failed",
+    message: "Cobranca gerada, mas o envio automatico por WhatsApp falhou.",
+    error: {
+      code: String(result?.error?.code || result?.error?.name || "SEND_FAILED"),
+      message: String(result?.error?.message || "Falha ao enviar WhatsApp"),
+      details: result?.error?.details || null,
+    },
+    meta: {
+      to,
+      publicUrl: payload.publicUrl,
+      outboxId: result?.outbox?._id || null,
+    },
+  };
 }
 
 function buildRecurringBasePayload(recurring) {
@@ -1186,7 +1330,7 @@ export async function executeRecurringOffer({
       },
     });
 
-    const sendResult = await tryAutoSendRecurringOffer({
+    const sendResult = await tryAutoSendRecurringOfferOutbox({
       recurring,
       offer,
       origin,

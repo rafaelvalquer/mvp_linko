@@ -5,13 +5,22 @@ const RecurringHistorySchema = new mongoose.Schema(
   {
     status: {
       type: String,
-      enum: ["generated", "sent", "skipped", "failed", "paused", "ended"],
+      enum: ["generated", "queued", "sent", "skipped", "failed", "paused", "ended"],
       required: true,
       default: "generated",
     },
     source: {
       type: String,
-      enum: ["creation", "automatic", "manual", "resume", "pause", "end", "duplicate"],
+      enum: [
+        "creation",
+        "automatic",
+        "manual",
+        "resume",
+        "pause",
+        "end",
+        "duplicate",
+        "outbox",
+      ],
       default: "automatic",
     },
     ranAt: { type: Date, default: Date.now },

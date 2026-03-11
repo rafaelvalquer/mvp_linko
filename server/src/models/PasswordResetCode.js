@@ -18,7 +18,6 @@ const PasswordResetCodeSchema = new mongoose.Schema(
     expiresAt: {
       type: Date,
       required: true,
-      index: true,
     },
     lastSentAt: {
       type: Date,

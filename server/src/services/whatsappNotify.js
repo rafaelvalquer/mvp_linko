@@ -3,7 +3,8 @@ import { Offer } from "../models/Offer.js";
 import Booking from "../models/Booking.js";
 import { Client } from "../models/Client.js";
 import { MessageLog } from "../models/MessageLog.js";
-import { isWhatsAppNotificationsEnabled, sendWhatsApp } from "./waGateway.js";
+import { isWhatsAppNotificationsEnabled } from "./waGateway.js";
+import { queueOrSendWhatsApp } from "./whatsappOutbox.service.js";
 
 function onlyDigits(v) {
   return String(v || "").replace(/\D+/g, "");
@@ -116,6 +117,52 @@ export function buildPaidMessage({ offer, booking }) {
   return lines.join("\n");
 }
 
+async function dispatchQueuedMessageLog({
+  doc,
+  workspaceId = null,
+  to,
+  message,
+  dedupeKey,
+  meta = null,
+}) {
+  const result = await queueOrSendWhatsApp({
+    workspaceId,
+    to,
+    message,
+    dedupeKey,
+    sourceType: "message_log",
+    sourceId: doc?._id || null,
+    meta,
+  });
+
+  const freshLog = doc?._id ? await MessageLog.findById(doc._id).lean() : null;
+
+  if (result?.status === "sent") {
+    return {
+      ok: true,
+      status: "SENT",
+      providerMessageId:
+        freshLog?.providerMessageId || result?.providerMessageId || null,
+      log: freshLog,
+    };
+  }
+
+  if (result?.status === "queued") {
+    return {
+      ok: true,
+      status: "QUEUED",
+      log: freshLog,
+    };
+  }
+
+  return {
+    ok: false,
+    status: "FAILED",
+    error: result?.error || new Error("Falha ao enviar WhatsApp"),
+    log: freshLog,
+  };
+}
+
 /**
  * Dispara WhatsApp para o CLIENTE quando o Pix for confirmado (AbacatePay/fluxos existentes).
  * - Idempotência forte: 1 envio por (offerId,eventType="PIX_PAID").
@@ -206,47 +253,19 @@ export async function maybeNotifyWhatsAppPixPaid({
     return { ok: true, status: "SKIPPED", reason: "IDEMPOTENT", log: doc };
   }
 
-  try {
-    const resp = await sendWhatsApp({ to, message });
-    const providerMessageId =
-      String(resp?.providerMessageId || "").trim() || null;
-
-    await MessageLog.updateOne(
-      { _id: doc?._id },
-      {
-        $set: {
-          status: "SENT",
-          providerMessageId,
-          sentAt: new Date(),
-          error: null,
-        },
-      },
-      { strict: false },
-    ).catch(() => {});
-
-    return { ok: true, status: "SENT", providerMessageId, log: doc };
-  } catch (err) {
-    await MessageLog.updateOne(
-      { _id: doc?._id },
-      {
-        $set: {
-          status: "FAILED",
-          providerMessageId: null,
-          sentAt: null,
-          error: {
-            message: String(err?.message || "Falha ao enviar WhatsApp"),
-            code: String(err?.code || err?.name || "SEND_FAILED"),
-            details: err?.details || {
-              pixId: String(pixId || "").trim() || null,
-            },
-          },
-        },
-      },
-      { strict: false },
-    ).catch(() => {});
-
-    return { ok: false, status: "FAILED", error: err };
-  }
+  return dispatchQueuedMessageLog({
+    doc,
+    workspaceId: workspaceId || offer?.workspaceId || null,
+    to,
+    message,
+    dedupeKey: `offer:${offerId || offer?._id}:PIX_PAID`,
+    meta: {
+      offerId: offerId || offer?._id || null,
+      bookingId: bookingId || null,
+      eventType: "PIX_PAID",
+      pixId: String(pixId || "").trim() || null,
+    },
+  });
 }
 
 /**
@@ -379,46 +398,18 @@ export async function notifyPaymentConfirmed(offerId) {
     return { ok: true, status: "SKIPPED", reason: "IDEMPOTENT", log: doc };
   }
 
-  // Envia
-  try {
-    const resp = await sendWhatsApp({ to, message });
-    const providerMessageId =
-      String(resp?.providerMessageId || "").trim() || null;
-
-    await MessageLog.updateOne(
-      { _id: doc?._id },
-      {
-        $set: {
-          status: "SENT",
-          providerMessageId,
-          sentAt: new Date(),
-          error: null,
-        },
-      },
-      { strict: false },
-    ).catch(() => {});
-
-    return { ok: true, status: "SENT", providerMessageId, log: doc };
-  } catch (err) {
-    await MessageLog.updateOne(
-      { _id: doc?._id },
-      {
-        $set: {
-          status: "FAILED",
-          providerMessageId: null,
-          sentAt: null,
-          error: {
-            message: String(err?.message || "Falha ao enviar WhatsApp"),
-            code: String(err?.code || err?.name || "SEND_FAILED"),
-            details: err?.details || { offerId: String(offer?._id || "") },
-          },
-        },
-      },
-      { strict: false },
-    ).catch(() => {});
-
-    return { ok: false, status: "FAILED", error: err };
-  }
+  return dispatchQueuedMessageLog({
+    doc,
+    workspaceId: offer?.workspaceId || null,
+    to,
+    message,
+    dedupeKey: `offer:${offer?._id}:PAYMENT_CONFIRMED`,
+    meta: {
+      offerId: offer?._id || null,
+      bookingId,
+      eventType: "PAYMENT_CONFIRMED",
+    },
+  });
 }
 
 function fmtMoneyBRLFromCentsSafe(cents) {
@@ -552,43 +543,17 @@ export async function notifyPaymentRejected(
     return { ok: true, status: "SKIPPED", reason: "IDEMPOTENT", log: doc };
   }
 
-  try {
-    const resp = await sendWhatsApp({ to, message: msg });
-    const providerMessageId =
-      String(resp?.providerMessageId || "").trim() || null;
-
-    await MessageLog.updateOne(
-      { _id: doc?._id },
-      {
-        $set: {
-          status: "SENT",
-          providerMessageId,
-          sentAt: new Date(),
-          error: null,
-        },
-      },
-      { strict: false },
-    ).catch(() => {});
-
-    return { ok: true, status: "SENT", providerMessageId, log: doc };
-  } catch (err) {
-    await MessageLog.updateOne(
-      { _id: doc?._id },
-      {
-        $set: {
-          status: "FAILED",
-          providerMessageId: null,
-          sentAt: null,
-          error: {
-            message: String(err?.message || "Falha ao enviar WhatsApp"),
-            code: String(err?.code || err?.name || "SEND_FAILED"),
-            details: err?.details || null,
-          },
-        },
-      },
-      { strict: false },
-    ).catch(() => {});
-
-    return { ok: false, status: "FAILED", error: err };
-  }
+  return dispatchQueuedMessageLog({
+    doc,
+    workspaceId: offer?.workspaceId || null,
+    to,
+    message: msg,
+    dedupeKey: `offer:${offer?._id}:${eventType}`,
+    meta: {
+      offerId: offer?._id || null,
+      bookingId: null,
+      eventType,
+      proofKey: proofKey || null,
+    },
+  });
 }

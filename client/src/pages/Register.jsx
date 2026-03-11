@@ -1,8 +1,17 @@
-//src/pages/Register.jsx
 import { useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
+import {
+  ArrowRight,
+  CheckCircle2,
+  LockKeyhole,
+  Mail,
+  Store,
+  User,
+} from "lucide-react";
+
 import { useAuth } from "../app/AuthContext.jsx";
 import RegisterEmailCodeModal from "../components/auth/RegisterEmailCodeModal.jsx";
+import brandLogo from "../assets/brand.png";
 
 function safeNextPath(value, fallback = "/billing/plans") {
   const raw = String(value || "").trim();
@@ -54,105 +63,164 @@ function getFieldErrors(values) {
   if (!email) {
     errors.email = "Informe seu e-mail.";
   } else if (!isValidEmail(email)) {
-    errors.email = "Informe um e-mail válido.";
+    errors.email = "Informe um e-mail valido.";
   }
 
   if (!password) {
     errors.password = "Informe sua senha.";
   } else if (!passwordRules.minLength || !passwordRules.specialChar) {
     errors.password =
-      "A senha deve ter no mínimo 8 caracteres e pelo menos 1 caractere especial.";
+      "A senha deve ter no minimo 8 caracteres e pelo menos 1 caractere especial.";
   }
 
   return errors;
 }
 
-function getApiErrorMessage(
-  err,
-  fallback = "Falha ao processar seu cadastro.",
-) {
+function getApiErrorMessage(err, fallback = "Falha ao processar seu cadastro.") {
   const code = String(err?.data?.code || "")
     .trim()
     .toUpperCase();
 
-  if (code === "EMAIL_IN_USE") return "Este e-mail já está em uso.";
-  if (code === "EMAIL_INVALID") return "Informe um e-mail válido.";
+  if (code === "EMAIL_IN_USE") return "Este e-mail ja esta em uso.";
+  if (code === "EMAIL_INVALID") return "Informe um e-mail valido.";
   if (code === "NAME_REQUIRED") return "Informe seu nome.";
-  if (code === "PASSWORD_TOO_SHORT")
-    return "A senha deve ter no mínimo 8 caracteres e pelo menos 1 caractere especial.";
-  if (code === "WORKSPACE_NAME_REQUIRED")
-    return "Informe um nome de workspace válido.";
-  if (code === "INVALID_CODE") return "Código inválido.";
-  if (code === "CODE_INVALID_FORMAT")
-    return "Digite o código de 4 dígitos corretamente.";
-  if (code === "CODE_EXPIRED")
-    return "O código expirou. Solicite um novo envio.";
-  if (code === "NO_PENDING_REGISTRATION")
-    return "Não foi encontrado um cadastro pendente para este e-mail.";
-  if (code === "TOO_MANY_ATTEMPTS")
-    return "Muitas tentativas inválidas. Solicite um novo código.";
+  if (code === "PASSWORD_TOO_SHORT") {
+    return "A senha deve ter no minimo 8 caracteres e pelo menos 1 caractere especial.";
+  }
+  if (code === "WORKSPACE_NAME_REQUIRED") {
+    return "Informe um nome de workspace valido.";
+  }
+  if (code === "INVALID_CODE") return "Codigo invalido.";
+  if (code === "CODE_INVALID_FORMAT") {
+    return "Digite o codigo de 4 digitos corretamente.";
+  }
+  if (code === "CODE_EXPIRED") {
+    return "O codigo expirou. Solicite um novo envio.";
+  }
+  if (code === "NO_PENDING_REGISTRATION") {
+    return "Nao foi encontrado um cadastro pendente para este e-mail.";
+  }
+  if (code === "TOO_MANY_ATTEMPTS") {
+    return "Muitas tentativas invalidas. Solicite um novo codigo.";
+  }
   if (code === "RESEND_COOLDOWN") {
     const seconds = Number(err?.data?.retryAfterSeconds || 60);
-    return `Aguarde ${seconds}s para reenviar o código.`;
+    return `Aguarde ${seconds}s para reenviar o codigo.`;
   }
 
   return err?.message || fallback;
 }
 
-function AuthShell({ children, passwordRules }) {
+function AuthBrand() {
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[linear-gradient(180deg,#fafafa_0%,#f4f4f5_45%,#f8fafc_100%)]">
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute left-[-80px] top-[-80px] h-72 w-72 rounded-full bg-indigo-500/10 blur-3xl" />
-        <div className="absolute right-[-100px] top-1/3 h-80 w-80 rounded-full bg-cyan-400/10 blur-3xl" />
-        <div className="absolute bottom-[-120px] left-1/3 h-80 w-80 rounded-full bg-emerald-400/10 blur-3xl" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.7),transparent_35%)]" />
+    <Link to="/" className="inline-flex items-center gap-3">
+      <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-[linear-gradient(135deg,#2563eb,#14b8a6)] shadow-[0_18px_40px_-20px_rgba(37,99,235,0.7)]">
+        <img
+          src={brandLogo}
+          alt="LuminorPay"
+          className="h-8 w-8 rounded-xl object-contain"
+          draggable="false"
+        />
+      </div>
+      <div>
+        <div className="text-[11px] font-semibold uppercase tracking-[0.26em] text-slate-400">
+          Vendas e Pix
+        </div>
+        <div className="text-lg font-black tracking-tight text-white">
+          LuminorPay
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+function AuthShell({ children, password }) {
+  const steps = [
+    "Crie sua conta com nome, e-mail e senha.",
+    "Confirme o codigo enviado para o e-mail.",
+    "Comece a montar propostas e receber no Pix.",
+  ];
+
+  return (
+    <div className="relative min-h-screen overflow-hidden bg-[rgb(5,10,24)] text-white">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute left-[-120px] top-[-120px] h-80 w-80 rounded-full bg-cyan-400/15 blur-3xl" />
+        <div className="absolute right-[-120px] top-1/4 h-96 w-96 rounded-full bg-blue-500/20 blur-3xl" />
+        <div className="absolute bottom-[-180px] left-1/3 h-[28rem] w-[28rem] rounded-full bg-emerald-400/12 blur-3xl" />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(5,10,24,0.92),rgba(8,15,30,0.88))]" />
       </div>
 
-      <div className="relative mx-auto flex min-h-screen max-w-7xl items-center justify-center px-4 py-8 sm:px-6 lg:px-8">
-        <div className="grid w-full max-w-6xl overflow-hidden rounded-[32px] border border-white/70 bg-white/70 shadow-[0_25px_80px_rgba(15,23,42,0.12)] backdrop-blur xl:grid-cols-[0.9fr_1.1fr]">
-          <div className="hidden border-r border-zinc-200/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.9),rgba(244,244,245,0.8))] p-10 xl:flex xl:flex-col xl:justify-center">
-            <span className="inline-flex w-fit items-center rounded-full border border-zinc-200 bg-white/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-zinc-600">
-              Luminor Pay
-            </span>
+      <div className="relative mx-auto flex min-h-screen max-w-7xl items-center px-4 py-6 sm:px-6 sm:py-10 lg:px-8">
+        <div className="grid w-full overflow-hidden rounded-[32px] border border-white/10 bg-[rgba(10,18,36,0.72)] shadow-[0_28px_80px_-40px_rgba(15,23,42,0.9)] backdrop-blur-2xl lg:grid-cols-[0.92fr_1.08fr]">
+          <aside className="hidden border-r border-white/10 bg-[linear-gradient(180deg,rgba(8,15,30,0.9),rgba(10,18,36,0.72))] p-10 lg:flex lg:flex-col lg:justify-between">
+            <div>
+              <AuthBrand />
 
-            <div className="mt-8 max-w-md">
-              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-zinc-500">
-                Cadastro
-              </p>
-              <h1 className="mt-4 text-4xl font-semibold tracking-tight text-zinc-950">
-                Crie sua conta.
-              </h1>
-              <p className="mt-4 text-base leading-7 text-zinc-600">
-                Preencha seus dados e confirme seu e-mail para continuar.
-              </p>
+              <div className="mt-12 max-w-md">
+                <div className="text-sm font-semibold uppercase tracking-[0.28em] text-cyan-300">
+                  Criar conta
+                </div>
+                <h1 className="mt-4 text-4xl font-black tracking-tight text-white">
+                  Comece com uma conta simples e pronta para vender.
+                </h1>
+                <p className="mt-5 text-base leading-7 text-slate-300">
+                  Crie seu acesso, confirme o e-mail e organize propostas,
+                  pagamentos e agenda na mesma plataforma.
+                </p>
+              </div>
+
+              <div className="mt-10 space-y-3">
+                {steps.map((item) => (
+                  <div
+                    key={item}
+                    className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-sm leading-6 text-slate-200"
+                  >
+                    <CheckCircle2 className="mt-0.5 h-5 w-5 flex-none text-teal-300" />
+                    <span>{item}</span>
+                  </div>
+                ))}
+              </div>
             </div>
 
-            <div className="mt-10">
-              <PasswordRules password={passwordRules} compact={false} />
-            </div>
-          </div>
+            <PasswordRules password={password} compact={false} />
+          </aside>
 
-          <div className="flex min-h-[760px] items-center justify-center p-4 sm:p-6 lg:p-10">
-            <div className="w-full max-w-lg">{children}</div>
+          <div className="flex min-h-[100svh] items-center justify-center p-4 sm:p-6 lg:min-h-[780px] lg:p-10">
+            <div className="w-full max-w-lg">
+              <div className="mb-6 lg:hidden">
+                <AuthBrand />
+                <div className="mt-6 rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
+                  <div className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-300">
+                    Criar conta
+                  </div>
+                  <h1 className="mt-3 text-3xl font-black tracking-tight text-white">
+                    Crie sua conta e comece a organizar suas vendas.
+                  </h1>
+                  <p className="mt-3 text-sm leading-6 text-slate-300">
+                    Cadastro claro, rapido e confortavel para preencher no celular.
+                  </p>
+                </div>
+              </div>
+
+              {children}
+            </div>
           </div>
         </div>
       </div>
     </div>
   );
 }
-
 function AuthCard({ title, subtitle, children, footer }) {
   return (
-    <div className="rounded-[28px] border border-white/80 bg-white/90 p-6 shadow-[0_20px_60px_rgba(15,23,42,0.10)] backdrop-blur sm:p-8">
+    <div className="rounded-[30px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] p-5 shadow-[0_20px_60px_-32px_rgba(15,23,42,0.45)] sm:p-8">
       <div className="mb-6">
-        <span className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
+        <span className="inline-flex items-center rounded-full border border-sky-100 bg-sky-50 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.18em] text-sky-700">
           Novo cadastro
         </span>
-        <h2 className="mt-4 text-3xl font-semibold tracking-tight text-zinc-950">
+        <h2 className="mt-4 text-3xl font-black tracking-tight text-slate-950">
           {title}
         </h2>
-        <p className="mt-2 text-sm leading-6 text-zinc-500">{subtitle}</p>
+        <p className="mt-2 text-sm leading-6 text-slate-500">{subtitle}</p>
       </div>
 
       {children}
@@ -166,7 +234,7 @@ function Alert({ children }) {
   if (!children) return null;
 
   return (
-    <div className="mb-5 rounded-2xl border border-red-200 bg-[linear-gradient(180deg,#fff1f2_0%,#fff5f5_100%)] px-4 py-3 text-sm text-red-700 shadow-sm">
+    <div className="mb-5 rounded-2xl border border-red-200 bg-[linear-gradient(180deg,#fff1f2_0%,#fff7f7_100%)] px-4 py-3 text-sm text-red-700">
       <div className="flex gap-3">
         <span className="mt-0.5 inline-flex h-5 w-5 flex-none items-center justify-center rounded-full bg-red-100 text-[11px] font-bold text-red-700">
           !
@@ -188,33 +256,37 @@ function Field({
   error,
   hint,
   disabled,
+  icon: Icon,
 }) {
   return (
     <div>
-      <label className="mb-2 block text-sm font-medium text-zinc-800">
+      <label className="mb-2 block text-sm font-semibold text-slate-800">
         {label}
       </label>
-      <input
+      <div
         className={[
-          "w-full rounded-2xl border bg-white px-4 py-3 text-[15px] text-zinc-950 shadow-[0_1px_2px_rgba(24,24,27,0.04)] outline-none transition",
-          "placeholder:text-zinc-400",
+          "flex min-h-[54px] items-center gap-3 rounded-2xl border bg-white px-4 shadow-[0_4px_18px_-14px_rgba(15,23,42,0.25)] transition",
           error
-            ? "border-red-300 ring-4 ring-red-100/70"
-            : "border-zinc-200 focus:border-zinc-300 focus:ring-4 focus:ring-zinc-200/60",
-          disabled ? "cursor-not-allowed opacity-70" : "",
+            ? "border-red-300 ring-4 ring-red-100/80"
+            : "border-slate-200 focus-within:border-sky-300 focus-within:ring-4 focus-within:ring-sky-100",
         ].join(" ")}
-        value={value}
-        onChange={onChange}
-        onBlur={onBlur}
-        type={type}
-        autoComplete={autoComplete}
-        placeholder={placeholder}
-        disabled={disabled}
-      />
+      >
+        {Icon ? <Icon className="h-5 w-5 flex-none text-slate-400" /> : null}
+        <input
+          className="w-full bg-transparent py-3 text-[15px] text-slate-950 outline-none placeholder:text-slate-400"
+          value={value}
+          onChange={onChange}
+          onBlur={onBlur}
+          type={type}
+          autoComplete={autoComplete}
+          placeholder={placeholder}
+          disabled={disabled}
+        />
+      </div>
       {error ? (
         <p className="mt-2 text-sm text-red-600">{error}</p>
       ) : hint ? (
-        <p className="mt-2 text-sm text-zinc-500">{hint}</p>
+        <p className="mt-2 text-sm text-slate-500">{hint}</p>
       ) : null}
     </div>
   );
@@ -227,16 +299,16 @@ function RuleItem({ ok, children }) {
         "flex items-center gap-3 rounded-2xl border px-3 py-3 text-sm transition",
         ok
           ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-          : "border-zinc-200 bg-zinc-50 text-zinc-600",
+          : "border-slate-200 bg-slate-50 text-slate-600",
       ].join(" ")}
     >
       <span
         className={[
           "inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold",
-          ok ? "bg-emerald-100 text-emerald-700" : "bg-white text-zinc-400",
+          ok ? "bg-emerald-100 text-emerald-700" : "bg-white text-slate-400",
         ].join(" ")}
       >
-        {ok ? "✓" : "•"}
+        {ok ? "ok" : "-"}
       </span>
       <span>{children}</span>
     </div>
@@ -249,24 +321,22 @@ function PasswordRules({ password, compact = false }) {
   return (
     <div
       className={[
-        "rounded-3xl border border-zinc-200 bg-zinc-50/80",
+        "rounded-[28px] border border-white/10 bg-white/5 backdrop-blur-xl",
         compact ? "p-4" : "p-5",
       ].join(" ")}
     >
       <div className="mb-3">
-        <div className="text-sm font-semibold text-zinc-900">
+        <div className={compact ? "text-sm font-bold text-slate-900" : "text-sm font-bold text-white"}>
           Regras de senha
         </div>
-        <div className="mt-1 text-sm text-zinc-500">
-          Sua senha precisa atender aos requisitos abaixo.
+        <div className={compact ? "mt-1 text-sm text-slate-500" : "mt-1 text-sm text-slate-300"}>
+          Use uma senha segura para proteger seu acesso.
         </div>
       </div>
 
       <div className="grid gap-3">
-        <RuleItem ok={rules.minLength}>Mínimo de 8 caracteres</RuleItem>
-        <RuleItem ok={rules.specialChar}>
-          Pelo menos 1 caractere especial
-        </RuleItem>
+        <RuleItem ok={rules.minLength}>Minimo de 8 caracteres</RuleItem>
+        <RuleItem ok={rules.specialChar}>Pelo menos 1 caractere especial</RuleItem>
       </div>
     </div>
   );
@@ -275,17 +345,20 @@ function PasswordRules({ password, compact = false }) {
 function SubmitButton({ loading, disabled }) {
   return (
     <button
-      className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-zinc-950 px-4 py-3.5 text-sm font-medium text-white shadow-[0_16px_40px_rgba(24,24,27,0.18)] transition hover:-translate-y-0.5 hover:bg-zinc-800 disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60"
+      className="inline-flex min-h-[54px] w-full items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#2563eb,#14b8a6)] px-4 py-3.5 text-sm font-bold text-white shadow-[0_20px_40px_-20px_rgba(37,99,235,0.55)] transition hover:-translate-y-0.5 disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60"
       disabled={disabled || loading}
       type="submit"
     >
       {loading ? (
         <>
           <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/25 border-t-white" />
-          Enviando código...
+          Enviando codigo...
         </>
       ) : (
-        "Criar conta"
+        <>
+          Criar conta
+          <ArrowRight className="h-4 w-4" />
+        </>
       )}
     </button>
   );
@@ -343,11 +416,11 @@ export default function Register() {
   }
 
   function markTouched(field) {
-    setTouched((prev) => ({ ...prev, [field]: true }));
+    setTouched((previous) => ({ ...previous, [field]: true }));
   }
 
   function setField(field, value) {
-    setValues((prev) => ({ ...prev, [field]: value }));
+    setValues((previous) => ({ ...previous, [field]: value }));
   }
 
   function getVisibleError(field) {
@@ -355,8 +428,8 @@ export default function Register() {
     return fieldErrors[field] || "";
   }
 
-  async function onSubmit(e) {
-    e.preventDefault();
+  async function onSubmit(event) {
+    event.preventDefault();
     setSubmitAttempted(true);
     setTouched({
       name: true,
@@ -406,7 +479,7 @@ export default function Register() {
       setIsCodeModalOpen(false);
       nav(next, { replace: true });
     } catch (err) {
-      throw new Error(getApiErrorMessage(err, "Falha ao confirmar o código."));
+      throw new Error(getApiErrorMessage(err, "Falha ao confirmar o codigo."));
     }
   }
 
@@ -421,21 +494,21 @@ export default function Register() {
       const data = await resendRegisterCode({ email: targetEmail });
       setPendingRegistration(data?.pendingRegistration || null);
     } catch (err) {
-      throw new Error(getApiErrorMessage(err, "Falha ao reenviar o código."));
+      throw new Error(getApiErrorMessage(err, "Falha ao reenviar o codigo."));
     }
   }
 
   return (
     <>
-      <AuthShell passwordRules={values.password}>
+      <AuthShell password={values.password}>
         <AuthCard
           title="Criar conta"
-          subtitle="Preencha seus dados para iniciar seu workspace e seguir para a confirmação por e-mail."
+          subtitle="Preencha seus dados para abrir seu workspace e confirmar o cadastro por e-mail."
           footer={
-            <div className="rounded-2xl border border-zinc-200 bg-zinc-50/80 px-4 py-3 text-sm text-zinc-600">
-              Já tem conta?{" "}
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              Ja tem conta?{" "}
               <Link
-                className="font-medium text-zinc-950 underline underline-offset-4 transition hover:text-zinc-700"
+                className="font-semibold text-slate-950 underline underline-offset-4 transition hover:text-slate-700"
                 to="/login"
               >
                 Entrar
@@ -449,56 +522,62 @@ export default function Register() {
             <Field
               label="Nome"
               value={values.name}
-              onChange={(e) => setField("name", e.target.value)}
+              onChange={(event) => setField("name", event.target.value)}
               onBlur={() => markTouched("name")}
               autoComplete="name"
               placeholder="Seu nome completo"
               error={getVisibleError("name")}
               disabled={loading}
+              icon={User}
             />
 
             <Field
               label="Nome do workspace"
               value={values.workspaceName}
-              onChange={(e) => setField("workspaceName", e.target.value)}
+              onChange={(event) => setField("workspaceName", event.target.value)}
               onBlur={() => markTouched("workspaceName")}
-              placeholder="Ex.: Minha Empresa"
-              hint="Opcional. Se não preencher, seu nome poderá ser usado como base."
+              placeholder="Ex.: Studio Bella"
+              hint="Opcional. Pode ser o nome da sua empresa ou da sua marca."
               error={getVisibleError("workspaceName")}
               disabled={loading}
+              icon={Store}
             />
 
             <Field
               label="Email"
               type="email"
               value={values.email}
-              onChange={(e) => setField("email", e.target.value)}
+              onChange={(event) => setField("email", event.target.value)}
               onBlur={() => markTouched("email")}
               autoComplete="email"
               placeholder="voce@empresa.com"
               error={getVisibleError("email")}
               disabled={loading}
+              icon={Mail}
             />
 
             <Field
               label="Senha"
               type="password"
               value={values.password}
-              onChange={(e) => setField("password", e.target.value)}
+              onChange={(event) => setField("password", event.target.value)}
               onBlur={() => markTouched("password")}
               autoComplete="new-password"
               placeholder="Crie uma senha forte"
               error={getVisibleError("password")}
               disabled={loading}
+              icon={LockKeyhole}
             />
 
-            <div className="xl:hidden">
-              <PasswordRules password={values.password} compact />
+            <div className="lg:hidden">
+              <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-4">
+                <PasswordRules password={values.password} compact />
+              </div>
             </div>
 
-            <div className="rounded-2xl border border-zinc-200 bg-zinc-50/80 px-4 py-3 text-sm text-zinc-500">
-              Ao continuar, enviaremos um código de confirmação para seu e-mail
-              antes de concluir a criação da conta.
+            <div className="rounded-2xl border border-sky-100 bg-sky-50/80 px-4 py-3 text-sm leading-6 text-slate-600">
+              Ao continuar, enviaremos um codigo de confirmacao para seu e-mail
+              antes de concluir a criacao da conta.
             </div>
 
             <SubmitButton loading={loading} disabled={!canSubmit} />

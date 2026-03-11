@@ -1,7 +1,8 @@
 import { env } from "../config/env.js";
 import { Offer } from "../models/Offer.js";
 import OfferReminderLog from "../models/OfferReminderLog.js";
-import { isWhatsAppNotificationsEnabled, sendWhatsApp } from "./waGateway.js";
+import { isWhatsAppNotificationsEnabled } from "./waGateway.js";
+import { queueOrSendWhatsApp } from "./whatsappOutbox.service.js";
 
 const TZ = "America/Sao_Paulo";
 
@@ -404,46 +405,46 @@ export async function dispatchPaymentReminder({
     };
   }
 
-  try {
-    const resp = await sendWhatsApp({ to, message });
-    const providerMessageId =
-      String(resp?.providerMessageId || "").trim() || null;
-    const sentAt = new Date();
+  const result = await queueOrSendWhatsApp({
+    workspaceId,
+    to,
+    message,
+    dedupeKey: `offer-reminder-log:${log._id}`,
+    sourceType: "offer_reminder_log",
+    sourceId: log._id,
+    meta: {
+      offerId: offer._id,
+      kind,
+      triggerKey,
+      source: meta?.source || null,
+    },
+  });
 
-    await markReminderLog(log._id, {
-      status: "sent",
-      providerMessageId,
-      sentAt,
-      error: null,
-    });
-    await markOfferReminderSent(offer._id, kind, sentAt);
-
+  if (result?.status === "sent") {
     return {
       ok: true,
       status: "sent",
       log: await OfferReminderLog.findById(log._id).lean(),
       offer: await Offer.findById(offer._id).lean(),
     };
-  } catch (err) {
-    await markReminderLog(log._id, {
-      status: "failed",
-      providerMessageId: null,
-      sentAt: null,
-      error: {
-        message: String(err?.message || "Falha ao enviar lembrete"),
-        code: String(err?.code || err?.name || "SEND_FAILED"),
-        details: err?.details || null,
-      },
-    });
+  }
 
+  if (result?.status === "queued") {
     return {
-      ok: false,
-      status: "failed",
-      error: err,
+      ok: true,
+      status: "queued",
       log: await OfferReminderLog.findById(log._id).lean(),
       offer: await Offer.findById(offer._id).lean(),
     };
   }
+
+  return {
+    ok: false,
+    status: "failed",
+    error: result?.error || new Error("Falha ao enviar lembrete"),
+    log: await OfferReminderLog.findById(log._id).lean(),
+    offer: await Offer.findById(offer._id).lean(),
+  };
 }
 
 export async function sendManualPaymentReminder({
@@ -550,6 +551,7 @@ export async function processAutomaticPaymentReminders({
   const summary = {
     scanned: offers.length,
     sent: 0,
+    queued: 0,
     failed: 0,
     skipped: 0,
     items: [],
@@ -581,6 +583,7 @@ export async function processAutomaticPaymentReminders({
     });
 
     if (result.status === "sent") summary.sent += 1;
+    else if (result.status === "queued") summary.queued += 1;
     else if (result.status === "failed") summary.failed += 1;
     else summary.skipped += 1;
   }

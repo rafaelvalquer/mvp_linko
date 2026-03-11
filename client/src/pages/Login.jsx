@@ -1,7 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
+import {
+  ArrowRight,
+  CheckCircle2,
+  LockKeyhole,
+  Mail,
+  ShieldCheck,
+} from "lucide-react";
+
 import { useAuth } from "../app/AuthContext.jsx";
 import ForgotPasswordModal from "../components/auth/ForgotPasswordModal.jsx";
+import brandLogo from "../assets/brand.png";
 
 function safeNextPath(value, fallback = null) {
   const raw = String(value || "").trim();
@@ -11,38 +20,135 @@ function safeNextPath(value, fallback = null) {
   return raw;
 }
 
-function AuthShell({ children }) {
+function AuthBrand() {
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[linear-gradient(180deg,#fafafa_0%,#f4f4f5_45%,#f8fafc_100%)]">
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute left-[-80px] top-[-80px] h-72 w-72 rounded-full bg-indigo-500/10 blur-3xl" />
-        <div className="absolute right-[-100px] top-1/3 h-80 w-80 rounded-full bg-cyan-400/10 blur-3xl" />
-        <div className="absolute bottom-[-120px] left-1/3 h-80 w-80 rounded-full bg-emerald-400/10 blur-3xl" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.7),transparent_35%)]" />
+    <Link to="/" className="inline-flex items-center gap-3">
+      <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-[linear-gradient(135deg,#2563eb,#14b8a6)] shadow-[0_18px_40px_-20px_rgba(37,99,235,0.7)]">
+        <img
+          src={brandLogo}
+          alt="LuminorPay"
+          className="h-8 w-8 rounded-xl object-contain"
+          draggable="false"
+        />
+      </div>
+      <div>
+        <div className="text-[11px] font-semibold uppercase tracking-[0.26em] text-slate-400">
+          Vendas e Pix
+        </div>
+        <div className="text-lg font-black tracking-tight text-white">
+          LuminorPay
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+function AuthShell({ children }) {
+  const highlights = [
+    "Entre pelo celular e acompanhe propostas, pagamentos e agenda sem complicacao.",
+    "Veja o que foi enviado, pago e confirmado em um so lugar.",
+    "Continue seu atendimento com mais organizacao e menos mensagem solta.",
+  ];
+
+  return (
+    <div className="relative min-h-screen overflow-hidden bg-[rgb(5,10,24)] text-white">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute left-[-120px] top-[-120px] h-80 w-80 rounded-full bg-cyan-400/15 blur-3xl" />
+        <div className="absolute right-[-120px] top-1/4 h-96 w-96 rounded-full bg-blue-500/20 blur-3xl" />
+        <div className="absolute bottom-[-180px] left-1/3 h-[28rem] w-[28rem] rounded-full bg-emerald-400/12 blur-3xl" />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(5,10,24,0.92),rgba(8,15,30,0.88))]" />
+        <div
+          className="absolute inset-0 opacity-[0.18]"
+          style={{
+            backgroundImage:
+              "linear-gradient(to right, rgba(148,163,184,0.12) 1px, transparent 1px), linear-gradient(to bottom, rgba(148,163,184,0.12) 1px, transparent 1px)",
+            backgroundSize: "52px 52px",
+            maskImage:
+              "radial-gradient(72% 58% at 50% 28%, black 0%, transparent 72%)",
+            WebkitMaskImage:
+              "radial-gradient(72% 58% at 50% 28%, black 0%, transparent 72%)",
+          }}
+        />
       </div>
 
-      <div className="relative mx-auto flex min-h-screen max-w-7xl items-center justify-center px-4 py-8 sm:px-6 lg:px-8">
-        <div className="grid w-full max-w-6xl overflow-hidden rounded-[32px] border border-white/70 bg-white/70 shadow-[0_25px_80px_rgba(15,23,42,0.12)] backdrop-blur xl:grid-cols-[0.9fr_1.1fr]">
-          <div className="hidden border-r border-zinc-200/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.9),rgba(244,244,245,0.8))] p-10 xl:flex xl:flex-col xl:justify-center">
-            <span className="inline-flex w-fit items-center rounded-full border border-zinc-200 bg-white/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-zinc-600">
-              Luminor Platform
-            </span>
+      <div className="relative mx-auto flex min-h-screen max-w-7xl items-center px-4 py-6 sm:px-6 sm:py-10 lg:px-8">
+        <div className="grid w-full overflow-hidden rounded-[32px] border border-white/10 bg-[rgba(10,18,36,0.72)] shadow-[0_28px_80px_-40px_rgba(15,23,42,0.9)] backdrop-blur-2xl lg:grid-cols-[0.92fr_1.08fr]">
+          <aside className="hidden border-r border-white/10 bg-[linear-gradient(180deg,rgba(8,15,30,0.9),rgba(10,18,36,0.72))] p-10 lg:flex lg:flex-col lg:justify-between">
+            <div>
+              <AuthBrand />
 
-            <div className="mt-8 max-w-md">
-              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-zinc-500">
-                Login
-              </p>
-              <h1 className="mt-4 text-4xl font-semibold tracking-tight text-zinc-950">
-                Entre na sua conta.
-              </h1>
-              <p className="mt-4 text-base leading-7 text-zinc-600">
-                Acesse sua plataforma para continuar seu fluxo com segurança.
-              </p>
+              <div className="mt-12 max-w-md">
+                <div className="text-sm font-semibold uppercase tracking-[0.28em] text-cyan-300">
+                  Entrar
+                </div>
+                <h1 className="mt-4 text-4xl font-black tracking-tight text-white">
+                  Acesse sua conta e continue suas vendas.
+                </h1>
+                <p className="mt-5 text-base leading-7 text-slate-300">
+                  Entre para acompanhar propostas, pagamentos e agenda com uma
+                  tela simples, clara e pronta para o dia a dia do seu negocio.
+                </p>
+              </div>
+
+              <div className="mt-10 space-y-3">
+                {highlights.map((item) => (
+                  <div
+                    key={item}
+                    className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-sm leading-6 text-slate-200"
+                  >
+                    <CheckCircle2 className="mt-0.5 h-5 w-5 flex-none text-teal-300" />
+                    <span>{item}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
 
-          <div className="flex min-h-[720px] items-center justify-center p-4 sm:p-6 lg:p-10">
-            <div className="w-full max-w-md">{children}</div>
+            <div className="grid gap-4 xl:grid-cols-2">
+              <div className="rounded-[26px] border border-cyan-400/15 bg-cyan-400/10 p-5">
+                <div className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-200">
+                  Acesso rapido
+                </div>
+                <div className="mt-3 text-3xl font-black">1 toque</div>
+                <p className="mt-2 text-sm leading-6 text-slate-200">
+                  Interface pensada para abrir bem no celular e no computador.
+                </p>
+              </div>
+
+              <div className="rounded-[26px] border border-white/10 bg-white/5 p-5">
+                <div className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">
+                  Seguranca
+                </div>
+                <div className="mt-3 flex items-center gap-2 text-lg font-bold text-white">
+                  <ShieldCheck className="h-5 w-5 text-emerald-300" />
+                  Conta protegida
+                </div>
+                <p className="mt-2 text-sm leading-6 text-slate-300">
+                  Entre e siga seu fluxo com seguranca e confirmacoes claras.
+                </p>
+              </div>
+            </div>
+          </aside>
+
+          <div className="flex min-h-[100svh] items-center justify-center p-4 sm:p-6 lg:min-h-[760px] lg:p-10">
+            <div className="w-full max-w-md">
+              <div className="mb-6 lg:hidden">
+                <AuthBrand />
+                <div className="mt-6 rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
+                  <div className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-300">
+                    Entrar
+                  </div>
+                  <h1 className="mt-3 text-3xl font-black tracking-tight text-white">
+                    Continue suas vendas de onde parou.
+                  </h1>
+                  <p className="mt-3 text-sm leading-6 text-slate-300">
+                    Acesse sua conta para acompanhar propostas, Pix e agenda com
+                    conforto no celular.
+                  </p>
+                </div>
+              </div>
+
+              {children}
+            </div>
           </div>
         </div>
       </div>
@@ -52,15 +158,15 @@ function AuthShell({ children }) {
 
 function AuthCard({ title, subtitle, children, footer }) {
   return (
-    <div className="rounded-[28px] border border-white/80 bg-white/90 p-6 shadow-[0_20px_60px_rgba(15,23,42,0.10)] backdrop-blur sm:p-8">
+    <div className="rounded-[30px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] p-5 shadow-[0_20px_60px_-32px_rgba(15,23,42,0.45)] sm:p-8">
       <div className="mb-6">
-        <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-          Acesso à conta
+        <span className="inline-flex items-center rounded-full border border-sky-100 bg-sky-50 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.18em] text-sky-700">
+          Acesso a conta
         </span>
-        <h2 className="mt-4 text-3xl font-semibold tracking-tight text-zinc-950">
+        <h2 className="mt-4 text-3xl font-black tracking-tight text-slate-950">
           {title}
         </h2>
-        <p className="mt-2 text-sm leading-6 text-zinc-500">{subtitle}</p>
+        <p className="mt-2 text-sm leading-6 text-slate-500">{subtitle}</p>
       </div>
 
       {children}
@@ -74,7 +180,7 @@ function Alert({ children }) {
   if (!children) return null;
 
   return (
-    <div className="mb-5 rounded-2xl border border-red-200 bg-[linear-gradient(180deg,#fff1f2_0%,#fff5f5_100%)] px-4 py-3 text-sm text-red-700 shadow-sm">
+    <div className="mb-5 rounded-2xl border border-red-200 bg-[linear-gradient(180deg,#fff1f2_0%,#fff7f7_100%)] px-4 py-3 text-sm text-red-700">
       <div className="flex gap-3">
         <span className="mt-0.5 inline-flex h-5 w-5 flex-none items-center justify-center rounded-full bg-red-100 text-[11px] font-bold text-red-700">
           !
@@ -89,17 +195,16 @@ function SuccessAlert({ children }) {
   if (!children) return null;
 
   return (
-    <div className="mb-5 rounded-2xl border border-emerald-200 bg-[linear-gradient(180deg,#ecfdf5_0%,#f0fdf4_100%)] px-4 py-3 text-sm text-emerald-700 shadow-sm">
+    <div className="mb-5 rounded-2xl border border-emerald-200 bg-[linear-gradient(180deg,#ecfdf5_0%,#f0fdf4_100%)] px-4 py-3 text-sm text-emerald-700">
       <div className="flex gap-3">
         <span className="mt-0.5 inline-flex h-5 w-5 flex-none items-center justify-center rounded-full bg-emerald-100 text-[11px] font-bold text-emerald-700">
-          ✓
+          ok
         </span>
         <div className="leading-6">{children}</div>
       </div>
     </div>
   );
 }
-
 function Field({
   label,
   type = "text",
@@ -108,26 +213,26 @@ function Field({
   autoComplete,
   placeholder,
   disabled,
+  icon: Icon,
 }) {
   return (
     <div>
-      <label className="mb-2 block text-sm font-medium text-zinc-800">
+      <label className="mb-2 block text-sm font-semibold text-slate-800">
         {label}
       </label>
-      <input
-        className={[
-          "w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-[15px] text-zinc-950 shadow-[0_1px_2px_rgba(24,24,27,0.04)] outline-none transition",
-          "placeholder:text-zinc-400 focus:border-zinc-300 focus:ring-4 focus:ring-zinc-200/60",
-          disabled ? "cursor-not-allowed opacity-70" : "",
-        ].join(" ")}
-        value={value}
-        onChange={onChange}
-        type={type}
-        autoComplete={autoComplete}
-        placeholder={placeholder}
-        disabled={disabled}
-        required
-      />
+      <div className="flex min-h-[54px] items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 shadow-[0_4px_18px_-14px_rgba(15,23,42,0.25)] transition focus-within:border-sky-300 focus-within:ring-4 focus-within:ring-sky-100">
+        {Icon ? <Icon className="h-5 w-5 flex-none text-slate-400" /> : null}
+        <input
+          className="w-full bg-transparent py-3 text-[15px] text-slate-950 outline-none placeholder:text-slate-400"
+          value={value}
+          onChange={onChange}
+          type={type}
+          autoComplete={autoComplete}
+          placeholder={placeholder}
+          disabled={disabled}
+          required
+        />
+      </div>
     </div>
   );
 }
@@ -135,7 +240,7 @@ function Field({
 function SubmitButton({ loading }) {
   return (
     <button
-      className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-zinc-950 px-4 py-3.5 text-sm font-medium text-white shadow-[0_16px_40px_rgba(24,24,27,0.18)] transition hover:-translate-y-0.5 hover:bg-zinc-800 disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60"
+      className="inline-flex min-h-[54px] w-full items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#2563eb,#14b8a6)] px-4 py-3.5 text-sm font-bold text-white shadow-[0_20px_40px_-20px_rgba(37,99,235,0.55)] transition hover:-translate-y-0.5 disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60"
       disabled={loading}
       type="submit"
     >
@@ -145,7 +250,10 @@ function SubmitButton({ loading }) {
           Entrando...
         </>
       ) : (
-        "Entrar"
+        <>
+          Entrar
+          <ArrowRight className="h-4 w-4" />
+        </>
       )}
     </button>
   );
@@ -181,8 +289,8 @@ export default function Login() {
 
   if (user) return <Navigate to="/dashboard" replace />;
 
-  async function onSubmit(e) {
-    e.preventDefault();
+  async function onSubmit(event) {
+    event.preventDefault();
     setError("");
     setSuccessMessage("");
     setLoading(true);
@@ -233,12 +341,12 @@ export default function Login() {
       <AuthShell>
         <AuthCard
           title="Entrar"
-          subtitle="Acesse sua conta para continuar sua experiência na plataforma."
+          subtitle="Acesse sua conta para acompanhar atendimentos, pagamentos e o andamento das suas propostas."
           footer={
-            <div className="rounded-2xl border border-zinc-200 bg-zinc-50/80 px-4 py-3 text-sm text-zinc-600">
-              Não tem conta?{" "}
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              Nao tem conta?{" "}
               <Link
-                className="font-medium text-zinc-950 underline underline-offset-4 transition hover:text-zinc-700"
+                className="font-semibold text-slate-950 underline underline-offset-4 transition hover:text-slate-700"
                 to="/register"
               >
                 Criar conta
@@ -254,14 +362,15 @@ export default function Login() {
               label="Email"
               type="email"
               value={email}
-              onChange={(e) => {
+              onChange={(event) => {
                 setError("");
                 setSuccessMessage("");
-                setEmail(e.target.value);
+                setEmail(event.target.value);
               }}
               autoComplete="email"
               placeholder="voce@empresa.com"
               disabled={loading}
+              icon={Mail}
             />
 
             <div>
@@ -269,20 +378,21 @@ export default function Login() {
                 label="Senha"
                 type="password"
                 value={password}
-                onChange={(e) => {
+                onChange={(event) => {
                   setError("");
                   setSuccessMessage("");
-                  setPassword(e.target.value);
+                  setPassword(event.target.value);
                 }}
                 autoComplete="current-password"
                 placeholder="Digite sua senha"
                 disabled={loading}
+                icon={LockKeyhole}
               />
 
               <div className="mt-3 flex justify-end">
                 <button
                   type="button"
-                  className="text-sm font-medium text-zinc-600 underline underline-offset-4 transition hover:text-zinc-950 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="text-sm font-semibold text-slate-600 underline underline-offset-4 transition hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
                   onClick={() => {
                     setError("");
                     setSuccessMessage("");
@@ -294,9 +404,9 @@ export default function Login() {
                 </button>
               </div>
             </div>
-
-            <div className="rounded-2xl border border-zinc-200 bg-zinc-50/80 px-4 py-3 text-sm text-zinc-500">
-              Entre para acessar seu workspace e continuar o fluxo da plataforma.
+            <div className="rounded-2xl border border-sky-100 bg-sky-50/80 px-4 py-3 text-sm leading-6 text-slate-600">
+              Entre para acessar seu workspace e continuar o fluxo de propostas,
+              Pix e agenda do seu negocio.
             </div>
 
             <SubmitButton loading={loading} />
