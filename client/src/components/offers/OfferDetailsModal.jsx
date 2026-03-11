@@ -631,7 +631,11 @@ export default function OfferDetailsModal({
               ? "O cliente não possui WhatsApp válido cadastrado."
               : result.reason === "FEATURE_DISABLED"
                 ? "O envio por WhatsApp está desabilitado na configuração do ambiente."
-                : "O lembrete não foi enviado.",
+                : result.reason === "PLAN_NOT_ALLOWED"
+                  ? "Seu plano atual não libera lembretes de pagamento por WhatsApp."
+                  : result.reason === "WORKSPACE_SETTING_DISABLED"
+                    ? "Os lembretes por WhatsApp estão desativados nas configurações do workspace."
+                    : "O lembrete não foi enviado.",
         });
       } else {
         setRemindersFlash({

@@ -10,7 +10,6 @@ import {
 } from "../services/agendaSettings.js";
 import {
   DEFAULT_NOTIFICATION_SETTINGS,
-  getNotificationCapabilities,
   mergeNotificationSettings,
   sanitizeNotificationPatch,
   resolveWorkspaceNotificationContext,
@@ -61,7 +60,10 @@ r.get(
         ),
       },
       capabilities: {
-        notifications: getNotificationCapabilities(context.plan),
+        notifications: {
+          ...(context.capabilities || {}),
+          availability: context.featureAvailability || {},
+        },
       },
     });
   }),
@@ -137,7 +139,27 @@ r.patch(
       { new: true, upsert: true },
     ).lean();
 
-    return res.json({ ok: true, settings: updated });
+    const context = await resolveWorkspaceNotificationContext({
+      workspaceId,
+      ownerUserId,
+    });
+
+    return res.json({
+      ok: true,
+      settings: {
+        ...updated,
+        notifications: mergeNotificationSettings(
+          DEFAULT_NOTIFICATION_SETTINGS,
+          updated?.notifications || nextNotifications,
+        ),
+      },
+      capabilities: {
+        notifications: {
+          ...(context.capabilities || {}),
+          availability: context.featureAvailability || {},
+        },
+      },
+    });
   }),
 );
 

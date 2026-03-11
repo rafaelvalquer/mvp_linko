@@ -3,7 +3,6 @@ import { useEffect, useMemo, useState } from "react";
 import Card, { CardBody, CardHeader } from "../components/appui/Card.jsx";
 import Button from "../components/appui/Button.jsx";
 import { Input } from "../components/appui/Input.jsx";
-import EmptyState from "../components/appui/EmptyState.jsx";
 import Skeleton from "../components/appui/Skeleton.jsx";
 import SettingsLayout from "../components/settings/SettingsLayout.jsx";
 import { getSettings, updateAgendaSettings } from "../app/settingsApi.js";
@@ -332,17 +331,7 @@ export default function SettingsAgenda() {
         </Button>
       }
     >
-      <PageHeader
-        title="Configuração da Agenda"
-        subtitle="Gerencie sua disponibilidade e fusos horários."
-        actions={
-          <Button onClick={handleSave} disabled={saving || !dirty}>
-            {saving ? "Salvando..." : "Salvar Alterações"}
-          </Button>
-        }
-      />
-
-      <div className="mt-6 space-y-6 pb-24">
+      <div className="space-y-6 pb-24">
         {/* FEEDBACK */}
         {err && (
           <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl whitespace-pre-line text-sm">

@@ -8,7 +8,7 @@ import Offers from "../pages/Offers.jsx";
 import NewOffer from "../pages/NewOffer.jsx";
 import RecurringOffers from "../pages/RecurringOffers.jsx";
 import RecurringOfferDetails from "../pages/RecurringOfferDetails.jsx";
-import Calendar from "../pages/Calendar.jsx";
+import Calendar from "../pages/CalendarV2.jsx";
 import Login from "../pages/Login.jsx";
 import Register from "../pages/Register.jsx";
 import RequireAuth from "../components/auth/RequireAuth.jsx";
@@ -25,6 +25,7 @@ import PublicPixPayment from "../pages/PublicPixPayment.jsx";
 import PublicOfferDone from "../pages/PublicOfferDone.jsx";
 import PublicPaidGuard from "../pages/PublicPaidGuard.jsx";
 import SettingsAgenda from "../pages/SettingsAgenda.jsx";
+import SettingsNotifications from "../pages/SettingsNotifications.jsx";
 
 // ✅ billing
 import BillingPlans from "../pages/BillingPlans.jsx";
@@ -148,6 +149,22 @@ export const router = createBrowserRouter(
       ),
     },
 
+    {
+      path: "/settings",
+      element: (
+        <RequireAuth>
+          <Navigate to="/settings/notifications" replace />
+        </RequireAuth>
+      ),
+    },
+    {
+      path: "/settings/notifications",
+      element: (
+        <RequireAuth>
+          <SettingsNotifications />
+        </RequireAuth>
+      ),
+    },
     {
       path: "/settings/agenda",
       element: (

@@ -1,4 +1,4 @@
-// src/pages/Calendar.jsx
+// src/pages/CalendarV2.jsx
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../app/AuthContext.jsx";
@@ -49,6 +49,7 @@ export default function Calendar() {
   const [err, setErr] = useState("");
   const [items, setItems] = useState([]);
   const [selectedBooking, setSelectedBooking] = useState(null);
+  const [calendarExpanded, setCalendarExpanded] = useState(true);
 
   const agendaTimeZone = getCalendarTimeZone(agendaSettings?.timezone);
 
@@ -133,6 +134,7 @@ export default function Calendar() {
     const term = String(q || "")
       .trim()
       .toLowerCase();
+
     if (!term) return items;
 
     return (items || []).filter((booking) => {
@@ -221,7 +223,7 @@ export default function Calendar() {
                 variant="secondary"
                 onClick={() => setDay(shiftDateKey(day, 1))}
               >
-                Próximo dia
+                Proximo dia
               </Button>
               <Button
                 variant="secondary"
@@ -229,10 +231,9 @@ export default function Calendar() {
                   setDay(shiftDateKey(getTodayDateKey(agendaTimeZone), 1))
                 }
               >
-                Amanhã
+                Amanha
               </Button>
 
-              {/* Botão de Configurações Ajustado com SVG Nativo */}
               <Button
                 variant="ghost"
                 type="button"
@@ -257,8 +258,8 @@ export default function Calendar() {
                       <circle cx="12" cy="12" r="3" />
                     </svg>
                   </div>
-                  <span className="hidden sm:inline font-medium text-zinc-700">
-                    Configurações
+                  <span className="hidden font-medium text-zinc-700 sm:inline">
+                    Configuracoes
                   </span>
                 </span>
               </Button>
@@ -269,7 +270,7 @@ export default function Calendar() {
         <Card>
           <CardHeader
             title={title}
-            subtitle={`Total: ${summary.total} • Confirmados: ${summary.confirmed} • Reservas: ${summary.hold}`}
+            subtitle={`Total filtrado: ${summary.total} | Confirmados: ${summary.confirmed} | HOLD: ${summary.hold}`}
             right={
               <div className="flex flex-wrap items-center gap-2">
                 <div className="w-44">
@@ -318,7 +319,6 @@ export default function Calendar() {
                 >
                   Reservas
                 </Button>
-
                 <Button variant="secondary" onClick={load} disabled={busy}>
                   Atualizar
                 </Button>
@@ -326,13 +326,85 @@ export default function Calendar() {
 
               <div className="w-full sm:w-72">
                 <Input
-                  placeholder="Buscar por cliente ou serviço..."
+                  placeholder="Buscar por cliente, WhatsApp ou servico..."
                   value={q}
-                  onChange={(e) => setQ(e.target.value)}
+                  onChange={(event) => setQ(event.target.value)}
                 />
               </div>
             </div>
+          </CardBody>
+        </Card>
 
+        {rangeMode === "day" ? (
+          <Card>
+            <CardHeader
+              title="Calendario do dia"
+              subtitle={`Timeline visual do dia filtrado. Fuso ativo: ${agendaTimeZone}`}
+              right={
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/80 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-[0_14px_28px_-22px_rgba(15,23,42,0.18)] transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
+                  aria-expanded={calendarExpanded}
+                  aria-controls="calendar-day-accordion"
+                  onClick={() => setCalendarExpanded((current) => !current)}
+                >
+                  <span>{calendarExpanded ? "Minimizar" : "Expandir"}</span>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className={`transition-transform ${calendarExpanded ? "rotate-180" : ""}`}
+                  >
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                </button>
+              }
+            />
+
+            <div
+              id="calendar-day-accordion"
+              className={`grid transition-[grid-template-rows] duration-300 ease-out ${calendarExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
+            >
+              <div className="min-h-0 overflow-hidden">
+                <CardBody>
+                  {busy ? (
+                    <Skeleton className="h-[560px] w-full rounded-[24px]" />
+                  ) : err ? (
+                    renderLoadError(err, load)
+                  ) : (
+                    <DayTimeline
+                      items={filtered}
+                      day={day}
+                      agendaSettings={agendaSettings}
+                      timezone={agendaTimeZone}
+                      onSelect={setSelectedBooking}
+                    />
+                  )}
+                </CardBody>
+              </div>
+            </div>
+
+            {!calendarExpanded ? (
+              <div className="border-t border-slate-200/80 px-5 py-3 text-xs text-slate-500 dark:border-white/10 dark:text-slate-400">
+                Calendario minimizado. A lista operacional continua disponivel logo abaixo.
+              </div>
+            ) : null}
+          </Card>
+        ) : null}
+
+        <Card>
+          <CardHeader
+            title={rangeMode === "day" ? "Lista do dia" : "Lista dos 7 dias"}
+            subtitle="Area operacional para abrir propostas e cancelar reservas."
+          />
+
+          <CardBody className="space-y-3">
             {busy ? (
               <>
                 <Skeleton className="h-16 w-full" />
@@ -340,77 +412,72 @@ export default function Calendar() {
                 <Skeleton className="h-16 w-full" />
               </>
             ) : err ? (
-              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-                {err}{" "}
-                <button className="ml-2 font-semibold underline" onClick={load}>
-                  Tentar novamente
-                </button>
-              </div>
+              renderLoadError(err, load)
             ) : filtered.length === 0 ? (
               <EmptyState
-                title="Sem reservas no período"
-                description="Quando houver agendamentos (HOLD/CONFIRMED), eles aparecerão aqui."
+                title={emptyStateTitle}
+                description={emptyStateDescription}
                 ctaLabel="Ver propostas"
                 onCta={() => nav("/")}
               />
             ) : (
               <div className="space-y-3">
-                {filtered.map((b) => {
-                  const st = String(b.status || "").toUpperCase();
-                  const exp =
-                    st === "HOLD" ? holdRemaining(b.holdExpiresAt) : null;
-                  const offerTitle = b?.offer?.title || "—";
-                  const publicToken = b?.offer?.publicToken || null;
+                {filtered.map((booking) => {
+                  const status = String(booking.status || "").toUpperCase();
+                  const holdInfo =
+                    status === "HOLD"
+                      ? holdRemaining(booking.holdExpiresAt)
+                      : null;
+                  const offerTitle = booking?.offer?.title || "-";
+                  const publicToken = booking?.offer?.publicToken || "";
 
                   return (
-                    <div key={b._id} className="rounded-xl border p-3">
+                    <div
+                      key={booking._id}
+                      className="rounded-xl border border-slate-200/80 bg-white/85 p-3 dark:border-white/10 dark:bg-white/[0.03]"
+                    >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
-                            <div className="text-sm font-semibold text-zinc-900">
-                              {fmtTimeBR(b.startAt)}–{fmtTimeBR(b.endAt)}
+                            <div className="text-sm font-semibold text-zinc-900 dark:text-white">
+                              {formatTime(booking.startAt, agendaTimeZone)} -{" "}
+                              {formatTime(booking.endAt, agendaTimeZone)}
                             </div>
-                            <div className="text-xs text-zinc-500">
-                              {fmtDateBR(b.startAt)}
+                            <div className="text-xs text-zinc-500 dark:text-slate-400">
+                              {formatDate(booking.startAt, agendaTimeZone)}
                             </div>
                           </div>
 
-                          <div className="mt-1 text-xs text-zinc-600">
+                          <div className="mt-1 text-xs text-zinc-600 dark:text-slate-300">
                             Cliente:{" "}
                             <span className="font-medium">
-                              {b.customerName || "—"}
+                              {booking.customerName || "-"}
                             </span>
-                            {b.customerWhatsApp
-                              ? ` • ${b.customerWhatsApp}`
+                            {booking.customerWhatsApp
+                              ? ` | ${booking.customerWhatsApp}`
                               : ""}
                           </div>
 
-                          <div className="mt-0.5 text-xs text-zinc-500 line-clamp-1">
-                            Serviço: {offerTitle}
+                          <div className="mt-0.5 line-clamp-1 text-xs text-zinc-500 dark:text-slate-400">
+                            Servico: {offerTitle}
                           </div>
 
-                          {exp ? (
-                            <div className={`mt-1 text-[11px] ${exp.tone}`}>
-                              {exp.label}
+                          {holdInfo ? (
+                            <div className={`mt-1 text-[11px] ${holdInfo.tone}`}>
+                              {holdInfo.label}
                             </div>
                           ) : null}
                         </div>
 
                         <div className="flex flex-col items-end gap-2">
-                          <Badge tone={st} />
+                          <Badge tone={status} />
 
                           <div className="flex flex-wrap gap-2">
                             {publicToken ? (
                               <Button
                                 variant="ghost"
                                 type="button"
-                                onClick={() =>
-                                  window.open(
-                                    `/p/${publicToken}`,
-                                    "_blank",
-                                    "noopener,noreferrer",
-                                  )
-                                }
+                                onClick={() => openProposal(publicToken)}
                               >
                                 Abrir proposta
                               </Button>
@@ -419,26 +486,7 @@ export default function Calendar() {
                             <Button
                               variant="secondary"
                               type="button"
-                              onClick={async () => {
-                                const ok = window.confirm(
-                                  "Cancelar esta reserva?",
-                                );
-                                if (!ok) return;
-                                try {
-                                  await cancelBooking(b._id);
-                                  load();
-                                } catch (e) {
-                                  if (e?.status === 401) {
-                                    signOut();
-                                    nav(
-                                      `/login?next=${encodeURIComponent("/calendar")}`,
-                                      { replace: true },
-                                    );
-                                    return;
-                                  }
-                                  alert(e?.message || "Falha ao cancelar.");
-                                }
-                              }}
+                              onClick={() => handleCancel(booking._id)}
                             >
                               Cancelar
                             </Button>
@@ -452,6 +500,13 @@ export default function Calendar() {
             )}
           </CardBody>
         </Card>
+
+        <BookingQuickViewModal
+          open={!!selectedBooking}
+          item={selectedBooking}
+          timezone={agendaTimeZone}
+          onClose={() => setSelectedBooking(null)}
+        />
       </div>
     </Shell>
   );

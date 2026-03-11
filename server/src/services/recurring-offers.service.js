@@ -12,6 +12,7 @@ import {
   canUseRecurringAutoSend,
 } from "../utils/planFeatures.js";
 import {
+  assertNotificationFeatureSelection,
   canSendWhatsAppRecurringAutoSend,
   getDefaultOfferNotificationFlags,
   resolveWorkspaceNotificationContext,
@@ -728,6 +729,24 @@ export async function createRecurringOffer({ tenantId, userId, body, origin = ""
     ownerUserId: userId || null,
     workspacePlan,
   });
+  const requestedAutoSend =
+    input?.automation?.autoSendToCustomer ?? input.autoSendToCustomer;
+
+  assertNotificationFeatureSelection({
+    context: notificationContext,
+    featureKey: "whatsappPaymentStatus",
+    requested: input.notifyWhatsAppOnPaid,
+    action:
+      "ativar a confirmacao de pagamento por WhatsApp nesta cobranca recorrente",
+  });
+  assertNotificationFeatureSelection({
+    context: notificationContext,
+    featureKey: "whatsappRecurringAutoSend",
+    requested: requestedAutoSend,
+    action:
+      "ativar o envio automatico da cobranca recorrente por WhatsApp",
+  });
+
   const customer = await resolveCustomerSnapshot({ tenantId, body: input });
   const snapshot = buildOfferSnapshotFields({
     body: input,
@@ -941,16 +960,26 @@ export async function updateRecurringOffer({ recurringId, tenantId, userId, body
   }
 
   const workspacePlan = await getWorkspacePlan(tenantId);
+  const notificationContext = await resolveWorkspaceNotificationContext({
+    workspaceId: tenantId,
+    ownerUserId: userId || null,
+    workspacePlan,
+  });
   const patch = buildRecurringUpdatePatch(body || {});
-  if (
-    patch.notifyWhatsAppOnPaid !== undefined &&
-    !canUseNotifyWhatsAppOnPaid(workspacePlan)
-  ) {
-    patch.notifyWhatsAppOnPaid = false;
-  }
 
   const setPatch = {};
   for (const [key, value] of Object.entries(patch)) setPatch[key] = value;
+
+  if (body?.notifyWhatsAppOnPaid !== undefined) {
+    assertNotificationFeatureSelection({
+      context: notificationContext,
+      featureKey: "whatsappPaymentStatus",
+      requested: body.notifyWhatsAppOnPaid,
+      action:
+        "ativar a confirmacao de pagamento por WhatsApp nesta cobranca recorrente",
+    });
+    setPatch.notifyWhatsAppOnPaid = safeBool(body.notifyWhatsAppOnPaid);
+  }
 
   if (body?.status !== undefined) {
     const status = String(body.status || "").trim().toLowerCase();
@@ -967,11 +996,16 @@ export async function updateRecurringOffer({ recurringId, tenantId, userId, body
 
   if (body?.automation) {
     if (body.automation.autoSendToCustomer !== undefined) {
-      setPatch["automation.autoSendToCustomer"] = canUseRecurringAutoSend(
-        workspacePlan,
-      )
-        ? safeBool(body.automation.autoSendToCustomer)
-        : false;
+      assertNotificationFeatureSelection({
+        context: notificationContext,
+        featureKey: "whatsappRecurringAutoSend",
+        requested: body.automation.autoSendToCustomer,
+        action:
+          "ativar o envio automatico da cobranca recorrente por WhatsApp",
+      });
+      setPatch["automation.autoSendToCustomer"] = safeBool(
+        body.automation.autoSendToCustomer,
+      );
     }
     if (body.automation.generateFirstNow !== undefined) {
       setPatch["automation.generateFirstNow"] = safeBool(

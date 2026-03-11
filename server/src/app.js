@@ -111,8 +111,12 @@ export function createApp() {
   app.use((err, _req, res, _next) => {
     console.error(err);
 
-    const status = Number(err?.status) || 500;
+    const status = Number(err?.statusCode || err?.status) || 500;
     const payload = { ok: false, error: err?.message || "Internal error" };
+
+    if (err?.code) payload.code = err.code;
+    if (err?.reason) payload.reason = err.reason;
+    if (err?.capability) payload.capability = err.capability;
 
     if (process.env.NODE_ENV !== "production" && err?.details) {
       payload.details = err.details;

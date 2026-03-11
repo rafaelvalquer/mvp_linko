@@ -19,6 +19,7 @@ import {
 } from "../services/resendEmail.js";
 import { canUseNotifyWhatsAppOnPaid } from "../utils/planFeatures.js";
 import {
+  assertNotificationFeatureSelection,
   getDefaultOfferNotificationFlags,
   isEmailNotificationEnabled,
   resolveWorkspaceNotificationContext,
@@ -784,6 +785,13 @@ r.post(
       workspaceId: req.tenantId,
       ownerUserId: req.user?._id || null,
       workspacePlan: workspace?.plan || "start",
+    });
+
+    assertNotificationFeatureSelection({
+      context: notificationContext,
+      featureKey: "whatsappPaymentStatus",
+      requested: req.body?.notifyWhatsAppOnPaid,
+      action: "ativar a confirmacao de pagamento por WhatsApp nesta proposta",
     });
 
     const offer = await createOfferLocal({

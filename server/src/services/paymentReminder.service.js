@@ -3,6 +3,7 @@ import { Offer } from "../models/Offer.js";
 import OfferReminderLog from "../models/OfferReminderLog.js";
 import { queueOrSendWhatsApp } from "./whatsappOutbox.service.js";
 import {
+  assertNotificationFeatureSelection,
   canSendWhatsAppPaymentReminders,
   resolveWorkspaceNotificationContext,
 } from "./notificationSettings.js";
@@ -203,6 +204,27 @@ export async function updateOfferPaymentReminderSettings({
   const query = { _id: offerId, workspaceId };
   if (ownerUserId) query.ownerUserId = ownerUserId;
 
+  const wantsReminderEnabled = [
+    patch.enabled24h,
+    patch.enabled3d,
+    patch.enabledDueDate,
+    patch.enabledAfterDueDate,
+  ].some((value) => value === true);
+
+  if (wantsReminderEnabled) {
+    const notificationContext = await resolveWorkspaceNotificationContext({
+      workspaceId,
+      ownerUserId: ownerUserId || null,
+    });
+
+    assertNotificationFeatureSelection({
+      context: notificationContext,
+      featureKey: "whatsappPaymentReminders",
+      requested: true,
+      action: "ativar lembretes de pagamento por WhatsApp",
+    });
+  }
+
   await Offer.updateOne(
     query,
     {
@@ -340,8 +362,8 @@ export async function dispatchPaymentReminder({
       to: to || "",
       message,
       error: {
-        message: "WhatsApp desabilitado na configuração do ambiente.",
-        code: "FEATURE_DISABLED",
+        message: reasonMessage,
+        code: reasonCode,
       },
       sentAt: null,
       meta: baseMeta,

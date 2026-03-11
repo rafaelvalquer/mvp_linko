@@ -3,6 +3,7 @@ import { useMemo, useState, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../app/api.js";
 import { createRecurringOffer } from "../app/recurringOffersApi.js";
+import { getSettings } from "../app/settingsApi.js";
 import PageHeader from "../components/appui/PageHeader.jsx";
 import Card, { CardBody, CardHeader } from "../components/appui/Card.jsx";
 import Button from "../components/appui/Button.jsx";
@@ -11,6 +12,10 @@ import { useAuth } from "../app/AuthContext.jsx";
 import { listClients } from "../app/clientsApi.js";
 import { listProducts } from "../app/productsApi.js";
 import { canUseRecurringPlan } from "../utils/planFeatures.js";
+import {
+  canSendWhatsAppRecurringAutoSend,
+  getDefaultOfferNotificationFlags,
+} from "../utils/notificationSettings.js";
 
 import { MessageCircle } from "lucide-react";
 
@@ -348,6 +353,10 @@ export default function NewOffer() {
   const [prodOpen, setProdOpen] = useState(false);
 
   const resultRef = useRef(null);
+  const notificationPreferenceTouchedRef = useRef({
+    notifyWhatsAppOnPaid: false,
+    recurringAutoSendToCustomer: false,
+  });
 
   useEffect(() => {
     const nextMode =
@@ -356,6 +365,41 @@ export default function NewOffer() {
       prev.creationMode === nextMode ? prev : { ...prev, creationMode: nextMode },
     );
   }, [canUseRecurringFeatures, initialRecurringMode]);
+
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      try {
+        const data = await getSettings();
+        if (!alive) return;
+
+        const notificationContext = {
+          settings: data?.settings?.notifications || {},
+          capabilities: data?.capabilities?.notifications || {},
+        };
+        const defaultFlags = getDefaultOfferNotificationFlags(notificationContext);
+        const defaultRecurringAutoSend =
+          canSendWhatsAppRecurringAutoSend(notificationContext);
+
+        setForm((prev) => ({
+          ...prev,
+          notifyWhatsAppOnPaid:
+            notificationPreferenceTouchedRef.current.notifyWhatsAppOnPaid
+              ? prev.notifyWhatsAppOnPaid
+              : defaultFlags.notifyWhatsAppOnPaid,
+          recurringAutoSendToCustomer:
+            notificationPreferenceTouchedRef.current.recurringAutoSendToCustomer
+              ? prev.recurringAutoSendToCustomer
+              : defaultRecurringAutoSend,
+        }));
+      } catch {}
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (result && resultRef.current) {
@@ -1125,12 +1169,14 @@ export default function NewOffer() {
                     type="checkbox"
                     className="mt-1 h-4 w-4 accent-emerald-600"
                     checked={!!form.notifyWhatsAppOnPaid}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      notificationPreferenceTouchedRef.current.notifyWhatsAppOnPaid =
+                        true;
                       setForm({
                         ...form,
                         notifyWhatsAppOnPaid: e.target.checked,
-                      })
-                    }
+                      });
+                    }}
                   />
                   <div>
                     <div className="text-sm font-semibold text-zinc-900">
@@ -2018,12 +2064,14 @@ export default function NewOffer() {
                       type="checkbox"
                       className="mt-1 h-4 w-4 accent-emerald-600"
                       checked={!!form.recurringAutoSendToCustomer}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        notificationPreferenceTouchedRef.current.recurringAutoSendToCustomer =
+                          true;
                         setForm({
                           ...form,
                           recurringAutoSendToCustomer: e.target.checked,
-                        })
-                      }
+                        });
+                      }}
                     />
                     <div>
                       <div className="text-sm font-semibold text-zinc-900">

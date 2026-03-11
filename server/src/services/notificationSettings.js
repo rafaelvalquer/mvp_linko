@@ -1,29 +1,32 @@
 import { AppSettings } from "../models/AppSettings.js";
 import { Workspace } from "../models/Workspace.js";
 import { getPlanFeatureMatrix, normalizePlan } from "../utils/planFeatures.js";
+import {
+  DEFAULT_NOTIFICATION_SETTINGS,
+  DEFAULT_PAYMENT_REMINDER_DEFAULTS,
+  canSendWhatsAppPaymentReminders,
+  canSendWhatsAppPaymentStatus,
+  canSendWhatsAppRecurringAutoSend,
+  getDefaultOfferNotificationFlags,
+  getNotificationFeatureAvailability,
+  getNotificationFeatureCapability,
+  isEmailNotificationEnabled,
+  isWhatsAppMasterEnabled,
+  mergeNotificationSettings,
+} from "../../../shared/notificationSettings.js";
 
-const DEFAULT_PAYMENT_REMINDER_DEFAULTS = {
-  enabled24h: false,
-  enabled3d: false,
-  enabledDueDate: false,
-  enabledAfterDueDate: false,
-};
-
-export const DEFAULT_NOTIFICATION_SETTINGS = {
-  email: {
-    sellerProofSubmitted: true,
-    sellerPixPaid: true,
-    sellerPlatformConfirmed: true,
-  },
-  whatsapp: {
-    masterEnabled: true,
-    paymentStatusUpdatesEnabled: true,
-    recurringAutoSendDefault: false,
-    paymentReminders: {
-      enabled: true,
-      defaults: { ...DEFAULT_PAYMENT_REMINDER_DEFAULTS },
-    },
-  },
+export {
+  DEFAULT_NOTIFICATION_SETTINGS,
+  DEFAULT_PAYMENT_REMINDER_DEFAULTS,
+  canSendWhatsAppPaymentReminders,
+  canSendWhatsAppPaymentStatus,
+  canSendWhatsAppRecurringAutoSend,
+  getDefaultOfferNotificationFlags,
+  getNotificationFeatureAvailability,
+  getNotificationFeatureCapability,
+  isEmailNotificationEnabled,
+  isWhatsAppMasterEnabled,
+  mergeNotificationSettings,
 };
 
 function hasText(value) {
@@ -45,60 +48,6 @@ function sanitizeReminderDefaults(input = {}, base = DEFAULT_PAYMENT_REMINDER_DE
       input.enabledAfterDueDate,
       base.enabledAfterDueDate,
     ),
-  };
-}
-
-export function mergeNotificationSettings(base, patch) {
-  const source = base || DEFAULT_NOTIFICATION_SETTINGS;
-  const input = patch || {};
-
-  return {
-    email: {
-      sellerProofSubmitted: boolOrDefault(
-        input?.email?.sellerProofSubmitted,
-        source?.email?.sellerProofSubmitted ??
-          DEFAULT_NOTIFICATION_SETTINGS.email.sellerProofSubmitted,
-      ),
-      sellerPixPaid: boolOrDefault(
-        input?.email?.sellerPixPaid,
-        source?.email?.sellerPixPaid ??
-          DEFAULT_NOTIFICATION_SETTINGS.email.sellerPixPaid,
-      ),
-      sellerPlatformConfirmed: boolOrDefault(
-        input?.email?.sellerPlatformConfirmed,
-        source?.email?.sellerPlatformConfirmed ??
-          DEFAULT_NOTIFICATION_SETTINGS.email.sellerPlatformConfirmed,
-      ),
-    },
-    whatsapp: {
-      masterEnabled: boolOrDefault(
-        input?.whatsapp?.masterEnabled,
-        source?.whatsapp?.masterEnabled ??
-          DEFAULT_NOTIFICATION_SETTINGS.whatsapp.masterEnabled,
-      ),
-      paymentStatusUpdatesEnabled: boolOrDefault(
-        input?.whatsapp?.paymentStatusUpdatesEnabled,
-        source?.whatsapp?.paymentStatusUpdatesEnabled ??
-          DEFAULT_NOTIFICATION_SETTINGS.whatsapp.paymentStatusUpdatesEnabled,
-      ),
-      recurringAutoSendDefault: boolOrDefault(
-        input?.whatsapp?.recurringAutoSendDefault,
-        source?.whatsapp?.recurringAutoSendDefault ??
-          DEFAULT_NOTIFICATION_SETTINGS.whatsapp.recurringAutoSendDefault,
-      ),
-      paymentReminders: {
-        enabled: boolOrDefault(
-          input?.whatsapp?.paymentReminders?.enabled,
-          source?.whatsapp?.paymentReminders?.enabled ??
-            DEFAULT_NOTIFICATION_SETTINGS.whatsapp.paymentReminders.enabled,
-        ),
-        defaults: sanitizeReminderDefaults(
-          input?.whatsapp?.paymentReminders?.defaults,
-          source?.whatsapp?.paymentReminders?.defaults ??
-            DEFAULT_NOTIFICATION_SETTINGS.whatsapp.paymentReminders.defaults,
-        ),
-      },
-    },
   };
 }
 
@@ -270,69 +219,66 @@ export async function resolveWorkspaceNotificationContext({
     workspaceId,
     ownerUserId,
   });
+  const capabilities = getNotificationCapabilities(plan);
+  const featureAvailability = getNotificationFeatureAvailability({
+    settings,
+    capabilities,
+  });
 
   return {
     plan,
     settings,
-    capabilities: getNotificationCapabilities(plan),
+    capabilities,
+    featureAvailability,
   };
 }
 
-export function isEmailNotificationEnabled(context, key) {
-  return (
-    context?.capabilities?.environment?.email?.available === true &&
-    context?.settings?.email?.[key] === true
-  );
-}
+export function createNotificationFeatureError({
+  context,
+  featureKey,
+  capability = null,
+  action = "usar este recurso",
+}) {
+  const resolvedCapability =
+    capability || getNotificationFeatureCapability(context, featureKey);
+  const message =
+    resolvedCapability?.reason ||
+    `Nao foi possivel ${action} porque o recurso esta indisponivel.`;
 
-export function isWhatsAppMasterEnabled(context) {
-  return (
-    context?.capabilities?.environment?.whatsapp?.available === true &&
-    context?.settings?.whatsapp?.masterEnabled === true
-  );
-}
-
-export function canSendWhatsAppPaymentStatus(context) {
-  return (
-    isWhatsAppMasterEnabled(context) &&
-    context?.capabilities?.plan?.features?.whatsappPaymentStatus === true &&
-    context?.settings?.whatsapp?.paymentStatusUpdatesEnabled === true
-  );
-}
-
-export function canSendWhatsAppRecurringAutoSend(context) {
-  return (
-    isWhatsAppMasterEnabled(context) &&
-    context?.capabilities?.plan?.features?.whatsappRecurringAutoSend === true &&
-    context?.settings?.whatsapp?.recurringAutoSendDefault === true
-  );
-}
-
-export function canSendWhatsAppPaymentReminders(context) {
-  return (
-    isWhatsAppMasterEnabled(context) &&
-    context?.capabilities?.plan?.features?.whatsappPaymentReminders === true &&
-    context?.settings?.whatsapp?.paymentReminders?.enabled === true
-  );
-}
-
-export function getDefaultOfferNotificationFlags(context) {
-  const reminderDefaults =
-    context?.settings?.whatsapp?.paymentReminders?.defaults ||
-    DEFAULT_NOTIFICATION_SETTINGS.whatsapp.paymentReminders.defaults;
-  const remindersEnabled = canSendWhatsAppPaymentReminders(context);
-
-  return {
-    notifyWhatsAppOnPaid: canSendWhatsAppPaymentStatus(context),
-    paymentReminders: {
-      enabled24h: remindersEnabled ? reminderDefaults.enabled24h === true : false,
-      enabled3d: remindersEnabled ? reminderDefaults.enabled3d === true : false,
-      enabledDueDate:
-        remindersEnabled ? reminderDefaults.enabledDueDate === true : false,
-      enabledAfterDueDate:
-        remindersEnabled
-          ? reminderDefaults.enabledAfterDueDate === true
-          : false,
-    },
+  const err = new Error(message);
+  err.status = Number(resolvedCapability?.statusCode) || 403;
+  err.statusCode = err.status;
+  err.code = resolvedCapability?.code || "FEATURE_NOT_AVAILABLE";
+  err.reason = message;
+  err.capability = {
+    featureKey,
+    ...resolvedCapability,
   };
+  err.details = {
+    action,
+    featureKey,
+    capability: err.capability,
+  };
+  return err;
+}
+
+export function assertNotificationFeatureSelection({
+  context,
+  featureKey,
+  requested,
+  action = "usar este recurso",
+}) {
+  if (requested !== true) return false;
+
+  const capability = getNotificationFeatureCapability(context, featureKey);
+  if (capability.available !== true) {
+    throw createNotificationFeatureError({
+      context,
+      featureKey,
+      capability,
+      action,
+    });
+  }
+
+  return true;
 }

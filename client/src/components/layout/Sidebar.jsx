@@ -811,7 +811,7 @@ export default function Sidebar({
               isDark={isDark}
               onNavigate={onNavigate}
           >
-              Configurações da Agenda
+              Configurações
             </SidebarItem>
           </div>
 
