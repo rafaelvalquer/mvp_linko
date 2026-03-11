@@ -1,5 +1,5 @@
-// src/components/dashboard/ChartCard.jsx
 import Card from "../appui/Card.jsx";
+import useThemeToggle from "../../app/useThemeToggle.js";
 
 export default function ChartCard({
   title,
@@ -9,28 +9,37 @@ export default function ChartCard({
   bodyClassName = "",
   children,
 }) {
+  const { isDark } = useThemeToggle();
+
   return (
     <Card
       className={[
-        // premium surface (light + dark friendly)
-        "overflow-hidden rounded-2xl border border-zinc-200/70 bg-white shadow-sm ring-1 ring-zinc-200/40",
-        "dark:border-zinc-800/70 dark:bg-zinc-950/40 dark:ring-zinc-800/40",
+        "overflow-hidden",
         className,
       ].join(" ")}
     >
       <div
         className={[
-          "flex items-start justify-between gap-3",
-          "px-5 pt-5 pb-3",
-          "border-b border-zinc-200/70 dark:border-zinc-800/70",
+          "flex items-start justify-between gap-3 border-b px-5 pb-4 pt-5",
+          isDark ? "border-white/10" : "border-slate-200/80",
         ].join(" ")}
       >
         <div className="min-w-0">
-          <div className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
+          <div
+            className={[
+              "text-sm font-bold tracking-tight",
+              isDark ? "text-white" : "text-slate-900",
+            ].join(" ")}
+          >
             {title}
           </div>
           {subtitle ? (
-            <div className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+            <div
+              className={[
+                "mt-1 text-xs",
+                isDark ? "text-slate-400" : "text-slate-500",
+              ].join(" ")}
+            >
               {subtitle}
             </div>
           ) : null}
@@ -39,13 +48,7 @@ export default function ChartCard({
         {right ? <div className="shrink-0">{right}</div> : null}
       </div>
 
-      <div
-        className={[
-          // default spacing similar to premium dashboards
-          "px-5 pb-5 pt-3",
-          bodyClassName,
-        ].join(" ")}
-      >
+      <div className={["px-5 pb-5 pt-4", bodyClassName].join(" ")}>
         {children}
       </div>
     </Card>

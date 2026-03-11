@@ -18,60 +18,40 @@ import {
 } from "./offerHelpers.js";
 
 function Modal({ open, onClose, title, children, footer }) {
-  useEffect(() => {
-    if (open) document.body.style.overflow = "hidden";
-    else document.body.style.overflow = "";
-    return () => {
-      document.body.style.overflow = "";
-    };
-  }, [open]);
-
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === "Escape") onClose?.();
-    };
-    if (open) window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [open, onClose]);
-
   if (!open) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm transition-opacity"
-      role="dialog"
-      aria-modal="true"
-      onClick={() => onClose?.()}
+    <ModalShell
+      open={open}
+      onClose={onClose}
+      panelClassName="max-w-4xl"
     >
-      <div
-        className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl transition-transform"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-zinc-100 bg-white px-5 py-4">
+      <div className="flex max-h-[90vh] w-full flex-col overflow-hidden rounded-[32px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(241,245,249,0.94))] shadow-[0_32px_80px_-42px_rgba(15,23,42,0.35)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.96),rgba(9,15,28,0.94))] dark:shadow-[0_32px_80px_-42px_rgba(15,23,42,0.82)]">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-200/80 bg-[linear-gradient(135deg,rgba(255,255,255,0.96),rgba(238,245,252,0.88))] px-5 py-4 dark:border-white/10 dark:bg-[linear-gradient(135deg,rgba(15,23,42,0.85),rgba(11,18,32,0.7))]">
           <div className="min-w-0">
-            <div className="truncate text-sm font-semibold text-zinc-900">
+            <div className="truncate text-sm font-bold text-slate-950 dark:text-white">
               {title}
             </div>
           </div>
           <button
             type="button"
-            className="flex h-9 w-9 items-center justify-center rounded-xl border border-zinc-200 text-zinc-500 transition-colors hover:bg-zinc-50"
+            className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200/80 bg-white/85 text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-950 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-cyan-400/20 dark:hover:bg-white/10 dark:hover:text-white"
             onClick={() => onClose?.()}
             aria-label="Fechar"
           >
-            ✕
+            x
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-5">{children}</div>
 
         {footer ? (
-          <div className="shrink-0 border-t border-zinc-100 bg-zinc-50 px-5 py-4">
+          <div className="shrink-0 border-t border-slate-200/80 bg-slate-50/80 px-5 py-4 dark:border-white/10 dark:bg-white/5">
             {footer}
           </div>
         ) : null}
       </div>
-    </div>
+    </ModalShell>
   );
 }
 

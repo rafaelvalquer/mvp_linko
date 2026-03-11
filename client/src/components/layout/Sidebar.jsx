@@ -9,6 +9,8 @@ import {
   guardOfferCreation,
 } from "../../utils/guardOfferCreation.js";
 import { canUseRecurringPlan } from "../../utils/planFeatures.js";
+import useThemeToggle from "../../app/useThemeToggle.js";
+import brandLogo from "../../assets/brand.png";
 
 const Icons = {
   Menu: ({ className = "" }) => (
@@ -123,7 +125,7 @@ const Icons = {
     </svg>
   ),
 
-  Wallet: () => <WalletIcon className="h-[18px] w-[18px] text-indigo-500" />,
+  Wallet: () => <WalletIcon className="h-[18px] w-[18px] text-current" />,
 
   Settings: () => (
     <svg
@@ -177,6 +179,15 @@ const Icons = {
   ),
 };
 
+const NAV_ACTIVE_CLASSES =
+  "bg-[linear-gradient(135deg,rgba(37,99,235,0.92),rgba(20,184,166,0.88))] text-white shadow-[0_18px_40px_-24px_rgba(37,99,235,0.85)] ring-1 ring-cyan-400/20";
+
+function getNavIdleClasses(isDark) {
+  return isDark
+    ? "text-slate-300 hover:bg-white/6 hover:text-white"
+    : "text-slate-600 hover:bg-slate-100/90 hover:text-slate-950";
+}
+
 function AnimatedText({ collapsed, children, className = "" }) {
   return (
     <span
@@ -199,6 +210,7 @@ function SidebarItem({
   icon: Icon,
   collapsed,
   indent = false,
+  isDark,
   onNavigate,
 }) {
   return (
@@ -211,9 +223,7 @@ function SidebarItem({
           "group relative flex items-center rounded-2xl px-3 py-2.5 text-sm transition-all duration-300",
           collapsed ? "justify-center" : "justify-start",
           !collapsed && indent ? "ml-9" : "",
-          isActive
-            ? "bg-emerald-50 text-emerald-700 shadow-sm ring-1 ring-emerald-100"
-            : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900",
+          isActive ? NAV_ACTIVE_CLASSES : getNavIdleClasses(isDark),
         ].join(" ")
       }
     >
@@ -236,6 +246,7 @@ function SidebarActionItem({
   collapsed,
   indent = false,
   active = false,
+  isDark,
   onClick,
 }) {
   return (
@@ -247,9 +258,7 @@ function SidebarActionItem({
         "group relative flex w-full items-center rounded-2xl px-3 py-2.5 text-sm transition-all duration-300",
         collapsed ? "justify-center" : "justify-start",
         !collapsed && indent ? "ml-9" : "",
-        active
-          ? "bg-emerald-50 text-emerald-700 shadow-sm ring-1 ring-emerald-100"
-          : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900",
+        active ? NAV_ACTIVE_CLASSES : getNavIdleClasses(isDark),
       ].join(" ")}
     >
       {Icon ? (
@@ -271,6 +280,7 @@ function SidebarParentButton({
   collapsed,
   active,
   open,
+  isDark,
   onClick,
 }) {
   return (
@@ -281,9 +291,7 @@ function SidebarParentButton({
       className={[
         "flex w-full items-center rounded-2xl px-3 py-2.5 text-sm transition-all duration-300",
         collapsed ? "justify-center" : "justify-between",
-        active
-          ? "bg-emerald-50 text-emerald-700 shadow-sm ring-1 ring-emerald-100"
-          : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900",
+        active ? NAV_ACTIVE_CLASSES : getNavIdleClasses(isDark),
       ].join(" ")}
     >
       <div className="flex min-w-0 items-center">
@@ -312,6 +320,7 @@ export default function Sidebar({
   onNavigate,
   mobile = false,
 }) {
+  const { isDark } = useThemeToggle();
   const { perms, workspace, refreshWorkspace } = useAuth();
   const nav = useNavigate();
   const loc = useLocation();
@@ -451,7 +460,10 @@ export default function Sidebar({
     <>
       <div
         className={[
-          "flex h-full flex-col rounded-[28px] border border-zinc-200/80 bg-white/90 p-3 shadow-[0_10px_30px_rgba(24,24,27,0.05)] backdrop-blur transition-all duration-300",
+          "flex h-full flex-col rounded-[32px] border p-3 backdrop-blur-2xl transition-all duration-300",
+          isDark
+            ? "border-white/10 bg-[linear-gradient(180deg,rgba(8,15,30,0.98),rgba(6,12,24,0.94))] shadow-[0_24px_80px_-42px_rgba(15,23,42,0.92)]"
+            : "border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(241,245,249,0.9))] shadow-[0_24px_80px_-42px_rgba(15,23,42,0.18)]",
           collapsed ? "items-center" : "items-stretch",
         ].join(" ")}
       >
@@ -465,16 +477,36 @@ export default function Sidebar({
         >
           {!collapsed ? (
             <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#111827_0%,#374151_100%)] text-white shadow-lg shadow-zinc-900/10">
-                <span className="text-sm font-bold">L</span>
+              <div
+                className={[
+                  "flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border bg-[linear-gradient(135deg,#2563eb,#14b8a6)] text-white shadow-[0_18px_40px_-22px_rgba(37,99,235,0.75)]",
+                  isDark ? "border-white/10" : "border-slate-200/80",
+                ].join(" ")}
+              >
+                <img
+                  src={brandLogo}
+                  alt="LuminorPay"
+                  className="h-8 w-8 rounded-xl object-contain"
+                  draggable={false}
+                />
               </div>
 
               <div className="min-w-0">
-                <div className="block text-[11px] font-bold uppercase tracking-[0.22em] text-zinc-400">
-                  Painel
+                <div
+                  className={[
+                    "block text-[11px] font-bold uppercase tracking-[0.22em]",
+                    isDark ? "text-slate-400" : "text-slate-500",
+                  ].join(" ")}
+                >
+                  Vendas e Pix
                 </div>
-                <div className="mt-1 block text-sm font-semibold text-zinc-900">
-                  Luminor
+                <div
+                  className={[
+                    "mt-1 block text-sm font-semibold",
+                    isDark ? "text-white" : "text-slate-950",
+                  ].join(" ")}
+                >
+                  LuminorPay
                 </div>
               </div>
             </div>
@@ -484,23 +516,52 @@ export default function Sidebar({
             type="button"
             onClick={onToggle}
             aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-zinc-200 bg-white text-zinc-600 shadow-sm transition hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-900"
+            className={[
+              "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border transition",
+              isDark
+                ? "border-white/10 bg-white/5 text-slate-200 hover:border-cyan-400/20 hover:bg-white/10 hover:text-white"
+                : "border-slate-200/80 bg-white/85 text-slate-600 shadow-[0_14px_28px_-20px_rgba(15,23,42,0.2)] hover:border-sky-300 hover:text-slate-950",
+            ].join(" ")}
           >
             {mobile ? <Icons.Close /> : <Icons.Menu />}
           </button>
         </div>
 
         {!collapsed ? (
-          <div className="mb-3 flex items-center justify-between rounded-2xl border border-zinc-200 bg-zinc-50/80 px-3 py-2">
+          <div
+            className={[
+              "mb-3 flex items-center justify-between rounded-2xl border px-3 py-2",
+              isDark
+                ? "border-white/10 bg-white/5"
+                : "border-slate-200/80 bg-white/80 shadow-[0_14px_28px_-24px_rgba(15,23,42,0.16)]",
+            ].join(" ")}
+          >
             <div>
-              <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-400">
+              <div
+                className={[
+                  "text-[10px] font-bold uppercase tracking-[0.18em]",
+                  isDark ? "text-slate-400" : "text-slate-500",
+                ].join(" ")}
+              >
                 Plano
               </div>
-              <div className="mt-1 text-sm font-semibold text-zinc-900">
+              <div
+                className={[
+                  "mt-1 text-sm font-semibold",
+                  isDark ? "text-white" : "text-slate-950",
+                ].join(" ")}
+              >
                 {planLabel}
               </div>
             </div>
-            <span className="rounded-full border border-emerald-200 bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700">
+            <span
+              className={[
+                "rounded-full border px-2.5 py-1 text-[10px] font-bold",
+                isDark
+                  ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-200"
+                  : "border-emerald-300/70 bg-emerald-50 text-emerald-700",
+              ].join(" ")}
+            >
               Ativo
             </span>
           </div>
@@ -508,7 +569,12 @@ export default function Sidebar({
           <div className="mb-3 flex w-full justify-center">
             <span
               title={planLabel}
-              className="inline-flex h-8 min-w-8 items-center justify-center rounded-full border border-emerald-200 bg-emerald-100 px-2 text-[10px] font-bold text-emerald-700"
+              className={[
+                "inline-flex h-8 min-w-8 items-center justify-center rounded-full border px-2 text-[10px] font-bold",
+                isDark
+                  ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-200"
+                  : "border-emerald-300/70 bg-emerald-50 text-emerald-700",
+              ].join(" ")}
             >
               {planLabel.slice(0, 1)}
             </span>
@@ -520,6 +586,7 @@ export default function Sidebar({
             to="/dashboard"
             icon={Icons.Dashboard}
             collapsed={collapsed}
+            isDark={isDark}
             onNavigate={onNavigate}
           >
             Dashboard
@@ -532,6 +599,7 @@ export default function Sidebar({
               collapsed={collapsed}
               active={isOffersAny}
               open={isOffersOpen}
+              isDark={isDark}
               onClick={handleOffersClick}
             />
 
@@ -549,6 +617,7 @@ export default function Sidebar({
                   to="/offers"
                   collapsed={collapsed}
                   indent
+                  isDark={isDark}
                   onNavigate={onNavigate}
                 >
                   Todas as propostas
@@ -557,6 +626,7 @@ export default function Sidebar({
                 <SidebarActionItem
                   collapsed={collapsed}
                   indent
+                  isDark={isDark}
                   active={
                     loc.pathname === "/offers/new" &&
                     (!loc.search.includes("mode=recurring") || !canUseRecurringFeatures)
@@ -571,6 +641,7 @@ export default function Sidebar({
                     to="/offers/recurring"
                     collapsed={collapsed}
                     indent
+                    isDark={isDark}
                     onNavigate={onNavigate}
                   >
                     Recorrências
@@ -584,6 +655,7 @@ export default function Sidebar({
             to="/calendar"
             icon={Icons.Calendar}
             collapsed={collapsed}
+            isDark={isDark}
             onNavigate={onNavigate}
           >
             Agenda
@@ -593,6 +665,7 @@ export default function Sidebar({
             to="/reports"
             icon={() => <FileText size={18} className="text-current" />}
             collapsed={collapsed}
+            isDark={isDark}
             onNavigate={onNavigate}
           >
             Relatórios
@@ -606,6 +679,7 @@ export default function Sidebar({
                 collapsed={collapsed}
                 active={isStoreRoute}
                 open={isStoreOpen}
+                isDark={isDark}
                 onClick={handleStoreClick}
               />
 
@@ -621,6 +695,7 @@ export default function Sidebar({
                     to="/store/products"
                     collapsed={collapsed}
                     indent
+                    isDark={isDark}
                     onNavigate={onNavigate}
                   >
                     Produtos
@@ -629,6 +704,7 @@ export default function Sidebar({
                     to="/store/customers"
                     collapsed={collapsed}
                     indent
+                    isDark={isDark}
                     onNavigate={onNavigate}
                   >
                     Clientes
@@ -643,8 +719,9 @@ export default function Sidebar({
               to="/settings/agenda"
               icon={Icons.Settings}
               collapsed={collapsed}
+              isDark={isDark}
               onNavigate={onNavigate}
-            >
+          >
               Configurações da Agenda
             </SidebarItem>
           </div>
@@ -654,6 +731,7 @@ export default function Sidebar({
               to="/withdraws"
               icon={Icons.Wallet}
               collapsed={collapsed}
+              isDark={isDark}
               onNavigate={onNavigate}
             >
               Conta Pix
@@ -661,10 +739,18 @@ export default function Sidebar({
           </div>
         </nav>
 
-        <div className="mt-4 border-t border-zinc-100 pt-4">
+        <div
+          className={[
+            "mt-4 border-t pt-4",
+            isDark ? "border-white/10" : "border-slate-200/80",
+          ].join(" ")}
+        >
           <div
             className={[
-              "rounded-2xl border border-zinc-100 bg-zinc-50/90 transition-all duration-300",
+              "rounded-2xl border transition-all duration-300",
+              isDark
+                ? "border-white/10 bg-white/5"
+                : "border-slate-200/80 bg-white/78 shadow-[0_14px_28px_-24px_rgba(15,23,42,0.16)]",
               collapsed ? "p-2" : "p-3",
             ].join(" ")}
             title={collapsed ? "Link Público" : undefined}
@@ -675,20 +761,33 @@ export default function Sidebar({
                 collapsed ? "justify-center" : "gap-3",
               ].join(" ")}
             >
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-emerald-600 shadow-sm">
+              <div
+                className={[
+                  "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
+                  isDark
+                    ? "bg-white/10 text-cyan-300 shadow-[0_12px_24px_-18px_rgba(15,23,42,0.8)]"
+                    : "bg-sky-50 text-sky-600 shadow-[0_12px_24px_-18px_rgba(15,23,42,0.24)]",
+                ].join(" ")}
+              >
                 <Icons.Link />
               </div>
 
               <div className="min-w-0">
                 <AnimatedText
                   collapsed={collapsed}
-                  className="block text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-400"
+                  className={[
+                    "block text-[10px] font-bold uppercase tracking-[0.18em]",
+                    isDark ? "text-slate-400" : "text-slate-500",
+                  ].join(" ")}
                 >
                   Link Público
                 </AnimatedText>
                 <AnimatedText
                   collapsed={collapsed}
-                  className="mt-1 block truncate font-mono text-[11px] font-medium text-emerald-600"
+                  className={[
+                    "mt-1 block truncate font-mono text-[11px] font-medium",
+                    isDark ? "text-cyan-300" : "text-sky-600",
+                  ].join(" ")}
                 >
                   /p/:token
                 </AnimatedText>
@@ -708,3 +807,4 @@ export default function Sidebar({
     </>
   );
 }
+

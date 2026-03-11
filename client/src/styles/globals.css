@@ -10,7 +10,16 @@
     font-size: 16px;
   }
   body {
-    @apply font-sans antialiased text-slate-900;
+    @apply font-sans antialiased;
+    background: rgb(var(--bg));
+    color: rgb(var(--text));
+    transition:
+      background-color 220ms ease,
+      color 220ms ease;
+  }
+
+  #root {
+    min-height: 100vh;
   }
 }
 
@@ -61,6 +70,112 @@ html {
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
+  }
+}
+
+@layer utilities {
+  .dark .bg-white {
+    background-color: rgb(15 23 42 / 0.72);
+  }
+
+  .dark .bg-zinc-50,
+  .dark .bg-gray-50 {
+    background-color: rgb(255 255 255 / 0.05);
+  }
+
+  .dark .bg-zinc-100,
+  .dark .bg-gray-100 {
+    background-color: rgb(255 255 255 / 0.08);
+  }
+
+  .dark .border-zinc-100,
+  .dark .border-zinc-200,
+  .dark .border-gray-200,
+  .dark .border-gray-300 {
+    border-color: rgb(255 255 255 / 0.10);
+  }
+
+  .dark .divide-zinc-100 > :not([hidden]) ~ :not([hidden]),
+  .dark .divide-gray-200 > :not([hidden]) ~ :not([hidden]) {
+    border-color: rgb(255 255 255 / 0.08);
+  }
+
+  .dark .text-zinc-900,
+  .dark .text-gray-900 {
+    color: rgb(248 250 252);
+  }
+
+  .dark .text-zinc-800,
+  .dark .text-zinc-700,
+  .dark .text-gray-700 {
+    color: rgb(226 232 240);
+  }
+
+  .dark .text-zinc-600,
+  .dark .text-zinc-500,
+  .dark .text-zinc-400,
+  .dark .text-gray-600,
+  .dark .text-gray-500 {
+    color: rgb(148 163 184);
+  }
+
+  .dark .hover\:bg-zinc-50:hover,
+  .dark .hover\:bg-zinc-100:hover,
+  .dark .hover\:bg-gray-50:hover {
+    background-color: rgb(255 255 255 / 0.08);
+  }
+
+  .dark .bg-red-50 {
+    background-color: rgb(127 29 29 / 0.18);
+  }
+
+  .dark .border-red-200 {
+    border-color: rgb(248 113 113 / 0.20);
+  }
+
+  .dark .text-red-800,
+  .dark .text-red-700 {
+    color: rgb(254 202 202);
+  }
+
+  .dark .bg-amber-50 {
+    background-color: rgb(120 53 15 / 0.18);
+  }
+
+  .dark .border-amber-200 {
+    border-color: rgb(251 191 36 / 0.20);
+  }
+
+  .dark .text-amber-900,
+  .dark .text-amber-800,
+  .dark .text-amber-700 {
+    color: rgb(253 230 138);
+  }
+
+  .dark .bg-emerald-50 {
+    background-color: rgb(6 95 70 / 0.18);
+  }
+
+  .dark .border-emerald-200 {
+    border-color: rgb(52 211 153 / 0.20);
+  }
+
+  .dark .text-emerald-900,
+  .dark .text-emerald-700 {
+    color: rgb(167 243 208);
+  }
+
+  .dark .bg-blue-50 {
+    background-color: rgb(30 64 175 / 0.18);
+  }
+
+  .dark .border-blue-200 {
+    border-color: rgb(96 165 250 / 0.20);
+  }
+
+  .dark .text-blue-900,
+  .dark .text-blue-700 {
+    color: rgb(191 219 254);
   }
 }
 

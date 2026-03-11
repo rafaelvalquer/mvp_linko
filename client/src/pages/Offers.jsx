@@ -11,6 +11,7 @@ import { Input } from "../components/appui/Input.jsx";
 import Badge from "../components/appui/Badge.jsx";
 import Skeleton from "../components/appui/Skeleton.jsx";
 import EmptyState from "../components/appui/EmptyState.jsx";
+import useThemeToggle from "../app/useThemeToggle.js";
 
 import OfferDetailsModal from "../components/offers/OfferDetailsModal.jsx";
 import {
@@ -21,6 +22,7 @@ import {
 } from "../components/offers/offerHelpers.js";
 
 export default function Offers() {
+  const { isDark } = useThemeToggle();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -32,6 +34,15 @@ export default function Offers() {
 
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsOffer, setDetailsOffer] = useState(null);
+
+  const selectClass = isDark
+    ? "h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-slate-100 outline-none transition focus:border-cyan-400/40"
+    : "h-10 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-sky-300";
+  const tableHeadClass = isDark
+    ? "text-[11px] uppercase tracking-wider text-slate-400"
+    : "text-[11px] uppercase tracking-wider text-zinc-400";
+  const tableBorderClass = isDark ? "border-white/10" : "border-zinc-100";
+  const tableRowClass = isDark ? "hover:bg-white/5" : "hover:bg-zinc-50/50";
 
   const patchOfferInList = useCallback((updated) => {
     if (!updated?._id) return;
@@ -139,7 +150,7 @@ export default function Offers() {
             <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
               <div className="flex flex-col gap-2 md:flex-row md:items-center">
                 <select
-                  className="h-10 rounded-xl border border-zinc-200 bg-white px-3 text-sm"
+                  className={selectClass}
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
                 >
@@ -155,7 +166,7 @@ export default function Offers() {
                 </select>
 
                 <select
-                  className="h-10 rounded-xl border border-zinc-200 bg-white px-3 text-sm"
+                  className={selectClass}
                   value={originFilter}
                   onChange={(e) => setOriginFilter(e.target.value)}
                 >
@@ -168,7 +179,7 @@ export default function Offers() {
                   <Input
                     value={q}
                     onChange={(e) => setQ(e.target.value)}
-                    placeholder="Buscar cliente, proposta ou recorrência…"
+                    placeholder="Buscar cliente, proposta ou recorrência..."
                     className="h-10"
                   />
                 </div>
@@ -185,7 +196,14 @@ export default function Offers() {
                 <Skeleton className="h-10 w-full rounded-xl" />
               </div>
             ) : error ? (
-              <div className="mt-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+              <div
+                className={[
+                  "mt-5 rounded-xl border p-4 text-sm",
+                  isDark
+                    ? "border-red-400/20 bg-red-500/10 text-red-100"
+                    : "border-red-200 bg-red-50 text-red-800",
+                ].join(" ")}
+              >
                 {error}
               </div>
             ) : filtered.length === 0 ? (
@@ -200,16 +218,16 @@ export default function Offers() {
             ) : (
               <div className="mt-5 overflow-x-auto">
                 <table className="w-full text-left text-sm">
-                  <thead className="text-[11px] uppercase tracking-wider text-zinc-400">
+                  <thead className={tableHeadClass}>
                     <tr>
-                      <th className="border-b border-zinc-100 py-3 pr-4">Cliente</th>
-                      <th className="border-b border-zinc-100 py-3 pr-4">Proposta</th>
-                      <th className="border-b border-zinc-100 py-3 pr-4">Valor</th>
-                      <th className="border-b border-zinc-100 py-3 pr-4">Status</th>
-                      <th className="border-b border-zinc-100 py-3 text-right">Ações</th>
+                      <th className={`border-b py-3 pr-4 ${tableBorderClass}`}>Cliente</th>
+                      <th className={`border-b py-3 pr-4 ${tableBorderClass}`}>Proposta</th>
+                      <th className={`border-b py-3 pr-4 ${tableBorderClass}`}>Valor</th>
+                      <th className={`border-b py-3 pr-4 ${tableBorderClass}`}>Status</th>
+                      <th className={`border-b py-3 text-right ${tableBorderClass}`}>Ações</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-zinc-100">
+                  <tbody className={isDark ? "divide-y divide-white/10" : "divide-y divide-zinc-100"}>
                     {filtered.map((o) => {
                       const pay = getPaymentLabel(o);
                       const publicUrl = `/p/${o.publicToken}`;
@@ -218,41 +236,47 @@ export default function Offers() {
                       const isRecurring = String(o?.generatedBy || "manual").toLowerCase() === "recurring";
 
                       return (
-                        <tr key={o._id} className="hover:bg-zinc-50/50">
+                        <tr key={o._id} className={tableRowClass}>
                           <td className="py-3 pr-4">
-                            <div className="font-semibold text-zinc-900">{o.customerName || "—"}</div>
-                            <div className="text-xs text-zinc-500">{o.customerWhatsApp || "—"}</div>
+                            <div className={isDark ? "font-semibold text-white" : "font-semibold text-zinc-900"}>
+                              {o.customerName || "—"}
+                            </div>
+                            <div className={isDark ? "text-xs text-slate-400" : "text-xs text-zinc-500"}>
+                              {o.customerWhatsApp || "—"}
+                            </div>
                           </td>
                           <td className="py-3 pr-4">
-                            <div className="flex flex-wrap items-center gap-2 text-zinc-900">
+                            <div className={isDark ? "flex flex-wrap items-center gap-2 text-white" : "flex flex-wrap items-center gap-2 text-zinc-900"}>
                               <span>{o.title || "Proposta"}</span>
                               {isRecurring ? (
-                                <span className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-700">
+                                <span className={isDark ? "inline-flex items-center rounded-full border border-indigo-400/20 bg-indigo-400/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-200" : "inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-700"}>
                                   Recorrente
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-zinc-600">
+                                <span className={isDark ? "inline-flex items-center rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-300" : "inline-flex items-center rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-zinc-600"}>
                                   Avulsa
                                 </span>
                               )}
                             </div>
-                            <div className="text-xs text-zinc-500 line-clamp-1">{o.description || ""}</div>
+                            <div className={isDark ? "line-clamp-1 text-xs text-slate-400" : "line-clamp-1 text-xs text-zinc-500"}>
+                              {o.description || ""}
+                            </div>
                             {isRecurring && o?.recurringOfferId ? (
                               <Link
                                 to={`/offers/recurring/${o.recurringOfferId}`}
-                                className="mt-1 inline-flex text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                                className={isDark ? "mt-1 inline-flex text-xs font-medium text-indigo-300 hover:text-indigo-200" : "mt-1 inline-flex text-xs font-medium text-indigo-600 hover:text-indigo-800"}
                               >
                                 {o?.recurringNameSnapshot || "Ver recorrência"}
                               </Link>
                             ) : null}
                           </td>
-                          <td className="py-3 pr-4 font-semibold text-zinc-900 tabular-nums">
+                          <td className={isDark ? "py-3 pr-4 font-semibold tabular-nums text-white" : "py-3 pr-4 font-semibold tabular-nums text-zinc-900"}>
                             {fmtBRLFromCents(getAmountCents(o))}
                           </td>
                           <td className="py-3 pr-4">
                             <div className="flex items-center gap-2">
                               {isPendingAlert ? (
-                                <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700">
+                                <span className={isDark ? "inline-flex items-center rounded-full border border-amber-400/20 bg-amber-400/10 px-2.5 py-1 text-[11px] font-bold text-amber-200" : "inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700"}>
                                   Aguardando pagamento
                                 </span>
                               ) : (
@@ -260,7 +284,7 @@ export default function Offers() {
                               )}
 
                               {o?.notifyWhatsAppOnPaid ? (
-                                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700">
+                                <span className={isDark ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-[10px] font-bold text-emerald-200" : "rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700"}>
                                   WA ON
                                 </span>
                               ) : null}

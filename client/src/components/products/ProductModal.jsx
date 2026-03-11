@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+
 import Button from "../appui/Button.jsx";
+import ModalShell from "../appui/ModalShell.jsx";
 
 function fmtBRL(cents) {
   return new Intl.NumberFormat("pt-BR", {
@@ -9,20 +11,19 @@ function fmtBRL(cents) {
 }
 
 function parseBRLToCents(input) {
-  const s = String(input || "").trim();
-  if (!s) return 0;
-  // aceita "10,50" ou "10.50" ou "1.234,56"
-  const norm = s.replace(/\./g, "").replace(",", ".");
-  const n = Number(norm);
-  return Number.isFinite(n) ? Math.round(n * 100) : 0;
+  const value = String(input || "").trim();
+  if (!value) return 0;
+  const normalized = value.replace(/./g, "").replace(",", ".");
+  const amount = Number(normalized);
+  return Number.isFinite(amount) ? Math.round(amount * 100) : 0;
 }
 
 export default function ProductModal({
   open,
-  mode, // "create" | "edit"
-  initial, // { _id, productId, name, description, priceCents, imageUrl }
+  mode,
+  initial,
   onClose,
-  onSave, // (payload) => Promise
+  onSave,
 }) {
   const isEdit = mode === "edit";
 
@@ -60,15 +61,14 @@ export default function ProductModal({
 
   useEffect(() => {
     return () => {
-      if (imageFile) URL.revokeObjectURL(previewUrl);
+      if (imageFile && previewUrl) URL.revokeObjectURL(previewUrl);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [imageFile]);
+  }, [imageFile, previewUrl]);
 
   if (!open) return null;
 
-  async function submit(e) {
-    e.preventDefault();
+  async function submit(event) {
+    event.preventDefault();
     setErr("");
     setBusy(true);
     try {
@@ -81,110 +81,107 @@ export default function ProductModal({
         imageFile,
       };
 
-      if (!payload.name) throw new Error("Nome é obrigatório.");
-      if (!isEdit && !payload.productId)
-        throw new Error("ID do produto é obrigatório.");
+      if (!payload.name) throw new Error("Nome e obrigatorio.");
+      if (!isEdit && !payload.productId) {
+        throw new Error("ID do produto e obrigatorio.");
+      }
 
       await onSave(payload);
       onClose?.();
-    } catch (e2) {
-      setErr(e2?.message || "Falha ao salvar.");
+    } catch (error) {
+      setErr(error?.message || "Falha ao salvar.");
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-black/30"
-        onClick={() => !busy && onClose?.()}
-      />
-
-      <div className="relative w-full max-w-lg rounded-2xl border bg-white p-5 shadow-xl">
-        <div className="text-lg font-semibold text-zinc-900">
+    <ModalShell
+      open={open}
+      onClose={onClose}
+      locked={busy}
+      panelClassName="max-w-lg"
+    >
+      <div className="relative w-full rounded-[32px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(241,245,249,0.94))] p-5 shadow-[0_32px_80px_-42px_rgba(15,23,42,0.35)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.96),rgba(9,15,28,0.94))] dark:shadow-[0_32px_80px_-42px_rgba(15,23,42,0.82)]">
+        <div className="text-lg font-bold text-slate-950 dark:text-white">
           {isEdit ? "Editar produto" : "Novo produto"}
         </div>
-        <div className="mt-1 text-sm text-zinc-500">
+        <div className="mt-1 text-sm text-slate-500 dark:text-slate-300">
           {isEdit
-            ? "Atualize as informações do produto."
+            ? "Atualize as informacoes do produto."
             : "Cadastre um novo produto na sua loja."}
         </div>
 
         {err ? (
-          <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-100">
             {err}
           </div>
         ) : null}
 
         <form className="mt-4 space-y-3" onSubmit={submit}>
           <div>
-            <label className="text-sm text-zinc-700">ID do produto</label>
+            <label className="text-sm text-slate-700 dark:text-slate-300">ID do produto</label>
             <input
-              className="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 outline-none focus:ring-2 focus:ring-zinc-300 disabled:bg-zinc-50"
+              className="mt-1 w-full rounded-2xl border border-slate-200/80 bg-white/92 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-cyan-300 focus:ring-2 focus:ring-cyan-500/30 disabled:bg-slate-50 dark:border-white/10 dark:bg-white/6 dark:text-slate-100 dark:disabled:bg-white/5"
               value={productId}
-              onChange={(e) => setProductId(e.target.value)}
+              onChange={(event) => setProductId(event.target.value)}
               disabled={isEdit}
               placeholder="Ex.: PROD-001"
               required={!isEdit}
             />
             {isEdit ? (
-              <div className="mt-1 text-xs text-zinc-500">
-                O ID não pode ser alterado.
+              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                O ID nao pode ser alterado.
               </div>
             ) : null}
           </div>
 
           <div>
-            <label className="text-sm text-zinc-700">Nome do produto</label>
+            <label className="text-sm text-slate-700 dark:text-slate-300">Nome do produto</label>
             <input
-              className="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 outline-none focus:ring-2 focus:ring-zinc-300"
+              className="mt-1 w-full rounded-2xl border border-slate-200/80 bg-white/92 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-cyan-300 focus:ring-2 focus:ring-cyan-500/30 dark:border-white/10 dark:bg-white/6 dark:text-slate-100"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(event) => setName(event.target.value)}
               required
             />
           </div>
 
           <div>
-            <label className="text-sm text-zinc-700">Descrição</label>
+            <label className="text-sm text-slate-700 dark:text-slate-300">Descricao</label>
             <textarea
-              className="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 outline-none focus:ring-2 focus:ring-zinc-300"
+              className="mt-1 w-full rounded-2xl border border-slate-200/80 bg-white/92 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-cyan-300 focus:ring-2 focus:ring-cyan-500/30 dark:border-white/10 dark:bg-white/6 dark:text-slate-100"
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(event) => setDescription(event.target.value)}
               rows={3}
               placeholder="Opcional"
             />
           </div>
 
           <div>
-            <label className="text-sm text-zinc-700">Valor</label>
+            <label className="text-sm text-slate-700 dark:text-slate-300">Valor</label>
             <input
-              className="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 outline-none focus:ring-2 focus:ring-zinc-300"
+              className="mt-1 w-full rounded-2xl border border-slate-200/80 bg-white/92 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-cyan-300 focus:ring-2 focus:ring-cyan-500/30 dark:border-white/10 dark:bg-white/6 dark:text-slate-100"
               value={priceInput}
-              onChange={(e) => setPriceInput(e.target.value)}
+              onChange={(event) => setPriceInput(event.target.value)}
               placeholder="0,00"
             />
-            <div className="mt-1 text-xs text-zinc-500">
-              Prévia:{" "}
-              <span className="font-semibold">
-                {fmtBRL(parseBRLToCents(priceInput))}
-              </span>
+            <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              Previa: <span className="font-semibold">{fmtBRL(parseBRLToCents(priceInput))}</span>
             </div>
           </div>
 
           <div>
-            <label className="text-sm text-zinc-700">Imagem do produto</label>
+            <label className="text-sm text-slate-700 dark:text-slate-300">Imagem do produto</label>
             <div className="mt-2 flex items-start gap-3">
-              <div className="h-24 w-24 overflow-hidden rounded-xl border bg-zinc-50">
+              <div className="h-24 w-24 overflow-hidden rounded-2xl border border-slate-200/80 bg-slate-50 dark:border-white/10 dark:bg-white/5">
                 {previewUrl ? (
-                  // previewUrl pode ser path do servidor ou blob URL
                   <img
                     src={previewUrl}
                     alt=""
                     className="h-full w-full object-cover"
                   />
                 ) : (
-                  <div className="flex h-full w-full items-center justify-center text-xs text-zinc-400">
+                  <div className="flex h-full w-full items-center justify-center text-xs text-slate-400 dark:text-slate-500">
                     Sem foto
                   </div>
                 )}
@@ -194,16 +191,17 @@ export default function ProductModal({
                 <input
                   type="file"
                   accept="image/*"
-                  onChange={(e) => setImageFile(e.target.files?.[0] || null)}
+                  onChange={(event) => setImageFile(event.target.files?.[0] || null)}
+                  className="block w-full text-sm text-slate-600 file:mr-4 file:rounded-2xl file:border-0 file:bg-slate-900 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-slate-800 dark:text-slate-300 dark:file:bg-white dark:file:text-slate-950 dark:hover:file:bg-slate-100"
                 />
-                <div className="mt-1 text-xs text-zinc-500">
-                  PNG/JPG/WebP/GIF até 3MB.
+                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  PNG, JPG, WebP ou GIF ate 3MB.
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="pt-2 flex items-center justify-end gap-2">
+          <div className="flex items-center justify-end gap-2 pt-2">
             <Button
               type="button"
               variant="secondary"
@@ -212,11 +210,11 @@ export default function ProductModal({
               Voltar
             </Button>
             <Button type="submit" disabled={busy}>
-              {busy ? "Salvando…" : "Salvar"}
+              {busy ? "Salvando..." : "Salvar"}
             </Button>
           </div>
         </form>
       </div>
-    </div>
+    </ModalShell>
   );
 }

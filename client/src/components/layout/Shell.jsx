@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
+import { PanelLeft } from "lucide-react";
 import { Link } from "react-router-dom";
+
 import { useAuth } from "../../app/AuthContext.jsx";
+import useThemeToggle from "../../app/useThemeToggle.js";
 import Sidebar from "./Sidebar.jsx";
 import Topbar from "./Topbar.jsx";
 
@@ -20,61 +23,81 @@ function persistSidebarExpanded(value) {
   } catch {}
 }
 
-function MobileMenuButton({ onClick }) {
+function MobileMenuButton({ isDark, onClick }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-label="Abrir menu"
-      className="fixed left-4 top-20 z-40 inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-zinc-200 bg-white/95 text-zinc-700 shadow-[0_10px_30px_rgba(15,23,42,0.10)] backdrop-blur transition hover:border-zinc-300 hover:bg-white hover:text-zinc-900 md:hidden"
+      className={[
+        "fixed left-4 top-[84px] z-40 inline-flex h-11 w-11 items-center justify-center rounded-2xl border backdrop-blur-xl transition md:hidden",
+        isDark
+          ? "border-white/10 bg-[rgba(8,15,30,0.88)] text-slate-100 shadow-[0_18px_40px_-20px_rgba(15,23,42,0.9)] hover:border-cyan-400/30 hover:bg-[rgba(10,18,36,0.96)]"
+          : "border-slate-200/80 bg-white/92 text-slate-700 shadow-[0_18px_36px_-22px_rgba(15,23,42,0.25)] hover:border-sky-300 hover:bg-white hover:text-slate-950",
+      ].join(" ")}
     >
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="18"
-        height="18"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <line x1="4" x2="20" y1="6" y2="6" />
-        <line x1="4" x2="20" y1="12" y2="12" />
-        <line x1="4" x2="20" y1="18" y2="18" />
-      </svg>
+      <PanelLeft className="h-5 w-5" />
     </button>
   );
 }
 
-function BillingInlineNotice() {
+function BillingInlineNotice({ isDark }) {
   const { subscriptionStatus, canCreatePix } = useAuth();
-  const s = String(subscriptionStatus || "").toLowerCase();
+  const status = String(subscriptionStatus || "").toLowerCase();
 
   if (!subscriptionStatus || canCreatePix) return null;
 
   const title =
-    s === "past_due"
+    status === "past_due"
       ? "Pagamento pendente"
-      : s === "inactive"
+      : status === "inactive"
         ? "Assinatura inativa"
-        : s === "canceled"
+        : status === "canceled"
           ? "Assinatura cancelada"
-          : "Assinatura com restrição";
+          : "Assinatura com restricao";
 
-  const desc =
-    s === "past_due"
-      ? "A geração de cobranças Pix está bloqueada até regularizar o pagamento."
-      : "A geração de cobranças Pix está bloqueada. Assine ou reative um plano para continuar.";
+  const description =
+    status === "past_due"
+      ? "A cobranca Pix esta bloqueada ate a regularizacao do pagamento."
+      : "A cobranca Pix esta bloqueada. Ative um plano para continuar usando a operacao completa.";
 
   return (
-    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
-      <div className="text-sm font-semibold">{title}</div>
-      <div className="mt-1 text-sm">{desc}</div>
-      <div className="mt-3">
+    <div
+      className={[
+        "rounded-[28px] border p-4 shadow-[0_20px_40px_-28px_rgba(180,83,9,0.35)] sm:p-5",
+        isDark
+          ? "border-amber-400/20 bg-[linear-gradient(135deg,rgba(120,53,15,0.32),rgba(68,64,18,0.22))] shadow-[0_24px_40px_-28px_rgba(15,23,42,0.55)]"
+          : "border-amber-200/80 bg-[linear-gradient(135deg,#fff7ed,#fffbeb)]",
+      ].join(" ")}
+    >
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div
+            className={[
+              "text-sm font-bold uppercase tracking-[0.18em]",
+              isDark ? "text-amber-200" : "text-amber-700",
+            ].join(" ")}
+          >
+            {title}
+          </div>
+          <div
+            className={[
+              "mt-1 text-sm leading-6",
+              isDark ? "text-amber-50" : "text-amber-900",
+            ].join(" ")}
+          >
+            {description}
+          </div>
+        </div>
+
         <Link
           to="/billing/plans"
-          className="inline-flex rounded-xl bg-zinc-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-zinc-800"
+          className={[
+            "inline-flex items-center justify-center rounded-2xl px-4 py-3 text-sm font-semibold transition",
+            isDark
+              ? "bg-white text-slate-950 hover:bg-slate-100"
+              : "bg-slate-950 text-white hover:bg-slate-800",
+          ].join(" ")}
         >
           Ver planos
         </Link>
@@ -84,6 +107,7 @@ function BillingInlineNotice() {
 }
 
 export default function Shell({ children }) {
+  const { isDark, setIsDark } = useThemeToggle();
   const [sidebarExpanded, setSidebarExpanded] = useState(readSidebarExpanded);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
@@ -94,11 +118,11 @@ export default function Shell({ children }) {
   useEffect(() => {
     if (!mobileSidebarOpen) return undefined;
 
-    const prev = document.body.style.overflow;
+    const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
     return () => {
-      document.body.style.overflow = prev;
+      document.body.style.overflow = previousOverflow;
     };
   }, [mobileSidebarOpen]);
 
@@ -114,31 +138,65 @@ export default function Shell({ children }) {
   }, []);
 
   return (
-    <div className="min-h-screen w-full bg-[linear-gradient(180deg,#ffffff_0%,#fafafa_100%)]">
-      <Topbar />
+    <div
+      className={[
+        "relative min-h-screen overflow-hidden transition-colors",
+        isDark ? "bg-[#040b18] text-white" : "bg-[rgb(246,248,252)] text-slate-900",
+      ].join(" ")}
+    >
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div
+          className={[
+            "absolute left-[-140px] top-[-140px] h-80 w-80 rounded-full blur-3xl",
+            isDark ? "bg-cyan-400/14" : "bg-cyan-400/18",
+          ].join(" ")}
+        />
+        <div
+          className={[
+            "absolute right-[-160px] top-1/4 h-96 w-96 rounded-full blur-3xl",
+            isDark ? "bg-blue-500/18" : "bg-blue-500/14",
+          ].join(" ")}
+        />
+        <div className="absolute bottom-[-220px] left-1/3 h-[30rem] w-[30rem] rounded-full bg-emerald-400/10 blur-3xl" />
+      </div>
 
-      <MobileMenuButton onClick={() => setMobileSidebarOpen(true)} />
+      <Topbar isDark={isDark} setIsDark={setIsDark} />
+      <MobileMenuButton
+        isDark={isDark}
+        onClick={() => setMobileSidebarOpen(true)}
+      />
 
-      <div className="flex w-full">
+      <div className="relative flex w-full">
         <aside
           className={[
-            "hidden md:block md:shrink-0 md:border-r md:border-zinc-200/80 md:bg-white/70",
+            "hidden md:block md:shrink-0",
             "transition-[width] duration-300 ease-out",
-            sidebarExpanded ? "md:w-[288px]" : "md:w-[104px]",
+            sidebarExpanded ? "md:w-[308px]" : "md:w-[112px]",
           ].join(" ")}
         >
-          <div className="sticky top-0 h-screen overflow-y-auto p-4">
+          <div className="sticky top-[72px] h-[calc(100vh-72px)] p-4">
             <Sidebar
               collapsed={!sidebarExpanded}
-              onToggle={() => setSidebarExpanded((prev) => !prev)}
+              onToggle={() => setSidebarExpanded((previous) => !previous)}
             />
           </div>
         </aside>
 
-        <main className="min-w-0 flex-1">
-          <div className="space-y-6 px-4 pb-6 pt-20 sm:px-6 md:py-6">
-            <BillingInlineNotice />
-            {children}
+        <main className="min-w-0 flex-1 pb-8">
+          <div className="px-4 pb-6 pt-[88px] sm:px-6 lg:px-8">
+            <div
+              className={[
+                "min-h-[calc(100vh-112px)] rounded-[34px] border p-4 backdrop-blur-xl transition-colors sm:p-6 lg:p-8",
+                isDark
+                  ? "border-white/10 bg-[linear-gradient(180deg,rgba(12,19,34,0.96),rgba(6,12,24,0.92))] shadow-[0_24px_80px_-52px_rgba(15,23,42,0.85)]"
+                  : "border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(241,245,249,0.88))] shadow-[0_24px_80px_-52px_rgba(15,23,42,0.18)]",
+              ].join(" ")}
+            >
+              <div className="space-y-6">
+                <BillingInlineNotice isDark={isDark} />
+                {children}
+              </div>
+            </div>
           </div>
         </main>
       </div>
@@ -152,18 +210,19 @@ export default function Shell({ children }) {
         <div
           onClick={() => setMobileSidebarOpen(false)}
           className={[
-            "absolute inset-0 bg-zinc-950/30 backdrop-blur-[2px] transition-opacity duration-300",
+            "absolute inset-0 backdrop-blur-sm transition-opacity duration-300",
+            isDark ? "bg-slate-950/60" : "bg-slate-950/30",
             mobileSidebarOpen ? "opacity-100" : "opacity-0",
           ].join(" ")}
         />
 
         <div
           className={[
-            "absolute inset-y-0 left-0 w-[88vw] max-w-[320px] transition-transform duration-300 ease-out",
+            "absolute inset-y-0 left-0 w-[90vw] max-w-[340px] transition-transform duration-300 ease-out",
             mobileSidebarOpen ? "translate-x-0" : "-translate-x-full",
           ].join(" ")}
         >
-          <div className="h-full p-4">
+          <div className="h-full p-4 pt-[84px]">
             <Sidebar
               collapsed={false}
               mobile

@@ -32,6 +32,7 @@ import {
 import AnimatedSection from "../components/marketing/AnimatedSection";
 import HeroPreview from "../components/marketing/HeroPreview";
 import brandLogo from "../assets/brand.png";
+import useThemeToggle from "../app/useThemeToggle.js";
 
 const EASE_OUT = [0.16, 1, 0.3, 1];
 
@@ -228,30 +229,6 @@ const FAQS = [
 
 function cx(...classes) {
   return classes.filter(Boolean).join(" ");
-}
-
-function useThemeToggle() {
-  const [isDark, setIsDark] = useState(() => {
-    if (typeof window === "undefined") return true;
-    const stored = window.localStorage.getItem("theme");
-    if (stored === "dark") return true;
-    if (stored === "light") return false;
-    return window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ?? true;
-  });
-
-  useEffect(() => {
-    const root = document.documentElement;
-    if (isDark) root.classList.add("dark");
-    else root.classList.remove("dark");
-
-    try {
-      window.localStorage.setItem("theme", isDark ? "dark" : "light");
-    } catch {
-      // ignore storage issues
-    }
-  }, [isDark]);
-
-  return { isDark, setIsDark };
 }
 
 function PremiumBackdrop() {

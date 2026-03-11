@@ -1,6 +1,7 @@
 // src/components/clients/ClientModal.jsx
 import { useEffect, useMemo, useState } from "react";
 import Button from "../appui/Button.jsx";
+import ModalShell from "../appui/ModalShell.jsx";
 
 function onlyDigits(v) {
   return String(v || "").replace(/\D+/g, "");
@@ -75,13 +76,18 @@ export default function ClientModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-      <div className="w-full max-w-lg rounded-2xl border bg-white shadow-lg">
-        <div className="border-b px-5 py-4">
-          <div className="text-lg font-semibold text-zinc-900">
+    <ModalShell
+      open={open}
+      onClose={onClose}
+      locked={busy}
+      panelClassName="max-w-lg"
+    >
+      <div className="w-full overflow-hidden rounded-[32px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(241,245,249,0.94))] shadow-[0_32px_80px_-42px_rgba(15,23,42,0.35)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.96),rgba(9,15,28,0.94))] dark:shadow-[0_32px_80px_-42px_rgba(15,23,42,0.82)]">
+        <div className="border-b border-slate-200/80 px-5 py-4 dark:border-white/10">
+          <div className="text-lg font-bold text-slate-950 dark:text-white">
             {isEdit ? "Editar cliente" : "Cadastrar cliente"}
           </div>
-          <div className="mt-1 text-sm text-zinc-500">
+          <div className="mt-1 text-sm text-slate-500 dark:text-slate-300">
             {isEdit
               ? "Atualize os dados do cliente."
               : "Cadastre um cliente para usar na sua loja."}
@@ -175,6 +181,6 @@ export default function ClientModal({
           </div>
         </form>
       </div>
-    </div>
+    </ModalShell>
   );
 }

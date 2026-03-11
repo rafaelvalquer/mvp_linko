@@ -22,6 +22,7 @@ import Skeleton from "../appui/Skeleton.jsx";
 import EmptyState from "../appui/EmptyState.jsx";
 import ChartCard from "./ChartCard.jsx";
 import RangeToggle from "./RangeToggle.jsx";
+import useThemeToggle from "../../app/useThemeToggle.js";
 
 const TZ_DEFAULT = "America/Sao_Paulo";
 const LS_KEY = "dash:analyticsOpen";
@@ -79,11 +80,8 @@ const FALLBACK_COLORS = [
   "#06b6d4",
 ];
 
-const CHART_GRID_STROKE = "hsl(220 14% 16%)";
-const AXIS_TICK = { fontSize: 11, fill: "#a1a1aa" };
-
-const TOOLTIP_SHELL =
-  "rounded-lg border border-[hsl(220,14%,20%)] bg-[hsl(220,18%,10%)] px-3 py-2 shadow-xl";
+const CHART_GRID_STROKE = "#d9e2ef";
+const AXIS_TICK = { fontSize: 11, fill: "#64748b" };
 
 function Chevron({ open }) {
   return (
@@ -274,7 +272,7 @@ function fmtDateShort(ymd) {
 
 function fmtBRL(v) {
   const n = Number(v);
-  if (!Number.isFinite(n)) return "—";
+  if (!Number.isFinite(n)) return "--";
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency: "BRL",
@@ -318,10 +316,24 @@ function normalizeMaybeCents(value, key) {
 }
 
 function TooltipShell({ title, rows }) {
+  const { isDark } = useThemeToggle();
+
   return (
-    <div className={TOOLTIP_SHELL}>
+    <div
+      className={[
+        "rounded-2xl border px-3 py-2",
+        isDark
+          ? "border-white/10 bg-slate-950 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.75)]"
+          : "border-slate-200 bg-white shadow-[0_20px_40px_-24px_rgba(15,23,42,0.35)]",
+      ].join(" ")}
+    >
       {title ? (
-        <div className="mb-1 text-[11px] font-semibold text-zinc-100">
+        <div
+          className={[
+            "mb-1 text-[11px] font-semibold",
+            isDark ? "text-white" : "text-slate-900",
+          ].join(" ")}
+        >
           {title}
         </div>
       ) : null}
@@ -331,7 +343,12 @@ function TooltipShell({ title, rows }) {
             key={r.label}
             className="flex items-center justify-between gap-6"
           >
-            <div className="inline-flex items-center gap-2 text-[11px] text-zinc-300">
+            <div
+              className={[
+                "inline-flex items-center gap-2 text-[11px]",
+                isDark ? "text-slate-400" : "text-slate-500",
+              ].join(" ")}
+            >
               {r.color ? (
                 <span
                   className="h-2.5 w-2.5 rounded-full"
@@ -340,7 +357,12 @@ function TooltipShell({ title, rows }) {
               ) : null}
               <span>{r.label}</span>
             </div>
-            <div className="text-[11px] font-semibold text-zinc-100 tabular-nums">
+            <div
+              className={[
+                "text-[11px] font-semibold tabular-nums",
+                isDark ? "text-white" : "text-slate-900",
+              ].join(" ")}
+            >
               {r.value}
             </div>
           </div>
@@ -362,7 +384,7 @@ function StandardTooltip({
 
   const rows = payload.map((p) => ({
     label: p.name || String(p.dataKey),
-    value: valueFormatter ? valueFormatter(p.value) : String(p.value ?? "—"),
+    value: valueFormatter ? valueFormatter(p.value) : String(p.value ?? "--"),
     color: p.color,
   }));
 
@@ -371,6 +393,8 @@ function StandardTooltip({
 
 function PieTooltipFactory({ total }) {
   return function PieTooltip({ active, payload }) {
+    const { isDark } = useThemeToggle();
+
     if (!active || !payload?.length) return null;
     const p = payload[0]?.payload;
     const code = normStatus(p?.status);
@@ -378,7 +402,14 @@ function PieTooltipFactory({ total }) {
     const pct = total > 0 ? Math.round((count / total) * 100) : 0;
 
     return (
-      <div className={TOOLTIP_SHELL}>
+      <div
+        className={[
+          "rounded-2xl border px-3 py-2",
+          isDark
+            ? "border-white/10 bg-slate-950 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.75)]"
+            : "border-slate-200 bg-white shadow-[0_20px_40px_-24px_rgba(15,23,42,0.35)]",
+        ].join(" ")}
+      >
         <div className="mb-2 flex items-center gap-2">
           <span
             className="h-2.5 w-2.5 rounded-full"
@@ -396,14 +427,16 @@ function PieTooltipFactory({ total }) {
 
         <div className="space-y-1">
           <div className="flex items-center justify-between gap-6">
-            <div className="text-[11px] text-zinc-300">Quantidade</div>
-            <div className="text-[11px] font-semibold text-zinc-100 tabular-nums">
+            <div className={isDark ? "text-[11px] text-slate-400" : "text-[11px] text-slate-500"}>
+              Quantidade
+            </div>
+            <div className={isDark ? "text-[11px] font-semibold text-white tabular-nums" : "text-[11px] font-semibold text-slate-900 tabular-nums"}>
               {count}
             </div>
           </div>
           <div className="flex items-center justify-between gap-6">
-            <div className="text-[11px] text-zinc-300">%</div>
-            <div className="text-[11px] font-semibold text-zinc-100 tabular-nums">
+            <div className={isDark ? "text-[11px] text-slate-400" : "text-[11px] text-slate-500"}>%</div>
+            <div className={isDark ? "text-[11px] font-semibold text-white tabular-nums" : "text-[11px] font-semibold text-slate-900 tabular-nums"}>
               {pct}%
             </div>
           </div>
@@ -414,6 +447,8 @@ function PieTooltipFactory({ total }) {
 }
 
 function ClickLegend({ payload, hiddenKeys, toggle }) {
+  const { isDark } = useThemeToggle();
+
   if (!payload?.length) return null;
   return (
     <div className="flex flex-wrap items-center gap-2 text-[11px]">
@@ -427,8 +462,9 @@ function ClickLegend({ payload, hiddenKeys, toggle }) {
             onClick={() => toggle(k)}
             className={[
               "inline-flex items-center gap-2 rounded-full border px-2.5 py-1 transition",
-              "border-zinc-200/70 bg-white/70 hover:bg-white",
-              "text-zinc-700 dark:border-zinc-800/70 dark:bg-zinc-950/30 dark:text-zinc-200 dark:hover:bg-zinc-950/50",
+              isDark
+                ? "border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
               hidden ? "opacity-40" : "opacity-100",
             ].join(" ")}
             title="Clique para ocultar/mostrar"
@@ -447,6 +483,8 @@ function ClickLegend({ payload, hiddenKeys, toggle }) {
 }
 
 function PieLegend({ data, totalAll, hidden, toggle }) {
+  const { isDark } = useThemeToggle();
+
   if (!data?.length) return null;
 
   return (
@@ -463,10 +501,10 @@ function PieLegend({ data, totalAll, hidden, toggle }) {
             type="button"
             onClick={() => toggle(code)}
             className={[
-              "w-full flex items-center justify-between gap-3",
-              "rounded-lg border px-2.5 py-1.5 text-[11px] transition",
-              "border-zinc-200/70 bg-white/60 hover:bg-white",
-              "dark:border-zinc-800/70 dark:bg-zinc-950/25 dark:hover:bg-zinc-950/45",
+              "w-full flex items-center justify-between gap-3 rounded-lg border px-2.5 py-1.5 text-[11px] transition",
+              isDark
+                ? "border-white/10 bg-white/5 hover:bg-white/10"
+                : "border-slate-200 bg-white hover:bg-slate-50",
               isHidden ? "opacity-40" : "opacity-100",
             ].join(" ")}
             title="Clique para ocultar/mostrar"
@@ -477,12 +515,12 @@ function PieLegend({ data, totalAll, hidden, toggle }) {
                 className="h-2.5 w-2.5 rounded-full"
                 style={{ background: statusFill(code, idx) }}
               />
-              <span className="font-semibold text-zinc-800 dark:text-zinc-100 truncate">
+              <span className={isDark ? "truncate font-semibold text-white" : "truncate font-semibold text-slate-800"}>
                 {statusLabel(code)}
               </span>
             </span>
 
-            <span className="tabular-nums text-zinc-600 dark:text-zinc-300">
+            <span className={isDark ? "tabular-nums text-slate-300" : "tabular-nums text-slate-600"}>
               {count} <span className="opacity-70">({pct}%)</span>
             </span>
           </button>
@@ -507,12 +545,15 @@ function sliceByRange(rows, range) {
 }
 
 function MiniRangeToggle({ value, onChange }) {
+  const { isDark } = useThemeToggle();
+
   return (
     <div
       className={[
         "inline-flex items-center rounded-lg border p-0.5",
-        "border-zinc-200/70 bg-white/70",
-        "dark:border-zinc-800/70 dark:bg-zinc-950/30",
+        isDark
+          ? "border-white/10 bg-white/5"
+          : "border-slate-200 bg-white/90 shadow-[0_10px_24px_-18px_rgba(15,23,42,0.25)]",
       ].join(" ")}
       role="group"
       aria-label="Selecionar período"
@@ -523,8 +564,10 @@ function MiniRangeToggle({ value, onChange }) {
         className={[
           "px-2.5 py-1 text-[11px] font-semibold rounded-md transition",
           value === "last7"
-            ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-            : "text-zinc-700 hover:bg-white dark:text-zinc-200 dark:hover:bg-zinc-950/50",
+            ? "bg-[linear-gradient(135deg,#2563eb,#14b8a6)] text-white shadow-[0_12px_24px_-16px_rgba(37,99,235,0.65)]"
+            : isDark
+              ? "text-slate-300 hover:bg-white/10"
+              : "text-slate-700 hover:bg-slate-50",
         ].join(" ")}
         aria-pressed={value === "last7"}
       >
@@ -536,8 +579,10 @@ function MiniRangeToggle({ value, onChange }) {
         className={[
           "px-2.5 py-1 text-[11px] font-semibold rounded-md transition",
           value === "last30"
-            ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-            : "text-zinc-700 hover:bg-white dark:text-zinc-200 dark:hover:bg-zinc-950/50",
+            ? "bg-[linear-gradient(135deg,#2563eb,#14b8a6)] text-white shadow-[0_12px_24px_-16px_rgba(37,99,235,0.65)]"
+            : isDark
+              ? "text-slate-300 hover:bg-white/10"
+              : "text-slate-700 hover:bg-slate-50",
         ].join(" ")}
         aria-pressed={value === "last30"}
       >
@@ -548,6 +593,7 @@ function MiniRangeToggle({ value, onChange }) {
 }
 
 export default function AnalyticsSection({ offers: offersProp = [] }) {
+  const { isDark } = useThemeToggle();
   const [open, setOpen] = useState(() => readOpenDefault());
 
   const fetchedRef = useRef(false);
@@ -690,7 +736,7 @@ export default function AnalyticsSection({ offers: offersProp = [] }) {
   const volumeBase = useMemo(() => {
     const offers = Array.isArray(offersProp) ? offersProp : [];
 
-    // ✅ principal: vem do Dashboard (/offers)
+    // principal: vem do Dashboard (/offers)
     if (offers.length) {
       const sums = new Map();
       for (const d of last30Days) sums.set(d, 0);
@@ -753,7 +799,7 @@ export default function AnalyticsSection({ offers: offersProp = [] }) {
   const createdPaidBase = useMemo(() => {
     const offers = Array.isArray(offersProp) ? offersProp : [];
 
-    // ✅ principal: deriva de offers
+    // principal: deriva de offers
     if (offers.length) {
       const created = new Map();
       const paid = new Map();
@@ -820,41 +866,54 @@ export default function AnalyticsSection({ offers: offersProp = [] }) {
     <div className="space-y-4">
       <div
         className={[
-          "rounded-2xl overflow-hidden",
-          "border border-zinc-200/70 bg-white shadow-sm ring-1 ring-zinc-200/40",
-          "dark:border-zinc-800/70 dark:bg-zinc-950/40 dark:ring-zinc-800/40",
+          "overflow-hidden rounded-[28px]",
+          isDark
+            ? "border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(9,15,28,0.82))] shadow-[0_24px_70px_-42px_rgba(15,23,42,0.72)]"
+            : "border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(244,247,252,0.92))] shadow-[0_24px_70px_-42px_rgba(15,23,42,0.35)]",
         ].join(" ")}
       >
         <button
           type="button"
           onClick={toggleOpen}
           className={[
-            "w-full px-5 py-4 flex items-center justify-between gap-3 transition",
-            "hover:bg-zinc-50/60 dark:hover:bg-zinc-900/30",
+            "flex w-full items-center justify-between gap-3 px-5 py-4 transition",
+            isDark ? "hover:bg-white/5" : "hover:bg-slate-50/80",
           ].join(" ")}
           aria-expanded={open}
         >
           <div className="text-left">
-            <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+            <div
+              className={[
+                "flex items-center gap-2 text-sm font-bold",
+                isDark ? "text-white" : "text-slate-900",
+              ].join(" ")}
+            >
               Desempenho de vendas
               {err ? (
-                <span className="inline-flex items-center rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200">
+                <span className="inline-flex items-center rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-700">
                   erro
                 </span>
               ) : null}
               {open && loading ? (
-                <span className="inline-flex items-center rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[10px] font-semibold text-zinc-700 dark:border-zinc-800/70 dark:bg-zinc-900/30 dark:text-zinc-200">
-                  carregando…
+                <span
+                  className={[
+                    "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold",
+                    isDark
+                      ? "border-white/10 bg-white/10 text-slate-200"
+                      : "border-slate-200 bg-slate-50 text-slate-700",
+                  ].join(" ")}
+                >
+                  carregando...
                 </span>
               ) : null}
             </div>
-            <div className="text-xs text-zinc-500 dark:text-zinc-400">
+            <div className={isDark ? "text-xs text-slate-400" : "text-xs text-slate-500"}>
               Clique para {open ? "ocultar" : "mostrar"} os gráficos.
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">
+            <span className={isDark ? "text-xs font-semibold text-slate-200" : "text-xs font-semibold text-slate-700"}>
               {open ? "Ocultar" : "Mostrar"}
             </span>
             <Chevron open={open} />
@@ -873,7 +932,14 @@ export default function AnalyticsSection({ offers: offersProp = [] }) {
             >
               <div className="px-5 pb-5">
                 {err ? (
-                  <div className="rounded-2xl border border-zinc-200/70 bg-white p-6 dark:border-zinc-800/70 dark:bg-zinc-950/30">
+                  <div
+                    className={[
+                      "rounded-[24px] border p-6",
+                      isDark
+                        ? "border-white/10 bg-white/5"
+                        : "border-slate-200/80 bg-white",
+                    ].join(" ")}
+                  >
                     <EmptyState
                       title="Não foi possível carregar analytics"
                       description={err}
@@ -955,7 +1021,7 @@ export default function AnalyticsSection({ offers: offersProp = [] }) {
                                 type="monotone"
                                 dataKey="volume"
                                 name="Volume"
-                                stroke="#22c55e"
+                                stroke="#14b8a6"
                                 strokeWidth={2}
                                 dot={{ r: 2 }}
                                 activeDot={{ r: 5 }}
@@ -985,7 +1051,7 @@ export default function AnalyticsSection({ offers: offersProp = [] }) {
                       <Skeleton className="h-[220px] w-full rounded-xl" />
                     ) : pieTotalAll === 0 ? (
                       <div className="h-[220px] flex items-center justify-center">
-                        <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                        <div className={isDark ? "text-xs text-slate-400" : "text-xs text-slate-500"}>
                           Sem dados no período
                         </div>
                       </div>
@@ -1078,7 +1144,7 @@ export default function AnalyticsSection({ offers: offersProp = [] }) {
                                 tickFormatter={(v) => fmtCompact(v)}
                               />
                               <Tooltip
-                                cursor={{ fill: "rgba(255,255,255,0.02)" }}
+                                cursor={{ fill: "rgba(148,163,184,0.10)" }}
                                 content={
                                   <StandardTooltip
                                     labelFormatter={(l) => fmtDateShort(l)}
@@ -1112,7 +1178,7 @@ export default function AnalyticsSection({ offers: offersProp = [] }) {
                                 <Bar
                                   dataKey="paid"
                                   name="Pagas"
-                                  fill="#22c55e"
+                                  fill="#2563eb"
                                   radius={[6, 6, 0, 0]}
                                 />
                               ) : null}
@@ -1131,3 +1197,4 @@ export default function AnalyticsSection({ offers: offersProp = [] }) {
     </div>
   );
 }
+

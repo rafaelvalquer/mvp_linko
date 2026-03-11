@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Button from "./appui/Button.jsx";
 import { Input } from "./appui/Input.jsx";
+import ModalShell from "./appui/ModalShell.jsx";
 import {
   createWithdraw,
   getWithdraw,
@@ -276,27 +277,27 @@ export default function WithdrawModal({ open, onClose, onCreated }) {
     busy || (withdraw && normalizeStatus(withdraw.status) === "PENDING");
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Saque"
-      onClick={() => (!busy ? onClose?.() : null)}
+    <ModalShell
+      open={open}
+      onClose={onClose}
+      locked={busy}
+      panelClassName="max-w-lg"
     >
       <div
-        className="w-full max-w-lg rounded-2xl bg-white shadow-2xl overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
+        className="w-full overflow-hidden rounded-[32px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(241,245,249,0.94))] shadow-[0_32px_80px_-42px_rgba(15,23,42,0.35)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.96),rgba(9,15,28,0.94))] dark:shadow-[0_32px_80px_-42px_rgba(15,23,42,0.82)]"
       >
         {/* Header */}
-        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border-b border-emerald-100 px-5 py-4 flex items-start justify-between gap-3">
+        <div className="flex items-start justify-between gap-3 border-b border-slate-200/80 bg-[linear-gradient(135deg,rgba(255,255,255,0.96),rgba(238,245,252,0.88))] px-5 py-4 dark:border-white/10 dark:bg-[linear-gradient(135deg,rgba(15,23,42,0.85),rgba(11,18,32,0.7))]">
           <div>
-            <h2 className="text-lg font-bold text-emerald-900">Saque</h2>
-            <p className="mt-1 text-xs text-emerald-700">
+            <h2 className="bg-[linear-gradient(135deg,#2563eb,#14b8a6)] bg-clip-text text-lg font-black text-transparent">
+              Saque
+            </h2>
+            <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
               Gerencie sua carteira e saques
             </p>
           </div>
           <button
-            className="rounded-lg p-1.5 text-emerald-600 hover:bg-emerald-100 transition-colors"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200/80 bg-white/85 text-slate-500 transition hover:border-slate-300 hover:text-slate-950 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-cyan-400/20 dark:hover:bg-white/10 dark:hover:text-white"
             onClick={() => (!busy ? onClose?.() : null)}
             type="button"
             aria-label="Fechar"
@@ -318,7 +319,7 @@ export default function WithdrawModal({ open, onClose, onCreated }) {
         </div>
 
         {/* Wallet Balance Card */}
-        <div className="px-5 py-4 bg-gradient-to-br from-emerald-500 to-teal-600 text-white">
+        <div className="bg-[linear-gradient(135deg,#0f172a,#1d4ed8,#0f766e)] px-5 py-4 text-white">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-xs font-medium opacity-90">Saldo disponível</p>
@@ -341,13 +342,13 @@ export default function WithdrawModal({ open, onClose, onCreated }) {
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-gray-200 px-5 bg-gray-50">
+        <div className="flex border-b border-slate-200/80 bg-slate-50/80 px-5 dark:border-white/10 dark:bg-white/5">
           <button
             onClick={() => setActiveTab("withdraw")}
             className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 ${
               activeTab === "withdraw"
-                ? "border-emerald-500 text-emerald-600 bg-white"
-                : "border-transparent text-gray-600 hover:text-gray-900"
+                ? "border-cyan-500 bg-white text-slate-950 dark:bg-white/10 dark:text-white"
+                : "border-transparent text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
             }`}
           >
             Saque
@@ -356,8 +357,8 @@ export default function WithdrawModal({ open, onClose, onCreated }) {
             onClick={() => setActiveTab("settings")}
             className={`flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 ${
               activeTab === "settings"
-                ? "border-emerald-500 text-emerald-600 bg-white"
-                : "border-transparent text-gray-600 hover:text-gray-900"
+                ? "border-cyan-500 bg-white text-slate-950 dark:bg-white/10 dark:text-white"
+                : "border-transparent text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
             }`}
           >
             Configurações
@@ -365,7 +366,7 @@ export default function WithdrawModal({ open, onClose, onCreated }) {
         </div>
 
         {/* Content */}
-        <div className="px-5 py-4 max-h-96 overflow-y-auto">
+        <div className="max-h-96 overflow-y-auto px-5 py-4">
           {/* Withdraw Tab */}
           {activeTab === "withdraw" && (
             <div className="space-y-4 animate-fadeIn">
@@ -615,7 +616,7 @@ export default function WithdrawModal({ open, onClose, onCreated }) {
         </div>
 
         {/* Footer Actions */}
-        <div className="flex gap-2 justify-end px-5 py-4 border-t border-gray-200 bg-gray-50">
+        <div className="flex justify-end gap-2 border-t border-slate-200/80 bg-slate-50/70 px-5 py-4 dark:border-white/10 dark:bg-white/5">
           <Button
             variant="ghost"
             type="button"
@@ -653,6 +654,6 @@ export default function WithdrawModal({ open, onClose, onCreated }) {
           animation: fadeIn 0.2s ease-out;
         }
       `}</style>
-    </div>
+    </ModalShell>
   );
 }

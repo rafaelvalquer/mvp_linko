@@ -19,6 +19,7 @@ import Skeleton from "../components/appui/Skeleton.jsx";
 import Badge from "../components/appui/Badge.jsx";
 import EmptyState from "../components/appui/EmptyState.jsx";
 import { useAuth } from "../app/AuthContext.jsx";
+import useThemeToggle from "../app/useThemeToggle.js";
 import AnalyticsSection from "../components/dashboard/AnalyticsSection.jsx";
 import PixSettingsModal from "../components/PixSettingsModal.jsx";
 
@@ -162,6 +163,8 @@ function offerPaidAmountCents(o) {
 }
 
 function Toast({ message, visible }) {
+  const { isDark } = useThemeToggle();
+
   return (
     <div
       className={[
@@ -171,7 +174,14 @@ function Toast({ message, visible }) {
           : "pointer-events-none translate-y-2 opacity-0",
       ].join(" ")}
     >
-      <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-800 shadow-xl">
+      <div
+        className={[
+          "rounded-2xl border px-4 py-3 text-sm backdrop-blur-xl",
+          isDark
+            ? "border-white/10 bg-[rgba(8,15,30,0.92)] text-slate-100 shadow-[0_24px_50px_-24px_rgba(15,23,42,0.9)]"
+            : "border-slate-200/80 bg-white/92 text-slate-800 shadow-[0_24px_50px_-24px_rgba(15,23,42,0.22)]",
+        ].join(" ")}
+      >
         {message}
       </div>
     </div>
@@ -188,39 +198,91 @@ function StatCard({
   loading = false,
   index = 0,
 }) {
+  const { isDark } = useThemeToggle();
+
   return (
     <div
       className={[
-        "rounded-2xl border bg-white p-4 shadow-sm ring-1 ring-zinc-200/70",
-        highlight ? "border-emerald-200 ring-emerald-200" : "border-zinc-200",
+        "relative overflow-hidden rounded-[28px] border p-5",
+        highlight
+          ? isDark
+            ? "border-cyan-400/20 bg-[linear-gradient(135deg,rgba(8,47,73,0.42),rgba(6,78,59,0.34))] shadow-[0_22px_60px_-42px_rgba(15,23,42,0.7)]"
+            : "border-cyan-200/80 bg-[linear-gradient(135deg,rgba(239,246,255,0.98),rgba(236,253,245,0.92))] shadow-[0_22px_60px_-42px_rgba(15,23,42,0.35)]"
+          : isDark
+            ? "border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(9,15,28,0.82))] shadow-[0_22px_60px_-42px_rgba(15,23,42,0.7)]"
+            : "border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(244,247,252,0.92))] shadow-[0_22px_60px_-42px_rgba(15,23,42,0.35)]",
       ].join(" ")}
       style={{ animationDelay: `${index * 60}ms` }}
     >
+      <div
+        className={[
+          "pointer-events-none absolute inset-x-0 top-0 h-16",
+          isDark
+            ? "bg-[linear-gradient(180deg,rgba(34,211,238,0.08),transparent)]"
+            : "bg-[linear-gradient(180deg,rgba(37,99,235,0.08),transparent)]",
+        ].join(" ")}
+      />
       <div className="flex items-start justify-between">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-zinc-200 bg-zinc-50">
+        <div
+          className={[
+            "flex h-12 w-12 items-center justify-center rounded-2xl border",
+            isDark
+              ? "border-white/10 bg-white/10 text-slate-100"
+              : "border-slate-200/80 bg-white text-slate-700 shadow-[0_14px_28px_-18px_rgba(15,23,42,0.35)]",
+          ].join(" ")}
+        >
           {icon}
         </div>
       </div>
 
-      <div className="mt-3">
-        <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">
+      <div className="mt-4">
+        <div
+          className={[
+            "text-[11px] font-bold uppercase tracking-[0.2em]",
+            isDark ? "text-slate-400" : "text-slate-500",
+          ].join(" ")}
+        >
           {label}
         </div>
 
-        <div className="mt-1 text-2xl font-extrabold tabular-nums text-zinc-900">
-          {loading ? "…" : value}
+        <div
+          className={[
+            "mt-2 text-3xl font-black tracking-[-0.04em] tabular-nums",
+            isDark ? "text-white" : "text-slate-950",
+          ].join(" ")}
+        >
+          {loading ? "..." : value}
         </div>
 
         {subtitle ? (
-          <div className="mt-1 text-xs text-zinc-500">{subtitle}</div>
+          <div
+            className={[
+              "mt-2 text-xs leading-5",
+              isDark ? "text-slate-400" : "text-slate-500",
+            ].join(" ")}
+          >
+            {subtitle}
+          </div>
         ) : null}
 
         {trend ? (
-          <div className="mt-2 text-xs text-zinc-600">
-            <span className="font-semibold text-zinc-800">
+          <div
+            className={[
+              "mt-3 text-xs",
+              isDark ? "text-slate-300" : "text-slate-600",
+            ].join(" ")}
+          >
+            <span
+              className={[
+                "font-semibold",
+                isDark ? "text-white" : "text-slate-900",
+              ].join(" ")}
+            >
               {trend.format === "pct" ? `${trend.value}%` : trend.value}
             </span>{" "}
-            <span className="text-zinc-500">{trend.label}</span>
+            <span className={isDark ? "text-slate-400" : "text-slate-500"}>
+              {trend.label}
+            </span>
           </div>
         ) : null}
       </div>
@@ -238,6 +300,7 @@ function holdRemainingLabel(iso) {
 }
 
 export default function Dashboard() {
+  const { isDark } = useThemeToggle();
   const [offers, setOffers] = useState([]);
   const [bookings, setBookings] = useState([]);
 
@@ -523,22 +586,54 @@ export default function Dashboard() {
 
   return (
     <Shell>
-      <div className="mx-auto max-w-7xl space-y-6 px-4 py-6">
+      <div className="mx-auto max-w-7xl space-y-6">
         <div className="relative">
-          <div className="absolute inset-0 rounded-3xl bg-gradient-to-r from-emerald-500/10 via-teal-500/5 to-blue-500/10 blur-2xl" />
+          <div
+            className={[
+              "absolute inset-0 rounded-[34px] blur-2xl",
+              isDark
+                ? "bg-[linear-gradient(135deg,rgba(34,211,238,0.08),rgba(59,130,246,0.12),rgba(15,23,42,0.02))]"
+                : "bg-[linear-gradient(135deg,rgba(37,99,235,0.12),rgba(20,184,166,0.08),rgba(255,255,255,0.12))]",
+            ].join(" ")}
+          />
 
-          <div className="relative rounded-3xl border border-gray-200 bg-white/80 p-6 shadow-xl backdrop-blur-xl sm:p-8">
+          <div
+            className={[
+              "relative overflow-hidden rounded-[34px] border p-6 backdrop-blur-xl sm:p-8",
+              isDark
+                ? "border-white/10 bg-[linear-gradient(135deg,rgba(15,23,42,0.94),rgba(10,18,36,0.86))] shadow-[0_26px_80px_-48px_rgba(15,23,42,0.8)]"
+                : "border-slate-200/80 bg-[linear-gradient(135deg,rgba(255,255,255,0.98),rgba(238,245,252,0.9))] shadow-[0_26px_80px_-48px_rgba(15,23,42,0.45)]",
+            ].join(" ")}
+          >
+            <div
+              className={[
+                "pointer-events-none absolute right-0 top-0 h-40 w-40 rounded-full blur-3xl",
+                isDark ? "bg-cyan-400/12" : "bg-cyan-400/10",
+              ].join(" ")}
+            />
             <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
               <div className="min-w-0 space-y-3">
                 <div className="flex flex-wrap items-center gap-3">
-                  <h1 className="bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-3xl font-bold text-transparent sm:text-4xl">
+                  <h1 className="bg-[linear-gradient(135deg,#2563eb,#14b8a6)] bg-clip-text text-3xl font-black tracking-tight text-transparent sm:text-4xl">
                     Dashboard
                   </h1>
 
                   {lastUpdate && (
-                    <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50 px-3 py-1.5">
-                      <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-                      <span className="text-xs font-bold text-emerald-700">
+                    <div
+                      className={[
+                        "inline-flex items-center gap-2 rounded-full border px-3 py-1.5",
+                        isDark
+                          ? "border-cyan-400/20 bg-white/10"
+                          : "border-cyan-200/80 bg-white/80 shadow-[0_16px_30px_-24px_rgba(37,99,235,0.45)]",
+                      ].join(" ")}
+                    >
+                      <span className="relative inline-flex h-2 w-2 rounded-full bg-cyan-500" />
+                      <span
+                        className={[
+                          "text-xs font-bold",
+                          isDark ? "text-cyan-100" : "text-sky-800",
+                        ].join(" ")}
+                      >
                         {loading
                           ? "Sincronizando..."
                           : `Atualizado: ${lastUpdate}`}
@@ -547,18 +642,26 @@ export default function Dashboard() {
                   )}
                 </div>
 
-                <p className="text-sm text-gray-600">
-                  Visão geral de sua plataforma em tempo real
+                <p
+                  className={[
+                    "max-w-2xl text-sm leading-6",
+                    isDark ? "text-slate-300" : "text-slate-600",
+                  ].join(" ")}
+                >
+                  Acompanhe pagamentos, agenda e andamento das propostas com uma
+                  leitura mais clara da operacao.
                 </p>
               </div>
 
               <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center lg:w-auto">
                 <div className="flex w-full flex-col items-stretch gap-2 sm:flex-row sm:items-center lg:w-auto">
                   <Button
-                    variant="outline"
+                    variant="secondary"
                     onClick={load}
                     disabled={loading}
-                    className="h-11 gap-2 px-4 transition-all active:scale-95"
+                    className={isDark
+                      ? "h-11 gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 text-slate-100 transition-all active:scale-95 hover:bg-white/10"
+                      : "h-11 gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-slate-700 shadow-[0_18px_32px_-24px_rgba(15,23,42,0.35)] transition-all active:scale-95 hover:border-slate-300 hover:bg-slate-50"}
                   >
                     <span className={`${loading ? "animate-spin" : ""}`}>
                       <Icons.Refresh />
@@ -570,16 +673,15 @@ export default function Dashboard() {
 
                   <Button
                     onClick={() => openPixModal()}
-                    className="h-11 gap-2 px-4 transition-all active:scale-95 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600"
+                    className="h-11 gap-2 rounded-2xl bg-[linear-gradient(135deg,#0f172a,#1e293b)] px-4 text-white shadow-[0_18px_36px_-22px_rgba(15,23,42,0.7)] transition-all active:scale-95 hover:brightness-110"
                   >
                     <WalletIcon className="h-5 w-5" />
                     <span className="font-semibold">Conta Pix</span>
                   </Button>
 
                   <Button
-                    size="sm"
                     onClick={handleCreateOffer}
-                    className="h-11 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-6 font-bold text-white shadow-lg shadow-emerald-200/60 ring-1 ring-emerald-500/20 transition-all active:scale-95 hover:from-emerald-700 hover:to-teal-700"
+                    className="h-11 items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#2563eb,#14b8a6)] px-6 font-bold text-white shadow-[0_20px_40px_-24px_rgba(37,99,235,0.75)] ring-1 ring-cyan-400/20 transition-all active:scale-95 hover:brightness-110"
                   >
                     <Icons.Plus />
                     Nova proposta
@@ -591,7 +693,14 @@ export default function Dashboard() {
         </div>
 
         {error && (
-          <div className="flex items-center justify-between rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-700">
+          <div
+            className={[
+              "flex items-center justify-between rounded-[24px] border p-4 text-sm",
+              isDark
+                ? "border-red-400/20 bg-[linear-gradient(135deg,rgba(127,29,29,0.28),rgba(69,10,10,0.18))] text-red-100"
+                : "border-red-200/80 bg-[linear-gradient(135deg,#fff1f2,#fff7f7)] text-red-700 shadow-[0_18px_36px_-28px_rgba(239,68,68,0.35)]",
+            ].join(" ")}
+          >
             <span>{error}</span>
             <Button variant="secondary" onClick={load}>
               Tentar novamente
@@ -681,7 +790,7 @@ export default function Dashboard() {
 
         <div className="grid grid-cols-12 gap-6">
           <div className="col-span-12 space-y-6 lg:col-span-8">
-            <Card className="overflow-hidden border-none shadow-sm ring-1 ring-zinc-200">
+            <Card className="overflow-hidden">
               <CardHeader
                 title="Links Recentes"
                 subtitle="Acompanhe o status e envie links rapidamente."
@@ -708,18 +817,24 @@ export default function Dashboard() {
                     />
                   </div>
                 ) : (
-                  <div className="divide-y divide-zinc-100">
+                  <div className={isDark ? "divide-y divide-white/10" : "divide-y divide-slate-100"}>
                     {kpis.last5.map((o) => {
                       const pay = getPaymentLabel(o);
                       const publicUrl = `/p/${o.publicToken}`;
                       const copied = copiedId === o._id;
 
                       return (
-                        <div key={o._id} className="p-5 hover:bg-zinc-50">
+                        <div
+                          key={o._id}
+                          className={[
+                            "p-5 transition-colors",
+                            isDark ? "hover:bg-white/5" : "hover:bg-slate-50/80",
+                          ].join(" ")}
+                        >
                           <div className="flex items-start justify-between gap-4">
                             <div className="min-w-0">
                               <div className="flex flex-wrap items-center gap-2">
-                                <div className="truncate text-sm font-semibold text-zinc-900">
+                                <div className={isDark ? "truncate text-sm font-semibold text-white" : "truncate text-sm font-semibold text-zinc-900"}>
                                   {o.title || "Proposta"}
                                 </div>
                                 <Badge
@@ -730,13 +845,13 @@ export default function Dashboard() {
                                   {pay.text}
                                 </Badge>
                                 {o?.notifyWhatsAppOnPaid ? (
-                                  <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700">
+                                  <span className={isDark ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-[10px] font-bold text-emerald-200" : "rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700"}>
                                     WA ON
                                   </span>
                                 ) : null}
                               </div>
 
-                              <div className="mt-1 text-xs text-zinc-500">
+                              <div className={isDark ? "mt-1 text-xs text-slate-400" : "mt-1 text-xs text-slate-500"}>
                                 {fmtBRLFromCents(getAmountCents(o))} •{" "}
                                 {o.customerName || "Cliente"}{" "}
                                 {o.customerWhatsApp
@@ -745,7 +860,14 @@ export default function Dashboard() {
                               </div>
 
                               <div className="mt-2 flex items-center gap-2">
-                                <code className="rounded-lg border bg-white px-2 py-1 text-[11px] text-zinc-700">
+                                <code
+                                  className={[
+                                    "rounded-lg border px-2 py-1 text-[11px]",
+                                    isDark
+                                      ? "border-white/10 bg-white/5 text-slate-200"
+                                      : "border-slate-200 bg-white text-slate-700",
+                                  ].join(" ")}
+                                >
                                   {publicUrl}
                                 </code>
                               </div>
@@ -754,7 +876,6 @@ export default function Dashboard() {
                             <div className="flex shrink-0 items-center gap-2">
                               <Button
                                 variant={copied ? "primary" : "secondary"}
-                                size="sm"
                                 onClick={() => copyLink(o)}
                               >
                                 {copied ? "Copiado" : "Copiar link"}
@@ -762,7 +883,6 @@ export default function Dashboard() {
 
                               <Button
                                 variant="ghost"
-                                size="sm"
                                 onClick={() =>
                                   window.open(
                                     publicUrl,
@@ -774,7 +894,7 @@ export default function Dashboard() {
                                 Abrir
                               </Button>
 
-                              <Button size="sm" onClick={() => openDetails(o)}>
+                              <Button onClick={() => openDetails(o)}>
                                 Detalhes
                               </Button>
                             </div>
@@ -789,14 +909,14 @@ export default function Dashboard() {
           </div>
 
           <div className="col-span-12 space-y-6 lg:col-span-4">
-            <Card className="border-none shadow-sm ring-1 ring-zinc-200">
+            <Card>
               <CardHeader
                 title="Agenda (7 dias)"
                 subtitle={bookingsErr || "Reservas e confirmações"}
                 right={
                   <Link
                     to="/calendar"
-                    className="text-[11px] font-bold text-indigo-600 hover:underline"
+                    className="text-[11px] font-bold uppercase tracking-[0.18em] text-sky-700 hover:underline"
                   >
                     VER TUDO
                   </Link>
@@ -807,7 +927,7 @@ export default function Dashboard() {
                   <Skeleton className="h-32 w-full rounded-xl" />
                 ) : bookings.length === 0 ? (
                   <div className="py-4 text-center">
-                    <p className="text-xs font-medium text-zinc-400">
+                    <p className={isDark ? "text-xs font-medium text-slate-500" : "text-xs font-medium text-slate-400"}>
                       Sem compromissos em breve
                     </p>
                   </div>
@@ -815,15 +935,18 @@ export default function Dashboard() {
                   bookings.slice(0, 3).map((b) => (
                     <div
                       key={b._id}
-                      className="relative border-l-2 border-zinc-100 py-1 pl-4 transition-colors hover:border-indigo-400"
+                      className={[
+                        "relative border-l-2 py-1 pl-4 transition-colors hover:border-sky-500",
+                        isDark ? "border-white/10" : "border-slate-200",
+                      ].join(" ")}
                     >
-                      <div className="text-[11px] font-bold uppercase tracking-tighter text-indigo-600">
+                      <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-sky-700">
                         {fmtTimeBR(b.startAt)} — {fmtTimeBR(b.endAt)}
                       </div>
-                      <div className="truncate text-sm font-semibold text-zinc-900">
+                      <div className={isDark ? "truncate text-sm font-semibold text-white" : "truncate text-sm font-semibold text-slate-900"}>
                         {b.customerName || "Cliente"}
                       </div>
-                      <div className="line-clamp-1 text-[11px] text-zinc-500">
+                      <div className={isDark ? "line-clamp-1 text-[11px] text-slate-400" : "line-clamp-1 text-[11px] text-slate-500"}>
                         {b?.offer?.title}
                       </div>
                       {normStatus(b.status) === "HOLD" && (
@@ -837,14 +960,14 @@ export default function Dashboard() {
               </CardBody>
             </Card>
 
-            <Card className="border-none shadow-sm ring-1 ring-zinc-200">
+            <Card>
               <CardHeader
                 title="Aguardando confirmação"
                 subtitle="Comprovantes enviados pelo cliente"
                 right={
                   <Link
                     to="/offers"
-                    className="text-[11px] font-bold text-emerald-600 hover:underline"
+                    className="text-[11px] font-bold uppercase tracking-[0.18em] text-teal-700 hover:underline"
                   >
                     VER PROPOSTAS
                   </Link>
@@ -857,26 +980,29 @@ export default function Dashboard() {
                   </div>
                 ) : waitingOffers.length === 0 ? (
                   <div className="p-8 text-center">
-                    <p className="text-xs text-zinc-400">
+                    <p className={isDark ? "text-xs text-slate-500" : "text-xs text-slate-400"}>
                       Nenhum pagamento aguardando confirmação
                     </p>
                   </div>
                 ) : (
-                  <div className="divide-y divide-zinc-50">
+                  <div className={isDark ? "divide-y divide-white/10" : "divide-y divide-slate-100"}>
                     {waitingOffers.map((o) => (
                       <div
                         key={o._id}
-                        className="group flex items-center justify-between p-4"
+                        className={[
+                          "group flex items-center justify-between p-4 transition-colors",
+                          isDark ? "hover:bg-white/5" : "hover:bg-slate-50/80",
+                        ].join(" ")}
                       >
                         <div className="min-w-0">
-                          <div className="truncate text-sm font-bold text-zinc-900">
+                          <div className={isDark ? "truncate text-sm font-bold text-white" : "truncate text-sm font-bold text-slate-900"}>
                             {o.customerName || "Cliente"}
                           </div>
-                          <div className="line-clamp-1 text-[11px] text-zinc-500">
+                          <div className={isDark ? "line-clamp-1 text-[11px] text-slate-400" : "line-clamp-1 text-[11px] text-slate-500"}>
                             {o.title || "Proposta"} •{" "}
                             {fmtBRLFromCents(getAmountCents(o))}
                           </div>
-                          <div className="text-[10px] font-medium uppercase tracking-wider text-zinc-400">
+                          <div className={isDark ? "text-[10px] font-medium uppercase tracking-[0.18em] text-slate-500" : "text-[10px] font-medium uppercase tracking-[0.18em] text-slate-400"}>
                             {fmtDateTimeBR(o.updatedAt || o.createdAt)}
                           </div>
                         </div>
@@ -886,7 +1012,12 @@ export default function Dashboard() {
                           </Badge>
                           <button
                             onClick={() => nav("/offers")}
-                            className="p-1.5 text-zinc-400 transition-colors hover:text-zinc-900"
+                            className={[
+                              "rounded-xl p-1.5 transition-colors",
+                              isDark
+                                ? "text-slate-500 hover:bg-white/10 hover:text-white"
+                                : "text-slate-400 hover:bg-slate-100 hover:text-slate-900",
+                            ].join(" ")}
                             title="Abrir propostas"
                           >
                             <Icons.External />
@@ -899,16 +1030,16 @@ export default function Dashboard() {
               </CardBody>
             </Card>
 
-            <div className="flex items-center justify-between rounded-2xl bg-zinc-900 p-5 text-white shadow-xl">
+            <div className="flex items-center justify-between rounded-[28px] bg-[linear-gradient(135deg,#0f172a,#1d4ed8,#0f766e)] p-5 text-white shadow-[0_26px_60px_-34px_rgba(15,23,42,0.85)]">
               <div>
-                <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-zinc-400">
+                <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-300">
                   Caixa de Hoje
                 </p>
-                <div className="text-xl font-bold">
+                <div className="text-2xl font-black tracking-[-0.03em]">
                   {loading ? "..." : fmtBRL(kpis.paidTodayCents)}
                 </div>
               </div>
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-800">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10">
                 <Icons.Wallet />
               </div>
             </div>
@@ -943,3 +1074,5 @@ export default function Dashboard() {
     </Shell>
   );
 }
+
+
