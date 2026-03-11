@@ -1,3 +1,4 @@
+//src/components/PixSettingsModal.jsx
 import { useEffect, useMemo, useState } from "react";
 
 import Button from "./appui/Button.jsx";
@@ -103,7 +104,8 @@ export default function PixSettingsModal({
                 Conta Pix
               </h2>
               <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                Configure a chave exibida para o cliente pagar e enviar o comprovante no mesmo fluxo.
+                Configure a chave exibida para o cliente pagar e enviar o
+                comprovante no mesmo fluxo.
               </p>
             </div>
 
@@ -146,7 +148,8 @@ export default function PixSettingsModal({
                       : "Chave pendente"}
                 </p>
                 <p className="mt-2 text-sm text-slate-200">
-                  O valor pago vai direto para a chave cadastrada no seu fluxo de venda.
+                  O valor pago vai direto para a chave cadastrada no seu fluxo
+                  de venda.
                 </p>
               </div>
 
@@ -233,7 +236,10 @@ export default function PixSettingsModal({
               <ul className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-300">
                 <li>O cliente paga para a sua chave Pix.</li>
                 <li>O comprovante continua sendo anexado no link publico.</li>
-                <li>Voce confirma o recebimento na proposta, mantendo o fluxo atual.</li>
+                <li>
+                  Voce confirma o recebimento na proposta, mantendo o fluxo
+                  atual.
+                </li>
               </ul>
             </div>
 
