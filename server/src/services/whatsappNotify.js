@@ -5,6 +5,10 @@ import { Client } from "../models/Client.js";
 import { MessageLog } from "../models/MessageLog.js";
 import { isWhatsAppNotificationsEnabled } from "./waGateway.js";
 import { queueOrSendWhatsApp } from "./whatsappOutbox.service.js";
+import {
+  canSendWhatsAppPaymentStatus,
+  resolveWorkspaceNotificationContext,
+} from "./notificationSettings.js";
 
 function onlyDigits(v) {
   return String(v || "").replace(/\D+/g, "");
@@ -181,6 +185,27 @@ export async function maybeNotifyWhatsAppPixPaid({
     return { ok: false, status: "SKIPPED", reason: "FEATURE_DISABLED" };
   }
 
+  const notificationContext = await resolveWorkspaceNotificationContext({
+    workspaceId: workspaceId || offer?.workspaceId || null,
+    ownerUserId: offer?.ownerUserId || null,
+  });
+
+  if (!canSendWhatsAppPaymentStatus(notificationContext)) {
+    return {
+      ok: false,
+      status: "SKIPPED",
+      reason:
+        notificationContext?.capabilities?.environment?.whatsapp?.available !==
+        true
+          ? notificationContext?.capabilities?.environment?.whatsapp?.reason ||
+            "FEATURE_DISABLED"
+          : notificationContext?.capabilities?.plan?.features
+                ?.whatsappPaymentStatus !== true
+            ? "PLAN_NOT_ALLOWED"
+            : "WORKSPACE_SETTING_DISABLED",
+    };
+  }
+
   if (offer?.notifyWhatsAppOnPaid !== true) {
     return { ok: false, status: "SKIPPED", reason: "OFFER_FLAG_DISABLED" };
   }
@@ -284,6 +309,27 @@ export async function notifyPaymentConfirmed(offerId) {
 
   const offer = await Offer.findById(id).lean();
   if (!offer) return { ok: false, status: "SKIPPED", reason: "NO_OFFER" };
+
+  const notificationContext = await resolveWorkspaceNotificationContext({
+    workspaceId: offer?.workspaceId || null,
+    ownerUserId: offer?.ownerUserId || null,
+  });
+
+  if (!canSendWhatsAppPaymentStatus(notificationContext)) {
+    return {
+      ok: false,
+      status: "SKIPPED",
+      reason:
+        notificationContext?.capabilities?.environment?.whatsapp?.available !==
+        true
+          ? notificationContext?.capabilities?.environment?.whatsapp?.reason ||
+            "FEATURE_DISABLED"
+          : notificationContext?.capabilities?.plan?.features
+                ?.whatsappPaymentStatus !== true
+            ? "PLAN_NOT_ALLOWED"
+            : "WORKSPACE_SETTING_DISABLED",
+    };
+  }
 
   if (offer?.notifyWhatsAppOnPaid !== true) {
     return { ok: false, status: "SKIPPED", reason: "OFFER_FLAG_DISABLED" };
@@ -469,6 +515,27 @@ export async function notifyPaymentRejected(
 
   const offer = await Offer.findById(id).lean();
   if (!offer) return { ok: false, status: "SKIPPED", reason: "NO_OFFER" };
+
+  const notificationContext = await resolveWorkspaceNotificationContext({
+    workspaceId: offer?.workspaceId || null,
+    ownerUserId: offer?.ownerUserId || null,
+  });
+
+  if (!canSendWhatsAppPaymentStatus(notificationContext)) {
+    return {
+      ok: false,
+      status: "SKIPPED",
+      reason:
+        notificationContext?.capabilities?.environment?.whatsapp?.available !==
+        true
+          ? notificationContext?.capabilities?.environment?.whatsapp?.reason ||
+            "FEATURE_DISABLED"
+          : notificationContext?.capabilities?.plan?.features
+                ?.whatsappPaymentStatus !== true
+            ? "PLAN_NOT_ALLOWED"
+            : "WORKSPACE_SETTING_DISABLED",
+    };
+  }
 
   if (offer?.notifyWhatsAppOnPaid !== true) {
     return { ok: false, status: "SKIPPED", reason: "OFFER_FLAG_DISABLED" };

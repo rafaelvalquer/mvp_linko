@@ -1,18 +1,11 @@
-export function normalizePlan(value) {
-  const plan = String(value || "").trim().toLowerCase();
-  if (!plan) return "start";
-  return ["start", "pro", "business", "enterprise"].includes(plan)
-    ? plan
-    : "start";
-}
-
-export function canUseRecurring(plan) {
-  return ["pro", "business", "enterprise"].includes(normalizePlan(plan));
-}
-
-export function canUseNotifyWhatsAppOnPaid(plan) {
-  return ["pro", "business", "enterprise"].includes(normalizePlan(plan));
-}
+export {
+  canUseNotifyWhatsAppOnPaid,
+  canUsePaymentReminderWhatsApp,
+  canUseRecurring,
+  canUseRecurringAutoSend,
+  getPlanFeatureMatrix,
+  normalizePlan,
+} from "../../../shared/planFeatures.js";
 
 export function recurringFeatureError() {
   const err = new Error(

@@ -29,6 +29,18 @@ const PaymentProofSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const PaymentRemindersSchema = new mongoose.Schema(
+  {
+    enabled24h: { type: Boolean, default: false },
+    enabled3d: { type: Boolean, default: false },
+    enabledDueDate: { type: Boolean, default: false },
+    enabledAfterDueDate: { type: Boolean, default: false },
+    lastSentAt: { type: Date, default: null },
+    lastSentKind: { type: String, default: null },
+  },
+  { _id: false },
+);
+
 const OfferSchema = new mongoose.Schema(
   {
     workspaceId: {
@@ -131,6 +143,7 @@ const OfferSchema = new mongoose.Schema(
 
     // ✅ comprovante de pagamento (manual)
     paymentProof: { type: PaymentProofSchema, default: null },
+    paymentReminders: { type: PaymentRemindersSchema, default: () => ({}) },
 
     // ✅ confirmação manual (pelo dono do workspace)
     confirmedAt: { type: Date, default: null },
@@ -173,6 +186,10 @@ const OfferSchema = new mongoose.Schema(
     proofNotifiedTo: { type: String, default: null },
     proofNotifiedKey: { type: String, default: null },
     proofNotifiedFileKey: { type: String, default: null },
+    confirmedNotifiedAt: { type: Date, default: null },
+    confirmedNotifiedTo: { type: String, default: null },
+    confirmedNotifiedKey: { type: String, default: null },
+    confirmedNotifiedProofKey: { type: String, default: null },
 
     // flags públicos (compat)
     publicDoneOnly: { type: Boolean, default: false },

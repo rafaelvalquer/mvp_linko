@@ -7,6 +7,7 @@ import {
   CalendarDays,
   DollarSign,
   TrendingUp,
+  Repeat2,
   Wallet as WalletIcon,
 } from "lucide-react";
 
@@ -34,6 +35,7 @@ import {
   guardOfferCreation,
   hasPixAccountConfigured,
 } from "../utils/guardOfferCreation.js";
+import { canUseRecurringPlan } from "../utils/planFeatures.js";
 
 const Icons = {
   Refresh: () => (
@@ -154,6 +156,19 @@ function offerPaidDate(o) {
 
 function offerCreatedDate(o) {
   return o?.createdAt || o?.updatedAt;
+}
+
+function offerDueDate(o) {
+  if (o?.validityEnabled !== true) return null;
+  const validityDays = Number(o?.validityDays);
+  if (!Number.isFinite(validityDays) || validityDays <= 0) return null;
+
+  const createdAt = offerCreatedDate(o);
+  if (!createdAt) return null;
+
+  const dueAt = startOfDay(createdAt);
+  dueAt.setDate(dueAt.getDate() + validityDays);
+  return dueAt;
 }
 
 function offerPaidAmountCents(o) {
@@ -303,6 +318,8 @@ export default function Dashboard() {
   const { isDark } = useThemeToggle();
   const [offers, setOffers] = useState([]);
   const [bookings, setBookings] = useState([]);
+  const [activeRecurringCount, setActiveRecurringCount] = useState(0);
+  const [activeRecurringIds, setActiveRecurringIds] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [bookingsBusy, setBookingsBusy] = useState(true);
@@ -321,6 +338,7 @@ export default function Dashboard() {
   const [lastUpdate, setLastUpdate] = useState("");
 
   const { signOut, workspace, loadingMe, refreshWorkspace } = useAuth();
+  const hasRecurringPlan = canUseRecurringPlan(workspace?.plan);
 
   const nav = useNavigate();
   const location = useLocation();
@@ -452,8 +470,34 @@ export default function Dashboard() {
     try {
       setLoading(true);
       setError("");
-      const d = await api("/offers");
+      const [offersResult, recurringResult] = await Promise.allSettled([
+        api("/offers"),
+        hasRecurringPlan
+          ? api("/recurring-offers?status=active")
+          : Promise.resolve({ items: [] }),
+      ]);
+
+      if (offersResult.status !== "fulfilled") {
+        throw offersResult.reason;
+      }
+
+      const d = offersResult.value;
       setOffers(d.items || []);
+
+      if (recurringResult.status === "fulfilled") {
+        const activeItems = recurringResult.value?.items || [];
+        setActiveRecurringCount(activeItems.length);
+        setActiveRecurringIds(
+          activeItems
+            .map((item) => String(item?._id || item?.id || "").trim())
+            .filter(Boolean),
+        );
+      } else {
+        if (recurringResult.reason?.status === 401) return signOut();
+        setActiveRecurringCount(0);
+        setActiveRecurringIds([]);
+      }
+
       setLastUpdate(
         new Intl.DateTimeFormat("pt-BR", { timeStyle: "short" }).format(
           new Date(),
@@ -463,6 +507,8 @@ export default function Dashboard() {
       loadBookings();
     } catch (e) {
       if (e?.status === 401) return signOut();
+      setActiveRecurringCount(0);
+      setActiveRecurringIds([]);
       setError("Falha ao carregar dados principais.");
     } finally {
       setLoading(false);
@@ -470,9 +516,10 @@ export default function Dashboard() {
   }
 
   useEffect(() => {
+    if (loadingMe) return;
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [hasRecurringPlan, loadingMe]);
 
   const kpis = useMemo(() => {
     const total = offers.length;
@@ -557,6 +604,30 @@ export default function Dashboard() {
       (o) => normStatus(o?.paymentStatus) === "WAITING_CONFIRMATION",
     ).length;
 
+    const activeRecurringIdSet = new Set(
+      (activeRecurringIds || []).map((id) => String(id || "").trim()),
+    );
+    const recurringAtRiskCount = new Set(
+      offers
+        .filter((o) => {
+          const recurringId = String(o?.recurringOfferId || "").trim();
+          if (!recurringId || !activeRecurringIdSet.has(recurringId)) {
+            return false;
+          }
+          if (isPaidOffer(o) || isCancelledOrExpiredOffer(o)) {
+            return false;
+          }
+          if (normStatus(o?.paymentStatus) === "WAITING_CONFIRMATION") {
+            return false;
+          }
+
+          const dueAt = offerDueDate(o);
+          return !!dueAt && dueAt < today0;
+        })
+        .map((o) => String(o?.recurringOfferId || "").trim())
+        .filter(Boolean),
+    ).size;
+
     const pixConfigured = hasPixAccountConfigured(
       workspace,
       effectivePayoutPixKeyMasked,
@@ -574,9 +645,16 @@ export default function Dashboard() {
       paidCur30Count,
       appointments,
       waitingConfirmation,
+      recurringAtRiskCount,
       pixConfigured,
     };
-  }, [offers, bookings, workspace, effectivePayoutPixKeyMasked]);
+  }, [
+    offers,
+    bookings,
+    workspace,
+    effectivePayoutPixKeyMasked,
+    activeRecurringIds,
+  ]);
 
   const waitingOffers = useMemo(() => {
     return offers
@@ -762,6 +840,21 @@ export default function Dashboard() {
             index={4}
           />
 
+          {hasRecurringPlan ? (
+            <StatCard
+              icon={<Repeat2 className="h-5 w-5 text-cyan-500" />}
+              label="Recorrencias ativas"
+              value={activeRecurringCount}
+              subtitle={
+                kpis.recurringAtRiskCount > 0
+                  ? `${kpis.recurringAtRiskCount} com parcelas em atraso`
+                  : "Sem parcelas em atraso"
+              }
+              loading={loading}
+              index={5}
+            />
+          ) : null}
+
           <StatCard
             icon={<WalletIcon className="h-5 w-5 text-emerald-600" />}
             label="Conta Pix"
@@ -773,7 +866,7 @@ export default function Dashboard() {
             }
             highlight
             loading={loadingMe}
-            index={5}
+            index={hasRecurringPlan ? 6 : 5}
           />
 
           <StatCard
@@ -782,7 +875,7 @@ export default function Dashboard() {
             value={kpis.waitingConfirmation}
             subtitle="comprovantes enviados"
             loading={loading}
-            index={6}
+            index={hasRecurringPlan ? 7 : 6}
           />
         </section>
 

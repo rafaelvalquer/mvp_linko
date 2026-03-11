@@ -4,13 +4,18 @@ import { Client } from "../models/Client.js";
 import { Offer } from "../models/Offer.js";
 import { Workspace } from "../models/Workspace.js";
 import { RecurringOffer } from "../models/RecurringOffer.js";
-import { isWhatsAppNotificationsEnabled } from "./waGateway.js";
 import { queueOrSendWhatsApp } from "./whatsappOutbox.service.js";
 import {
   assertRecurringPlanAllowed,
   canUseNotifyWhatsAppOnPaid,
   canUseRecurring,
+  canUseRecurringAutoSend,
 } from "../utils/planFeatures.js";
+import {
+  canSendWhatsAppRecurringAutoSend,
+  getDefaultOfferNotificationFlags,
+  resolveWorkspaceNotificationContext,
+} from "./notificationSettings.js";
 
 const LINK_TTL_DAYS = Number(process.env.OFFER_LINK_TTL_DAYS || 90);
 const RUNNER_LOCK_TTL_MS = Number(
@@ -145,10 +150,16 @@ async function resolveCustomerSnapshot({ tenantId, body }) {
   };
 }
 
-function buildOfferSnapshotFields({ body, workspacePlan, customer }) {
+function buildOfferSnapshotFields({
+  body,
+  workspacePlan,
+  customer,
+  notificationContext = null,
+}) {
   const input = body || {};
   const offerTypeRaw = String(input.offerType || "service").trim().toLowerCase();
   const offerType = offerTypeRaw === "product" ? "product" : "service";
+  const defaultFlags = getDefaultOfferNotificationFlags(notificationContext);
 
   const title = isNonEmpty(input.title)
     ? String(input.title).trim()
@@ -167,7 +178,11 @@ function buildOfferSnapshotFields({ body, workspacePlan, customer }) {
     customerWhatsApp: customer.customerWhatsApp,
 
     notifyWhatsAppOnPaid: canUseNotifyWhatsAppOnPaid(workspacePlan)
-      ? safeBool(input.notifyWhatsAppOnPaid)
+      ? input.notifyWhatsAppOnPaid === true
+        ? true
+        : input.notifyWhatsAppOnPaid === false
+          ? false
+          : defaultFlags.notifyWhatsAppOnPaid
       : false,
 
     offerType,
@@ -227,6 +242,7 @@ function buildOfferSnapshotFields({ body, workspacePlan, customer }) {
 
     freightEnabled: safeBool(input.freightEnabled),
     freightValue: input.freightValue ?? null,
+    paymentReminders: defaultFlags.paymentReminders,
   };
 }
 
@@ -257,9 +273,22 @@ export async function createOfferFromPayload({
   workspacePlan,
   body,
   recurringMeta = null,
+  notificationContext = null,
 }) {
   const customer = await resolveCustomerSnapshot({ tenantId, body });
-  const snapshot = buildOfferSnapshotFields({ body, workspacePlan, customer });
+  const effectiveNotificationContext =
+    notificationContext ||
+    (await resolveWorkspaceNotificationContext({
+      workspaceId: tenantId,
+      ownerUserId: userId || null,
+      workspacePlan,
+    }));
+  const snapshot = buildOfferSnapshotFields({
+    body,
+    workspacePlan,
+    customer,
+    notificationContext: effectiveNotificationContext,
+  });
   validateOfferSnapshotFields(snapshot);
 
   const publicToken = await generateUniquePublicToken();
@@ -517,12 +546,32 @@ async function tryAutoSendRecurringOfferOutbox({ recurring, offer, origin }) {
     };
   }
 
-  if (!isWhatsAppNotificationsEnabled()) {
+  const notificationContext = await resolveWorkspaceNotificationContext({
+    workspaceId: recurring?.workspaceId || null,
+    ownerUserId: recurring?.ownerUserId || null,
+  });
+
+  if (!canSendWhatsAppRecurringAutoSend(notificationContext)) {
+    const reasonCode =
+      notificationContext?.capabilities?.environment?.whatsapp?.available !==
+      true
+        ? notificationContext?.capabilities?.environment?.whatsapp?.reason ||
+          "FEATURE_DISABLED"
+        : notificationContext?.capabilities?.plan?.features
+              ?.whatsappRecurringAutoSend !== true
+          ? "PLAN_NOT_ALLOWED"
+          : "WORKSPACE_SETTING_DISABLED";
+    const reasonMessage =
+      reasonCode === "PLAN_NOT_ALLOWED"
+        ? "Cobranca gerada, mas o autoenvio por WhatsApp exige plano Pro ou superior."
+        : reasonCode === "WORKSPACE_SETTING_DISABLED"
+          ? "Cobranca gerada, mas o autoenvio por WhatsApp esta desativado nas configuracoes."
+          : "Cobranca gerada, mas o WhatsApp esta indisponivel no ambiente.";
+
     return {
       status: "skipped",
-      message:
-        "Cobranca gerada, mas o envio automatico por WhatsApp esta desabilitado.",
-      error: { code: "FEATURE_DISABLED", message: "WhatsApp desabilitado." },
+      message: reasonMessage,
+      error: { code: reasonCode, message: reasonMessage },
     };
   }
 
@@ -674,9 +723,20 @@ export async function createRecurringOffer({ tenantId, userId, body, origin = ""
 
   const input = body || {};
   const workspacePlan = await assertRecurringFeatureForTenant(tenantId);
+  const notificationContext = await resolveWorkspaceNotificationContext({
+    workspaceId: tenantId,
+    ownerUserId: userId || null,
+    workspacePlan,
+  });
   const customer = await resolveCustomerSnapshot({ tenantId, body: input });
-  const snapshot = buildOfferSnapshotFields({ body: input, workspacePlan, customer });
+  const snapshot = buildOfferSnapshotFields({
+    body: input,
+    workspacePlan,
+    customer,
+    notificationContext,
+  });
   validateOfferSnapshotFields(snapshot);
+  const defaultAutoSend = canSendWhatsAppRecurringAutoSend(notificationContext);
 
   const name = String(input.name || input.recurringName || "").trim();
   const timeOfDay = normalizeTimeOfDay(
@@ -725,9 +785,17 @@ export async function createRecurringOffer({ tenantId, userId, body, origin = ""
       maxOccurrences,
     },
     automation: {
-      autoSendToCustomer: safeBool(
-        input?.automation?.autoSendToCustomer ?? input.autoSendToCustomer,
-      ),
+      autoSendToCustomer: canUseRecurringAutoSend(workspacePlan)
+        ? input?.automation?.autoSendToCustomer === true
+          ? true
+          : input?.automation?.autoSendToCustomer === false
+            ? false
+            : input.autoSendToCustomer === true
+              ? true
+              : input.autoSendToCustomer === false
+                ? false
+                : defaultAutoSend
+        : false,
       generateFirstNow: safeBool(
         input?.automation?.generateFirstNow ?? input.generateFirstNow,
       ),
@@ -899,9 +967,11 @@ export async function updateRecurringOffer({ recurringId, tenantId, userId, body
 
   if (body?.automation) {
     if (body.automation.autoSendToCustomer !== undefined) {
-      setPatch["automation.autoSendToCustomer"] = safeBool(
-        body.automation.autoSendToCustomer,
-      );
+      setPatch["automation.autoSendToCustomer"] = canUseRecurringAutoSend(
+        workspacePlan,
+      )
+        ? safeBool(body.automation.autoSendToCustomer)
+        : false;
     }
     if (body.automation.generateFirstNow !== undefined) {
       setPatch["automation.generateFirstNow"] = safeBool(

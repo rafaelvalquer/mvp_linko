@@ -16,6 +16,10 @@ import * as WorkspaceModule from "../models/Workspace.js";
 import { buildPixBrCode } from "../services/pixEmv.js";
 import { uploadPaymentProof } from "../middleware/uploadProof.js";
 import { notifySellerPaymentProofSubmitted } from "../services/resendEmail.js";
+import {
+  isEmailNotificationEnabled,
+  resolveWorkspaceNotificationContext,
+} from "../services/notificationSettings.js";
 import path from "path";
 
 const router = express.Router();
@@ -1007,6 +1011,27 @@ router.post("/p/:token/payment/proof", async (req, res, next) => {
         // ✅ dispara e-mail para o vendedor (com idempotência por offerId + proofKey)
         let email = null;
         try {
+          const notificationContext = await resolveWorkspaceNotificationContext({
+            workspaceId: offer?.workspaceId || null,
+            ownerUserId: offer?.ownerUserId || null,
+          });
+
+          if (
+            !isEmailNotificationEnabled(
+              notificationContext,
+              "sellerProofSubmitted",
+            )
+          ) {
+            email = {
+              status: "SKIPPED",
+              reason:
+                notificationContext?.capabilities?.environment?.email
+                  ?.available !== true
+                  ? notificationContext?.capabilities?.environment?.email
+                      ?.reason || "EMAIL_UNAVAILABLE"
+                  : "WORKSPACE_SETTING_DISABLED",
+            };
+          } else {
           const fullOffer = await Offer.findById(offer._id)
             .lean()
             .catch(() => null);
@@ -1033,6 +1058,7 @@ router.post("/p/:token/payment/proof", async (req, res, next) => {
             email = { status: "SKIPPED", reason: r.reason || "" };
           } else {
             email = { status: "SENT", id: r?.id || null, to: r?.to || "" };
+          }
           }
 
           console.log("[email] proof submitted", {

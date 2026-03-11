@@ -82,6 +82,57 @@ const AgendaSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const NotificationReminderDefaultsSchema = new mongoose.Schema(
+  {
+    enabled24h: { type: Boolean, default: false },
+    enabled3d: { type: Boolean, default: false },
+    enabledDueDate: { type: Boolean, default: false },
+    enabledAfterDueDate: { type: Boolean, default: false },
+  },
+  { _id: false },
+);
+
+const NotificationPaymentRemindersSchema = new mongoose.Schema(
+  {
+    enabled: { type: Boolean, default: true },
+    defaults: {
+      type: NotificationReminderDefaultsSchema,
+      default: () => ({}),
+    },
+  },
+  { _id: false },
+);
+
+const NotificationEmailSchema = new mongoose.Schema(
+  {
+    sellerProofSubmitted: { type: Boolean, default: true },
+    sellerPixPaid: { type: Boolean, default: true },
+    sellerPlatformConfirmed: { type: Boolean, default: true },
+  },
+  { _id: false },
+);
+
+const NotificationWhatsAppSchema = new mongoose.Schema(
+  {
+    masterEnabled: { type: Boolean, default: true },
+    paymentStatusUpdatesEnabled: { type: Boolean, default: true },
+    recurringAutoSendDefault: { type: Boolean, default: false },
+    paymentReminders: {
+      type: NotificationPaymentRemindersSchema,
+      default: () => ({}),
+    },
+  },
+  { _id: false },
+);
+
+const NotificationSettingsSchema = new mongoose.Schema(
+  {
+    email: { type: NotificationEmailSchema, default: () => ({}) },
+    whatsapp: { type: NotificationWhatsAppSchema, default: () => ({}) },
+  },
+  { _id: false },
+);
+
 const AppSettingsSchema = new mongoose.Schema(
   {
     workspaceId: {
@@ -99,6 +150,7 @@ const AppSettingsSchema = new mongoose.Schema(
 
     // configurações atuais
     agenda: { type: AgendaSchema, default: () => ({}) },
+    notifications: { type: NotificationSettingsSchema, default: () => ({}) },
 
     // extensível p/ futuras configurações
     data: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },

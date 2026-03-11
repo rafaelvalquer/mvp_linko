@@ -1,8 +1,11 @@
 import { env } from "../config/env.js";
 import { Offer } from "../models/Offer.js";
 import OfferReminderLog from "../models/OfferReminderLog.js";
-import { isWhatsAppNotificationsEnabled } from "./waGateway.js";
 import { queueOrSendWhatsApp } from "./whatsappOutbox.service.js";
+import {
+  canSendWhatsAppPaymentReminders,
+  resolveWorkspaceNotificationContext,
+} from "./notificationSettings.js";
 
 const TZ = "America/Sao_Paulo";
 
@@ -301,6 +304,10 @@ export async function dispatchPaymentReminder({
 
   const to = normalizePhoneBR(offer?.customerWhatsApp);
   const message = buildPaymentReminderMessage({ offer, kind, publicUrl });
+  const notificationContext = await resolveWorkspaceNotificationContext({
+    workspaceId,
+    ownerUserId: offer?.ownerUserId || userId || null,
+  });
   const baseMeta = {
     ...(meta || {}),
     publicUrl,
@@ -308,7 +315,21 @@ export async function dispatchPaymentReminder({
     customerWhatsApp: String(offer?.customerWhatsApp || "").trim(),
   };
 
-  if (!isWhatsAppNotificationsEnabled()) {
+  if (!canSendWhatsAppPaymentReminders(notificationContext)) {
+    const reasonCode =
+      notificationContext?.capabilities?.environment?.whatsapp?.available !==
+      true
+        ? "FEATURE_DISABLED"
+        : notificationContext?.capabilities?.plan?.features
+              ?.whatsappPaymentReminders !== true
+          ? "PLAN_NOT_ALLOWED"
+          : "WORKSPACE_SETTING_DISABLED";
+    const reasonMessage =
+      reasonCode === "PLAN_NOT_ALLOWED"
+        ? "Lembretes por WhatsApp disponiveis apenas nos planos Business e Enterprise."
+        : reasonCode === "WORKSPACE_SETTING_DISABLED"
+          ? "Lembretes por WhatsApp desativados nas configuracoes do workspace."
+          : "WhatsApp desabilitado na configuracao do ambiente.";
     const log = await createReminderLog({
       workspaceId,
       offerId: offer._id,
@@ -330,7 +351,7 @@ export async function dispatchPaymentReminder({
     return {
       ok: false,
       status: "skipped",
-      reason: "FEATURE_DISABLED",
+      reason: reasonCode,
       log,
       offer: await Offer.findById(offer._id).lean(),
     };

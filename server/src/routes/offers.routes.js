@@ -17,6 +17,12 @@ import {
   notifySellerPixPaid,
   notifySellerPaymentConfirmedOnPlatform,
 } from "../services/resendEmail.js";
+import { canUseNotifyWhatsAppOnPaid } from "../utils/planFeatures.js";
+import {
+  getDefaultOfferNotificationFlags,
+  isEmailNotificationEnabled,
+  resolveWorkspaceNotificationContext,
+} from "../services/notificationSettings.js";
 
 const r = Router();
 
@@ -43,16 +49,10 @@ function safeBool(v) {
   return v === true;
 }
 
-function normalizePlan(v) {
-  const p = String(v || "").trim().toLowerCase();
-  if (!p) return "start";
-  return ["start", "pro", "business", "enterprise"].includes(p)
-    ? p
-    : "start";
-}
-
-function canUseNotifyWhatsAppOnPaid(plan) {
-  return ["pro", "business", "enterprise"].includes(normalizePlan(plan));
+function boolWithFallback(v, fallback = false) {
+  if (v === true) return true;
+  if (v === false) return false;
+  return fallback;
 }
 
 function addDays(date, days) {
@@ -107,8 +107,15 @@ function normalizeItems(raw) {
     .filter((it) => isNonEmpty(it.description));
 }
 
-async function createOfferLocal({ tenantId, userId, workspacePlan, body }) {
+async function createOfferLocal({
+  tenantId,
+  userId,
+  workspacePlan,
+  notificationContext,
+  body,
+}) {
   const b = body || {};
+  const defaultFlags = getDefaultOfferNotificationFlags(notificationContext);
   let sellerEmail = String(b.sellerEmail || "")
     .trim()
     .toLowerCase();
@@ -120,7 +127,10 @@ async function createOfferLocal({ tenantId, userId, workspacePlan, body }) {
   let customerDoc = onlyDigits(b.customerDoc);
   let customerWhatsApp = String(b.customerWhatsApp || "").trim();
   const notifyWhatsAppOnPaid = canUseNotifyWhatsAppOnPaid(workspacePlan)
-    ? safeBool(b.notifyWhatsAppOnPaid)
+    ? boolWithFallback(
+        b.notifyWhatsAppOnPaid,
+        defaultFlags.notifyWhatsAppOnPaid,
+      )
     : false;
 
   if (customerId) {
@@ -273,6 +283,7 @@ async function createOfferLocal({ tenantId, userId, workspacePlan, body }) {
     status: "PUBLIC",
     paymentMethod: "MANUAL_PIX",
     paymentStatus: "PENDING",
+    paymentReminders: defaultFlags.paymentReminders,
   };
 
   const offer = await Offer.create(doc);
@@ -413,6 +424,23 @@ async function safeNotifyPaymentConfirmed(offerId) {
 
 async function safeNotifySellerPixPaid({ offer, booking, now }) {
   try {
+    const notificationContext = await resolveWorkspaceNotificationContext({
+      workspaceId: offer?.workspaceId || null,
+      ownerUserId: offer?.ownerUserId || null,
+    });
+
+    if (!isEmailNotificationEnabled(notificationContext, "sellerPixPaid")) {
+      return {
+        status: "SKIPPED",
+        reason:
+          notificationContext?.capabilities?.environment?.email?.available !==
+          true
+            ? notificationContext?.capabilities?.environment?.email?.reason ||
+              "EMAIL_UNAVAILABLE"
+            : "WORKSPACE_SETTING_DISABLED",
+      };
+    }
+
     const r2 = await notifySellerPixPaid({
       offerId: offer._id,
       offer,
@@ -432,6 +460,25 @@ async function safeNotifySellerPixPaid({ offer, booking, now }) {
 
 async function safeNotifySellerConfirmedOnPlatform({ offer, booking }) {
   try {
+    const notificationContext = await resolveWorkspaceNotificationContext({
+      workspaceId: offer?.workspaceId || null,
+      ownerUserId: offer?.ownerUserId || null,
+    });
+
+    if (
+      !isEmailNotificationEnabled(notificationContext, "sellerPlatformConfirmed")
+    ) {
+      return {
+        status: "SKIPPED",
+        reason:
+          notificationContext?.capabilities?.environment?.email?.available !==
+          true
+            ? notificationContext?.capabilities?.environment?.email?.reason ||
+              "EMAIL_UNAVAILABLE"
+            : "WORKSPACE_SETTING_DISABLED",
+      };
+    }
+
     const r3 = await notifySellerPaymentConfirmedOnPlatform({
       offerId: offer._id,
       offer,
@@ -733,11 +780,17 @@ r.post(
     const workspace = req.tenantId
       ? await Workspace.findById(req.tenantId).select("plan").lean()
       : null;
+    const notificationContext = await resolveWorkspaceNotificationContext({
+      workspaceId: req.tenantId,
+      ownerUserId: req.user?._id || null,
+      workspacePlan: workspace?.plan || "start",
+    });
 
     const offer = await createOfferLocal({
       tenantId: req.tenantId,
       userId: req.user?._id,
       workspacePlan: workspace?.plan || "start",
+      notificationContext,
       body: req.body,
     });
 

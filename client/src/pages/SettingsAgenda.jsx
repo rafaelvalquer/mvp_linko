@@ -1,13 +1,12 @@
 // src/pages/SettingsAgenda.jsx
 import { useEffect, useMemo, useState } from "react";
-import Shell from "../components/layout/Shell.jsx";
-import PageHeader from "../components/appui/PageHeader.jsx";
 import Card, { CardBody, CardHeader } from "../components/appui/Card.jsx";
 import Button from "../components/appui/Button.jsx";
 import { Input } from "../components/appui/Input.jsx";
 import EmptyState from "../components/appui/EmptyState.jsx";
 import Skeleton from "../components/appui/Skeleton.jsx";
-import { api } from "../app/api.js";
+import SettingsLayout from "../components/settings/SettingsLayout.jsx";
+import { getSettings, updateAgendaSettings } from "../app/settingsApi.js";
 
 // --- CONSTANTS & HELPERS ---
 const DAY_ORDER = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
@@ -183,7 +182,7 @@ export default function SettingsAgenda() {
   const load = async () => {
     try {
       setLoading(true);
-      const d = await api("/settings");
+      const d = await getSettings();
       const a = d.settings?.agenda || {};
       // Sanitização básica
       a.timezone = a.timezone || "America/Sao_Paulo";
@@ -228,10 +227,7 @@ export default function SettingsAgenda() {
       setSaving(true);
       setErr("");
 
-      const res = await api("/settings/agenda", {
-        method: "PATCH",
-        body: JSON.stringify({ agenda: settings.agenda }),
-      });
+      const res = await updateAgendaSettings(settings.agenda);
 
       // IMPORTANTE: atualizar o state com o retorno do backend
       setSettings(res.settings);
@@ -315,14 +311,27 @@ export default function SettingsAgenda() {
 
   if (loading)
     return (
-      <Shell>
+      <SettingsLayout
+        activeTab="agenda"
+        title="Configuracoes da Agenda"
+        subtitle="Gerencie sua disponibilidade, fusos e excecoes da agenda publica."
+      >
         <Skeleton className="h-20 mb-4" />
         <Skeleton className="h-64" />
-      </Shell>
+      </SettingsLayout>
     );
 
   return (
-    <Shell>
+    <SettingsLayout
+      activeTab="agenda"
+      title="Configuracoes da Agenda"
+      subtitle="Gerencie sua disponibilidade, fusos e excecoes da agenda publica."
+      actions={
+        <Button onClick={handleSave} disabled={saving || !dirty}>
+          {saving ? "Salvando..." : "Salvar Alteracoes"}
+        </Button>
+      }
+    >
       <PageHeader
         title="Configuração da Agenda"
         subtitle="Gerencie sua disponibilidade e fusos horários."
@@ -819,6 +828,6 @@ export default function SettingsAgenda() {
           </div>
         </div>
       )}
-    </Shell>
+    </SettingsLayout>
   );
 }
