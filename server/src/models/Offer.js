@@ -150,7 +150,7 @@ const OfferSchema = new mongoose.Schema(
     },
     rejectionNote: { type: String, default: null },
 
-    // compat legado (AbacatePay)
+    // campos legados de gateway, preservados para compatibilidade de dados
     payment: {
       provider: { type: String, default: null },
       lastPixId: { type: String, default: null },

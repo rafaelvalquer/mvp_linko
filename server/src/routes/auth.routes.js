@@ -13,6 +13,7 @@ import { PasswordResetCode } from "../models/PasswordResetCode.js";
 import { authOptional, ensureAuth } from "../middleware/auth.js";
 import { sendRegistrationVerificationEmail } from "../services/emailVerification.js";
 import { sendForgotPasswordCode } from "../services/resendEmail.js";
+import { isMasterAdminEmail } from "../utils/masterAdmin.js";
 
 const r = Router();
 
@@ -92,6 +93,7 @@ function signToken(user) {
       sub: String(user._id),
       workspaceId: String(user.workspaceId),
       role: user.role,
+      isMasterAdmin: isMasterAdminEmail(user.email),
     },
     env.jwtSecret,
     { expiresIn: env.jwtExpiresIn || "7d" },
@@ -208,6 +210,7 @@ function buildWorkspacePayload(ws) {
 
 function buildAuthResponse(user, ws) {
   const token = signToken(user);
+  const isMasterAdmin = isMasterAdminEmail(user?.email);
 
   return {
     ok: true,
@@ -219,6 +222,7 @@ function buildAuthResponse(user, ws) {
       workspaceId: user.workspaceId,
       role: user.role,
       status: user.status,
+      isMasterAdmin,
     },
     workspace: buildWorkspacePayload(ws),
   };
@@ -843,6 +847,7 @@ r.get(
         workspaceId: req.user.workspaceId,
         role: req.user.role,
         status: req.user.status,
+        isMasterAdmin: req.user.isMasterAdmin === true,
       },
       workspace: buildWorkspacePayload(ws),
     });

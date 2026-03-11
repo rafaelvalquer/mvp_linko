@@ -12,10 +12,12 @@ import Calendar from "../pages/Calendar.jsx";
 import Login from "../pages/Login.jsx";
 import Register from "../pages/Register.jsx";
 import RequireAuth from "../components/auth/RequireAuth.jsx";
+import RequireMasterAdmin from "../components/auth/RequireMasterAdmin.jsx";
 import RequireRecurringPlan from "../components/auth/RequireRecurringPlan.jsx";
 import Products from "../pages/Products.jsx";
 import ProductDetails from "../pages/ProductDetails.jsx";
 import Clients from "../pages/Clients.jsx";
+import Management from "../pages/Management.jsx";
 
 import PublicOffer from "../pages/PublicOffer.jsx";
 import PublicSchedule from "../pages/PublicSchedule.jsx";
@@ -31,6 +33,7 @@ import BillingCancel from "../pages/BillingCancel.jsx";
 
 // ✅ NOVO: Relatórios
 import Reports from "../pages/Reports.jsx";
+import RecurringReportsPage from "../pages/RecurringReportsPage.jsx";
 
 export const router = createBrowserRouter(
   [
@@ -68,6 +71,16 @@ export const router = createBrowserRouter(
       element: (
         <RequireAuth>
           <Dashboard />
+        </RequireAuth>
+      ),
+    },
+    {
+      path: "/gerenciamento",
+      element: (
+        <RequireAuth>
+          <RequireMasterAdmin>
+            <Management />
+          </RequireMasterAdmin>
         </RequireAuth>
       ),
     },
@@ -121,6 +134,16 @@ export const router = createBrowserRouter(
       element: (
         <RequireAuth>
           <Reports />
+        </RequireAuth>
+      ),
+    },
+    {
+      path: "/reports/recurring",
+      element: (
+        <RequireAuth>
+          <RequireRecurringPlan redirectTo="/reports">
+            <RecurringReportsPage />
+          </RequireRecurringPlan>
         </RequireAuth>
       ),
     },

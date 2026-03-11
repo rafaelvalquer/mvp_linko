@@ -4,6 +4,7 @@ import { api } from "../../app/api.js";
 
 import Button from "../appui/Button.jsx";
 import Badge from "../appui/Badge.jsx";
+import ModalShell from "../appui/ModalShell.jsx";
 import Skeleton from "../appui/Skeleton.jsx";
 
 import {

@@ -1,8 +1,24 @@
 import { processAutomaticPaymentReminders } from "./paymentReminder.service.js";
+import {
+  markRuntimeCycleError,
+  markRuntimeCycleStart,
+  markRuntimeCycleSuccess,
+  markRuntimeStarted,
+  registerRuntime,
+} from "./runtimeStatus.js";
 
 let runnerStarted = false;
 let intervalRef = null;
 let running = false;
+const RUNTIME_NAME = "payment-reminders-runner";
+
+registerRuntime(RUNTIME_NAME, {
+  type: "runner",
+  intervalMs: Math.max(
+    60000,
+    Number(process.env.PAYMENT_REMINDERS_RUNNER_MS || 300000),
+  ),
+});
 
 export async function runPaymentRemindersCycle(options = {}) {
   if (running) {
@@ -10,8 +26,14 @@ export async function runPaymentRemindersCycle(options = {}) {
   }
 
   running = true;
+  markRuntimeCycleStart(RUNTIME_NAME);
   try {
-    return await processAutomaticPaymentReminders(options);
+    const summary = await processAutomaticPaymentReminders(options);
+    markRuntimeCycleSuccess(RUNTIME_NAME, summary);
+    return summary;
+  } catch (error) {
+    markRuntimeCycleError(RUNTIME_NAME, error);
+    throw error;
   } finally {
     running = false;
   }
@@ -27,6 +49,7 @@ export function startPaymentRemindersRunner(options = {}) {
     60000,
     Number(process.env.PAYMENT_REMINDERS_RUNNER_MS || 300000),
   );
+  markRuntimeStarted(RUNTIME_NAME, { intervalMs });
 
   const run = async () => {
     try {

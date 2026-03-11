@@ -138,9 +138,9 @@ export default function Shell({ children }) {
   }, []);
 
   return (
-    <div
+      <div
       className={[
-        "relative min-h-screen overflow-hidden transition-colors",
+        "relative min-h-screen overflow-x-hidden transition-colors",
         isDark ? "bg-[#040b18] text-white" : "bg-[rgb(246,248,252)] text-slate-900",
       ].join(" ")}
     >
@@ -174,7 +174,7 @@ export default function Shell({ children }) {
             sidebarExpanded ? "md:w-[308px]" : "md:w-[112px]",
           ].join(" ")}
         >
-          <div className="sticky top-[72px] h-[calc(100vh-72px)] p-4">
+          <div className="sticky top-[72px] h-[calc(100vh-72px)] overflow-y-auto p-4">
             <Sidebar
               collapsed={!sidebarExpanded}
               onToggle={() => setSidebarExpanded((previous) => !previous)}
@@ -222,7 +222,7 @@ export default function Shell({ children }) {
             mobileSidebarOpen ? "translate-x-0" : "-translate-x-full",
           ].join(" ")}
         >
-          <div className="h-full p-4 pt-[84px]">
+          <div className="h-full overflow-y-auto p-4 pt-[84px]">
             <Sidebar
               collapsed={false}
               mobile

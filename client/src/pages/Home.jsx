@@ -618,12 +618,12 @@ export default function Home() {
                       >
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-bold uppercase tracking-[0.24em] text-[rgb(var(--muted-2))]">
-                            Receita confirmada
+                            Confirmacao automatica
                           </span>
                           <Zap className="h-4 w-4 text-[rgb(var(--glow))]" />
                         </div>
-                        <div className="mt-4 text-4xl font-black tracking-[-0.04em]">
-                          R$ 48k
+                        <div className="mt-4 max-w-[8ch] text-3xl font-black leading-[0.92] tracking-[-0.04em] sm:text-4xl">
+                          Pix em tempo real
                         </div>
                         <p
                           className={cx(
@@ -631,8 +631,8 @@ export default function Home() {
                             ui.mutedText,
                           )}
                         >
-                          Painel com leitura rapida do que entrou hoje, esta
-                          semana e no mes.
+                          O cliente paga e o status atualiza na hora, sem
+                          comprovante solto ou checagem manual.
                         </p>
                       </div>
 

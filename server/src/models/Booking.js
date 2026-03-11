@@ -3,8 +3,8 @@ import mongoose from "mongoose";
 
 const PaymentSchema = new mongoose.Schema(
   {
-    provider: { type: String, default: "ABACATEPAY" },
-    providerPaymentId: { type: String }, // pixId
+    provider: { type: String, default: "MANUAL_PIX" },
+    providerPaymentId: { type: String }, // legado: id externo do gateway, se existir
     amountCents: { type: Number, default: 0 },
     status: {
       type: String,

@@ -164,7 +164,7 @@ async function dispatchQueuedMessageLog({
 }
 
 /**
- * Dispara WhatsApp para o CLIENTE quando o Pix for confirmado (AbacatePay/fluxos existentes).
+ * Dispara WhatsApp para o CLIENTE quando o Pix for confirmado nos fluxos ativos.
  * - Idempotência forte: 1 envio por (offerId,eventType="PIX_PAID").
  */
 export async function maybeNotifyWhatsAppPixPaid({

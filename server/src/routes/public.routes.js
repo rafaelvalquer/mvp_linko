@@ -38,6 +38,16 @@ function noStore(res) {
   res.setHeader("Cache-Control", "no-store");
 }
 
+function sendLegacyPixEndpointDisabled(res, { refreshHint = false } = {}) {
+  return res.status(410).json({
+    ok: false,
+    error: refreshHint
+      ? "Este endpoint legado de pagamento foi desativado. Atualize a pagina."
+      : "Este endpoint legado de pagamento foi desativado.",
+    code: "ABACATEPAY_DISABLED",
+  });
+}
+
 function normalizeOfferStatus(st) {
   const s = String(st || "")
     .trim()
@@ -1051,30 +1061,18 @@ router.post("/p/:token/payment/proof", async (req, res, next) => {
   }
 });
 /**
- * (DEPRECATED) AbacatePay endpoints — desativados no MVP MANUAL_PIX
+ * Endpoints legados do gateway antigo, mantidos apenas para compatibilidade.
  */
 router.post("/p/:token/pix/create", (req, res) => {
-  return res.status(410).json({
-    ok: false,
-    error: "Pagamento via AbacatePay foi desativado. Atualize a página.",
-    code: "ABACATEPAY_DISABLED",
-  });
+  return sendLegacyPixEndpointDisabled(res, { refreshHint: true });
 });
 
 router.get("/p/:token/pix/status", (req, res) => {
-  return res.status(410).json({
-    ok: false,
-    error: "Pagamento via AbacatePay foi desativado. Atualize a página.",
-    code: "ABACATEPAY_DISABLED",
-  });
+  return sendLegacyPixEndpointDisabled(res, { refreshHint: true });
 });
 
 router.post("/p/:token/pix/dev/simulate", (req, res) => {
-  return res.status(410).json({
-    ok: false,
-    error: "Pagamento via AbacatePay foi desativado.",
-    code: "ABACATEPAY_DISABLED",
-  });
+  return sendLegacyPixEndpointDisabled(res);
 });
 
 export default router;

@@ -7,7 +7,6 @@ import healthRoutes from "./routes/health.routes.js";
 import offersRoutes from "./routes/offers.routes.js";
 import recurringOffersRoutes from "./routes/recurring-offers.routes.js";
 import publicRoutes from "./routes/public.routes.js";
-import webhooksAbacatepayRoutes from "./routes/webhooks.abacatepay.routes.js";
 import authRoutes from "./routes/auth.routes.js";
 import { authOptional } from "./middleware/auth.js";
 import bookingsRoutes from "./routes/bookings.routes.js";
@@ -21,11 +20,20 @@ import offerRemindersRoutes from "./routes/offer-reminders.routes.js";
 import billingStripeRoutes from "./routes/billing.stripe.routes.js";
 import webhooksStripeRoutes from "./routes/webhooks.stripe.routes.js";
 import analyticsRoutes from "./routes/analytics.routes.js";
+import adminRoutes from "./routes/admin.routes.js";
 import { startRecurringOffersRunner } from "./services/recurring-offers.runner.js";
 import { startPaymentRemindersRunner } from "./services/payment-reminders.runner.js";
 import { startWhatsAppOutboxRunner } from "./services/whatsappOutbox.runner.js";
 
 import path from "path";
+
+function sendLegacyPixGatewayDisabled(res) {
+  return res.status(410).json({
+    ok: false,
+    error: "Webhooks do gateway legado foram desativados (MVP MANUAL_PIX).",
+    code: "ABACATEPAY_DISABLED",
+  });
+}
 
 export function createApp() {
   const app = express();
@@ -71,7 +79,9 @@ export function createApp() {
 
   app.use("/api", publicRoutes);
   app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
-  app.use("/api/webhooks/abacatepay", webhooksAbacatepayRoutes);
+  app.use("/api/webhooks/abacatepay", (_req, res) =>
+    sendLegacyPixGatewayDisabled(res),
+  );
   app.use("/api", webhooksStripeRoutes);
 
   app.use(authOptional);
@@ -88,6 +98,7 @@ export function createApp() {
   app.use("/api", analyticsRoutes);
   app.use("/api", reportsRoutes);
   app.use("/api", billingStripeRoutes);
+  app.use("/api", adminRoutes);
 
   startRecurringOffersRunner({
     origin: publicOrigin,

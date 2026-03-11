@@ -3,6 +3,7 @@ import { Router } from "express";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ensureAuth, tenantFromUser } from "../middleware/auth.js";
 import { Offer } from "../models/Offer.js";
+import { buildRecurringReportsDashboard } from "../services/recurringReports.service.js";
 
 const r = Router();
 
@@ -80,6 +81,44 @@ function dateToStringDayExpr(field) {
 
 // Auth + tenant
 r.use(ensureAuth, tenantFromUser);
+
+r.get(
+  "/reports/recurring/dashboard",
+  asyncHandler(async (req, res) => {
+    const fromYMD = parseYMD(req.query.from);
+    const toYMD = parseYMD(req.query.to);
+    const type = String(req.query.type || "all");
+    const recurringStatus = String(req.query.recurringStatus || "all");
+
+    if (!fromYMD || !toYMD) {
+      return res
+        .status(400)
+        .json({ ok: false, error: "Parametros from/to invalidos" });
+    }
+
+    const { start, end } = rangeInSaoPaulo(fromYMD, toYMD);
+    const days = daysBetween(start, end);
+    if (days > MAX_DAYS + 1) {
+      return res.status(400).json({
+        ok: false,
+        error: `Periodo maximo excedido (${MAX_DAYS} dias)`,
+      });
+    }
+
+    const dashboard = await buildRecurringReportsDashboard({
+      tenantId: req.tenantId,
+      userId: req.user?._id || null,
+      fromYMD,
+      toYMD,
+      type,
+      recurringStatus,
+      start,
+      end,
+    });
+
+    res.json({ ok: true, ...dashboard });
+  }),
+);
 
 r.get(
   "/reports/summary",

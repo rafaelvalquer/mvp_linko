@@ -69,6 +69,23 @@ const Icons = {
     </svg>
   ),
 
+  Management: () => (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 2 4 5v6c0 5 3.4 9.7 8 11 4.6-1.3 8-6 8-11V5l-8-3Z" />
+      <path d="m9 12 2 2 4-4" />
+    </svg>
+  ),
+
   Offers: () => (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -104,6 +121,8 @@ const Icons = {
       <line x1="3" x2="21" y1="10" y2="10" />
     </svg>
   ),
+
+  Reports: () => <FileText size={18} className="text-current" />,
 
   Store: () => (
     <svg
@@ -321,12 +340,17 @@ export default function Sidebar({
   mobile = false,
 }) {
   const { isDark } = useThemeToggle();
-  const { perms, workspace, refreshWorkspace } = useAuth();
+  const { perms, user, workspace, refreshWorkspace } = useAuth();
   const nav = useNavigate();
   const loc = useLocation();
 
   const isOffersAny = useMemo(
     () => loc.pathname === "/offers" || loc.pathname.startsWith("/offers/"),
+    [loc.pathname],
+  );
+
+  const isReportsAny = useMemo(
+    () => loc.pathname === "/reports" || loc.pathname.startsWith("/reports/"),
     [loc.pathname],
   );
 
@@ -336,6 +360,7 @@ export default function Sidebar({
   );
 
   const [isOffersOpen, setIsOffersOpen] = useState(isOffersAny);
+  const [isReportsOpen, setIsReportsOpen] = useState(isReportsAny);
   const [isStoreOpen, setIsStoreOpen] = useState(isStoreRoute);
   const [localPayoutPixKeyMasked, setLocalPayoutPixKeyMasked] = useState("");
   const [pixModalState, setPixModalState] = useState({
@@ -348,6 +373,10 @@ export default function Sidebar({
   useEffect(() => {
     if (isOffersAny) setIsOffersOpen(true);
   }, [isOffersAny]);
+
+  useEffect(() => {
+    if (isReportsAny) setIsReportsOpen(true);
+  }, [isReportsAny]);
 
   useEffect(() => {
     if (isStoreRoute) setIsStoreOpen(true);
@@ -417,6 +446,18 @@ export default function Sidebar({
     setIsStoreOpen((prev) => !prev);
   }
 
+  function handleReportsClick() {
+    if (collapsed) {
+      onToggle?.();
+      setIsReportsOpen(true);
+      nav("/reports");
+      return;
+    }
+
+    setIsReportsOpen((prev) => !prev);
+    nav("/reports");
+  }
+
   function handleCreateOffer() {
     const allowed = guardOfferCreation({
       workspace,
@@ -460,7 +501,7 @@ export default function Sidebar({
     <>
       <div
         className={[
-          "flex h-full flex-col rounded-[32px] border p-3 backdrop-blur-2xl transition-all duration-300",
+          "flex min-h-full flex-col rounded-[32px] border p-3 backdrop-blur-2xl transition-all duration-300",
           isDark
             ? "border-white/10 bg-[linear-gradient(180deg,rgba(8,15,30,0.98),rgba(6,12,24,0.94))] shadow-[0_24px_80px_-42px_rgba(15,23,42,0.92)]"
             : "border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(241,245,249,0.9))] shadow-[0_24px_80px_-42px_rgba(15,23,42,0.18)]",
@@ -581,7 +622,7 @@ export default function Sidebar({
           </div>
         )}
 
-        <nav className="flex-1 space-y-1.5">
+        <nav className="flex-1 space-y-1.5 pr-1">
           <SidebarItem
             to="/dashboard"
             icon={Icons.Dashboard}
@@ -591,6 +632,18 @@ export default function Sidebar({
           >
             Dashboard
           </SidebarItem>
+
+          {user?.isMasterAdmin ? (
+            <SidebarItem
+              to="/gerenciamento"
+              icon={Icons.Management}
+              collapsed={collapsed}
+              isDark={isDark}
+              onNavigate={onNavigate}
+            >
+              Gerenciamento
+            </SidebarItem>
+          ) : null}
 
           <div className="pt-1">
             <SidebarParentButton
@@ -661,15 +714,51 @@ export default function Sidebar({
             Agenda
           </SidebarItem>
 
-          <SidebarItem
-            to="/reports"
-            icon={() => <FileText size={18} className="text-current" />}
-            collapsed={collapsed}
-            isDark={isDark}
-            onNavigate={onNavigate}
-          >
-            Relatórios
-          </SidebarItem>
+          <div className="pt-1">
+            <SidebarParentButton
+              icon={Icons.Reports}
+              label="Relatórios"
+              collapsed={collapsed}
+              active={isReportsAny}
+              open={isReportsOpen}
+              isDark={isDark}
+              onClick={handleReportsClick}
+            />
+
+            <div
+              className={`overflow-hidden transition-all duration-300 ease-out ${
+                !collapsed && isReportsOpen
+                  ? canUseRecurringFeatures
+                    ? "mt-1 max-h-32 opacity-100"
+                    : "mt-1 max-h-16 opacity-100"
+                  : "mt-0 max-h-0 opacity-0"
+              }`}
+            >
+              <div className="space-y-1">
+                <SidebarItem
+                  to="/reports"
+                  collapsed={collapsed}
+                  indent
+                  isDark={isDark}
+                  onNavigate={onNavigate}
+                >
+                  Geral
+                </SidebarItem>
+
+                {canUseRecurringFeatures ? (
+                  <SidebarItem
+                    to="/reports/recurring"
+                    collapsed={collapsed}
+                    indent
+                    isDark={isDark}
+                    onNavigate={onNavigate}
+                  >
+                    Recorrência
+                  </SidebarItem>
+                ) : null}
+              </div>
+            </div>
+          </div>
 
           {perms.store ? (
             <div className="pt-1">
