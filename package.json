@@ -1,0 +1,7 @@
+{
+  "name": "mvp-paylink",
+  "private": true,
+  "workspaces": [
+    "server"
+  ]
+}

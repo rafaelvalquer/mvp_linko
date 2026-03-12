@@ -1,3 +1,4 @@
+import { env } from "../config/env.js";
 import { AppSettings } from "../models/AppSettings.js";
 import Booking from "../models/Booking.js";
 import { MessageLog } from "../models/MessageLog.js";
@@ -32,6 +33,20 @@ function firstName(name) {
   const value = String(name || "").trim();
   if (!value) return "";
   return value.split(/\s+/)[0] || "";
+}
+
+function trimTrailingSlash(value) {
+  return String(value || "").replace(/\/+$/g, "");
+}
+
+function baseOrigin(origin) {
+  const explicit = trimTrailingSlash(origin);
+  if (explicit) return explicit;
+
+  const fromEnv = trimTrailingSlash(String(env.corsOrigin || "").split(",")[0]);
+  if (fromEnv) return fromEnv;
+
+  return "http://localhost:5173";
 }
 
 function formatDateTimeBR(value, timeZone = DEFAULT_TIMEZONE) {
@@ -76,6 +91,18 @@ function getServiceName(booking) {
   const offer = getOfferDoc(booking);
   const title = String(offer?.title || offer?.name || "").trim();
   return title || "seu servico";
+}
+
+function buildBookingManageUrl(booking, origin = "") {
+  const offer = getOfferDoc(booking);
+  const token = String(offer?.publicToken || "").trim();
+  const bookingId = String(booking?._id || "").trim();
+
+  if (!token || !bookingId) return "";
+
+  return `${baseOrigin(origin)}/p/${token}/manage?bookingId=${encodeURIComponent(
+    bookingId,
+  )}`;
 }
 
 async function loadWorkspaceTimeZone({ workspaceId, ownerUserId }) {
@@ -127,6 +154,7 @@ export function buildBookingReminderMessage({
   booking,
   kind = REMINDER_WINDOW_24H,
   timeZone = DEFAULT_TIMEZONE,
+  manageUrl = "",
 }) {
   const name = firstName(booking?.customerName);
   const when = formatDateTimeBR(booking?.startAt, timeZone);
@@ -139,7 +167,9 @@ export function buildBookingReminderMessage({
   const closing =
     kind === REMINDER_WINDOW_2H
       ? "Estamos te lembrando com antecedencia para deixar tudo alinhado. Se precisar de algo, e so responder esta mensagem."
-      : "Se precisar alinhar algum detalhe, e so responder esta mensagem.";
+      : manageUrl
+        ? `Se precisar reagendar, acesse o link: ${manageUrl}`
+        : "Se precisar reagendar, acesse o link da sua proposta.";
 
   return [
     greeting,
@@ -202,6 +232,7 @@ async function upsertSkippedMessageLog({
 export async function dispatchBookingReminder({
   booking,
   kind = REMINDER_WINDOW_24H,
+  origin = "",
 }) {
   const offerId = getOfferId(booking);
   if (!booking?._id || !offerId) {
@@ -216,7 +247,14 @@ export async function dispatchBookingReminder({
     workspaceId: booking?.workspaceId || null,
     ownerUserId: booking?.ownerUserId || null,
   });
-  const message = buildBookingReminderMessage({ booking, kind, timeZone });
+  const manageUrl =
+    kind === REMINDER_WINDOW_24H ? buildBookingManageUrl(booking, origin) : "";
+  const message = buildBookingReminderMessage({
+    booking,
+    kind,
+    timeZone,
+    manageUrl,
+  });
   const notificationContext = await resolveWorkspaceNotificationContext({
     workspaceId: booking?.workspaceId || null,
     ownerUserId: booking?.ownerUserId || null,
@@ -315,6 +353,7 @@ export async function dispatchBookingReminder({
       offerId,
       eventType,
       kind,
+      manageUrl,
       timeZone,
     },
   });
@@ -337,6 +376,7 @@ export async function dispatchBookingReminder({
 export async function processAutomaticBookingReminders({
   now = new Date(),
   limit = 200,
+  origin = "",
 } = {}) {
   const bookingLimit = Math.max(1, Math.min(500, Number(limit) || 200));
   const upperBound = new Date(
@@ -352,7 +392,7 @@ export async function processAutomaticBookingReminders({
   })
     .sort({ startAt: 1 })
     .limit(bookingLimit)
-    .populate("offerId", "_id title name")
+    .populate("offerId", "_id title name publicToken")
     .lean();
 
   const summary = {
@@ -371,6 +411,7 @@ export async function processAutomaticBookingReminders({
     const result = await dispatchBookingReminder({
       booking,
       kind: trigger.kind,
+      origin,
     });
 
     summary.items.push({

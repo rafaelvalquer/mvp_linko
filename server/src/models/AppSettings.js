@@ -65,6 +65,7 @@ const AgendaSchema = new mongoose.Schema(
   {
     timezone: { type: String, default: "America/Sao_Paulo" },
     slotMinutes: { type: Number, default: 60 }, // passo p/ gerar slots em "intervals"
+    selfServiceMinimumNoticeMinutes: { type: Number, default: 24 * 60 },
 
     // fallback global (compatível com o comportamento atual do backend)
     defaultSlots: {
@@ -110,11 +111,22 @@ const NotificationBookingRemindersSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const NotificationBookingChangesSchema = new mongoose.Schema(
+  {
+    enabled: { type: Boolean, default: true },
+  },
+  { _id: false },
+);
+
 const NotificationEmailSchema = new mongoose.Schema(
   {
     sellerProofSubmitted: { type: Boolean, default: true },
     sellerPixPaid: { type: Boolean, default: true },
     sellerPlatformConfirmed: { type: Boolean, default: true },
+    bookingChanges: {
+      type: NotificationBookingChangesSchema,
+      default: () => ({}),
+    },
   },
   { _id: false },
 );
@@ -126,6 +138,10 @@ const NotificationWhatsAppSchema = new mongoose.Schema(
     recurringAutoSendDefault: { type: Boolean, default: false },
     bookingReminders: {
       type: NotificationBookingRemindersSchema,
+      default: () => ({}),
+    },
+    bookingChanges: {
+      type: NotificationBookingChangesSchema,
       default: () => ({}),
     },
     paymentReminders: {

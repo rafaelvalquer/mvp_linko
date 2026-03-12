@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../app/api.js";
+import Button from "../components/appui/Button.jsx";
 
 function fmtBRL(cents) {
   const v = Number.isFinite(cents) ? cents : 0;
@@ -20,6 +21,16 @@ function fmtDateTime(iso) {
 function safeInt(v, fallback = 0) {
   const n = Number(v);
   return Number.isFinite(n) ? Math.trunc(n) : fallback;
+}
+
+function bookingStatusLabel(status) {
+  const normalized = String(status || "")
+    .trim()
+    .toUpperCase();
+  if (normalized === "CONFIRMED") return "Confirmado";
+  if (normalized === "CANCELLED") return "Cancelado";
+  if (normalized === "HOLD") return "Reservado";
+  return normalized || "Sem status";
 }
 
 export default function PublicOfferDone() {
@@ -100,6 +111,17 @@ export default function PublicOfferDone() {
   const s = summary || {};
   const offer = s.offer || {};
   const booking = s.booking || {};
+  const selfService = s.selfService || {};
+  const isServiceOffer =
+    String(offer.offerType || "")
+      .trim()
+      .toLowerCase() !== "product";
+  const manageHref =
+    booking.id || bookingId
+      ? `/p/${token}/manage?bookingId=${encodeURIComponent(
+          booking.id || bookingId,
+        )}`
+      : "";
 
   // Itens (resiliente a nomes diferentes)
   const rawItems = Array.isArray(offer.items)
@@ -443,13 +465,49 @@ export default function PublicOfferDone() {
                 {booking.id || bookingId || "—"}
               </span>
             </div>
+            <div className="mt-1 text-sm text-zinc-800">
+              Status:{" "}
+              <span className="font-semibold text-zinc-900">
+                {bookingStatusLabel(booking.status)}
+              </span>
+            </div>
             {booking.startAt && booking.endAt ? (
               <div className="mt-1 text-xs text-zinc-600">
                 Horário: {fmtDateTime(booking.startAt)} –{" "}
                 {fmtDateTime(booking.endAt)}
               </div>
             ) : null}
+            {booking.cancelReason ? (
+              <div className="mt-2 text-xs text-zinc-600">
+                Motivo informado: {booking.cancelReason}
+              </div>
+            ) : null}
           </div>
+
+          {isServiceOffer && (booking.id || bookingId) ? (
+            <div className="mt-4 rounded-2xl border bg-white p-4">
+              <div className="text-xs font-semibold text-zinc-500">
+                Reagendar serviço
+              </div>
+              <div className="mt-1 text-sm text-zinc-700">
+                Se precisar, voce pode reagendar ou cancelar pelo mesmo link.
+              </div>
+              {selfService?.reason && !selfService?.eligible ? (
+                <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                  {selfService.reason}
+                </div>
+              ) : null}
+              <div className="mt-4">
+                <Button
+                  type="button"
+                  onClick={() => nav(manageHref)}
+                  disabled={!manageHref}
+                >
+                  Reagendar serviço
+                </Button>
+              </div>
+            </div>
+          ) : null}
 
           <div className="mt-4 rounded-2xl border bg-zinc-50 p-4 text-sm text-zinc-700">
             Esta etapa foi concluída. Você pode fechar esta página com

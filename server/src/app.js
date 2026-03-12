@@ -104,7 +104,7 @@ export function createApp() {
   startRecurringOffersRunner({
     origin: publicOrigin,
   });
-  startBookingRemindersRunner();
+  startBookingRemindersRunner({ origin: publicOrigin });
   startPaymentRemindersRunner({ origin: publicOrigin });
   startWhatsAppOutboxRunner();
 

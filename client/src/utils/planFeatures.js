@@ -18,6 +18,9 @@ export function getPlanFeatureMatrix(value) {
   const whatsappBookingReminders = ["pro", "business", "enterprise"].includes(
     plan,
   );
+  const whatsappBookingChanges = ["pro", "business", "enterprise"].includes(
+    plan,
+  );
   const whatsappOfferPaymentReminders = [
     "pro",
     "business",
@@ -31,6 +34,7 @@ export function getPlanFeatureMatrix(value) {
     whatsappPaymentStatus,
     whatsappRecurringAutoSend,
     whatsappBookingReminders,
+    whatsappBookingChanges,
     whatsappOfferPaymentReminders,
     whatsappPaymentReminders,
   };
@@ -54,6 +58,10 @@ export function canUseRecurringAutoSend(value) {
 
 export function canUseBookingReminderWhatsApp(value) {
   return getPlanFeatureMatrix(value).whatsappBookingReminders;
+}
+
+export function canUseBookingChangeWhatsApp(value) {
+  return getPlanFeatureMatrix(value).whatsappBookingChanges;
 }
 
 export function canUseOfferPaymentReminderWhatsApp(value) {

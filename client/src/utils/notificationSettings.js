@@ -12,6 +12,9 @@ export const DEFAULT_NOTIFICATION_SETTINGS = {
     sellerProofSubmitted: true,
     sellerPixPaid: true,
     sellerPlatformConfirmed: true,
+    bookingChanges: {
+      enabled: true,
+    },
   },
   whatsapp: {
     masterEnabled: true,
@@ -19,6 +22,9 @@ export const DEFAULT_NOTIFICATION_SETTINGS = {
     recurringAutoSendDefault: false,
     bookingReminders: {
       enabled: false,
+    },
+    bookingChanges: {
+      enabled: true,
     },
     paymentReminders: {
       enabled: true,
@@ -56,6 +62,13 @@ const NOTIFICATION_FEATURE_META = {
     workspaceMessage:
       "Lembretes de agendamento por WhatsApp desativados nas configurações do workspace.",
   },
+  whatsappBookingChanges: {
+    label: "alteracoes de agenda por WhatsApp",
+    planMessage:
+      "Alteracoes de agenda por WhatsApp disponiveis apenas nos planos Pro, Business e Enterprise.",
+    workspaceMessage:
+      "Alteracoes de agenda por WhatsApp desativadas nas configuracoes do workspace.",
+  },
 };
 
 function boolOrDefault(value, fallback) {
@@ -82,6 +95,12 @@ function normalizeReminderDefaults(
   };
 }
 
+function isEmailSettingEnabled(value) {
+  if (value === true) return true;
+  if (value && typeof value === "object") return value.enabled === true;
+  return false;
+}
+
 export function mergeNotificationSettings(base, patch) {
   const source = base || DEFAULT_NOTIFICATION_SETTINGS;
   const input = patch || {};
@@ -103,6 +122,13 @@ export function mergeNotificationSettings(base, patch) {
         source?.email?.sellerPlatformConfirmed ??
           DEFAULT_NOTIFICATION_SETTINGS.email.sellerPlatformConfirmed,
       ),
+      bookingChanges: {
+        enabled: boolOrDefault(
+          input?.email?.bookingChanges?.enabled,
+          source?.email?.bookingChanges?.enabled ??
+            DEFAULT_NOTIFICATION_SETTINGS.email.bookingChanges.enabled,
+        ),
+      },
     },
     whatsapp: {
       masterEnabled: boolOrDefault(
@@ -125,6 +151,13 @@ export function mergeNotificationSettings(base, patch) {
           input?.whatsapp?.bookingReminders?.enabled,
           source?.whatsapp?.bookingReminders?.enabled ??
             DEFAULT_NOTIFICATION_SETTINGS.whatsapp.bookingReminders.enabled,
+        ),
+      },
+      bookingChanges: {
+        enabled: boolOrDefault(
+          input?.whatsapp?.bookingChanges?.enabled,
+          source?.whatsapp?.bookingChanges?.enabled ??
+            DEFAULT_NOTIFICATION_SETTINGS.whatsapp.bookingChanges.enabled,
         ),
       },
       paymentReminders: {
@@ -176,7 +209,7 @@ export function isEmailNotificationEnabled(context, key) {
   const { settings, capabilities } = extractNotificationContext(context);
   return (
     capabilities?.environment?.email?.available === true &&
-    settings?.email?.[key] === true
+    isEmailSettingEnabled(settings?.email?.[key])
   );
 }
 
@@ -297,6 +330,14 @@ export function getNotificationFeatureAvailability(context) {
       workspaceEnabled: whatsappSettings?.bookingReminders?.enabled === true,
       meta: NOTIFICATION_FEATURE_META.whatsappBookingReminders,
     }),
+    whatsappBookingChanges: buildWhatsAppFeatureAvailability({
+      envAvailable: whatsappEnvironment.available === true,
+      envReason: whatsappEnvironment.reason || "",
+      planAllowed: planFeatures?.whatsappBookingChanges === true,
+      masterEnabled,
+      workspaceEnabled: whatsappSettings?.bookingChanges?.enabled === true,
+      meta: NOTIFICATION_FEATURE_META.whatsappBookingChanges,
+    }),
   };
 }
 
@@ -336,6 +377,13 @@ export function canSendWhatsAppBookingReminders(context) {
   return getNotificationFeatureCapability(
     context,
     "whatsappBookingReminders",
+  ).available === true;
+}
+
+export function canSendWhatsAppBookingChanges(context) {
+  return getNotificationFeatureCapability(
+    context,
+    "whatsappBookingChanges",
   ).available === true;
 }
 

@@ -22,6 +22,7 @@ import Management from "../pages/Management.jsx";
 import PublicOffer from "../pages/PublicOffer.jsx";
 import PublicSchedule from "../pages/PublicSchedule.jsx";
 import PublicPixPayment from "../pages/PublicPixPayment.jsx";
+import PublicBookingManage from "../pages/PublicBookingManage.jsx";
 import PublicOfferDone from "../pages/PublicOfferDone.jsx";
 import PublicPaidGuard from "../pages/PublicPaidGuard.jsx";
 import SettingsAgenda from "../pages/SettingsAgenda.jsx";
@@ -234,6 +235,7 @@ export const router = createBrowserRouter(
         </PublicPaidGuard>
       ),
     },
+    { path: "/p/:token/manage", element: <PublicBookingManage /> },
 
     { path: "/p/:token/done", element: <PublicOfferDone /> },
   ],

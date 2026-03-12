@@ -3,10 +3,12 @@
 const DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 
 export const DEFAULT_TIMEZONE = "America/Sao_Paulo";
+export const DEFAULT_SELF_SERVICE_MINIMUM_NOTICE_MINUTES = 24 * 60;
 
 export const DEFAULT_AGENDA = {
   timezone: DEFAULT_TIMEZONE,
   slotMinutes: 60,
+  selfServiceMinimumNoticeMinutes: DEFAULT_SELF_SERVICE_MINIMUM_NOTICE_MINUTES,
   defaultSlots: ["09:00", "10:00", "14:00", "16:00", "18:00"],
   weeklyRules: {
     sun: { open: false, mode: "slots", slots: [], intervals: [] },
@@ -292,6 +294,13 @@ export function mergeAgenda(base, patch) {
   return {
     timezone: normalizeTimeZone(p.timezone ?? b.timezone ?? DEFAULT_TIMEZONE),
     slotMinutes: p.slotMinutes ?? b.slotMinutes ?? DEFAULT_AGENDA.slotMinutes,
+    selfServiceMinimumNoticeMinutes: clampInt(
+      p.selfServiceMinimumNoticeMinutes ??
+        b.selfServiceMinimumNoticeMinutes ??
+        DEFAULT_AGENDA.selfServiceMinimumNoticeMinutes,
+      0,
+      30 * 24 * 60,
+    ),
     defaultSlots:
       p.defaultSlots ?? b.defaultSlots ?? DEFAULT_AGENDA.defaultSlots,
     weeklyRules: { ...(b.weeklyRules || {}), ...(p.weeklyRules || {}) },
@@ -313,6 +322,14 @@ export function sanitizeAgendaPatch(input) {
 
   if (raw.slotMinutes != null)
     patch.slotMinutes = clampInt(raw.slotMinutes, 5, 12 * 60);
+
+  if (raw.selfServiceMinimumNoticeMinutes != null) {
+    patch.selfServiceMinimumNoticeMinutes = clampInt(
+      raw.selfServiceMinimumNoticeMinutes,
+      0,
+      30 * 24 * 60,
+    );
+  }
 
   if (raw.defaultSlots != null)
     patch.defaultSlots = normalizeSlots(raw.defaultSlots);

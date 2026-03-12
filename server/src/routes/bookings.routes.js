@@ -89,9 +89,36 @@ router.patch("/bookings/:id/cancel", async (req, res, next) => {
     if (!mongoose.isValidObjectId(id))
       return res.status(400).json({ ok: false, error: "ID inválido." });
 
+    const current = await Booking.findOne({
+      _id: id,
+      workspaceId: tenantId,
+    })
+      .select("startAt endAt")
+      .lean();
+
+    const actionAt = new Date();
     const doc = await Booking.findOneAndUpdate(
       { _id: id, workspaceId: tenantId },
-      { $set: { status: "CANCELLED" } },
+      {
+        $set: {
+          status: "CANCELLED",
+          cancelledAt: actionAt,
+          cancelledBy: "workspace",
+          cancelReason: null,
+        },
+        $push: {
+          changeHistory: {
+            action: "cancel",
+            actor: "workspace",
+            changedAt: actionAt,
+            fromStartAt: current?.startAt || null,
+            fromEndAt: current?.endAt || null,
+            toStartAt: null,
+            toEndAt: null,
+            reason: null,
+          },
+        },
+      },
       { new: true },
     )
       .populate("offerId", "_id title publicToken")

@@ -11,6 +11,13 @@ import {
   dayRangeInTZ,
   buildSlotsForDate,
 } from "../services/agendaSettings.js";
+import {
+  buildPublicBookingSelfServiceState,
+  cancelPublicBooking,
+  getPublicBookingManageSummary,
+  listPublicBookingManageSlots,
+  reschedulePublicBooking,
+} from "../services/publicBookingSelfService.service.js";
 
 import * as WorkspaceModule from "../models/Workspace.js";
 import { buildPixBrCode } from "../services/pixEmv.js";
@@ -290,6 +297,12 @@ function toPublicBooking(b) {
         : b.holdExpiresAt || null,
     customerName: b.customerName || "",
     customerWhatsApp: b.customerWhatsApp || "",
+    cancelledAt:
+      b.cancelledAt instanceof Date
+        ? b.cancelledAt.toISOString()
+        : b.cancelledAt || null,
+    cancelledBy: b.cancelledBy || "",
+    cancelReason: b.cancelReason || "",
   };
 }
 
@@ -445,6 +458,15 @@ router.get("/p/:token/summary", async (req, res, next) => {
     const paidAt =
       offerRaw?.paidAt || booking?.payment?.paidAt || booking?.paidAt || null;
 
+    const selfService =
+      offerType === "service" && booking
+        ? await buildPublicBookingSelfServiceState({
+            offerRaw,
+            booking,
+            now,
+          })
+        : null;
+
     const summary = {
       locked: offerLocked || booking?.status === "CONFIRMED",
       paidAt,
@@ -454,6 +476,11 @@ router.get("/p/:token/summary", async (req, res, next) => {
         customerName: offerRaw?.customerName || offerRaw?.customer?.name || "",
       }),
       booking: booking ? toPublicBooking(booking) : null,
+      selfService: selfService
+        ? {
+            ...selfService,
+          }
+        : null,
       totalCents: amounts.totalCents,
       depositEnabled: amounts.depositEnabled,
       depositPct: amounts.depositPct,
@@ -463,6 +490,91 @@ router.get("/p/:token/summary", async (req, res, next) => {
 
     noStore(res);
     return res.json({ ok: true, summary });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * GET /p/:token/manage?bookingId=...
+ */
+router.get("/p/:token/manage", async (req, res, next) => {
+  try {
+    const { token } = req.params;
+    const bookingId = String(req.query.bookingId || "").trim();
+
+    const summary = await getPublicBookingManageSummary({ token, bookingId });
+
+    noStore(res);
+    return res.json({ ok: true, summary });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * GET /p/:token/manage/slots?bookingId=...&date=YYYY-MM-DD
+ */
+router.get("/p/:token/manage/slots", async (req, res, next) => {
+  try {
+    const { token } = req.params;
+    const bookingId = String(req.query.bookingId || "").trim();
+    const date = String(req.query.date || "").trim();
+
+    const payload = await listPublicBookingManageSlots({
+      token,
+      bookingId,
+      date,
+    });
+
+    noStore(res);
+    return res.json({ ok: true, ...payload });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * POST /p/:token/manage/reschedule
+ */
+router.post("/p/:token/manage/reschedule", async (req, res, next) => {
+  try {
+    const { token } = req.params;
+    const bookingId = String(req.body?.bookingId || "").trim();
+    const startAt = req.body?.startAt ?? req.body?.start;
+    const endAt = req.body?.endAt ?? req.body?.end;
+
+    const payload = await reschedulePublicBooking({
+      token,
+      bookingId,
+      startAt,
+      endAt,
+    });
+
+    noStore(res);
+    return res.json({ ok: true, ...payload });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * POST /p/:token/manage/cancel
+ */
+router.post("/p/:token/manage/cancel", async (req, res, next) => {
+  try {
+    const { token } = req.params;
+    const bookingId = String(req.body?.bookingId || "").trim();
+    const reason = String(req.body?.reason || "").trim();
+
+    const payload = await cancelPublicBooking({
+      token,
+      bookingId,
+      reason,
+    });
+
+    noStore(res);
+    return res.json({ ok: true, ...payload });
   } catch (e) {
     next(e);
   }

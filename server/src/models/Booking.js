@@ -16,6 +16,28 @@ const PaymentSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const BookingChangeHistorySchema = new mongoose.Schema(
+  {
+    action: {
+      type: String,
+      enum: ["reschedule", "cancel"],
+      required: true,
+    },
+    actor: {
+      type: String,
+      enum: ["customer", "workspace"],
+      required: true,
+    },
+    changedAt: { type: Date, required: true },
+    fromStartAt: { type: Date, default: null },
+    fromEndAt: { type: Date, default: null },
+    toStartAt: { type: Date, default: null },
+    toEndAt: { type: Date, default: null },
+    reason: { type: String, default: null },
+  },
+  { _id: false },
+);
+
 const BookingSchema = new mongoose.Schema(
   {
     offerId: {
@@ -55,6 +77,18 @@ const BookingSchema = new mongoose.Schema(
 
     customerName: { type: String },
     customerWhatsApp: { type: String },
+
+    cancelledAt: { type: Date, default: null },
+    cancelledBy: {
+      type: String,
+      enum: ["customer", "workspace", null],
+      default: null,
+    },
+    cancelReason: { type: String, default: null },
+    changeHistory: {
+      type: [BookingChangeHistorySchema],
+      default: () => [],
+    },
 
     payment: { type: PaymentSchema, default: () => ({}) },
   },

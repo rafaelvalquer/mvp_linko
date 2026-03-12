@@ -71,6 +71,18 @@ const RECOMMENDED_DEFAULT = [
   "18:00",
 ];
 
+const SELF_SERVICE_NOTICE_OPTIONS = [
+  { value: 0, label: "Sem bloqueio" },
+  { value: 60, label: "1 hora" },
+  { value: 120, label: "2 horas" },
+  { value: 360, label: "6 horas" },
+  { value: 720, label: "12 horas" },
+  { value: 1440, label: "24 horas" },
+  { value: 2880, label: "2 dias" },
+  { value: 4320, label: "3 dias" },
+  { value: 10080, label: "7 dias" },
+];
+
 function clone(v) {
   return JSON.parse(JSON.stringify(v || {}));
 }
@@ -186,6 +198,11 @@ export default function SettingsAgenda() {
       // Sanitização básica
       a.timezone = a.timezone || "America/Sao_Paulo";
       a.slotMinutes = a.slotMinutes || 60;
+      a.selfServiceMinimumNoticeMinutes =
+        Number.isFinite(Number(a.selfServiceMinimumNoticeMinutes)) &&
+        Number(a.selfServiceMinimumNoticeMinutes) >= 0
+          ? Number(a.selfServiceMinimumNoticeMinutes)
+          : 1440;
       a.weeklyRules = a.weeklyRules || {};
       setSettings(d.settings);
       setInitialJSON(JSON.stringify(a));
@@ -246,6 +263,12 @@ export default function SettingsAgenda() {
   const validate = () => {
     const a = settings.agenda;
     const p = [];
+    if (
+      !Number.isFinite(Number(a.selfServiceMinimumNoticeMinutes)) ||
+      Number(a.selfServiceMinimumNoticeMinutes) < 0
+    ) {
+      p.push("Defina um prazo maximo valido para reagendamento.");
+    }
     if (!a.timezone) p.push("Selecione um fuso horário.");
     if (uniqTimes(a.defaultSlots).length === 0)
       p.push("Defina ao menos um horário padrão.");
@@ -429,6 +452,30 @@ export default function SettingsAgenda() {
                 </select>
                 <p className="mt-1 text-xs text-zinc-400 italic">
                   O "passo" entre cada horário disponível na agenda pública.
+                </p>
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase text-zinc-500 mb-1">
+                  Prazo maximo para reagendamento
+                </label>
+                <select
+                  className="w-full rounded-lg border-zinc-200 text-sm p-2"
+                  value={agenda.selfServiceMinimumNoticeMinutes ?? 1440}
+                  onChange={(e) =>
+                    patchAgenda({
+                      selfServiceMinimumNoticeMinutes: Number(e.target.value),
+                    })
+                  }
+                >
+                  {SELF_SERVICE_NOTICE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-zinc-400 italic">
+                  Define ate quanto tempo antes o cliente pode reagendar ou
+                  cancelar pelo link publico.
                 </p>
               </div>
             </div>

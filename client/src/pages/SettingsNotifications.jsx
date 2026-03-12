@@ -291,6 +291,7 @@ export default function SettingsNotifications() {
         context,
         "sellerPlatformConfirmed",
       ),
+      emailBookingChanges: getEmailEventState(context, "bookingChanges"),
       whatsappMaster: getWhatsAppMasterState(context),
       whatsappPaymentStatus: getWhatsAppFeatureState(
         context,
@@ -303,6 +304,12 @@ export default function SettingsNotifications() {
         "whatsappBookingReminders",
         context?.settings?.whatsapp?.bookingReminders?.enabled === true,
         "Lembretes de agendamento por WhatsApp ficam disponíveis a partir do plano Pro.",
+      ),
+      whatsappBookingChanges: getWhatsAppFeatureState(
+        context,
+        "whatsappBookingChanges",
+        context?.settings?.whatsapp?.bookingChanges?.enabled === true,
+        "Alterações de agenda por WhatsApp ficam disponíveis a partir do plano Pro.",
       ),
       whatsappRecurringAutoSend: getWhatsAppFeatureState(
         context,
@@ -395,17 +402,17 @@ export default function SettingsNotifications() {
         <CardBody className="grid gap-4 lg:grid-cols-2">
           <ChannelStatusCard
             title="E-mail do workspace"
-            subtitle="Usado para avisar o vendedor sobre comprovante enviado e confirmações de pagamento."
+            subtitle="Usado para avisos do vendedor e para comunicações de alteração de agenda."
             capability={emailCapability}
           >
             <div className="text-xs text-slate-500 dark:text-slate-400">
-              Eventos ativos agora: comprovante enviado, pagamento Pix confirmado e confirmação no painel.
+              Eventos ativos agora: comprovante enviado, pagamento Pix confirmado, confirmação no painel e alteração de agenda.
             </div>
           </ChannelStatusCard>
 
           <ChannelStatusCard
             title="WhatsApp do workspace"
-            subtitle="Usado para status de pagamento, autoenvio de recorrência e lembretes."
+            subtitle="Usado para status de pagamento, autoenvio de recorrência, lembretes e alteração de agenda."
             capability={whatsappCapability}
           >
             <div className="text-xs text-slate-500 dark:text-slate-400">
@@ -463,6 +470,25 @@ export default function SettingsNotifications() {
                 }))
               }
               status={statusStates.emailPlatformConfirmed}
+            />
+
+            <ToggleRow
+              label="Alterações de agenda por e-mail"
+              description="Controla os e-mails enviados ao cliente e ao workspace quando um agendamento é reagendado ou cancelado pelo link público."
+              checked={draft.email.bookingChanges.enabled}
+              onChange={(value) =>
+                setDraft((prev) => ({
+                  ...prev,
+                  email: {
+                    ...prev.email,
+                    bookingChanges: {
+                      ...prev.email.bookingChanges,
+                      enabled: value,
+                    },
+                  },
+                }))
+              }
+              status={statusStates.emailBookingChanges}
             />
           </div>
 
@@ -533,6 +559,25 @@ export default function SettingsNotifications() {
                 }))
               }
               status={statusStates.whatsappBookingReminders}
+            />
+
+            <ToggleRow
+              label="Alterações de agenda por WhatsApp"
+              description="Controla o aviso por WhatsApp ao cliente quando um agendamento é reagendado ou cancelado pelo link público."
+              checked={draft.whatsapp.bookingChanges.enabled}
+              onChange={(value) =>
+                setDraft((prev) => ({
+                  ...prev,
+                  whatsapp: {
+                    ...prev.whatsapp,
+                    bookingChanges: {
+                      ...prev.whatsapp.bookingChanges,
+                      enabled: value,
+                    },
+                  },
+                }))
+              }
+              status={statusStates.whatsappBookingChanges}
             />
 
             <ToggleRow
@@ -673,6 +718,7 @@ export default function SettingsNotifications() {
                 lines: [
                   "Confirmações e status por WhatsApp.",
                   "Lembretes de agendamento para clientes.",
+                  "Alterações de agenda por WhatsApp.",
                   "Autoenvio padrão de recorrência.",
                 ],
               },
