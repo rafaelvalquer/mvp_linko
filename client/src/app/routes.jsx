@@ -34,7 +34,7 @@ import BillingSuccess from "../pages/BillingSuccess.jsx";
 import BillingCancel from "../pages/BillingCancel.jsx";
 
 // ✅ NOVO: Relatórios
-import Reports from "../pages/Reports.jsx";
+import Reports from "../pages/ReportsDashboard.jsx";
 import RecurringReportsPage from "../pages/RecurringReportsPage.jsx";
 
 export const router = createBrowserRouter(

@@ -21,6 +21,7 @@ import Skeleton from "../components/appui/Skeleton.jsx";
 import Badge from "../components/appui/Badge.jsx";
 import { getRecurringReportsDashboard } from "../app/recurringReportsApi.js";
 import { getRecurringStatusLabel, getRecurringStatusTone } from "../utils/recurringStatus.js";
+import { downloadReportFile } from "../utils/reportDownloads.js";
 
 const weekdayColors = ["#2563eb", "#0ea5e9", "#14b8a6", "#22c55e", "#84cc16", "#f59e0b", "#f97316"];
 const agingColors = ["#f59e0b", "#f97316", "#ef4444", "#dc2626", "#991b1b"];
@@ -144,6 +145,37 @@ export default function RecurringReportsPage() {
     load({ from: nextFrom, to: nextTo });
   }
 
+  const qs = useMemo(() => {
+    const params = new URLSearchParams();
+    params.set("from", from);
+    params.set("to", to);
+    params.set("type", type);
+    params.set("recurringStatus", recurringStatus);
+    return params.toString();
+  }, [from, to, type, recurringStatus]);
+
+  async function downloadCsv() {
+    try {
+      await downloadReportFile(
+        `/reports/recurring/export.csv?${qs}`,
+        `relatorios_recorrencia_${from}_a_${to}.csv`,
+      );
+    } catch (err) {
+      setError(err?.message || "Falha ao baixar CSV.");
+    }
+  }
+
+  async function downloadPdf() {
+    try {
+      await downloadReportFile(
+        `/reports/recurring/export.pdf?${qs}`,
+        `relatorios_recorrencia_${from}_a_${to}.pdf`,
+      );
+    } catch (err) {
+      setError(err?.message || "Falha ao baixar PDF.");
+    }
+  }
+
   const summary = data?.summary || {};
   const dueVsPaidDaily = data?.dueVsPaidDaily || [];
   const paymentWeekdayDistribution = data?.paymentWeekdayDistribution || [];
@@ -165,6 +197,12 @@ export default function RecurringReportsPage() {
               </Link>
               <Button variant="secondary" onClick={() => load()} disabled={applying}>
                 {applying ? "Atualizando..." : "Atualizar"}
+              </Button>
+              <Button variant="secondary" onClick={downloadCsv} disabled={applying}>
+                Baixar CSV
+              </Button>
+              <Button onClick={downloadPdf} disabled={applying}>
+                Baixar PDF
               </Button>
             </>
           }

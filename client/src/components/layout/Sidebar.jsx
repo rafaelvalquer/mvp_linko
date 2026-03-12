@@ -207,6 +207,12 @@ function getNavIdleClasses(isDark) {
     : "text-slate-600 hover:bg-slate-100/90 hover:text-slate-950";
 }
 
+function getNavSectionClasses(isDark) {
+  return isDark
+    ? "bg-white/8 text-white ring-1 ring-white/10"
+    : "bg-slate-100/90 text-slate-950 ring-1 ring-slate-200/80";
+}
+
 function AnimatedText({ collapsed, children, className = "" }) {
   return (
     <span
@@ -229,12 +235,14 @@ function SidebarItem({
   icon: Icon,
   collapsed,
   indent = false,
+  end = false,
   isDark,
   onNavigate,
 }) {
   return (
     <NavLink
       to={to}
+      end={end}
       title={collapsed ? String(children) : undefined}
       onClick={onNavigate}
       className={({ isActive }) =>
@@ -297,7 +305,7 @@ function SidebarParentButton({
   icon: Icon,
   label,
   collapsed,
-  active,
+  highlighted,
   open,
   isDark,
   onClick,
@@ -310,7 +318,7 @@ function SidebarParentButton({
       className={[
         "flex w-full items-center rounded-2xl px-3 py-2.5 text-sm transition-all duration-300",
         collapsed ? "justify-center" : "justify-between",
-        active ? NAV_ACTIVE_CLASSES : getNavIdleClasses(isDark),
+        highlighted ? getNavSectionClasses(isDark) : getNavIdleClasses(isDark),
       ].join(" ")}
     >
       <div className="flex min-w-0 items-center">
@@ -650,7 +658,7 @@ export default function Sidebar({
               icon={Icons.Offers}
               label="Propostas"
               collapsed={collapsed}
-              active={isOffersAny}
+              highlighted={isOffersAny}
               open={isOffersOpen}
               isDark={isDark}
               onClick={handleOffersClick}
@@ -670,6 +678,7 @@ export default function Sidebar({
                   to="/offers"
                   collapsed={collapsed}
                   indent
+                  end
                   isDark={isDark}
                   onNavigate={onNavigate}
                 >
@@ -719,7 +728,7 @@ export default function Sidebar({
               icon={Icons.Reports}
               label="Relatórios"
               collapsed={collapsed}
-              active={isReportsAny}
+              highlighted={isReportsAny}
               open={isReportsOpen}
               isDark={isDark}
               onClick={handleReportsClick}
@@ -739,6 +748,7 @@ export default function Sidebar({
                   to="/reports"
                   collapsed={collapsed}
                   indent
+                  end
                   isDark={isDark}
                   onNavigate={onNavigate}
                 >
@@ -766,7 +776,7 @@ export default function Sidebar({
                 icon={Icons.Store}
                 label="Sua Loja"
                 collapsed={collapsed}
-                active={isStoreRoute}
+                highlighted={isStoreRoute}
                 open={isStoreOpen}
                 isDark={isDark}
                 onClick={handleStoreClick}

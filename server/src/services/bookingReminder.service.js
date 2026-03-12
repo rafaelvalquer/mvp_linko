@@ -105,6 +105,18 @@ function buildBookingManageUrl(booking, origin = "") {
   )}`;
 }
 
+function buildBookingDoneUrl(booking, origin = "") {
+  const offer = getOfferDoc(booking);
+  const token = String(offer?.publicToken || "").trim();
+  const bookingId = String(booking?._id || "").trim();
+
+  if (!token || !bookingId) return "";
+
+  return `${baseOrigin(origin)}/p/${token}/done?bookingId=${encodeURIComponent(
+    bookingId,
+  )}`;
+}
+
 async function loadWorkspaceTimeZone({ workspaceId, ownerUserId }) {
   if (!workspaceId || !ownerUserId) return DEFAULT_TIMEZONE;
 
@@ -155,6 +167,7 @@ export function buildBookingReminderMessage({
   kind = REMINDER_WINDOW_24H,
   timeZone = DEFAULT_TIMEZONE,
   manageUrl = "",
+  doneUrl = "",
 }) {
   const name = firstName(booking?.customerName);
   const when = formatDateTimeBR(booking?.startAt, timeZone);
@@ -166,7 +179,9 @@ export function buildBookingReminderMessage({
       : "Passando para lembrar do seu agendamento:";
   const closing =
     kind === REMINDER_WINDOW_2H
-      ? "Estamos te lembrando com antecedencia para deixar tudo alinhado. Se precisar de algo, e so responder esta mensagem."
+      ? doneUrl
+        ? `Confira os detalhes do seu atendimento aqui: ${doneUrl}`
+        : "Confira os detalhes do seu atendimento no link da sua proposta."
       : manageUrl
         ? `Se precisar reagendar, acesse o link: ${manageUrl}`
         : "Se precisar reagendar, acesse o link da sua proposta.";
@@ -249,11 +264,14 @@ export async function dispatchBookingReminder({
   });
   const manageUrl =
     kind === REMINDER_WINDOW_24H ? buildBookingManageUrl(booking, origin) : "";
+  const doneUrl =
+    kind === REMINDER_WINDOW_2H ? buildBookingDoneUrl(booking, origin) : "";
   const message = buildBookingReminderMessage({
     booking,
     kind,
     timeZone,
     manageUrl,
+    doneUrl,
   });
   const notificationContext = await resolveWorkspaceNotificationContext({
     workspaceId: booking?.workspaceId || null,
@@ -348,15 +366,16 @@ export async function dispatchBookingReminder({
     dedupeKey: `booking:${booking._id}:${kind}`,
     sourceType: "message_log",
     sourceId: doc?._id || null,
-    meta: {
-      bookingId: booking?._id || null,
-      offerId,
-      eventType,
-      kind,
-      manageUrl,
-      timeZone,
-    },
-  });
+      meta: {
+        bookingId: booking?._id || null,
+        offerId,
+        eventType,
+        kind,
+        manageUrl,
+        doneUrl,
+        timeZone,
+      },
+    });
 
   const freshLog = doc?._id ? await MessageLog.findById(doc._id).lean() : null;
   if (result?.status === "sent") {

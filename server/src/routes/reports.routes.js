@@ -3,6 +3,11 @@ import { Router } from "express";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ensureAuth, tenantFromUser } from "../middleware/auth.js";
 import { Offer } from "../models/Offer.js";
+import { buildGeneralReportsSnapshot } from "../services/generalReports.service.js";
+import {
+  buildGeneralReportPdfBuffer,
+  buildRecurringReportPdfBuffer,
+} from "../services/reportPdf.service.js";
 import { buildRecurringReportsDashboard } from "../services/recurringReports.service.js";
 
 const r = Router();
@@ -79,6 +84,30 @@ function dateToStringDayExpr(field) {
   };
 }
 
+function csvEscape(value) {
+  const text = String(value ?? "");
+  if (/[,"\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+  return text;
+}
+
+function formatRecurringPortfolioCsvRows(dashboard) {
+  const rows = Array.isArray(dashboard?.portfolio) ? dashboard.portfolio : [];
+  return rows.map((item) => ({
+    recurringName: item?.recurringName || "",
+    customerName: item?.customerName || "",
+    recurringStatus: item?.recurringStatus || "",
+    generatedCount: Number(item?.generatedCount || 0),
+    paidCount: Number(item?.paidCount || 0),
+    pendingCount: Number(item?.pendingCount || 0),
+    overdueCount: Number(item?.overdueCount || 0),
+    overdueAmountCents: Number(item?.overdueAmountCents || 0),
+    awaitingConfirmationCount: Number(item?.awaitingConfirmationCount || 0),
+    lastPaidAt: item?.lastPaidAt || "",
+    nextDueAt: item?.nextDueAt || "",
+    lastReminderAt: item?.lastReminderAt || "",
+  }));
+}
+
 // Auth + tenant
 r.use(ensureAuth, tenantFromUser);
 
@@ -114,9 +143,118 @@ r.get(
       recurringStatus,
       start,
       end,
+      delinquentClientsLimit: 1000,
+      portfolioLimit: 5000,
     });
 
     res.json({ ok: true, ...dashboard });
+  }),
+);
+
+r.get(
+  "/reports/recurring/export.csv",
+  asyncHandler(async (req, res) => {
+    const fromYMD = parseYMD(req.query.from);
+    const toYMD = parseYMD(req.query.to);
+    const type = String(req.query.type || "all");
+    const recurringStatus = String(req.query.recurringStatus || "all");
+
+    if (!fromYMD || !toYMD) {
+      return res
+        .status(400)
+        .json({ ok: false, error: "Parametros from/to invalidos" });
+    }
+
+    const { start, end } = rangeInSaoPaulo(fromYMD, toYMD);
+    const days = daysBetween(start, end);
+    if (days > MAX_DAYS + 1) {
+      return res.status(400).json({
+        ok: false,
+        error: `Periodo maximo excedido (${MAX_DAYS} dias)`,
+      });
+    }
+
+    const dashboard = await buildRecurringReportsDashboard({
+      tenantId: req.tenantId,
+      userId: req.user?._id || null,
+      fromYMD,
+      toYMD,
+      type,
+      recurringStatus,
+      start,
+      end,
+      delinquentClientsLimit: 1000,
+      portfolioLimit: 5000,
+    });
+
+    const headers = [
+      "recurringName",
+      "customerName",
+      "recurringStatus",
+      "generatedCount",
+      "paidCount",
+      "pendingCount",
+      "overdueCount",
+      "overdueAmountCents",
+      "awaitingConfirmationCount",
+      "lastPaidAt",
+      "nextDueAt",
+      "lastReminderAt",
+    ];
+    const rows = formatRecurringPortfolioCsvRows(dashboard);
+    const lines = [headers.join(",")];
+
+    for (const row of rows) {
+      lines.push(headers.map((header) => csvEscape(row[header])).join(","));
+    }
+
+    const filename = `relatorios_recorrencia_${fromYMD}_a_${toYMD}.csv`;
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.status(200).send(lines.join("\n"));
+  }),
+);
+
+r.get(
+  "/reports/recurring/export.pdf",
+  asyncHandler(async (req, res) => {
+    const fromYMD = parseYMD(req.query.from);
+    const toYMD = parseYMD(req.query.to);
+    const type = String(req.query.type || "all");
+    const recurringStatus = String(req.query.recurringStatus || "all");
+
+    if (!fromYMD || !toYMD) {
+      return res
+        .status(400)
+        .json({ ok: false, error: "Parametros from/to invalidos" });
+    }
+
+    const { start, end } = rangeInSaoPaulo(fromYMD, toYMD);
+    const days = daysBetween(start, end);
+    if (days > MAX_DAYS + 1) {
+      return res.status(400).json({
+        ok: false,
+        error: `Periodo maximo excedido (${MAX_DAYS} dias)`,
+      });
+    }
+
+    const dashboard = await buildRecurringReportsDashboard({
+      tenantId: req.tenantId,
+      userId: req.user?._id || null,
+      fromYMD,
+      toYMD,
+      type,
+      recurringStatus,
+      start,
+      end,
+    });
+
+    const pdf = buildRecurringReportPdfBuffer(dashboard);
+    const filename = `relatorios_recorrencia_${fromYMD}_a_${toYMD}.pdf`;
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.status(200).send(pdf);
   }),
 );
 
@@ -574,12 +712,6 @@ r.get(
       "publicToken",
     ];
 
-    function csvEscape(v) {
-      const s = String(v ?? "");
-      if (/[,"\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-      return s;
-    }
-
     const lines = [headers.join(",")];
     for (const r0 of rows) {
       lines.push(headers.map((h) => csvEscape(r0[h])).join(","));
@@ -595,10 +727,53 @@ r.get(
 );
 
 r.get(
-  "/reports/export.pdf",
-  asyncHandler(async (_req, res) => {
+  "/reports/export.pdf-legacy",
+  asyncHandler(async (req, res) => {
     // MVP sem dependência nova: mantém rota, mas retorna "em breve"
     res.status(501).json({ ok: false, error: "Exportação PDF em breve" });
+  }),
+);
+
+r.get(
+  "/reports/export.pdf",
+  asyncHandler(async (req, res) => {
+    const fromYMD = parseYMD(req.query.from);
+    const toYMD = parseYMD(req.query.to);
+    const type = String(req.query.type || "all");
+    const onlyPaid = String(req.query.onlyPaid || "1") === "1";
+
+    if (!fromYMD || !toYMD) {
+      return res
+        .status(400)
+        .json({ ok: false, error: "ParÃ¢metros from/to invÃ¡lidos" });
+    }
+
+    const { start, end } = rangeInSaoPaulo(fromYMD, toYMD);
+    if (daysBetween(start, end) > MAX_DAYS + 1) {
+      return res.status(400).json({
+        ok: false,
+        error: `PerÃ­odo mÃ¡ximo excedido (${MAX_DAYS} dias)`,
+      });
+    }
+
+    const snapshot = await buildGeneralReportsSnapshot({
+      tenantId: req.tenantId,
+      userId: req.user?._id || null,
+      fromYMD,
+      toYMD,
+      start,
+      end,
+      type,
+      onlyPaid,
+      transactionsLimit: 2000,
+    });
+
+    const pdf = buildGeneralReportPdfBuffer(snapshot);
+    const filename = `relatorios_${fromYMD}_a_${toYMD}.pdf`;
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.status(200).send(pdf);
   }),
 );
 

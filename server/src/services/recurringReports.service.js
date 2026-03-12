@@ -438,7 +438,7 @@ function buildAgingBuckets(rows) {
   return order.map((label) => map.get(label));
 }
 
-function buildDelinquentClients(rows, reminderMap) {
+function buildDelinquentClients(rows, reminderMap, limit = 20) {
   const map = new Map();
 
   for (const row of rows) {
@@ -502,10 +502,10 @@ function buildDelinquentClients(rows, reminderMap) {
       }
       return b.maxDelayDays - a.maxDelayDays;
     })
-    .slice(0, 20);
+    .slice(0, Math.max(1, Number(limit) || 20));
 }
 
-function buildPortfolio(rows, reminderMap, today) {
+function buildPortfolio(rows, reminderMap, today, limit = 30) {
   const map = new Map();
 
   for (const row of rows) {
@@ -568,7 +568,7 @@ function buildPortfolio(rows, reminderMap, today) {
       if (b.pendingCount !== a.pendingCount) return b.pendingCount - a.pendingCount;
       return b.generatedCount - a.generatedCount;
     })
-    .slice(0, 30);
+    .slice(0, Math.max(1, Number(limit) || 30));
 }
 
 export async function buildRecurringReportsDashboard({
@@ -580,6 +580,8 @@ export async function buildRecurringReportsDashboard({
   recurringStatus = "all",
   start,
   end,
+  delinquentClientsLimit = 20,
+  portfolioLimit = 30,
 }) {
   const normalizedRecurringStatus = normalizeRecurringStatus(recurringStatus);
   const rows = await loadRecurringRows({
@@ -608,7 +610,16 @@ export async function buildRecurringReportsDashboard({
     paymentDelayBuckets: buildDelayBuckets(annotated),
     paymentWeekdayDistribution: buildWeekdayDistribution(annotated),
     overdueAgingBuckets: buildAgingBuckets(annotated),
-    delinquentClients: buildDelinquentClients(annotated, reminderMap),
-    portfolio: buildPortfolio(annotated, reminderMap, today),
+    delinquentClients: buildDelinquentClients(
+      annotated,
+      reminderMap,
+      delinquentClientsLimit,
+    ),
+    portfolio: buildPortfolio(
+      annotated,
+      reminderMap,
+      today,
+      portfolioLimit,
+    ),
   };
 }
