@@ -113,7 +113,7 @@ export default function SettingsLayout({
           </CardBody>
         </Card>
 
-        <div className="space-y-6 pb-24">{children}</div>
+        <div className="space-y-6 pb-32">{children}</div>
       </div>
     </Shell>
   );

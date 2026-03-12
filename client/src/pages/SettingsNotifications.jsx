@@ -4,6 +4,7 @@ import Button from "../components/appui/Button.jsx";
 import Card, { CardBody, CardHeader } from "../components/appui/Card.jsx";
 import Skeleton from "../components/appui/Skeleton.jsx";
 import SettingsLayout from "../components/settings/SettingsLayout.jsx";
+import UnsavedChangesBar from "../components/settings/UnsavedChangesBar.jsx";
 import {
   getSettings,
   updateNotificationSettings,
@@ -802,6 +803,12 @@ export default function SettingsNotifications() {
           </div>
         </CardBody>
       </Card>
+      <UnsavedChangesBar
+        visible={dirty}
+        saving={saving}
+        onDiscard={load}
+        onSave={handleSave}
+      />
     </SettingsLayout>
   );
 }

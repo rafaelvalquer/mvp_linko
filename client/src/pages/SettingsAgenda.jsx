@@ -5,6 +5,7 @@ import Button from "../components/appui/Button.jsx";
 import { Input } from "../components/appui/Input.jsx";
 import Skeleton from "../components/appui/Skeleton.jsx";
 import SettingsLayout from "../components/settings/SettingsLayout.jsx";
+import UnsavedChangesBar from "../components/settings/UnsavedChangesBar.jsx";
 import { getSettings, updateAgendaSettings } from "../app/settingsApi.js";
 
 // --- CONSTANTS & HELPERS ---
@@ -836,7 +837,13 @@ export default function SettingsAgenda() {
       </div>
 
       {/* STICKY SAVE BAR */}
-      {dirty && (
+      <UnsavedChangesBar
+        visible={dirty}
+        saving={saving}
+        onDiscard={load}
+        onSave={handleSave}
+      />
+      {false && dirty && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4 z-50">
           <div className="bg-zinc-900 text-white p-4 rounded-2xl shadow-2xl flex items-center justify-between border border-white/10 animate-in slide-in-from-bottom-4">
             <div className="flex items-center gap-3">
