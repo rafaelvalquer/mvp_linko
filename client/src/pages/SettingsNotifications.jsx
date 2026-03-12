@@ -10,13 +10,11 @@ import {
 } from "../app/settingsApi.js";
 import {
   DEFAULT_NOTIFICATION_SETTINGS,
-  canSendWhatsAppPaymentReminders,
-  canSendWhatsAppPaymentStatus,
-  canSendWhatsAppRecurringAutoSend,
   isEmailNotificationEnabled,
   isWhatsAppMasterEnabled,
   mergeNotificationSettings,
 } from "../utils/notificationSettings.js";
+import { getPlanFeatureMatrix } from "../utils/planFeatures.js";
 
 function buildEnvironmentNote(capability, fallback) {
   if (capability?.available === true) return "";
@@ -78,17 +76,25 @@ function getWhatsAppMasterState(context) {
 
 function getWhatsAppFeatureState(context, featureKey, settingEnabled, planNote) {
   const whatsappCapability = context?.capabilities?.environment?.whatsapp || {};
-  const planFeatures = context?.capabilities?.plan?.features || {};
+  const currentPlan = context?.capabilities?.plan?.value || "start";
+  const planFeatures = {
+    ...getPlanFeatureMatrix(currentPlan),
+    ...(context?.capabilities?.plan?.features || {}),
+  };
+  const featureAvailability =
+    context?.capabilities?.availability?.[featureKey] || {};
   const masterEnabled = context?.settings?.whatsapp?.masterEnabled === true;
+  const planAllowed =
+    featureAvailability?.planAllowed === true || planFeatures?.[featureKey] === true;
 
-  const canSend =
-    featureKey === "whatsappPaymentStatus"
-      ? canSendWhatsAppPaymentStatus(context)
-      : featureKey === "whatsappRecurringAutoSend"
-        ? canSendWhatsAppRecurringAutoSend(context)
-        : canSendWhatsAppPaymentReminders(context);
-
-  if (canSend) return { tone: "PAID", label: "Ativo agora", note: "" };
+  if (
+    whatsappCapability.available === true &&
+    planAllowed &&
+    masterEnabled &&
+    settingEnabled
+  ) {
+    return { tone: "PAID", label: "Ativo agora", note: "" };
+  }
 
   if (whatsappCapability.available !== true) {
     return {
@@ -101,7 +107,7 @@ function getWhatsAppFeatureState(context, featureKey, settingEnabled, planNote) 
     };
   }
 
-  if (planFeatures?.[featureKey] !== true) {
+  if (!planAllowed) {
     return {
       tone: "ACCEPTED",
       label: "Bloqueado pelo plano",
@@ -292,6 +298,12 @@ export default function SettingsNotifications() {
         context?.settings?.whatsapp?.paymentStatusUpdatesEnabled === true,
         "Esse fluxo fica disponível a partir do plano Pro.",
       ),
+      whatsappBookingReminders: getWhatsAppFeatureState(
+        context,
+        "whatsappBookingReminders",
+        context?.settings?.whatsapp?.bookingReminders?.enabled === true,
+        "Lembretes de agendamento por WhatsApp ficam disponíveis a partir do plano Pro.",
+      ),
       whatsappRecurringAutoSend: getWhatsAppFeatureState(
         context,
         "whatsappRecurringAutoSend",
@@ -326,9 +338,7 @@ export default function SettingsNotifications() {
         notifications: nextNotifications,
       }));
       setCapabilities(
-        data?.capabilities?.notifications ||
-          capabilities ||
-          null,
+        data?.capabilities?.notifications || capabilities || null,
       );
       setDraft(nextNotifications);
       setOkMsg("Preferências de notificações salvas com sucesso.");
@@ -492,7 +502,7 @@ export default function SettingsNotifications() {
 
             <ToggleRow
               label="Autoenvio padrão de recorrência"
-              description="Define o default de novas recorrências para tentar enviar a cobrança automaticamente ao cliente."
+              description="Define o padrão de novas recorrências para tentar enviar a cobrança automaticamente ao cliente."
               checked={draft.whatsapp.recurringAutoSendDefault}
               onChange={(value) =>
                 setDraft((prev) => ({
@@ -504,6 +514,25 @@ export default function SettingsNotifications() {
                 }))
               }
               status={statusStates.whatsappRecurringAutoSend}
+            />
+
+            <ToggleRow
+              label="Lembretes de agendamento"
+              description="Dispara automaticamente um lembrete 24h antes e outro 2h antes de cada atendimento confirmado."
+              checked={draft.whatsapp.bookingReminders.enabled}
+              onChange={(value) =>
+                setDraft((prev) => ({
+                  ...prev,
+                  whatsapp: {
+                    ...prev.whatsapp,
+                    bookingReminders: {
+                      ...prev.whatsapp.bookingReminders,
+                      enabled: value,
+                    },
+                  },
+                }))
+              }
+              status={statusStates.whatsappBookingReminders}
             />
 
             <ToggleRow
@@ -643,6 +672,7 @@ export default function SettingsNotifications() {
                 key: "pro",
                 lines: [
                   "Confirmações e status por WhatsApp.",
+                  "Lembretes de agendamento para clientes.",
                   "Autoenvio padrão de recorrência.",
                 ],
               },
@@ -650,7 +680,7 @@ export default function SettingsNotifications() {
                 key: "business",
                 lines: [
                   "Tudo do Pro.",
-                  "Lembretes manuais e automáticos por WhatsApp.",
+                  "Lembretes manuais e automáticos de pagamento por WhatsApp.",
                 ],
               },
               {

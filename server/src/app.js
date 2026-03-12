@@ -21,6 +21,7 @@ import billingStripeRoutes from "./routes/billing.stripe.routes.js";
 import webhooksStripeRoutes from "./routes/webhooks.stripe.routes.js";
 import analyticsRoutes from "./routes/analytics.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
+import { startBookingRemindersRunner } from "./services/booking-reminders.runner.js";
 import { startRecurringOffersRunner } from "./services/recurring-offers.runner.js";
 import { startPaymentRemindersRunner } from "./services/payment-reminders.runner.js";
 import { startWhatsAppOutboxRunner } from "./services/whatsappOutbox.runner.js";
@@ -103,6 +104,7 @@ export function createApp() {
   startRecurringOffersRunner({
     origin: publicOrigin,
   });
+  startBookingRemindersRunner();
   startPaymentRemindersRunner({ origin: publicOrigin });
   startWhatsAppOutboxRunner();
 

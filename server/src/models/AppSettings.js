@@ -103,6 +103,13 @@ const NotificationPaymentRemindersSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const NotificationBookingRemindersSchema = new mongoose.Schema(
+  {
+    enabled: { type: Boolean, default: false },
+  },
+  { _id: false },
+);
+
 const NotificationEmailSchema = new mongoose.Schema(
   {
     sellerProofSubmitted: { type: Boolean, default: true },
@@ -117,6 +124,10 @@ const NotificationWhatsAppSchema = new mongoose.Schema(
     masterEnabled: { type: Boolean, default: true },
     paymentStatusUpdatesEnabled: { type: Boolean, default: true },
     recurringAutoSendDefault: { type: Boolean, default: false },
+    bookingReminders: {
+      type: NotificationBookingRemindersSchema,
+      default: () => ({}),
+    },
     paymentReminders: {
       type: NotificationPaymentRemindersSchema,
       default: () => ({}),

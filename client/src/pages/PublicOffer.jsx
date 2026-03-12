@@ -1,13 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { api } from "../app/api.js";
-import Button from "../components/appui/Button.jsx";
+import {
+  ArrowRight,
+  BadgeCheck,
+  CalendarClock,
+  Check,
+  FileText,
+  Package2,
+  ShieldCheck,
+  Sparkles,
+  Wallet,
+} from "lucide-react";
 import { motion, useReducedMotion } from "framer-motion";
+import { api } from "../app/api.js";
+import useThemeToggle from "../app/useThemeToggle.js";
+import Button from "../components/appui/Button.jsx";
 import brand from "../assets/brand.png";
 
-/* =========================
-   Helpers
-========================= */
+function cls(...parts) {
+  return parts.filter(Boolean).join(" ");
+}
 
 function fmtBRL(cents) {
   const v = Number.isFinite(cents) ? cents : 0;
@@ -81,38 +93,103 @@ function pickFirst(obj, keys) {
   return "";
 }
 
-function Badge({ tone = "zinc", children }) {
-  const map = {
-    emerald: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    amber: "bg-amber-50 text-amber-800 border-amber-200",
-    red: "bg-red-50 text-red-700 border-red-200",
-    blue: "bg-blue-50 text-blue-700 border-blue-200",
-    zinc: "bg-zinc-50 text-zinc-700 border-zinc-200",
-  };
+function Badge({ tone = "zinc", className = "", children }) {
+  const { isDark } = useThemeToggle();
+
+  const map = isDark
+    ? {
+        emerald: "border-emerald-400/20 bg-emerald-400/10 text-emerald-100",
+        amber: "border-amber-400/20 bg-amber-400/10 text-amber-100",
+        red: "border-red-400/20 bg-red-400/10 text-red-100",
+        blue: "border-sky-400/20 bg-sky-400/10 text-sky-100",
+        violet: "border-violet-400/20 bg-violet-400/10 text-violet-100",
+        zinc: "border-white/10 bg-white/5 text-slate-200",
+      }
+    : {
+        emerald: "border-emerald-200 bg-emerald-50 text-emerald-700",
+        amber: "border-amber-200 bg-amber-50 text-amber-700",
+        red: "border-red-200 bg-red-50 text-red-700",
+        blue: "border-sky-200 bg-sky-50 text-sky-700",
+        violet: "border-violet-200 bg-violet-50 text-violet-700",
+        zinc: "border-slate-200 bg-white text-slate-700",
+      };
+
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${
-        map[tone] || map.zinc
-      }`}
+      className={cls(
+        "inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-[0.18em]",
+        map[tone] || map.zinc,
+        className,
+      )}
     >
       {children}
     </span>
   );
 }
 
-function SectionCard({ title, subtitle, children }) {
+function SectionCard({
+  eyebrow,
+  title,
+  subtitle,
+  className = "",
+  children,
+}) {
+  const { isDark } = useThemeToggle();
+
   return (
-    <div className="rounded-2xl border bg-white p-5 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-sm font-semibold text-zinc-900">{title}</div>
+    <section
+      className={cls(
+        "relative overflow-hidden rounded-[30px] border p-5 sm:p-6",
+        isDark
+          ? "border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(9,15,28,0.84))] shadow-[0_28px_70px_-46px_rgba(15,23,42,0.82)]"
+          : "border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(241,245,249,0.9))] shadow-[0_28px_70px_-46px_rgba(15,23,42,0.2)]",
+        className,
+      )}
+    >
+      <div
+        className={cls(
+          "pointer-events-none absolute inset-x-0 top-0 h-24",
+          isDark
+            ? "bg-[linear-gradient(180deg,rgba(34,211,238,0.08),transparent)]"
+            : "bg-[linear-gradient(180deg,rgba(37,99,235,0.08),transparent)]",
+        )}
+      />
+
+      <div className="relative">
+        {eyebrow ? (
+          <div
+            className={cls(
+              "text-[11px] font-bold uppercase tracking-[0.18em]",
+              isDark ? "text-sky-200/80" : "text-sky-700",
+            )}
+          >
+            {eyebrow}
+          </div>
+        ) : null}
+
+        <div className={cls(eyebrow ? "mt-2" : "", "flex flex-col gap-1")}>
+          <div
+            className={cls(
+              "text-lg font-black tracking-[-0.03em]",
+              isDark ? "text-white" : "text-slate-950",
+            )}
+          >
+            {title}
+          </div>
           {subtitle ? (
-            <div className="mt-0.5 text-xs text-zinc-500">{subtitle}</div>
+            <div
+              className={cls(
+                "text-sm leading-6",
+                isDark ? "text-slate-300" : "text-slate-600",
+              )}
+            >
+              {subtitle}
+            </div>
           ) : null}
         </div>
+        <div className="mt-5">{children}</div>
       </div>
-      <div className="mt-4">{children}</div>
-    </div>
+    </section>
   );
 }
 
@@ -324,6 +401,7 @@ function NextSteps({ offerType, depositEnabled }) {
 export default function PublicOffer() {
   const { token } = useParams();
   const navigate = useNavigate();
+  const { isDark } = useThemeToggle();
 
   const [offer, setOffer] = useState(null);
   const [error, setError] = useState("");
@@ -623,8 +701,15 @@ export default function PublicOffer() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-zinc-50 p-6">
-        <div className="mx-auto max-w-3xl rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+      <div className={cls("min-h-screen p-6", isDark ? "bg-slate-950" : "bg-slate-100")}>
+        <div
+          className={cls(
+            "mx-auto max-w-3xl rounded-[28px] border p-5 text-sm",
+            isDark
+              ? "border-red-400/20 bg-[linear-gradient(135deg,rgba(127,29,29,0.26),rgba(69,10,10,0.18))] text-red-100"
+              : "border-red-200/80 bg-[linear-gradient(135deg,#fff1f2,#fff7f7)] text-red-700 shadow-[0_20px_40px_-30px_rgba(239,68,68,0.35)]",
+          )}
+        >
           {error}
         </div>
       </div>
@@ -644,6 +729,7 @@ export default function PublicOffer() {
   const title = offer.title || "Proposta";
   const description = offer.description || "";
   const customerName = offer.customerName || "Cliente";
+  const descriptionPreview = String(description).replace(/\s+/g, " ").trim();
 
   const statusTone = (() => {
     const s = String(view.headerMeta.status || "").toLowerCase();
@@ -669,22 +755,93 @@ export default function PublicOffer() {
       view.conditions.freightEnabled &&
       Number.isFinite(view.conditions.freightCents));
 
+  const heroMetrics = [
+    {
+      icon: view.offerType === "product" ? Package2 : CalendarClock,
+      label: view.offerType === "product" ? "Escopo" : "Atendimento",
+      value:
+        view.offerType === "product"
+          ? `${view.items.length} item${view.items.length === 1 ? "" : "s"}`
+          : view.conditions.durationEnabled && view.conditions.durationMin != null
+            ? `${view.conditions.durationMin} min`
+            : "Personalizado",
+      hint:
+        view.offerType === "product"
+          ? "Itens detalhados com quantidade e valor."
+          : hasAnyConditions
+            ? "Condições do atendimento descritas abaixo."
+            : "Fluxo simples para aceite, agenda e pagamento.",
+      tone: "sky",
+    },
+    {
+      icon: Wallet,
+      label: view.depositEnabled ? "Entrada" : "Pagamento",
+      value: view.depositEnabled
+        ? `${fmtBRL(view.depositCents)} agora`
+        : "Integral via Pix",
+      hint: view.depositEnabled
+        ? `Saldo de ${fmtBRL(view.remainingCents)} na etapa final.`
+        : "Sem complemento posterior para finalizar a proposta.",
+      tone: "emerald",
+    },
+    {
+      icon: view.headerMeta.validityText ? ShieldCheck : Sparkles,
+      label: view.headerMeta.validityText ? "Validade" : "Fluxo",
+      value:
+        view.headerMeta.validityText ||
+        (view.offerType === "product"
+          ? "Aceite + pagamento"
+          : "Aceite + agenda + pagamento"),
+      hint: view.headerMeta.issuedAt
+        ? `Emitida em ${view.headerMeta.issuedAt}.`
+        : "Link exclusivo para esta proposta.",
+      tone: "violet",
+    },
+  ];
+
   return (
-    <div className="min-h-screen bg-zinc-50">
+    <div
+      className={cls(
+        "relative min-h-screen overflow-hidden bg-zinc-50",
+        isDark && "bg-slate-950",
+      )}
+    >
       {/* Header */}
-      <div className="border-b bg-white">
-        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-3">
+      <div
+        className={cls(
+          "border-b",
+          isDark
+            ? "border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.96),rgba(9,15,28,0.88))]"
+            : "border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(241,245,249,0.92))]",
+        )}
+      >
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-4">
           <div className="flex items-center gap-3">
-            <img
-              src={brand}
-              alt="Luminor Pay"
-              className="h-9 w-9 rounded-xl object-contain ring-1 ring-zinc-200 bg-white p-1"
-            />
+              <img
+                src={brand}
+                alt="Luminor Pay"
+                className={cls(
+                  "h-11 w-11 rounded-2xl object-contain p-1.5",
+                  isDark
+                    ? "border border-white/10 bg-white/5"
+                    : "border border-slate-200/80 bg-white shadow-[0_18px_36px_-28px_rgba(15,23,42,0.25)]",
+                )}
+              />
             <div>
-              <div className="text-sm font-semibold text-zinc-900">
+              <div
+                className={cls(
+                  "text-sm font-bold",
+                  isDark ? "text-white" : "text-slate-950",
+                )}
+              >
                 LuminorPay
               </div>
-              <div className="text-xs text-zinc-500">
+              <div
+                className={cls(
+                  "text-xs",
+                  isDark ? "text-slate-400" : "text-slate-500",
+                )}
+              >
                 Proposta •{" "}
                 {view.offerType === "product" ? "Produto" : "Serviço"} • Link
                 público
@@ -700,7 +857,12 @@ export default function PublicOffer() {
                 <Badge>Proposta</Badge>
               )}
             </div>
-            <div className="text-xs text-zinc-500">
+            <div
+              className={cls(
+                "text-xs",
+                isDark ? "text-slate-400" : "text-slate-500",
+              )}
+            >
               {view.headerMeta.issuedAt
                 ? `Emitida em ${view.headerMeta.issuedAt}`
                 : ""}
@@ -738,35 +900,93 @@ export default function PublicOffer() {
         )}
       </div>
 
-      <div className="mx-auto grid max-w-3xl gap-4 px-4 py-6">
+      <div className="mx-auto grid max-w-5xl gap-6 px-4 py-6">
         {/* Resumo (primeira dobra) */}
-        <div className="rounded-2xl border bg-white p-6 shadow-sm">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div
+          className={cls(
+            "rounded-[34px] border p-6 shadow-[0_28px_80px_-48px_rgba(15,23,42,0.28)] sm:p-8",
+            isDark
+              ? "border-white/10 bg-[linear-gradient(135deg,rgba(15,23,42,0.96),rgba(10,18,36,0.88))]"
+              : "border-slate-200/80 bg-[linear-gradient(135deg,rgba(255,255,255,0.99),rgba(238,245,252,0.92))]",
+          )}
+        >
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              <div
+                className={cls(
+                  "text-[11px] font-bold uppercase tracking-[0.22em]",
+                  isDark ? "text-sky-200/80" : "text-sky-700",
+                )}
+              >
                 Proposta
               </div>
-              <div className="mt-1 text-2xl font-semibold text-zinc-900">
+              <div
+                className={cls(
+                  "mt-2 text-3xl font-black tracking-[-0.04em]",
+                  isDark ? "text-white" : "text-slate-950",
+                )}
+              >
                 {title}
               </div>
-              <div className="mt-1 text-sm text-zinc-600">
+              <div
+                className={cls(
+                  "mt-2 text-sm",
+                  isDark ? "text-slate-300" : "text-zinc-600",
+                )}
+              >
                 Para:{" "}
-                <span className="font-semibold text-zinc-900">
+                <span
+                  className={cls(
+                    "font-semibold",
+                    isDark ? "text-white" : "text-zinc-900",
+                  )}
+                >
                   {customerName}
                 </span>
               </div>
+
+              <div
+                className={cls(
+                  "mt-3 max-w-2xl text-sm leading-6",
+                  isDark ? "text-slate-300" : "text-zinc-600",
+                )}
+              >
+                {descriptionPreview
+                  ? descriptionPreview
+                  : view.offerType === "product"
+                    ? "Confira os itens, os termos e o investimento final antes de seguir para o pagamento."
+                    : "Confira o escopo, as condicoes do atendimento e siga para a etapa de aceite, agenda e pagamento."}
+              </div>
+
             </div>
 
-            <div className="rounded-2xl border bg-emerald-50 p-4">
-              <div className="text-xs font-semibold text-emerald-700">
+            <div
+              className={cls(
+                "rounded-[28px] border p-5",
+                isDark
+                  ? "border-cyan-400/20 bg-[linear-gradient(160deg,rgba(8,47,73,0.42),rgba(6,78,59,0.28),rgba(15,23,42,0.9))]"
+                  : "border-cyan-200/80 bg-[linear-gradient(160deg,rgba(239,246,255,0.98),rgba(236,253,245,0.92),rgba(255,255,255,0.96))]",
+              )}
+            >
+              <div
+                className={cls(
+                  "text-[11px] font-bold uppercase tracking-[0.18em]",
+                  isDark ? "text-cyan-100/80" : "text-emerald-700",
+                )}
+              >
                 Total
               </div>
-              <div className="mt-1 text-2xl font-semibold text-zinc-900">
+              <div
+                className={cls(
+                  "mt-2 text-3xl font-black tracking-[-0.04em]",
+                  isDark ? "text-white" : "text-slate-950",
+                )}
+              >
                 {fmtBRL(view.totalCents)}
               </div>
 
               {view.depositEnabled ? (
-                <div className="mt-1 text-xs text-zinc-700">
+                <div className={cls("mt-2 text-xs", isDark ? "text-slate-200" : "text-zinc-700")}>
                   Sinal:{" "}
                   <span className="font-semibold">
                     {fmtBRL(view.depositCents)}
@@ -778,12 +998,12 @@ export default function PublicOffer() {
                   </span>
                 </div>
               ) : (
-                <div className="mt-1 text-xs text-zinc-700">
+                <div className={cls("mt-2 text-xs", isDark ? "text-slate-200" : "text-zinc-700")}>
                   Pagamento integral
                 </div>
               )}
 
-              <div className="mt-2 text-xs text-zinc-600">
+              <div className={cls("mt-3 text-xs", isDark ? "text-slate-300" : "text-zinc-600")}>
                 {view.offerType === "product" ? (
                   <>
                     Itens:{" "}
@@ -1175,36 +1395,59 @@ export default function PublicOffer() {
           </SectionCard>
         ) : null}
 
-        {/* Próximos passos */}
-        <SectionCard title="Próximos passos" subtitle="Rápido, sem enrolação.">
-          <NextSteps
-            offerType={view.offerType}
-            depositEnabled={view.depositEnabled}
-          />
-        </SectionCard>
-
         {/* Confirmação + CTA */}
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <div className="text-sm font-semibold text-zinc-900">
+        <div
+          className={cls(
+            "rounded-[30px] border p-5 shadow-[0_28px_70px_-46px_rgba(15,23,42,0.22)] sm:p-6",
+            isDark
+              ? "border-cyan-400/20 bg-[linear-gradient(160deg,rgba(8,47,73,0.42),rgba(15,23,42,0.92))]"
+              : "border-cyan-200/80 bg-[linear-gradient(160deg,rgba(239,246,255,0.98),rgba(255,255,255,0.96))]",
+          )}
+        >
+          <div
+            className={cls(
+              "text-lg font-black tracking-[-0.03em]",
+              isDark ? "text-white" : "text-slate-950",
+            )}
+          >
             Confirmar e aceitar
           </div>
-          <div className="mt-1 text-sm text-zinc-600">
+          <div
+            className={cls(
+              "mt-2 text-sm leading-6",
+              isDark ? "text-slate-300" : "text-zinc-600",
+            )}
+          >
             Antes de continuar, marque os itens abaixo.
           </div>
 
           <div className="mt-4 space-y-3">
-            <label className="flex items-start gap-3 rounded-xl border bg-zinc-50 p-3">
+            <label
+              className={cls(
+                "flex items-start gap-3 rounded-[24px] border p-4",
+                agreeTerms
+                  ? isDark
+                    ? "border-emerald-400/20 bg-emerald-400/10"
+                    : "border-emerald-200 bg-emerald-50"
+                  : isDark
+                    ? "border-white/10 bg-white/5"
+                    : "border-slate-200/80 bg-white/85",
+              )}
+            >
               <input
                 type="checkbox"
-                className="mt-1"
+                className={cls(
+                  "mt-1 h-4 w-4 rounded border text-cyan-600 focus:ring-cyan-500",
+                  isDark ? "border-white/20 bg-slate-950" : "border-slate-300 bg-white",
+                )}
                 checked={agreeTerms}
                 onChange={(e) => setAgreeTerms(e.target.checked)}
               />
               <div>
-                <div className="text-sm font-semibold text-zinc-900">
+                <div className={cls("text-sm font-semibold", isDark ? "text-white" : "text-zinc-900")}>
                   Li e concordo com as condições (quando aplicável).
                 </div>
-                <div className="text-xs text-zinc-600">
+                <div className={cls("text-xs", isDark ? "text-slate-300" : "text-zinc-600")}>
                   Você está aceitando o que foi descrito acima para esta
                   proposta.
                 </div>
@@ -1212,19 +1455,33 @@ export default function PublicOffer() {
             </label>
 
             {mustAckDeposit ? (
-              <label className="flex items-start gap-3 rounded-xl border bg-amber-50 p-3">
+              <label
+                className={cls(
+                  "flex items-start gap-3 rounded-[24px] border p-4",
+                  ackDeposit
+                    ? isDark
+                      ? "border-amber-400/20 bg-amber-400/10"
+                      : "border-amber-200 bg-amber-50"
+                    : isDark
+                      ? "border-white/10 bg-white/5"
+                      : "border-slate-200/80 bg-white/85",
+                )}
+              >
                 <input
                   type="checkbox"
-                  className="mt-1"
+                  className={cls(
+                    "mt-1 h-4 w-4 rounded border text-cyan-600 focus:ring-cyan-500",
+                    isDark ? "border-white/20 bg-slate-950" : "border-slate-300 bg-white",
+                  )}
                   checked={ackDeposit}
                   onChange={(e) => setAckDeposit(e.target.checked)}
                 />
                 <div>
-                  <div className="text-sm font-semibold text-zinc-900">
+                  <div className={cls("text-sm font-semibold", isDark ? "text-white" : "text-zinc-900")}>
                     Entendo que o sinal é de {fmtBRL(view.depositCents)} (
                     {view.depositPct}%).
                   </div>
-                  <div className="text-xs text-zinc-700">
+                  <div className={cls("text-xs", isDark ? "text-slate-300" : "text-zinc-700")}>
                     O sinal serve para confirmar o compromisso e iniciar o
                     processo.
                   </div>
@@ -1232,26 +1489,44 @@ export default function PublicOffer() {
               </label>
             ) : null}
 
-            <div className="rounded-xl border bg-white p-3 text-xs text-zinc-600">
+            <div
+              className={cls(
+                "rounded-[24px] border p-3 text-xs",
+                isDark
+                  ? "border-white/10 bg-white/5 text-slate-400"
+                  : "border-slate-200/80 bg-white/85 text-zinc-600",
+              )}
+            >
               Este link é exclusivo para esta proposta. Se você recebeu por
               engano, não prossiga.
             </div>
 
             {ctaError ? (
-              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+              <div
+                className={cls(
+                  "rounded-[24px] border p-3 text-sm",
+                  isDark
+                    ? "border-red-400/20 bg-red-400/10 text-red-100"
+                    : "border-red-200 bg-red-50 text-red-800",
+                )}
+              >
                 {ctaError}
               </div>
             ) : null}
           </div>
 
           <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="text-xs text-zinc-500">{view.ctaHint}</div>
+            <div className={cls("text-xs", isDark ? "text-slate-300" : "text-zinc-500")}>
+              {view.ctaHint}
+            </div>
             <Button
               type="button"
               onClick={onCta}
               disabled={!ctaEnabled || busy}
+              className="justify-between gap-3 rounded-2xl px-5"
             >
               {busy ? "Processando…" : view.ctaLabel}
+              <ArrowRight className="h-4 w-4" />
             </Button>
           </div>
         </div>
