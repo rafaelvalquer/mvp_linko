@@ -1,10 +1,9 @@
 import { env } from "../config/env.js";
 import { Offer } from "../models/Offer.js";
 import OfferReminderLog from "../models/OfferReminderLog.js";
+import { getPlanFeatureMatrix } from "../utils/planFeatures.js";
 import { queueOrSendWhatsApp } from "./whatsappOutbox.service.js";
 import {
-  assertNotificationFeatureSelection,
-  canSendWhatsAppPaymentReminders,
   resolveWorkspaceNotificationContext,
 } from "./notificationSettings.js";
 
@@ -195,6 +194,54 @@ function boolValue(v) {
   return v === true;
 }
 
+function getOfferPaymentReminderCapability(notificationContext) {
+  const whatsappEnvironment =
+    notificationContext?.capabilities?.environment?.whatsapp || {};
+  const planValue = notificationContext?.capabilities?.plan?.value || "start";
+  const planFeatures = {
+    ...getPlanFeatureMatrix(planValue),
+    ...(notificationContext?.capabilities?.plan?.features || {}),
+  };
+  const masterEnabled =
+    notificationContext?.settings?.whatsapp?.masterEnabled === true;
+
+  if (whatsappEnvironment.available !== true) {
+    return {
+      available: false,
+      code: "FEATURE_DISABLED",
+      reason:
+        whatsappEnvironment.reason || "WhatsApp desabilitado na configuracao do ambiente.",
+      status: 503,
+    };
+  }
+
+  if (planFeatures?.whatsappOfferPaymentReminders !== true) {
+    return {
+      available: false,
+      code: "PLAN_NOT_ALLOWED",
+      reason:
+        "Lembretes por WhatsApp disponiveis apenas nos planos Pro, Business e Enterprise.",
+      status: 403,
+    };
+  }
+
+  if (!masterEnabled) {
+    return {
+      available: false,
+      code: "WORKSPACE_SETTING_DISABLED",
+      reason: "WhatsApp desativado nas configuracoes do workspace.",
+      status: 409,
+    };
+  }
+
+  return {
+    available: true,
+    code: "",
+    reason: "",
+    status: 200,
+  };
+}
+
 export async function updateOfferPaymentReminderSettings({
   offerId,
   workspaceId,
@@ -216,13 +263,15 @@ export async function updateOfferPaymentReminderSettings({
       workspaceId,
       ownerUserId: ownerUserId || null,
     });
+    const capability = getOfferPaymentReminderCapability(notificationContext);
 
-    assertNotificationFeatureSelection({
-      context: notificationContext,
-      featureKey: "whatsappPaymentReminders",
-      requested: true,
-      action: "ativar lembretes de pagamento por WhatsApp",
-    });
+    if (!capability.available) {
+      const err = new Error(capability.reason);
+      err.status = capability.status;
+      err.statusCode = capability.status;
+      err.code = capability.code;
+      throw err;
+    }
   }
 
   await Offer.updateOne(
@@ -330,6 +379,7 @@ export async function dispatchPaymentReminder({
     workspaceId,
     ownerUserId: offer?.ownerUserId || userId || null,
   });
+  const capability = getOfferPaymentReminderCapability(notificationContext);
   const baseMeta = {
     ...(meta || {}),
     publicUrl,
@@ -337,21 +387,7 @@ export async function dispatchPaymentReminder({
     customerWhatsApp: String(offer?.customerWhatsApp || "").trim(),
   };
 
-  if (!canSendWhatsAppPaymentReminders(notificationContext)) {
-    const reasonCode =
-      notificationContext?.capabilities?.environment?.whatsapp?.available !==
-      true
-        ? "FEATURE_DISABLED"
-        : notificationContext?.capabilities?.plan?.features
-              ?.whatsappPaymentReminders !== true
-          ? "PLAN_NOT_ALLOWED"
-          : "WORKSPACE_SETTING_DISABLED";
-    const reasonMessage =
-      reasonCode === "PLAN_NOT_ALLOWED"
-        ? "Lembretes por WhatsApp disponiveis apenas nos planos Business e Enterprise."
-        : reasonCode === "WORKSPACE_SETTING_DISABLED"
-          ? "Lembretes por WhatsApp desativados nas configuracoes do workspace."
-          : "WhatsApp desabilitado na configuracao do ambiente.";
+  if (!capability.available) {
     const log = await createReminderLog({
       workspaceId,
       offerId: offer._id,
@@ -362,8 +398,8 @@ export async function dispatchPaymentReminder({
       to: to || "",
       message,
       error: {
-        message: reasonMessage,
-        code: reasonCode,
+        message: capability.reason,
+        code: capability.code,
       },
       sentAt: null,
       meta: baseMeta,
@@ -373,7 +409,7 @@ export async function dispatchPaymentReminder({
     return {
       ok: false,
       status: "skipped",
-      reason: reasonCode,
+      reason: capability.code,
       log,
       offer: await Offer.findById(offer._id).lean(),
     };
