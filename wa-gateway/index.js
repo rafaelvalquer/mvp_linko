@@ -14,9 +14,26 @@ const qrcode = qrcodePkg?.default ?? qrcodePkg;
 const { Client, LocalAuth } = whatsappPkg?.default ?? whatsappPkg;
 
 const PORT = Number(process.env.PORT || process.env.WA_PORT || 3010);
+const DEFAULT_WINDOWS_SESSION_PATH = "C:\\LuminorPay\\wa-session";
+const DEFAULT_WINDOWS_CHROME_PATH =
+  "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 
 const API_KEY = process.env.WA_API_KEY || "";
-const SESSION_PATH = process.env.WA_SESSION_PATH || "./wa-session";
+const SESSION_PATH_CONFIGURED =
+  process.env.WA_SESSION_PATH ||
+  (process.platform === "win32" ? DEFAULT_WINDOWS_SESSION_PATH : "./wa-session");
+const SESSION_PATH = path.resolve(SESSION_PATH_CONFIGURED);
+const CLIENT_ID =
+  String(process.env.WA_CLIENT_ID || "luminorpay-windows").trim() ||
+  "luminorpay-windows";
+const RECONNECT_BASE_MS = Math.max(
+  1000,
+  Number(process.env.WA_RECONNECT_BASE_MS || 5000) || 5000,
+);
+const RECONNECT_MAX_MS = Math.max(
+  RECONNECT_BASE_MS,
+  Number(process.env.WA_RECONNECT_MAX_MS || 60000) || 60000,
+);
 
 const HEADLESS =
   String(process.env.WA_PUPPETEER_HEADLESS || "true").toLowerCase() === "true";
@@ -35,7 +52,9 @@ const CHROME_PATH =
   process.env.WA_CHROME_PATH ||
   process.env.CHROME_BIN ||
   process.env.PUPPETEER_EXECUTABLE_PATH ||
-  "/usr/bin/google-chrome";
+  (process.platform === "win32"
+    ? DEFAULT_WINDOWS_CHROME_PATH
+    : "/usr/bin/google-chrome");
 
 let state = "INIT"; // INIT | STARTING | QR | READY | DISCONNECTED
 let phone = null;
@@ -46,6 +65,15 @@ let latestQrAt = null;
 
 let lastError = null;
 let lastErrorAt = null;
+let lastDisconnectReason = null;
+let lastDisconnectAt = null;
+let reconnectAttempts = 0;
+let reconnectCount = 0;
+let disconnectCount = 0;
+let nextReconnectAt = null;
+let reconnectDelayMs = null;
+let reconnectTimer = null;
+let clientGeneration = 0;
 
 let waClient = null;
 let isInitializing = false;
@@ -58,12 +86,34 @@ function touch() {
   lastSeen = nowISO();
 }
 
+function clearReconnectSchedule() {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  nextReconnectAt = null;
+  reconnectDelayMs = null;
+}
+
+function resetReconnectState() {
+  clearReconnectSchedule();
+  reconnectAttempts = 0;
+}
+
 function setLastError(where, err) {
   lastErrorAt = nowISO();
   lastError = `${where}: ${err?.message || String(err)}`;
   touch();
   console.error(`[wa] ERROR ${lastErrorAt} ${lastError}`);
   if (err?.stack) console.error(err.stack);
+}
+
+function markDisconnected(reason) {
+  state = "DISCONNECTED";
+  lastDisconnectAt = nowISO();
+  lastDisconnectReason = String(reason?.message || reason || "unknown");
+  disconnectCount += 1;
+  touch();
 }
 
 function compactForLog(text, max = 280) {
@@ -104,6 +154,7 @@ function resolveChromePath() {
     process.env.WA_CHROME_PATH,
     process.env.CHROME_BIN,
     process.env.PUPPETEER_EXECUTABLE_PATH,
+    process.platform === "win32" ? DEFAULT_WINDOWS_CHROME_PATH : null,
     "/usr/bin/google-chrome",
     "/usr/bin/google-chrome-stable",
     "/usr/bin/chromium",
@@ -118,18 +169,47 @@ function resolveChromePath() {
     process.env.WA_CHROME_PATH ||
     process.env.CHROME_BIN ||
     process.env.PUPPETEER_EXECUTABLE_PATH ||
-    "/usr/bin/google-chrome"
+    (process.platform === "win32"
+      ? DEFAULT_WINDOWS_CHROME_PATH
+      : "/usr/bin/google-chrome")
   );
+}
+
+function scheduleReconnect(reason = "unknown") {
+  clearReconnectSchedule();
+  reconnectAttempts += 1;
+  reconnectDelayMs = Math.min(
+    RECONNECT_MAX_MS,
+    RECONNECT_BASE_MS * 2 ** (reconnectAttempts - 1),
+  );
+  nextReconnectAt = new Date(Date.now() + reconnectDelayMs).toISOString();
+
+  console.warn(
+    `[wa] reconnect scheduled at=${nowISO()} reason="${compactForLog(
+      reason,
+      120,
+    )}" attempt=${reconnectAttempts} delayMs=${reconnectDelayMs}`,
+  );
+
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    nextReconnectAt = null;
+    reconnectDelayMs = null;
+    reconnectCount += 1;
+    initWhatsApp();
+  }, reconnectDelayMs);
 }
 
 process.on("unhandledRejection", (reason) => {
   setLastError("unhandledRejection", reason);
-  state = "DISCONNECTED";
+  markDisconnected(reason);
+  scheduleReconnect("unhandledRejection");
 });
 
 process.on("uncaughtException", (err) => {
   setLastError("uncaughtException", err);
-  state = "DISCONNECTED";
+  markDisconnected(err);
+  scheduleReconnect("uncaughtException");
 });
 
 function requireApiKey(req, res, next) {
@@ -182,16 +262,30 @@ app.get("/status", requireApiKey, (req, res) => {
   res.json({
     ok: true,
     state,
+    ready: state === "READY",
     phone,
     lastSeen,
     hasLatestQr: !!latestQr,
     latestQrAt,
     lastError,
     lastErrorAt,
+    lastDisconnectReason,
+    lastDisconnectAt,
     isInitializing,
+    clientId: CLIENT_ID,
+    cwd: process.cwd(),
     chromePathConfigured: CHROME_PATH,
     chromePathResolved: resolveChromePath(),
+    sessionPathConfigured: SESSION_PATH_CONFIGURED,
     sessionPath: SESSION_PATH,
+    sessionPathIsAbsolute: path.isAbsolute(SESSION_PATH_CONFIGURED),
+    reconnectAttempts,
+    reconnectCount,
+    disconnectCount,
+    reconnectBaseMs: RECONNECT_BASE_MS,
+    reconnectMaxMs: RECONNECT_MAX_MS,
+    reconnectDelayMs,
+    nextReconnectAt,
   });
 });
 
@@ -338,6 +432,7 @@ async function destroyClientSafe() {
     if (waClient) {
       const current = waClient;
       waClient = null;
+      current.removeAllListeners();
       await current.destroy();
     }
   } catch (err) {
@@ -354,16 +449,17 @@ async function initWhatsApp() {
   isInitializing = true;
   state = "STARTING";
   touch();
-
-  ensureDir(path.resolve(SESSION_PATH));
+  clearReconnectSchedule();
+  ensureDir(SESSION_PATH);
 
   const resolvedChromePath = resolveChromePath();
+  const generation = ++clientGeneration;
 
   console.log(
     `[wa] init at=${nowISO()} headless=${HEADLESS} sessionPath=${SESSION_PATH}`,
   );
   console.log(
-    `[wa] env apiKey=${maskApiKey(API_KEY)} qrPublic=${QR_PUBLIC} chromeConfigured=${CHROME_PATH} chromeResolved=${resolvedChromePath}`,
+    `[wa] env apiKey=${maskApiKey(API_KEY)} qrPublic=${QR_PUBLIC} clientId=${CLIENT_ID} chromeConfigured=${CHROME_PATH} chromeResolved=${resolvedChromePath}`,
   );
   console.log(
     `[wa] chromeExists=${fileExists(resolvedChromePath)} port=${PORT}`,
@@ -375,6 +471,7 @@ async function initWhatsApp() {
     waClient = new Client({
       authStrategy: new LocalAuth({
         dataPath: SESSION_PATH,
+        clientId: CLIENT_ID,
       }),
       puppeteer: {
         headless: HEADLESS,
@@ -393,6 +490,7 @@ async function initWhatsApp() {
     });
 
     waClient.on("qr", (qr) => {
+      if (generation !== clientGeneration) return;
       state = "QR";
       touch();
 
@@ -409,8 +507,10 @@ async function initWhatsApp() {
     });
 
     waClient.on("ready", () => {
+      if (generation !== clientGeneration) return;
       state = "READY";
       touch();
+      resetReconnectState();
 
       const widUser =
         waClient?.info?.wid?.user || waClient?.info?.me?.user || null;
@@ -421,16 +521,20 @@ async function initWhatsApp() {
       latestQrAt = null;
       lastError = null;
       lastErrorAt = null;
+      lastDisconnectReason = null;
+      lastDisconnectAt = null;
 
       console.log(`[wa] READY at=${nowISO()} phone=${phone || widUser || "?"}`);
     });
 
     waClient.on("authenticated", () => {
+      if (generation !== clientGeneration) return;
       touch();
       console.log(`[wa] AUTHENTICATED at=${nowISO()}`);
     });
 
     waClient.on("loading_screen", (percent, message) => {
+      if (generation !== clientGeneration) return;
       touch();
       console.log(
         `[wa] LOADING at=${nowISO()} percent=${percent} message="${compactForLog(
@@ -441,24 +545,30 @@ async function initWhatsApp() {
     });
 
     waClient.on("change_state", (nextState) => {
+      if (generation !== clientGeneration) return;
       touch();
       console.log(`[wa] CHANGE_STATE at=${nowISO()} nextState=${nextState}`);
     });
 
     waClient.on("auth_failure", (msg) => {
-      state = "DISCONNECTED";
+      if (generation !== clientGeneration) return;
+      markDisconnected(msg);
       setLastError("auth_failure", msg);
+      scheduleReconnect("auth_failure");
     });
 
     waClient.on("disconnected", (reason) => {
-      state = "DISCONNECTED";
+      if (generation !== clientGeneration) return;
+      markDisconnected(reason);
       setLastError("disconnected", reason);
+      scheduleReconnect("disconnected");
     });
 
     await waClient.initialize();
   } catch (e) {
-    state = "DISCONNECTED";
+    markDisconnected(e);
     setLastError("initWhatsApp", e);
+    scheduleReconnect("initWhatsApp");
   } finally {
     isInitializing = false;
   }

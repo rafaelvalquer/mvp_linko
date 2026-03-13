@@ -1,6 +1,27 @@
 const PAGE_WIDTH = 595;
 const PAGE_HEIGHT = 842;
 const PAGE_MARGIN = 40;
+const FOOTER_RESERVED = 70;
+const CONTENT_WIDTH = PAGE_WIDTH - PAGE_MARGIN * 2;
+const CONTENT_BOTTOM = PAGE_HEIGHT - FOOTER_RESERVED;
+
+const LAYOUT = {
+  pageTop: 28,
+  sectionGap: 18,
+  blockGap: 12,
+  cardGap: 16,
+  cardPaddingX: 16,
+  cardPaddingTop: 16,
+  cardPaddingBottom: 16,
+  headerPaddingTop: 24,
+  headerPaddingBottom: 22,
+  filterBandPadding: 14,
+  filterChipHeight: 24,
+  filterChipGap: 10,
+  metricAccentHeight: 4,
+  tableHeaderHeight: 24,
+  minTableRowsPerPage: 4,
+};
 
 const COLORS = {
   page: [248, 250, 252],
@@ -16,6 +37,10 @@ const COLORS = {
   slate: [148, 163, 184],
   surface: [241, 245, 249],
   softAmber: [254, 243, 199],
+  headerBlueTint: [191, 219, 254],
+  headerBlueSurface: [30, 41, 59],
+  headerGreenTint: [167, 243, 208],
+  headerGreenSurface: [22, 101, 52],
 };
 
 function asciiText(value) {
@@ -106,6 +131,14 @@ function approxTextWidth(text, size = 12) {
   return asciiText(text).length * size * 0.52;
 }
 
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function safeArray(value) {
+  return Array.isArray(value) ? value.filter(Boolean) : [];
+}
+
 function truncateText(text, maxWidth, size = 12) {
   const clean = asciiText(text);
   if (!maxWidth || approxTextWidth(clean, size) <= maxWidth) return clean;
@@ -117,7 +150,7 @@ function truncateText(text, maxWidth, size = 12) {
   return `${output}...`;
 }
 
-function wrapText(text, maxWidth, size = 12) {
+function wrapText(text, maxWidth, size = 12, maxLines = Number.POSITIVE_INFINITY) {
   const clean = asciiText(text);
   if (!clean) return [""];
   if (!maxWidth) return [clean];
@@ -127,17 +160,108 @@ function wrapText(text, maxWidth, size = 12) {
   let current = "";
 
   for (const word of words) {
-    const candidate = current ? `${current} ${word}` : word;
+    const normalizedWord =
+      approxTextWidth(word, size) > maxWidth ? truncateText(word, maxWidth, size) : word;
+    const candidate = current ? `${current} ${normalizedWord}` : normalizedWord;
+
     if (!current || approxTextWidth(candidate, size) <= maxWidth) {
       current = candidate;
       continue;
     }
+
     lines.push(current);
-    current = word;
+    current = normalizedWord;
   }
 
   if (current) lines.push(current);
+
+  if (Number.isFinite(maxLines) && lines.length > maxLines) {
+    const visible = lines.slice(0, maxLines);
+    visible[maxLines - 1] = truncateText(`${visible[maxLines - 1]}...`, maxWidth, size);
+    return visible;
+  }
+
   return lines.length ? lines : [clean];
+}
+
+function measureTextBlock(text, options = {}) {
+  const {
+    width = null,
+    size = 12,
+    lineHeight = size + 4,
+    truncate = false,
+    maxLines = Number.POSITIVE_INFINITY,
+  } = options;
+  const lines = truncate ? [truncateText(text, width, size)] : wrapText(text, width, size, maxLines);
+  return {
+    lines,
+    height: lines.length * lineHeight,
+  };
+}
+
+function niceCeil(value) {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 1;
+  const exponent = 10 ** Math.floor(Math.log10(numeric));
+  const fraction = numeric / exponent;
+  if (fraction <= 1) return 1 * exponent;
+  if (fraction <= 2) return 2 * exponent;
+  if (fraction <= 5) return 5 * exponent;
+  return 10 * exponent;
+}
+
+function shortAxisLabel(value) {
+  const raw = asciiText(value);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const [, month, day] = raw.split("-");
+    return `${day}/${month}`;
+  }
+  return truncateText(raw, 42, 8);
+}
+
+function pickAxisIndexes(length, maxLabels = 4) {
+  if (length <= 0) return [];
+  if (length <= maxLabels) return Array.from({ length }, (_, index) => index);
+  const indexes = new Set([0, length - 1]);
+  for (let step = 1; step < maxLabels - 1; step += 1) {
+    indexes.add(Math.round(((length - 1) * step) / (maxLabels - 1)));
+  }
+  return Array.from(indexes).sort((a, b) => a - b);
+}
+
+function buildLegendRows(items, maxWidth, size = 8) {
+  const rows = [];
+  let currentRow = [];
+  let currentWidth = 0;
+
+  for (const item of safeArray(items)) {
+    const itemWidth = clamp(approxTextWidth(item.label || "", size) + 28, 68, Math.max(68, maxWidth));
+    if (currentRow.length && currentWidth + itemWidth > maxWidth) {
+      rows.push(currentRow);
+      currentRow = [];
+      currentWidth = 0;
+    }
+    currentRow.push({ ...item, width: itemWidth });
+    currentWidth += itemWidth + 14;
+  }
+
+  if (currentRow.length) rows.push(currentRow);
+  return rows;
+}
+
+function measureLegendHeight(items, maxWidth, size = 8) {
+  const rows = buildLegendRows(items, maxWidth, size);
+  return rows.length ? rows.length * 18 : 0;
+}
+
+function buildAutoTableNote(startIndex, renderedRows, totalRows) {
+  if (!totalRows) return "Sem dados no periodo exportado.";
+  const start = startIndex + 1;
+  const end = startIndex + renderedRows;
+  if (start === 1 && end === totalRows) {
+    return `Total exportado: ${totalRows} linha(s).`;
+  }
+  return `Linhas ${start} a ${end} de ${totalRows} exportadas no PDF.`;
 }
 
 class PdfPage {
@@ -208,11 +332,12 @@ class PdfPage {
       lineHeight = size + 4,
       align = "left",
       truncate = false,
+      maxLines = Number.POSITIVE_INFINITY,
     } = options;
 
     const lines = truncate
       ? [truncateText(textValue, width, size)]
-      : wrapText(textValue, width, size);
+      : wrapText(textValue, width, size, maxLines);
 
     let currentTop = top;
     for (const line of lines) {
@@ -239,65 +364,253 @@ class PdfPage {
   }
 }
 
-function drawHeader(page, { title, subtitle, metaLeft = [], metaRight = [] }) {
-  page.rect(PAGE_MARGIN, 28, PAGE_WIDTH - PAGE_MARGIN * 2, 108, {
+function drawMetaStack(page, { x, top, width, items = [], fillColor, textColor }) {
+  const lines = safeArray(items);
+  let cursor = top;
+
+  for (const line of lines) {
+    page.rect(x, cursor, width, 22, {
+      fillColor,
+      strokeColor: fillColor,
+    });
+    page.text(x + 10, cursor + 7, line, {
+      size: 9,
+      color: textColor,
+      width: width - 20,
+      truncate: true,
+    });
+    cursor += 28;
+  }
+
+  return cursor - top;
+}
+
+function measureMetaStackHeight(items = []) {
+  return safeArray(items).length * 28;
+}
+
+function drawHeader(page, { top = LAYOUT.pageTop, title, subtitle, metaLeft = [], metaRight = [] }) {
+  const leftWidth = 296;
+  const rightWidth = CONTENT_WIDTH - leftWidth - 34;
+  const titleMetrics = measureTextBlock(title, {
+    width: leftWidth,
+    size: 24,
+    lineHeight: 28,
+    maxLines: 3,
+  });
+  const subtitleMetrics = measureTextBlock(subtitle, {
+    width: leftWidth,
+    size: 11,
+    lineHeight: 15,
+    maxLines: 3,
+  });
+
+  const leftContentHeight =
+    titleMetrics.height +
+    (subtitle ? 10 + subtitleMetrics.height : 0);
+  const metaGap = metaLeft.length && metaRight.length ? 10 : 0;
+  const rightContentHeight =
+    measureMetaStackHeight(metaLeft) +
+    metaGap +
+    measureMetaStackHeight(metaRight);
+  const contentHeight = Math.max(leftContentHeight, rightContentHeight, 72);
+  const height = LAYOUT.headerPaddingTop + contentHeight + LAYOUT.headerPaddingBottom;
+
+  page.rect(PAGE_MARGIN, top, CONTENT_WIDTH, height, {
     fillColor: COLORS.ink,
   });
-  page.rect(PAGE_MARGIN + 18, 44, 88, 6, { fillColor: COLORS.blue });
-  page.rect(PAGE_MARGIN + 112, 44, 52, 6, { fillColor: COLORS.teal });
-  page.text(PAGE_MARGIN + 22, 58, title, {
+  page.rect(PAGE_MARGIN + 18, top + 16, 88, 6, { fillColor: COLORS.blue });
+  page.rect(PAGE_MARGIN + 112, top + 16, 52, 6, { fillColor: COLORS.teal });
+
+  let leftCursor = top + 30;
+  leftCursor += page.text(PAGE_MARGIN + 22, leftCursor, title, {
     font: "F2",
     size: 24,
     color: COLORS.white,
-    width: 300,
+    width: leftWidth,
+    lineHeight: 28,
+    maxLines: 3,
   });
-  page.text(PAGE_MARGIN + 22, 92, subtitle, {
-    size: 11,
-    color: [203, 213, 225],
-    width: 320,
-  });
-
-  let metaTop = 58;
-  for (const line of metaLeft) {
-    page.text(PAGE_MARGIN + 360, metaTop, line, {
-      size: 10,
-      color: [191, 219, 254],
-      width: 170,
-      align: "right",
+  if (subtitle) {
+    leftCursor += 10;
+    page.text(PAGE_MARGIN + 22, leftCursor, subtitle, {
+      size: 11,
+      color: [203, 213, 225],
+      width: leftWidth,
+      lineHeight: 15,
+      maxLines: 3,
     });
-    metaTop += 16;
   }
 
-  metaTop = 58;
-  for (const line of metaRight) {
-    page.text(PAGE_MARGIN + 360, metaTop + 48, line, {
-      size: 10,
-      color: [167, 243, 208],
-      width: 170,
-      align: "right",
-    });
-    metaTop += 16;
-  }
+  const rightX = PAGE_MARGIN + CONTENT_WIDTH - rightWidth - 22;
+  let metaTop = top + 24;
+  metaTop += drawMetaStack(page, {
+    x: rightX,
+    top: metaTop,
+    width: rightWidth,
+    items: metaLeft,
+    fillColor: COLORS.headerBlueSurface,
+    textColor: COLORS.headerBlueTint,
+  });
+  if (metaLeft.length && metaRight.length) metaTop += 10;
+  drawMetaStack(page, {
+    x: rightX,
+    top: metaTop,
+    width: rightWidth,
+    items: metaRight,
+    fillColor: COLORS.headerGreenSurface,
+    textColor: COLORS.headerGreenTint,
+  });
+
+  return height;
 }
 
-function drawCard(page, { x, top, width, height, title, subtitle }) {
+function drawFilterBand(page, { top, items = [] }) {
+  const filters = safeArray(items).map((item) => truncateText(item, 180, 10));
+  if (!filters.length) return 0;
+
+  const maxInnerWidth = CONTENT_WIDTH - LAYOUT.filterBandPadding * 2;
+  const rows = [];
+  let currentRow = [];
+  let currentWidth = 0;
+
+  for (const item of filters) {
+    const chipWidth = clamp(approxTextWidth(item, 10) + 22, 88, 200);
+    if (currentRow.length && currentWidth + chipWidth > maxInnerWidth) {
+      rows.push(currentRow);
+      currentRow = [];
+      currentWidth = 0;
+    }
+    currentRow.push({ label: item, width: chipWidth });
+    currentWidth += chipWidth + LAYOUT.filterChipGap;
+  }
+
+  if (currentRow.length) rows.push(currentRow);
+
+  const height =
+    LAYOUT.filterBandPadding * 2 +
+    rows.length * LAYOUT.filterChipHeight +
+    Math.max(0, rows.length - 1) * 8;
+
+  page.rect(PAGE_MARGIN, top, CONTENT_WIDTH, height, {
+    fillColor: COLORS.surface,
+    strokeColor: COLORS.line,
+  });
+
+  let cursorTop = top + LAYOUT.filterBandPadding;
+  for (const row of rows) {
+    let cursorX = PAGE_MARGIN + LAYOUT.filterBandPadding;
+    for (const item of row) {
+      page.rect(cursorX, cursorTop, item.width, LAYOUT.filterChipHeight, {
+        fillColor: COLORS.white,
+        strokeColor: COLORS.line,
+      });
+      page.text(cursorX + 9, cursorTop + 8, item.label, {
+        size: 10,
+        color: COLORS.muted,
+        width: item.width - 18,
+        truncate: true,
+      });
+      cursorX += item.width + LAYOUT.filterChipGap;
+    }
+    cursorTop += LAYOUT.filterChipHeight + 8;
+  }
+
+  return height;
+}
+
+function measureCardHeaderHeight({ width, title, subtitle }) {
+  const innerWidth = width - LAYOUT.cardPaddingX * 2;
+  const titleMetrics = measureTextBlock(title, {
+    width: innerWidth,
+    size: 12,
+    lineHeight: 16,
+    maxLines: 3,
+  });
+  const subtitleMetrics = subtitle
+    ? measureTextBlock(subtitle, {
+        width: innerWidth,
+        size: 9,
+        lineHeight: 13,
+        maxLines: 3,
+      })
+    : { height: 0 };
+
+  return (
+    LAYOUT.cardPaddingTop +
+    titleMetrics.height +
+    (subtitle ? 4 + subtitleMetrics.height : 0) +
+    14
+  );
+}
+
+function drawCardShell(page, { x, top, width, height, title, subtitle, accent = COLORS.blue }) {
   page.rect(x, top, width, height, {
     fillColor: COLORS.white,
     strokeColor: COLORS.line,
   });
-  page.rect(x, top, width, 4, { fillColor: COLORS.blue });
-  page.text(x + 16, top + 16, title, {
+  page.rect(x, top, width, 4, { fillColor: accent });
+
+  const innerX = x + LAYOUT.cardPaddingX;
+  const innerWidth = width - LAYOUT.cardPaddingX * 2;
+  let cursor = top + LAYOUT.cardPaddingTop;
+
+  cursor += page.text(innerX, cursor, title, {
     font: "F2",
     size: 12,
-    width: width - 32,
+    width: innerWidth,
+    lineHeight: 16,
+    maxLines: 3,
   });
+
   if (subtitle) {
-    page.text(x + 16, top + 34, subtitle, {
+    cursor += 4;
+    cursor += page.text(innerX, cursor, subtitle, {
       size: 9,
       color: COLORS.muted,
-      width: width - 32,
+      width: innerWidth,
+      lineHeight: 13,
+      maxLines: 3,
     });
   }
+
+  cursor += 14;
+
+  return {
+    innerX,
+    innerWidth,
+    bodyTop: cursor,
+    bodyBottom: top + height - LAYOUT.cardPaddingBottom,
+  };
+}
+
+function measureMetricCardHeight(item, width) {
+  const innerWidth = width - 28;
+  const titleHeight = measureTextBlock(item.title, {
+    width: innerWidth,
+    size: 11,
+    lineHeight: 14,
+    maxLines: 3,
+  }).height;
+  const valueHeight = measureTextBlock(item.value, {
+    width: innerWidth,
+    size: 18,
+    lineHeight: 22,
+    maxLines: 2,
+  }).height;
+  const subtitleHeight = item.subtitle
+    ? measureTextBlock(item.subtitle, {
+        width: innerWidth,
+        size: 9,
+        lineHeight: 12,
+        maxLines: 3,
+      }).height
+    : 0;
+
+  return Math.max(
+    96,
+    14 + titleHeight + 10 + valueHeight + (subtitleHeight ? 10 + subtitleHeight : 0) + 16,
+  );
 }
 
 function drawMetricCard(page, { x, top, width, height, title, subtitle, value, accent }) {
@@ -305,59 +618,85 @@ function drawMetricCard(page, { x, top, width, height, title, subtitle, value, a
     fillColor: COLORS.white,
     strokeColor: COLORS.line,
   });
-  page.rect(x, top, width, 4, { fillColor: accent || COLORS.blue });
-  page.text(x + 14, top + 14, title, {
+  page.rect(x, top, width, LAYOUT.metricAccentHeight, {
+    fillColor: accent || COLORS.blue,
+  });
+
+  const innerX = x + 14;
+  const innerWidth = width - 28;
+  let cursor = top + 14;
+
+  cursor += page.text(innerX, cursor, title, {
     font: "F2",
     size: 11,
-    width: width - 28,
+    width: innerWidth,
+    lineHeight: 14,
+    maxLines: 3,
   });
-  page.text(x + 14, top + 34, value, {
+  cursor += 10;
+  cursor += page.text(innerX, cursor, value, {
     font: "F2",
     size: 18,
     color: COLORS.ink,
-    width: width - 28,
+    width: innerWidth,
+    lineHeight: 22,
+    maxLines: 2,
   });
+
   if (subtitle) {
-    page.text(x + 14, top + 60, subtitle, {
+    cursor += 10;
+    page.text(innerX, cursor, subtitle, {
       size: 9,
       color: COLORS.muted,
-      width: width - 28,
+      width: innerWidth,
+      lineHeight: 12,
+      maxLines: 3,
     });
   }
-}
 
-function drawFilterBand(page, { top, items }) {
-  page.rect(PAGE_MARGIN, top, PAGE_WIDTH - PAGE_MARGIN * 2, 44, {
-    fillColor: COLORS.surface,
-    strokeColor: COLORS.line,
-  });
-
-  let currentX = PAGE_MARGIN + 16;
-  for (const item of items) {
-    const label = truncateText(item, 150, 10);
-    const width = Math.min(160, approxTextWidth(label, 10) + 18);
-    page.rect(currentX, top + 10, width, 24, {
-      fillColor: COLORS.white,
-      strokeColor: COLORS.line,
-    });
-    page.text(currentX + 9, top + 17, label, {
-      size: 10,
-      color: COLORS.muted,
-      width: width - 18,
-      truncate: true,
-    });
-    currentX += width + 10;
-    if (currentX > PAGE_WIDTH - PAGE_MARGIN - 80) break;
-  }
+  return height;
 }
 
 function drawEmptyChart(page, x, top, width, height, message) {
-  page.text(x, top + height / 2 - 8, message, {
+  page.text(x, top + Math.max(0, height / 2 - 8), message, {
     width,
     size: 10,
     color: COLORS.muted,
     align: "center",
   });
+}
+
+function drawLegend(page, { x, top, width, items = [] }) {
+  const rows = buildLegendRows(items, width);
+  let cursorTop = top;
+
+  for (const row of rows) {
+    let cursorX = x;
+    for (const item of row) {
+      page.rect(cursorX, cursorTop + 3, 10, 10, { fillColor: item.color || COLORS.blue });
+      page.text(cursorX + 16, cursorTop, item.label || "", {
+        size: 8,
+        color: COLORS.muted,
+        width: item.width - 16,
+        truncate: true,
+      });
+      cursorX += item.width + 14;
+    }
+    cursorTop += 18;
+  }
+
+  return rows.length ? rows.length * 18 : 0;
+}
+
+function measureChartCardHeight(config, width) {
+  const legendHeight = measureLegendHeight(config.series, width - LAYOUT.cardPaddingX * 2);
+  return (
+    measureCardHeaderHeight({ width, title: config.title, subtitle: config.subtitle }) +
+    legendHeight +
+    (legendHeight ? 10 : 0) +
+    Number(config.plotHeight || 150) +
+    18
+  );
 }
 
 function drawLineChartCard(page, config) {
@@ -374,39 +713,49 @@ function drawLineChartCard(page, config) {
     yFormatter = compactMoney,
   } = config;
 
-  drawCard(page, { x, top, width, height, title, subtitle });
+  const shell = drawCardShell(page, {
+    x,
+    top,
+    width,
+    height,
+    title,
+    subtitle,
+    accent: series?.[0]?.color || COLORS.blue,
+  });
 
-  const plot = {
-    x: x + 18,
-    top: top + 54,
-    width: width - 36,
-    height: height - 74,
-  };
+  const legendHeight = drawLegend(page, {
+    x: shell.innerX,
+    top: shell.bodyTop,
+    width: shell.innerWidth,
+    items: series,
+  });
+  const plotTop = shell.bodyTop + legendHeight + (legendHeight ? 10 : 0);
+  const plotHeight = Math.max(96, shell.bodyBottom - plotTop);
 
   if (!data.length || !series.length) {
-    drawEmptyChart(page, plot.x, plot.top, plot.width, plot.height, "Sem dados no periodo");
-    return;
+    drawEmptyChart(page, shell.innerX, plotTop, shell.innerWidth, plotHeight, "Sem dados no periodo");
+    return height;
   }
 
   const values = [];
   for (const row of data) {
     for (const item of series) values.push(Number(row?.[item.key] || 0));
   }
-  const maxValue = Math.max(...values, 1);
-  const minValue = 0;
-  const leftAxisWidth = 48;
+
+  const maxValue = niceCeil(Math.max(...values, 0));
+  const leftAxisWidth = 52;
   const bottomAxisHeight = 24;
-  const chartX = plot.x + leftAxisWidth;
-  const chartTop = plot.top + 6;
-  const chartWidth = plot.width - leftAxisWidth - 8;
-  const chartHeight = plot.height - bottomAxisHeight - 12;
+  const chartX = shell.innerX + leftAxisWidth;
+  const chartTop = plotTop + 6;
+  const chartWidth = shell.innerWidth - leftAxisWidth - 8;
+  const chartHeight = Math.max(64, plotHeight - bottomAxisHeight - 10);
 
   for (let index = 0; index <= 4; index += 1) {
     const ratio = index / 4;
     const y = chartTop + chartHeight * ratio;
     page.line(chartX, y, chartX + chartWidth, y, COLORS.line, 1);
-    const value = Math.round(maxValue - (maxValue - minValue) * ratio);
-    page.text(plot.x, y - 6, yFormatter(value), {
+    const value = Math.round(maxValue - maxValue * ratio);
+    page.text(shell.innerX, y - 6, yFormatter(value), {
       size: 8,
       color: COLORS.muted,
       width: leftAxisWidth - 8,
@@ -426,45 +775,32 @@ function drawLineChartCard(page, config) {
   );
 
   const step = data.length > 1 ? chartWidth / (data.length - 1) : chartWidth / 2;
-  const xIndexes = [0, Math.floor((data.length - 1) / 2), data.length - 1]
-    .filter((value, index, items) => items.indexOf(value) === index);
-
-  for (const index of xIndexes) {
+  for (const index of pickAxisIndexes(data.length, 4)) {
     const row = data[index];
-    const label = row?.label || row?.[xLabelKey] || "-";
+    const label = shortAxisLabel(row?.label || row?.[xLabelKey] || "-");
     const xPos = chartX + (data.length > 1 ? step * index : chartWidth / 2);
-    page.text(xPos - 28, chartTop + chartHeight + 10, label, {
+    page.text(xPos - 24, chartTop + chartHeight + 10, label, {
       size: 8,
       color: COLORS.muted,
-      width: 56,
+      width: 48,
       align: "center",
       truncate: true,
     });
   }
 
-  let legendX = x + 18;
-  for (const item of series) {
-    page.rect(legendX, top + 18, 10, 10, { fillColor: item.color });
-    page.text(legendX + 14, top + 16, item.label, {
-      size: 8,
-      color: COLORS.muted,
-      width: 90,
-      truncate: true,
-    });
-    legendX += 100;
-  }
-
   for (const item of series) {
     const points = data.map((row, index) => {
       const value = Number(row?.[item.key] || 0);
-      const ratio = value / maxValue;
+      const ratio = maxValue > 0 ? value / maxValue : 0;
       return {
         x: chartX + (data.length > 1 ? step * index : chartWidth / 2),
         top: chartTop + chartHeight - chartHeight * ratio,
       };
     });
-    page.polyline(points, item.color, 2.2);
+    page.polyline(points, item.color || COLORS.blue, 2.2);
   }
+
+  return height;
 }
 
 function drawGroupedBarChartCard(page, config) {
@@ -481,38 +817,49 @@ function drawGroupedBarChartCard(page, config) {
     yFormatter = compactMoney,
   } = config;
 
-  drawCard(page, { x, top, width, height, title, subtitle });
+  const shell = drawCardShell(page, {
+    x,
+    top,
+    width,
+    height,
+    title,
+    subtitle,
+    accent: series?.[0]?.color || COLORS.blue,
+  });
 
-  const plot = {
-    x: x + 18,
-    top: top + 54,
-    width: width - 36,
-    height: height - 74,
-  };
+  const legendHeight = drawLegend(page, {
+    x: shell.innerX,
+    top: shell.bodyTop,
+    width: shell.innerWidth,
+    items: series,
+  });
+  const plotTop = shell.bodyTop + legendHeight + (legendHeight ? 10 : 0);
+  const plotHeight = Math.max(96, shell.bodyBottom - plotTop);
 
   if (!data.length || !series.length) {
-    drawEmptyChart(page, plot.x, plot.top, plot.width, plot.height, "Sem dados no periodo");
-    return;
+    drawEmptyChart(page, shell.innerX, plotTop, shell.innerWidth, plotHeight, "Sem dados no periodo");
+    return height;
   }
 
   const values = [];
   for (const row of data) {
     for (const item of series) values.push(Number(row?.[item.key] || 0));
   }
-  const maxValue = Math.max(...values, 1);
-  const leftAxisWidth = 48;
+
+  const maxValue = niceCeil(Math.max(...values, 0));
+  const leftAxisWidth = 52;
   const bottomAxisHeight = 24;
-  const chartX = plot.x + leftAxisWidth;
-  const chartTop = plot.top + 6;
-  const chartWidth = plot.width - leftAxisWidth - 8;
-  const chartHeight = plot.height - bottomAxisHeight - 12;
+  const chartX = shell.innerX + leftAxisWidth;
+  const chartTop = plotTop + 6;
+  const chartWidth = shell.innerWidth - leftAxisWidth - 8;
+  const chartHeight = Math.max(64, plotHeight - bottomAxisHeight - 10);
 
   for (let index = 0; index <= 4; index += 1) {
     const ratio = index / 4;
     const y = chartTop + chartHeight * ratio;
     page.line(chartX, y, chartX + chartWidth, y, COLORS.line, 1);
     const value = Math.round(maxValue - maxValue * ratio);
-    page.text(plot.x, y - 6, yFormatter(value), {
+    page.text(shell.innerX, y - 6, yFormatter(value), {
       size: 8,
       color: COLORS.muted,
       width: leftAxisWidth - 8,
@@ -532,38 +879,23 @@ function drawGroupedBarChartCard(page, config) {
   );
 
   const groupWidth = chartWidth / Math.max(data.length, 1);
-  const totalBarWidth = Math.min(44, Math.max(12, groupWidth - 8));
+  const totalBarWidth = Math.min(48, Math.max(12, groupWidth - 10));
   const singleBarWidth = Math.max(
     6,
     (totalBarWidth - Math.max(0, (series.length - 1) * 4)) / series.length,
   );
 
-  const labelIndexes = [0, Math.floor((data.length - 1) / 2), data.length - 1]
-    .filter((value, index, items) => items.indexOf(value) === index);
-
-  for (const idx of labelIndexes) {
+  for (const idx of pickAxisIndexes(data.length, 4)) {
     const row = data[idx];
-    const label = row?.[xLabelKey] || row?.label || "-";
+    const label = shortAxisLabel(row?.[xLabelKey] || row?.label || "-");
     const xPos = chartX + groupWidth * idx + groupWidth / 2;
-    page.text(xPos - 28, chartTop + chartHeight + 10, label, {
+    page.text(xPos - 24, chartTop + chartHeight + 10, label, {
       size: 8,
       color: COLORS.muted,
-      width: 56,
+      width: 48,
       align: "center",
       truncate: true,
     });
-  }
-
-  let legendX = x + 18;
-  for (const item of series) {
-    page.rect(legendX, top + 18, 10, 10, { fillColor: item.color });
-    page.text(legendX + 14, top + 16, item.label, {
-      size: 8,
-      color: COLORS.muted,
-      width: 90,
-      truncate: true,
-    });
-    legendX += 100;
   }
 
   for (let rowIndex = 0; rowIndex < data.length; rowIndex += 1) {
@@ -571,13 +903,52 @@ function drawGroupedBarChartCard(page, config) {
     for (let seriesIndex = 0; seriesIndex < series.length; seriesIndex += 1) {
       const item = series[seriesIndex];
       const value = Number(data[rowIndex]?.[item.key] || 0);
-      const barHeight = (chartHeight * value) / maxValue;
+      const barHeight = maxValue > 0 ? (chartHeight * value) / maxValue : 0;
       const xPos = baseX + seriesIndex * (singleBarWidth + 4);
       page.rect(xPos, chartTop + chartHeight - barHeight, singleBarWidth, barHeight, {
-        fillColor: item.color,
+        fillColor: item.color || COLORS.blue,
       });
     }
   }
+
+  return height;
+}
+
+function resolveTableNote(config) {
+  if (config.note) return asciiText(config.note);
+  return buildAutoTableNote(config.startIndex || 0, config.rows?.length || 0, config.totalRows || 0);
+}
+
+function measureTableBaseHeight(config) {
+  const noteText = resolveTableNote(config);
+  const noteHeight = noteText
+    ? 10 +
+      measureTextBlock(noteText, {
+        width: config.width - LAYOUT.cardPaddingX * 2,
+        size: 8,
+        lineHeight: 11,
+        maxLines: 2,
+      }).height
+    : 0;
+
+  return measureCardHeaderHeight({
+    width: config.width,
+    title: config.title,
+    subtitle: config.subtitle,
+  }) + LAYOUT.tableHeaderHeight + noteHeight + 14;
+}
+
+function measureTableCardHeight(config) {
+  const rowsCount = Array.isArray(config.rows) ? config.rows.length : Number(config.rowsCount || 0);
+  const bodyHeight = rowsCount > 0 ? rowsCount * config.rowHeight : 56;
+  return measureTableBaseHeight(config) + bodyHeight;
+}
+
+function computeTableCapacity(config) {
+  const baseHeight = measureTableBaseHeight(config);
+  const availableForRows = config.availableHeight - baseHeight;
+  if (availableForRows <= 0) return 0;
+  return Math.floor(availableForRows / config.rowHeight);
 }
 
 function drawTableCard(page, config) {
@@ -585,35 +956,61 @@ function drawTableCard(page, config) {
     x,
     top,
     width,
-    height,
     title,
     subtitle,
     columns = [],
     rows = [],
     rowHeight = 24,
-    note = "",
+    startIndex = 0,
+    totalRows = rows.length,
+    accent = COLORS.blue,
   } = config;
 
-  drawCard(page, { x, top, width, height, title, subtitle });
+  const noteText = resolveTableNote({ ...config, rows, startIndex, totalRows });
+  const noteMetrics = noteText
+    ? measureTextBlock(noteText, {
+        width: width - LAYOUT.cardPaddingX * 2,
+        size: 8,
+        lineHeight: 11,
+        maxLines: 2,
+      })
+    : { height: 0 };
 
-  const innerX = x + 14;
-  const innerTop = top + 50;
-  const innerWidth = width - 28;
-  const headerHeight = 24;
-  const availableHeight = height - 72;
-  const maxRows = Math.max(1, Math.floor((availableHeight - headerHeight) / rowHeight));
-  const visibleRows = rows.slice(0, maxRows);
-  const scale = innerWidth / columns.reduce((sum, column) => sum + column.width, 0);
+  const height = measureTableCardHeight({
+    ...config,
+    rows,
+    startIndex,
+    totalRows,
+    note: noteText,
+    rowHeight,
+  });
 
-  page.rect(innerX, innerTop, innerWidth, headerHeight, {
+  const shell = drawCardShell(page, {
+    x,
+    top,
+    width,
+    height,
+    title,
+    subtitle,
+    accent,
+  });
+
+  const innerX = shell.innerX;
+  const innerWidth = shell.innerWidth;
+  let cursor = shell.bodyTop;
+
+  page.rect(innerX, cursor, innerWidth, LAYOUT.tableHeaderHeight, {
     fillColor: COLORS.surface,
     strokeColor: COLORS.line,
   });
 
+  const totalColumnWidth = columns.reduce((sum, column) => sum + column.width, 0) || 1;
+  const scale = innerWidth / totalColumnWidth;
+
   let cursorX = innerX + 8;
   for (const column of columns) {
     const cellWidth = column.width * scale;
-    page.text(cursorX, innerTop + 7, column.label, {
+    page.text(cursorX, cursor + 8, column.label, {
       font: "F2",
       size: 8,
       color: COLORS.muted,
@@ -623,42 +1020,51 @@ function drawTableCard(page, config) {
     cursorX += cellWidth;
   }
 
-  for (let index = 0; index < visibleRows.length; index += 1) {
-    const rowTop = innerTop + headerHeight + index * rowHeight;
-    page.line(innerX, rowTop, innerX + innerWidth, rowTop, COLORS.line, 1);
-    cursorX = innerX + 8;
+  cursor += LAYOUT.tableHeaderHeight;
 
-    for (const column of columns) {
-      const cellWidth = column.width * scale;
-      const value = column.render(visibleRows[index]);
-      page.text(cursorX, rowTop + 7, value, {
-        size: 8,
-        color: COLORS.ink,
-        width: cellWidth - 10,
-        truncate: true,
-      });
-      cursorX += cellWidth;
+  if (!rows.length) {
+    page.line(innerX, cursor, innerX + innerWidth, cursor, COLORS.line, 1);
+    page.text(innerX, cursor + 20, "Sem dados no periodo", {
+      width: innerWidth,
+      size: 9,
+      color: COLORS.muted,
+      align: "center",
+    });
+    cursor += 56;
+  } else {
+    for (let index = 0; index < rows.length; index += 1) {
+      const rowTop = cursor + index * rowHeight;
+      page.line(innerX, rowTop, innerX + innerWidth, rowTop, COLORS.line, 1);
+      cursorX = innerX + 8;
+
+      for (const column of columns) {
+        const cellWidth = column.width * scale;
+        const value = column.render(rows[index]);
+        page.text(cursorX, rowTop + 8, value, {
+          size: 8,
+          color: COLORS.ink,
+          width: cellWidth - 10,
+          truncate: true,
+        });
+        cursorX += cellWidth;
+      }
     }
+    cursor += rows.length * rowHeight;
+    page.line(innerX, cursor, innerX + innerWidth, cursor, COLORS.line, 1);
   }
 
-  if (note) {
-    page.text(innerX, top + height - 18, note, {
+  if (noteText) {
+    const noteTop = top + height - 14 - noteMetrics.height;
+    page.text(innerX, noteTop, noteText, {
       size: 8,
       color: COLORS.muted,
       width: innerWidth,
+      lineHeight: 11,
+      maxLines: 2,
     });
-  } else if (rows.length > visibleRows.length) {
-    page.text(
-      innerX,
-      top + height - 18,
-      `Mostrando ${visibleRows.length} de ${rows.length} linhas no PDF.`,
-      {
-        size: 8,
-        color: COLORS.muted,
-        width: innerWidth,
-      },
-    );
   }
+
+  return height;
 }
 
 function drawFooter(page, pageNumber, totalPages) {
@@ -724,35 +1130,269 @@ function buildPdfBuffer(pages) {
   return Buffer.from(pdf, "utf8");
 }
 
-function buildGeneralPages(snapshot) {
-  const page1 = new PdfPage();
-  page1.fillPage(COLORS.page);
-  drawHeader(page1, {
+class ReportComposer {
+  constructor(defaultPage) {
+    this.defaultPage = defaultPage;
+    this.pages = [];
+    this.page = null;
+    this.cursor = 0;
+    this.pageBodyTop = 0;
+  }
+
+  startPage(overrides = {}) {
+    const config = {
+      ...this.defaultPage,
+      ...overrides,
+    };
+    const page = new PdfPage();
+    page.fillPage(COLORS.page);
+
+    const headerHeight = drawHeader(page, {
+      top: LAYOUT.pageTop,
+      title: config.title,
+      subtitle: config.subtitle,
+      metaLeft: config.metaLeft,
+      metaRight: config.metaRight,
+    });
+
+    let cursor = LAYOUT.pageTop + headerHeight + LAYOUT.sectionGap;
+    const filterHeight = drawFilterBand(page, {
+      top: cursor,
+      items: config.filters,
+    });
+    cursor += filterHeight + LAYOUT.sectionGap;
+
+    this.pages.push(page);
+    this.page = page;
+    this.cursor = cursor;
+    this.pageBodyTop = cursor;
+    return page;
+  }
+
+  remainingHeight() {
+    return CONTENT_BOTTOM - this.cursor;
+  }
+
+  isFreshPage() {
+    return Math.abs(this.cursor - this.pageBodyTop) < 0.5;
+  }
+
+  ensureSpace(minHeight, pageOverrides = {}) {
+    if (!this.page) {
+      this.startPage(pageOverrides);
+      return;
+    }
+
+    if (this.remainingHeight() < minHeight) {
+      this.startPage(pageOverrides);
+    }
+  }
+
+  advance(height, gap = LAYOUT.sectionGap) {
+    this.cursor += height + gap;
+  }
+}
+
+function renderMetricGrid(composer, { metrics, columns, pageConfig }) {
+  const gap = 12;
+  const cardWidth = (CONTENT_WIDTH - gap * (columns - 1)) / columns;
+
+  for (let start = 0; start < metrics.length; start += columns) {
+    const row = metrics.slice(start, start + columns);
+    const rowHeight = Math.max(...row.map((item) => measureMetricCardHeight(item, cardWidth)));
+    composer.ensureSpace(rowHeight, pageConfig);
+
+    row.forEach((item, index) => {
+      drawMetricCard(composer.page, {
+        x: PAGE_MARGIN + index * (cardWidth + gap),
+        top: composer.cursor,
+        width: cardWidth,
+        height: rowHeight,
+        ...item,
+      });
+    });
+
+    composer.advance(rowHeight, gap);
+  }
+}
+
+function renderChartRow(composer, { cards, pageConfig }) {
+  const gap = LAYOUT.cardGap;
+  const cardWidth = (CONTENT_WIDTH - gap * (cards.length - 1)) / cards.length;
+  const heights = cards.map((card) => card.height || measureChartCardHeight(card, cardWidth));
+  const rowHeight = Math.max(...heights);
+
+  composer.ensureSpace(rowHeight, pageConfig);
+
+  cards.forEach((card, index) => {
+    const x = PAGE_MARGIN + index * (cardWidth + gap);
+    const height = card.height || rowHeight;
+    const draw = card.kind === "bar" ? drawGroupedBarChartCard : drawLineChartCard;
+    draw(composer.page, {
+      ...card,
+      x,
+      top: composer.cursor,
+      width: cardWidth,
+      height,
+    });
+  });
+
+  composer.advance(rowHeight);
+}
+
+function renderSingleChart(composer, { card, pageConfig }) {
+  const width = CONTENT_WIDTH;
+  const height = card.height || measureChartCardHeight(card, width);
+  composer.ensureSpace(height, pageConfig);
+
+  const draw = card.kind === "bar" ? drawGroupedBarChartCard : drawLineChartCard;
+  draw(composer.page, {
+    ...card,
+    x: PAGE_MARGIN,
+    top: composer.cursor,
+    width,
+    height,
+  });
+
+  composer.advance(height);
+}
+
+function renderTableSection(composer, { table, pageConfig, continuationPageConfig }) {
+  const rows = Array.isArray(table.rows) ? table.rows : [];
+
+  if (!rows.length) {
+    const emptyHeight = measureTableCardHeight({
+      ...table,
+      rows: [],
+      rowHeight: table.rowHeight,
+    });
+    composer.ensureSpace(emptyHeight, pageConfig);
+    const height = drawTableCard(composer.page, {
+      ...table,
+      x: PAGE_MARGIN,
+      top: composer.cursor,
+      width: table.width || CONTENT_WIDTH,
+      rows: [],
+    });
+    composer.advance(height);
+    return;
+  }
+
+  let index = 0;
+  while (index < rows.length) {
+    composer.ensureSpace(
+      measureTableCardHeight({
+        ...table,
+        startIndex: index,
+        totalRows: rows.length,
+        rowsCount: Math.min(LAYOUT.minTableRowsPerPage, rows.length - index),
+      }),
+      index === 0 ? pageConfig : continuationPageConfig,
+    );
+
+    const availableHeight = composer.remainingHeight();
+    const capacity = computeTableCapacity({
+      ...table,
+      startIndex: index,
+      totalRows: rows.length,
+      width: table.width || CONTENT_WIDTH,
+      availableHeight,
+    });
+    const remaining = rows.length - index;
+    const minimumRows = Math.min(LAYOUT.minTableRowsPerPage, remaining);
+
+    if (capacity < minimumRows && !composer.isFreshPage()) {
+      composer.startPage(index === 0 ? pageConfig : continuationPageConfig);
+      continue;
+    }
+
+    const chunkSize = Math.max(1, Math.min(remaining, capacity || 0));
+    const chunk = rows.slice(index, index + chunkSize);
+    const title =
+      index === 0 ? table.title : `${table.title} (continuacao)`;
+
+    const height = drawTableCard(composer.page, {
+      ...table,
+      title,
+      x: PAGE_MARGIN,
+      top: composer.cursor,
+      width: table.width || CONTENT_WIDTH,
+      rows: chunk,
+      startIndex: index,
+      totalRows: rows.length,
+    });
+
+    composer.advance(height);
+    index += chunk.length;
+
+    if (index < rows.length) {
+      composer.startPage(continuationPageConfig);
+    }
+  }
+}
+
+function buildGeneralPageOptions(snapshot, generatedAt, subtitle) {
+  return {
     title: "Relatorios gerais",
-    subtitle: "Receita, conversao e desempenho comercial em um painel executivo.",
+    subtitle,
     metaLeft: [
       `Periodo: ${snapshot.filters.from} a ${snapshot.filters.to}`,
       `Tipo: ${typeLabel(snapshot.filters.type)}`,
     ],
     metaRight: [
       `Escopo: ${snapshot.filters.onlyPaid ? "Somente pagos" : "Todos"}`,
-      `Gerado em: ${formatDateTime(new Date())}`,
+      `Gerado em: ${generatedAt}`,
     ],
-  });
-  drawFilterBand(page1, {
-    top: 154,
-    items: [
+    filters: [
       `Periodo ${snapshot.filters.from} ate ${snapshot.filters.to}`,
       `Tipo ${typeLabel(snapshot.filters.type)}`,
       snapshot.filters.onlyPaid ? "Filtro pagos ativo" : "Exibindo todos os status",
     ],
-  });
+  };
+}
+
+function buildRecurringPageOptions(dashboard, generatedAt, subtitle) {
+  return {
+    title: "Relatorios de recorrencia",
+    subtitle,
+    metaLeft: [
+      `Periodo: ${dashboard.filters.from} a ${dashboard.filters.to}`,
+      `Tipo: ${typeLabel(dashboard.filters.type)}`,
+    ],
+    metaRight: [
+      `Status: ${recurringStatusLabel(dashboard.filters.recurringStatus)}`,
+      `Gerado em: ${generatedAt}`,
+    ],
+    filters: [
+      `Periodo ${dashboard.filters.from} ate ${dashboard.filters.to}`,
+      `Tipo ${typeLabel(dashboard.filters.type)}`,
+      `Status ${recurringStatusLabel(dashboard.filters.recurringStatus)}`,
+    ],
+  };
+}
+
+function buildGeneralPages(snapshot) {
+  const generatedAt = formatDateTime(new Date());
+  const overviewPage = buildGeneralPageOptions(
+    snapshot,
+    generatedAt,
+    "Receita, conversao e desempenho comercial em um painel executivo.",
+  );
+  const detailPage = buildGeneralPageOptions(
+    snapshot,
+    generatedAt,
+    "Clientes, itens e transacoes em um resumo comercial detalhado.",
+  );
+  const transactionsPage = buildGeneralPageOptions(
+    snapshot,
+    generatedAt,
+    "Transacoes recentes do periodo exportado.",
+  );
+
+  const composer = new ReportComposer(overviewPage);
+  composer.startPage();
 
   const summary = snapshot.summary || {};
-  const metricWidth = (PAGE_WIDTH - PAGE_MARGIN * 2 - 36) / 4;
-  const metricTop = 214;
-  const metricHeight = 88;
-  const metricGap = 12;
   const metrics = [
     {
       title: "Receita paga",
@@ -780,61 +1420,63 @@ function buildGeneralPages(snapshot) {
     },
   ];
 
-  metrics.forEach((item, index) => {
-    drawMetricCard(page1, {
-      x: PAGE_MARGIN + index * (metricWidth + metricGap),
-      top: metricTop,
-      width: metricWidth,
-      height: metricHeight,
-      ...item,
-    });
+  renderMetricGrid(composer, {
+    metrics,
+    columns: 4,
+    pageConfig: overviewPage,
   });
 
-  drawLineChartCard(page1, {
-    x: PAGE_MARGIN,
-    top: 322,
-    width: 248,
-    height: 242,
-    title: "Receita diaria",
-    subtitle: "Pagamentos confirmados por dia",
-    data: snapshot.revenueDaily || [],
-    xLabelKey: "date",
-    series: [{ key: "paidRevenueCents", label: "Receita paga", color: COLORS.teal }],
-  });
-
-  drawGroupedBarChartCard(page1, {
-    x: PAGE_MARGIN + 267,
-    top: 322,
-    width: 248,
-    height: 242,
-    title: "Criadas vs pagas",
-    subtitle: "Comparativo diario do periodo",
-    data: snapshot.createdVsPaidDaily || [],
-    xLabelKey: "date",
-    yFormatter: (value) => String(Math.round(Number(value || 0))),
-    series: [
-      { key: "createdCount", label: "Criadas", color: COLORS.slate },
-      { key: "paidCount", label: "Pagas", color: COLORS.green },
+  renderChartRow(composer, {
+    pageConfig: overviewPage,
+    cards: [
+      {
+        kind: "line",
+        title: "Receita diaria",
+        subtitle: "Pagamentos confirmados por dia",
+        data: snapshot.revenueDaily || [],
+        xLabelKey: "date",
+        series: [{ key: "paidRevenueCents", label: "Receita paga", color: COLORS.teal }],
+        plotHeight: 150,
+      },
+      {
+        kind: "bar",
+        title: "Criadas vs pagas",
+        subtitle: "Comparativo diario do periodo",
+        data: snapshot.createdVsPaidDaily || [],
+        xLabelKey: "date",
+        yFormatter: (value) => String(Math.round(Number(value || 0))),
+        series: [
+          { key: "createdCount", label: "Criadas", color: COLORS.slate },
+          { key: "paidCount", label: "Pagas", color: COLORS.green },
+        ],
+        plotHeight: 150,
+      },
     ],
   });
 
-  const page2 = new PdfPage();
-  page2.fillPage(COLORS.page);
-  drawHeader(page2, {
-    title: "Clientes, itens e transacoes",
-    subtitle: "Leitura comercial detalhada para compartilhamento executivo.",
-    metaLeft: [
-      `Periodo: ${snapshot.filters.from} a ${snapshot.filters.to}`,
-      `Tipo: ${typeLabel(snapshot.filters.type)}`,
-    ],
-    metaRight: [`Gerado em: ${formatDateTime(new Date())}`],
+  composer.startPage(detailPage);
+  const pairedWidth = (CONTENT_WIDTH - LAYOUT.cardGap) / 2;
+  const topClientsHeight = measureTableCardHeight({
+    width: pairedWidth,
+    title: "Top clientes",
+    subtitle: "Quem mais converteu receita",
+    rows: snapshot.topClients || [],
+    rowHeight: 22,
   });
+  const topItemsHeight = measureTableCardHeight({
+    width: pairedWidth,
+    title: "Top itens",
+    subtitle: "Servicos e produtos mais vendidos",
+    rows: snapshot.topItems || [],
+    rowHeight: 22,
+  });
+  const pairedHeight = Math.max(topClientsHeight, topItemsHeight);
+  composer.ensureSpace(pairedHeight, detailPage);
 
-  drawTableCard(page2, {
+  drawTableCard(composer.page, {
     x: PAGE_MARGIN,
-    top: 154,
-    width: 248,
-    height: 224,
+    top: composer.cursor,
+    width: pairedWidth,
     title: "Top clientes",
     subtitle: "Quem mais converteu receita",
     columns: [
@@ -843,13 +1485,13 @@ function buildGeneralPages(snapshot) {
       { label: "Vendas", width: 40, render: (row) => String(row.paidCount || 0) },
     ],
     rows: snapshot.topClients || [],
+    rowHeight: 22,
   });
 
-  drawTableCard(page2, {
-    x: PAGE_MARGIN + 267,
-    top: 154,
-    width: 248,
-    height: 224,
+  drawTableCard(composer.page, {
+    x: PAGE_MARGIN + pairedWidth + LAYOUT.cardGap,
+    top: composer.cursor,
+    width: pairedWidth,
     title: "Top itens",
     subtitle: "Servicos e produtos mais vendidos",
     columns: [
@@ -858,57 +1500,60 @@ function buildGeneralPages(snapshot) {
       { label: "Qtd", width: 40, render: (row) => String(row.qty || 0) },
     ],
     rows: snapshot.topItems || [],
-  });
-
-  drawTableCard(page2, {
-    x: PAGE_MARGIN,
-    top: 398,
-    width: PAGE_WIDTH - PAGE_MARGIN * 2,
-    height: 344,
-    title: "Transacoes recentes",
-    subtitle: "Amostra operacional do periodo exportado",
-    columns: [
-      { label: "Data", width: 60, render: (row) => formatDate(row.paidDate) },
-      { label: "Cliente", width: 110, render: (row) => row.customerName || "-" },
-      { label: "Titulo", width: 120, render: (row) => row.title || "-" },
-      { label: "Status", width: 70, render: (row) => row.paymentStatus || row.status || "-" },
-      { label: "Valor", width: 60, render: (row) => money(row.paidCents) },
-    ],
-    rows: snapshot.transactions || [],
     rowHeight: 22,
   });
 
-  return [page1, page2];
+  composer.advance(pairedHeight);
+
+  renderTableSection(composer, {
+    pageConfig: transactionsPage,
+    continuationPageConfig: transactionsPage,
+    table: {
+      title: "Transacoes recentes",
+      subtitle: "Amostra operacional do periodo exportado",
+      width: CONTENT_WIDTH,
+      columns: [
+        { label: "Data", width: 60, render: (row) => formatDate(row.paidDate) },
+        { label: "Cliente", width: 110, render: (row) => row.customerName || "-" },
+        { label: "Titulo", width: 120, render: (row) => row.title || "-" },
+        { label: "Status", width: 70, render: (row) => row.paymentStatus || row.status || "-" },
+        { label: "Valor", width: 60, render: (row) => money(row.paidCents) },
+      ],
+      rows: snapshot.transactions || [],
+      rowHeight: 22,
+    },
+  });
+
+  return composer.pages;
 }
 
 function buildRecurringPages(dashboard) {
-  const page1 = new PdfPage();
-  page1.fillPage(COLORS.page);
-  drawHeader(page1, {
-    title: "Relatorios de recorrencia",
-    subtitle: "Saude da carteira recorrente, risco atual e performance de recebimento.",
-    metaLeft: [
-      `Periodo: ${dashboard.filters.from} a ${dashboard.filters.to}`,
-      `Tipo: ${typeLabel(dashboard.filters.type)}`,
-    ],
-    metaRight: [
-      `Status: ${recurringStatusLabel(dashboard.filters.recurringStatus)}`,
-      `Gerado em: ${formatDateTime(new Date())}`,
-    ],
-  });
-  drawFilterBand(page1, {
-    top: 154,
-    items: [
-      `Periodo ${dashboard.filters.from} ate ${dashboard.filters.to}`,
-      `Tipo ${typeLabel(dashboard.filters.type)}`,
-      `Status ${recurringStatusLabel(dashboard.filters.recurringStatus)}`,
-    ],
-  });
+  const generatedAt = formatDateTime(new Date());
+  const overviewPage = buildRecurringPageOptions(
+    dashboard,
+    generatedAt,
+    "Saude da carteira recorrente, risco atual e performance de recebimento.",
+  );
+  const detailPage = buildRecurringPageOptions(
+    dashboard,
+    generatedAt,
+    "Distribuicao e carteira recorrente em um resumo executivo.",
+  );
+  const delinquentPage = buildRecurringPageOptions(
+    dashboard,
+    generatedAt,
+    "Clientes inadimplentes e carteira recorrente em acompanhamento.",
+  );
+  const portfolioPage = buildRecurringPageOptions(
+    dashboard,
+    generatedAt,
+    "Carteira por recorrencia e comportamento de pagamento.",
+  );
+
+  const composer = new ReportComposer(overviewPage);
+  composer.startPage();
 
   const summary = dashboard.summary || {};
-  const metricWidth = (PAGE_WIDTH - PAGE_MARGIN * 2 - 24) / 3;
-  const metricHeight = 78;
-  const metricGap = 12;
   const metrics = [
     {
       title: "Receita recebida",
@@ -948,112 +1593,102 @@ function buildRecurringPages(dashboard) {
     },
   ];
 
-  metrics.forEach((item, index) => {
-    const row = Math.floor(index / 3);
-    const col = index % 3;
-    drawMetricCard(page1, {
-      x: PAGE_MARGIN + col * (metricWidth + metricGap),
-      top: 214 + row * (metricHeight + 12),
-      width: metricWidth,
-      height: metricHeight,
-      ...item,
-    });
+  renderMetricGrid(composer, {
+    metrics,
+    columns: 3,
+    pageConfig: overviewPage,
   });
 
-  drawLineChartCard(page1, {
-    x: PAGE_MARGIN,
-    top: 392,
-    width: 248,
-    height: 196,
-    title: "Vencendo vs recebido",
-    subtitle: "Valor previsto x valor pago por dia",
-    data: dashboard.dueVsPaidDaily || [],
-    series: [
-      { key: "dueAmountCents", label: "Vencendo", color: COLORS.amber },
-      { key: "paidAmountCents", label: "Recebido", color: COLORS.teal },
+  renderChartRow(composer, {
+    pageConfig: overviewPage,
+    cards: [
+      {
+        kind: "line",
+        title: "Vencendo vs recebido",
+        subtitle: "Valor previsto x valor pago por dia",
+        data: dashboard.dueVsPaidDaily || [],
+        series: [
+          { key: "dueAmountCents", label: "Vencendo", color: COLORS.amber },
+          { key: "paidAmountCents", label: "Recebido", color: COLORS.teal },
+        ],
+        plotHeight: 132,
+      },
+      {
+        kind: "bar",
+        title: "Carteira em atraso",
+        subtitle: "Valor por faixa de aging",
+        data: dashboard.overdueAgingBuckets || [],
+        xLabelKey: "bucket",
+        series: [{ key: "amountCents", label: "Valor em atraso", color: COLORS.red }],
+        plotHeight: 132,
+      },
     ],
   });
 
-  drawGroupedBarChartCard(page1, {
-    x: PAGE_MARGIN + 267,
-    top: 392,
-    width: 248,
-    height: 196,
-    title: "Carteira em atraso",
-    subtitle: "Valor por faixa de aging",
-    data: dashboard.overdueAgingBuckets || [],
-    xLabelKey: "bucket",
-    series: [{ key: "amountCents", label: "Valor em atraso", color: COLORS.red }],
+  composer.startPage(detailPage);
+  renderSingleChart(composer, {
+    pageConfig: detailPage,
+    card: {
+      kind: "bar",
+      title: "Dias com mais pagamentos",
+      subtitle: "Contagem de pagamentos por dia da semana",
+      data: dashboard.paymentWeekdayDistribution || [],
+      xLabelKey: "label",
+      yFormatter: (value) => String(Math.round(Number(value || 0))),
+      series: [{ key: "count", label: "Pagamentos", color: COLORS.blue }],
+      plotHeight: 124,
+    },
   });
 
-  const page2 = new PdfPage();
-  page2.fillPage(COLORS.page);
-  drawHeader(page2, {
-    title: "Distribuicao e carteira recorrente",
-    subtitle: "Cliente, recorrencia e comportamento de pagamento em um resumo executivo.",
-    metaLeft: [
-      `Periodo: ${dashboard.filters.from} a ${dashboard.filters.to}`,
-      `Status: ${recurringStatusLabel(dashboard.filters.recurringStatus)}`,
-    ],
-    metaRight: [`Gerado em: ${formatDateTime(new Date())}`],
+  renderTableSection(composer, {
+    pageConfig: delinquentPage,
+    continuationPageConfig: delinquentPage,
+    table: {
+      title: "Clientes inadimplentes",
+      subtitle: "Quem exige acao de cobranca com maior urgencia",
+      width: CONTENT_WIDTH,
+      columns: [
+        { label: "Cliente", width: 100, render: (row) => row.customerName || "-" },
+        { label: "Recorr.", width: 44, render: (row) => String(row.recurringCount || 0) },
+        { label: "Atraso", width: 44, render: (row) => String(row.overdueCount || 0) },
+        { label: "Valor", width: 58, render: (row) => money(row.overdueAmountCents) },
+        { label: "Maior atraso", width: 60, render: (row) => `${Number(row.maxDelayDays || 0)} dia(s)` },
+        {
+          label: "Ult. lembrete",
+          width: 70,
+          render: (row) => (row.lastReminderAt ? formatDateTime(row.lastReminderAt) : "Sem envio"),
+        },
+      ],
+      rows: dashboard.delinquentClients || [],
+      rowHeight: 22,
+    },
   });
 
-  drawGroupedBarChartCard(page2, {
-    x: PAGE_MARGIN,
-    top: 154,
-    width: PAGE_WIDTH - PAGE_MARGIN * 2,
-    height: 174,
-    title: "Dias com mais pagamentos",
-    subtitle: "Contagem de pagamentos por dia da semana",
-    data: dashboard.paymentWeekdayDistribution || [],
-    xLabelKey: "label",
-    yFormatter: (value) => String(Math.round(Number(value || 0))),
-    series: [{ key: "count", label: "Pagamentos", color: COLORS.blue }],
+  renderTableSection(composer, {
+    pageConfig: portfolioPage,
+    continuationPageConfig: portfolioPage,
+    table: {
+      title: "Carteira por recorrencia",
+      subtitle: "Resumo das automacoes mais relevantes do periodo",
+      width: CONTENT_WIDTH,
+      columns: [
+        { label: "Recorrencia", width: 100, render: (row) => row.recurringName || "-" },
+        { label: "Cliente", width: 74, render: (row) => row.customerName || "-" },
+        { label: "Status", width: 48, render: (row) => row.recurringStatus || "-" },
+        { label: "Ger.", width: 30, render: (row) => String(row.generatedCount || 0) },
+        { label: "Pag.", width: 30, render: (row) => String(row.paidCount || 0) },
+        { label: "Pend.", width: 34, render: (row) => String(row.pendingCount || 0) },
+        { label: "Atr.", width: 30, render: (row) => String(row.overdueCount || 0) },
+        { label: "Valor", width: 54, render: (row) => money(row.overdueAmountCents) },
+        { label: "Carteira", width: 48, render: (row) => portfolioHealthLabel(row) },
+        { label: "Prox. venc.", width: 52, render: (row) => formatDate(row.nextDueAt) },
+      ],
+      rows: dashboard.portfolio || [],
+      rowHeight: 22,
+    },
   });
 
-  drawTableCard(page2, {
-    x: PAGE_MARGIN,
-    top: 348,
-    width: PAGE_WIDTH - PAGE_MARGIN * 2,
-    height: 168,
-    title: "Clientes inadimplentes",
-    subtitle: "Quem exige acao de cobranca com maior urgencia",
-    columns: [
-      { label: "Cliente", width: 100, render: (row) => row.customerName || "-" },
-      { label: "Recorr.", width: 44, render: (row) => String(row.recurringCount || 0) },
-      { label: "Atraso", width: 44, render: (row) => String(row.overdueCount || 0) },
-      { label: "Valor", width: 58, render: (row) => money(row.overdueAmountCents) },
-      { label: "Maior atraso", width: 60, render: (row) => `${Number(row.maxDelayDays || 0)} dia(s)` },
-      { label: "Ult. lembrete", width: 70, render: (row) => row.lastReminderAt ? formatDateTime(row.lastReminderAt) : "Sem envio" },
-    ],
-    rows: dashboard.delinquentClients || [],
-    rowHeight: 22,
-  });
-
-  drawTableCard(page2, {
-    x: PAGE_MARGIN,
-    top: 536,
-    width: PAGE_WIDTH - PAGE_MARGIN * 2,
-    height: 236,
-    title: "Carteira por recorrencia",
-    subtitle: "Resumo das automacoes mais relevantes do periodo",
-    columns: [
-      { label: "Recorrencia", width: 100, render: (row) => row.recurringName || "-" },
-      { label: "Cliente", width: 74, render: (row) => row.customerName || "-" },
-      { label: "Status", width: 48, render: (row) => row.recurringStatus || "-" },
-      { label: "Ger.", width: 30, render: (row) => String(row.generatedCount || 0) },
-      { label: "Pag.", width: 30, render: (row) => String(row.paidCount || 0) },
-      { label: "Pend.", width: 34, render: (row) => String(row.pendingCount || 0) },
-      { label: "Atr.", width: 30, render: (row) => String(row.overdueCount || 0) },
-      { label: "Valor", width: 54, render: (row) => money(row.overdueAmountCents) },
-      { label: "Carteira", width: 48, render: (row) => portfolioHealthLabel(row) },
-      { label: "Prox. venc.", width: 52, render: (row) => formatDate(row.nextDueAt) },
-    ],
-    rows: dashboard.portfolio || [],
-    rowHeight: 22,
-  });
-
-  return [page1, page2];
+  return composer.pages;
 }
 
 export function buildGeneralReportPdfBuffer(snapshot) {

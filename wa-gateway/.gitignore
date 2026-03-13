@@ -1,4 +1,5 @@
 node_modules/
 wa-session/
 chrome/
+.wwebjs_cache/
 .env
