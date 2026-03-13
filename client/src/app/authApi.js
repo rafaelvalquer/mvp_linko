@@ -24,3 +24,14 @@ export function register({ name, email, password, workspaceName }) {
 export function me() {
   return api("/auth/me");
 }
+
+export function getWhatsNew() {
+  return api("/auth/whats-new");
+}
+
+export function ackWhatsNew({ seenAt }) {
+  return api("/auth/whats-new/ack", {
+    method: "POST",
+    body: JSON.stringify({ seenAt }),
+  });
+}

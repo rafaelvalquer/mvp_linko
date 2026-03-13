@@ -1,5 +1,6 @@
 // src/pages/Offers.jsx
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { api } from "../app/api.js";
 
@@ -20,6 +21,40 @@ import {
   getAmountCents,
   getPaymentLabel,
 } from "../components/offers/offerHelpers.js";
+
+function PulseGlowBadge({ children, isDark }) {
+  const chipClass = isDark
+    ? "inline-flex items-center rounded-full border border-amber-400/25 bg-amber-400/12 px-2.5 py-1 text-[11px] font-bold text-amber-200"
+    : "inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-800";
+  const pulseShadow = isDark
+    ? [
+        "0 0 0 0 rgba(251,191,36,0)",
+        "0 0 0 6px rgba(251,191,36,0.18)",
+        "0 0 0 0 rgba(251,191,36,0)",
+      ]
+    : [
+        "0 0 0 0 rgba(245,158,11,0)",
+        "0 0 0 6px rgba(245,158,11,0.24)",
+        "0 0 0 0 rgba(245,158,11,0)",
+      ];
+
+  return (
+    <motion.span
+      className={chipClass}
+      animate={{
+        boxShadow: pulseShadow,
+        scale: [1, 1.015, 1],
+      }}
+      transition={{
+        duration: 1.9,
+        repeat: Infinity,
+        ease: "easeInOut",
+      }}
+    >
+      {children}
+    </motion.span>
+  );
+}
 
 export default function Offers() {
   const { isDark } = useThemeToggle();
@@ -232,7 +267,10 @@ export default function Offers() {
                       const pay = getPaymentLabel(o);
                       const publicUrl = `/p/${o.publicToken}`;
                       const copied = copiedId === o._id;
-                      const isPendingAlert = norm(o?.paymentStatus) === "PENDING";
+                      const paymentStatus = norm(o?.paymentStatus);
+                      const isPendingAlert = paymentStatus === "PENDING";
+                      const isWaitingConfirmation =
+                        pay?.code === "WAITING_CONFIRMATION";
                       const isRecurring = String(o?.generatedBy || "manual").toLowerCase() === "recurring";
 
                       return (
@@ -279,6 +317,10 @@ export default function Offers() {
                                 <span className={isDark ? "inline-flex items-center rounded-full border border-amber-400/20 bg-amber-400/10 px-2.5 py-1 text-[11px] font-bold text-amber-200" : "inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700"}>
                                   Aguardando pagamento
                                 </span>
+                              ) : isWaitingConfirmation ? (
+                                <PulseGlowBadge isDark={isDark}>
+                                  {pay.text}
+                                </PulseGlowBadge>
                               ) : (
                                 <Badge tone={pay.tone}>{pay.text}</Badge>
                               )}

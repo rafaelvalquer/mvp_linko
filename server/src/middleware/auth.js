@@ -30,6 +30,7 @@ export async function authOptional(req, _res, next) {
       workspaceId: u.workspaceId,
       role: u.role,
       status: u.status,
+      whatsNewLastSeenAt: u.whatsNewLastSeenAt || null,
     });
     return next();
   } catch {

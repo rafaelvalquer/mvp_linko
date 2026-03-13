@@ -30,6 +30,10 @@ const UserSchema = new mongoose.Schema(
       enum: ["active", "disabled"],
       default: "active",
     },
+    whatsNewLastSeenAt: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true },
 );

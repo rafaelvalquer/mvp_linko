@@ -13,6 +13,10 @@ import { PasswordResetCode } from "../models/PasswordResetCode.js";
 import { authOptional, ensureAuth } from "../middleware/auth.js";
 import { sendRegistrationVerificationEmail } from "../services/emailVerification.js";
 import { sendForgotPasswordCode } from "../services/resendEmail.js";
+import {
+  ensureWhatsNewBaseline,
+  listWhatsNewForUser,
+} from "../services/whatsNew.service.js";
 import { isMasterAdminEmail } from "../utils/masterAdmin.js";
 
 const r = Router();
@@ -208,22 +212,29 @@ function buildWorkspacePayload(ws) {
   };
 }
 
+function buildUserPayload(user) {
+  if (!user) return null;
+
+  const isMasterAdmin = isMasterAdminEmail(user?.email);
+  return {
+    _id: user._id,
+    name: user.name,
+    email: user.email,
+    workspaceId: user.workspaceId,
+    role: user.role,
+    status: user.status,
+    isMasterAdmin,
+    whatsNewLastSeenAt: user.whatsNewLastSeenAt || null,
+  };
+}
+
 function buildAuthResponse(user, ws) {
   const token = signToken(user);
-  const isMasterAdmin = isMasterAdminEmail(user?.email);
 
   return {
     ok: true,
     token,
-    user: {
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      workspaceId: user.workspaceId,
-      role: user.role,
-      status: user.status,
-      isMasterAdmin,
-    },
+    user: buildUserPayload(user),
     workspace: buildWorkspacePayload(ws),
   };
 }
@@ -644,8 +655,9 @@ r.post(
       session.endSession();
     }
 
+    const authUser = await ensureWhatsNewBaseline(userDoc?._id);
     const ws = await Workspace.findById(workspaceId).lean();
-    return res.json(buildAuthResponse(userDoc, ws));
+    return res.json(buildAuthResponse(authUser || userDoc, ws));
   }),
 );
 
@@ -827,8 +839,9 @@ r.post(
     if (!ok)
       return res.status(401).json({ ok: false, error: "invalid credentials" });
 
+    const authUser = await ensureWhatsNewBaseline(user._id);
     const ws = await Workspace.findById(user.workspaceId).lean();
-    return res.json(buildAuthResponse(user, ws));
+    return res.json(buildAuthResponse(authUser || user, ws));
   }),
 );
 
@@ -836,20 +849,73 @@ r.get(
   "/auth/me",
   ensureAuth,
   asyncHandler(async (req, res) => {
+    const authUser = await ensureWhatsNewBaseline(req.user._id);
     const ws = await Workspace.findById(req.user.workspaceId).lean();
 
     return res.json({
       ok: true,
-      user: {
-        _id: req.user._id,
-        name: req.user.name,
-        email: req.user.email,
-        workspaceId: req.user.workspaceId,
-        role: req.user.role,
-        status: req.user.status,
-        isMasterAdmin: req.user.isMasterAdmin === true,
-      },
+      user: buildUserPayload(authUser || req.user),
       workspace: buildWorkspacePayload(ws),
+    });
+  }),
+);
+
+r.get(
+  "/auth/whats-new",
+  ensureAuth,
+  asyncHandler(async (req, res) => {
+    const authUser = await ensureWhatsNewBaseline(req.user._id);
+    const snapshotAt = new Date();
+    const payload = await listWhatsNewForUser({
+      user: authUser || req.user,
+      snapshotAt,
+    });
+
+    return res.json({
+      ok: true,
+      snapshotAt: payload.snapshotAt,
+      items: payload.items,
+    });
+  }),
+);
+
+r.post(
+  "/auth/whats-new/ack",
+  ensureAuth,
+  asyncHandler(async (req, res) => {
+    const seenAt = new Date(req.body?.seenAt);
+    if (Number.isNaN(seenAt.getTime())) {
+      return sendError(
+        res,
+        400,
+        "Data de leitura invalida.",
+        "INVALID_SEEN_AT",
+      );
+    }
+
+    await User.updateOne(
+      {
+        _id: req.user._id,
+        $or: [
+          { whatsNewLastSeenAt: { $exists: false } },
+          { whatsNewLastSeenAt: null },
+          { whatsNewLastSeenAt: { $lt: seenAt } },
+        ],
+      },
+      {
+        $set: {
+          whatsNewLastSeenAt: seenAt,
+        },
+      },
+    );
+
+    const freshUser = await User.findById(req.user._id)
+      .select("whatsNewLastSeenAt")
+      .lean();
+
+    return res.json({
+      ok: true,
+      whatsNewLastSeenAt: freshUser?.whatsNewLastSeenAt || seenAt.toISOString(),
     });
   }),
 );

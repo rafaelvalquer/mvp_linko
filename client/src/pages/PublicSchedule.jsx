@@ -1,16 +1,30 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import {
+  ArrowRight,
+  CalendarDays,
+  CircleAlert,
+  Clock3,
+  Lock,
+  Sparkles,
+  Wallet,
+} from "lucide-react";
 import { api } from "../app/api.js";
+import useThemeToggle from "../app/useThemeToggle.js";
+import brand from "../assets/brand.png";
 import Button from "../components/appui/Button.jsx";
 import { Input } from "../components/appui/Input.jsx";
-import brand from "../assets/brand.png";
+
+function cls(...parts) {
+  return parts.filter(Boolean).join(" ");
+}
 
 function fmtBRL(cents) {
-  const v = Number.isFinite(cents) ? cents : 0;
+  const value = Number.isFinite(cents) ? cents : 0;
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency: "BRL",
-  }).format(v / 100);
+  }).format(value / 100);
 }
 
 function toDateInputValue(d = new Date()) {
@@ -27,25 +41,48 @@ function fmtTime(iso) {
   return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 
-function normStatus(s) {
-  return String(s || "")
-    .trim()
-    .toUpperCase();
+function fmtDateLabel(dateValue) {
+  if (!dateValue) return "";
+  const d = new Date(`${dateValue}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return "";
+  const label = new Intl.DateTimeFormat("pt-BR", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+  }).format(d);
+  return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
-function safeDate(v) {
-  if (!v) return null;
-  const d = new Date(v);
+function fmtDateFromIso(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const label = new Intl.DateTimeFormat("pt-BR", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+  }).format(d);
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+function fmtRange(startAt, endAt) {
+  if (!startAt) return "";
+  const start = fmtTime(startAt);
+  const end = fmtTime(endAt);
+  return end ? `${start} - ${end}` : start;
+}
+
+function normStatus(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function safeDate(value) {
+  if (!value) return null;
+  const d = new Date(value);
   if (Number.isNaN(d.getTime())) return null;
   return d;
 }
 
-/**
- * ✅ Resolve status do slot de forma robusta:
- * - suporta campos alternativos comuns (status/state/availability/etc)
- * - suporta booleans (available/isAvailable/isFree)
- * - suporta ids que indicam reserva (bookingId/reservationId/holdId)
- */
 function resolveSlotStatus(slot) {
   const raw =
     normStatus(slot?.status) ||
@@ -55,7 +92,6 @@ function resolveSlotStatus(slot) {
     normStatus(slot?.bookingStatus) ||
     normStatus(slot?.booking?.status);
 
-  // booleans / flags
   const hasBookingRef =
     !!slot?.bookingId ||
     !!slot?.reservationId ||
@@ -66,9 +102,7 @@ function resolveSlotStatus(slot) {
   const isAvailableBool =
     slot?.isAvailable ?? slot?.available ?? slot?.isFree ?? slot?.free;
 
-  // Se tem referência de booking/reserva, não é FREE
   if (hasBookingRef) {
-    // tenta inferir confirmado/pago
     if (
       ["CONFIRMED", "BOOKED", "PAID", "CONFIRMADO"].includes(raw) ||
       ["CONFIRMED", "PAID"].includes(normStatus(slot?.booking?.paymentStatus))
@@ -78,54 +112,77 @@ function resolveSlotStatus(slot) {
     return "HOLD";
   }
 
-  // Se o slot informa boolean de disponibilidade
   if (isAvailableBool === false) {
-    // se não tem raw, assume bloqueado/reservado
     if (!raw) return "HOLD";
     if (["FREE", "AVAILABLE", "OPEN", "LIVRE"].includes(raw)) return "HOLD";
     return raw;
   }
 
-  // Map de sinônimos
   if (["FREE", "AVAILABLE", "OPEN", "LIVRE"].includes(raw)) return "FREE";
-  if (
-    [
-      "HOLD",
-      "HELD",
-      "RESERVED",
-      "RESERVADO",
-      "PENDING",
-      "WAITING",
-      "WAITING_CONFIRMATION",
-    ].includes(raw)
-  )
-    return "HOLD";
-  if (["CONFIRMED", "BOOKED", "PAID", "CONFIRMADO", "CONFIRMADA"].includes(raw))
-    return "CONFIRMED";
-  if (
-    ["BLOCKED", "UNAVAILABLE", "BUSY", "INDISPONIVEL", "INDISPONÍVEL"].includes(
-      raw,
-    )
-  )
-    return "BLOCKED";
-
-  // fallback
+  if (["HOLD", "HELD", "RESERVED", "RESERVADO", "PENDING", "WAITING", "WAITING_CONFIRMATION"].includes(raw)) return "HOLD";
+  if (["CONFIRMED", "BOOKED", "PAID", "CONFIRMADO", "CONFIRMADA"].includes(raw)) return "CONFIRMED";
+  if (["BLOCKED", "UNAVAILABLE", "BUSY", "INDISPONIVEL"].includes(raw)) return "BLOCKED";
   return raw || "FREE";
+}
+
+function Pill({ tone = "amber", label }) {
+  const { isDark } = useThemeToggle();
+  const map = isDark
+    ? {
+        amber: "border-amber-400/20 bg-amber-400/10 text-amber-100",
+        blue: "border-sky-400/20 bg-sky-400/10 text-sky-100",
+        emerald: "border-emerald-400/20 bg-emerald-400/10 text-emerald-100",
+        slate: "border-white/10 bg-white/5 text-slate-200",
+      }
+    : {
+        amber: "border-amber-200 bg-amber-50 text-amber-700",
+        blue: "border-sky-200 bg-sky-50 text-sky-700",
+        emerald: "border-emerald-200 bg-emerald-50 text-emerald-700",
+        slate: "border-slate-200 bg-white text-slate-700",
+      };
+
+  return (
+    <span
+      className={cls(
+        "inline-flex rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-[0.18em]",
+        map[tone] || map.amber,
+      )}
+    >
+      {label}
+    </span>
+  );
+}
+
+function SurfaceCard({ className = "", children }) {
+  const { isDark } = useThemeToggle();
+
+  return (
+    <section
+      className={cls(
+        "rounded-[30px] border p-5 sm:p-6",
+        isDark
+          ? "border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.92),rgba(8,15,30,0.86))] shadow-[0_28px_70px_-46px_rgba(15,23,42,0.9)]"
+          : "border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(241,245,249,0.92))] shadow-[0_28px_70px_-46px_rgba(15,23,42,0.22)]",
+        className,
+      )}
+    >
+      {children}
+    </section>
+  );
 }
 
 export default function PublicSchedule() {
   const { token } = useParams();
   const navigate = useNavigate();
+  const { isDark } = useThemeToggle();
 
   const [offer, setOffer] = useState(null);
   const [offerErr, setOfferErr] = useState("");
-
   const [date, setDate] = useState(toDateInputValue());
   const [slots, setSlots] = useState([]);
   const [slotsNow, setSlotsNow] = useState(null);
   const [slotsErr, setSlotsErr] = useState("");
   const [loadingSlots, setLoadingSlots] = useState(false);
-
   const [selected, setSelected] = useState(null);
   const [busy, setBusy] = useState(false);
   const [booking, setBooking] = useState(null);
@@ -136,174 +193,119 @@ export default function PublicSchedule() {
     navigate(`/p/${token}/pay?bookingId=${encodeURIComponent(bookingId)}`);
   }
 
-  // carrega proposta + respeita flowState
   useEffect(() => {
     setOffer(null);
     setOfferErr("");
+
     api(`/p/${token}`)
       .then((d) => {
         const step = String(d?.flow?.step || "").toUpperCase();
 
-        // ✅ se abrir /schedule indevidamente, redireciona para o passo correto
         if (step && step !== "SCHEDULE") {
-          const bookingId = String(
-            d?.flow?.bookingId || d?.booking?.id || "",
-          ).trim();
-          const q = bookingId
-            ? `?bookingId=${encodeURIComponent(bookingId)}`
-            : "";
+          const bookingId = String(d?.flow?.bookingId || d?.booking?.id || "").trim();
+          const query = bookingId ? `?bookingId=${encodeURIComponent(bookingId)}` : "";
 
           if (step === "PAYMENT") {
-            navigate(`/p/${token}/pay${q}`, { replace: true });
+            navigate(`/p/${token}/pay${query}`, { replace: true });
             return;
           }
           if (step === "DONE") {
-            navigate(`/p/${token}/done${q}`, { replace: true });
+            navigate(`/p/${token}/done${query}`, { replace: true });
             return;
           }
 
-          // ACCEPT / EXPIRED / CANCELED -> rota base (guard decide)
           navigate(`/p/${token}`, { replace: true });
           return;
         }
 
         setOffer(d.offer);
       })
-      .catch((e) => {
-        setOfferErr(e?.message || "Falha ao carregar proposta.");
-      });
+      .catch((e) => setOfferErr(e?.message || "Falha ao carregar proposta."));
   }, [token, navigate]);
 
   const view = useMemo(() => {
     const o = offer || {};
-    const inferredType =
-      o.offerType ||
-      (Array.isArray(o.items) && o.items.length ? "product" : "service");
-    const offerType = inferredType === "product" ? "product" : "service";
-
     const totalCents =
       (Number.isFinite(o.totalCents) && o.totalCents) ||
       (Number.isFinite(o.amountCents) && o.amountCents) ||
       0;
-
     const depositPctRaw = Number(o.depositPct);
-    const depositPct =
-      Number.isFinite(depositPctRaw) && depositPctRaw > 0 ? depositPctRaw : 0;
-
+    const depositPct = Number.isFinite(depositPctRaw) && depositPctRaw > 0 ? depositPctRaw : 0;
     const depositEnabled = o.depositEnabled === false ? false : depositPct > 0;
-    const depositCents = depositEnabled
-      ? Math.round((totalCents * depositPct) / 100)
-      : 0;
+    const depositCents = depositEnabled ? Math.round((totalCents * depositPct) / 100) : 0;
     const remainingCents = Math.max(0, totalCents - depositCents);
-
-    return {
-      offerType,
-      totalCents,
-      depositEnabled,
-      depositPct,
-      depositCents,
-      remainingCents,
-    };
+    return { totalCents, depositEnabled, depositCents, remainingCents };
   }, [offer]);
 
   const now = safeDate(slotsNow) || new Date();
-  const todayStr = toDateInputValue(new Date());
-  const isToday = date === todayStr;
-  const pastTolMs = 90_000; // tolerância (90s)
+  const isToday = date === toDateInputValue(new Date());
 
   const getSlotUi = useCallback(
-    (s) => {
-      const st = resolveSlotStatus(s);
-      const start = safeDate(s?.startAt);
-
-      const isPast =
-        isToday && start ? start.getTime() <= now.getTime() - pastTolMs : false;
-
-      // ✅ qualquer coisa que não seja FREE = bloqueado (e past também)
-      const disabled = st !== "FREE" || isPast;
-
+    (slot) => {
+      const status = resolveSlotStatus(slot);
+      const start = safeDate(slot?.startAt);
+      const isPast = isToday && start ? start.getTime() <= now.getTime() - 90_000 : false;
+      const disabled = status !== "FREE" || isPast;
       const label = isPast
-        ? "Horário passado"
-        : st === "FREE"
-          ? "Livre"
-          : st === "HOLD"
-            ? "Já reservado"
-            : st === "CONFIRMED"
-              ? "Já reservado"
-              : "Indisponível";
-
-      const tone = isPast
-        ? "PAST"
-        : st === "FREE"
-          ? "FREE"
-          : st === "HOLD"
-            ? "HOLD"
-            : "BLOCKED";
-
-      return { st, isPast, disabled, label, tone };
+        ? "Horario passado"
+        : status === "FREE"
+          ? "Disponivel"
+          : status === "HOLD" || status === "CONFIRMED"
+            ? "Ja reservado"
+            : "Indisponivel";
+      const tone = isPast ? "PAST" : status === "FREE" ? "FREE" : "BLOCKED";
+      return { disabled, label, tone };
     },
-    [isToday, now, pastTolMs],
+    [isToday, now],
   );
 
   const fetchSlots = useCallback(async () => {
     if (!offer) return;
+
     setLoadingSlots(true);
     setSlotsErr("");
+
     try {
       const d = await api(`/p/${token}/slots?date=${encodeURIComponent(date)}`);
       setSlotsNow(d?.now || null);
       setSlots(Array.isArray(d?.slots) ? d.slots : []);
     } catch (e) {
       setSlots([]);
-      setSlotsErr(e?.message || "Falha ao carregar horários.");
+      setSlotsErr(e?.message || "Falha ao carregar horarios.");
     } finally {
       setLoadingSlots(false);
     }
   }, [offer, token, date]);
 
-  // carrega slots quando muda a data
   useEffect(() => {
     if (!offer) return;
-
     setSelected(null);
     setBooking(null);
-
     fetchSlots();
-  }, [token, date, offer, fetchSlots]);
+  }, [offer, date, fetchSlots]);
 
-  // ✅ auto refresh: reflete reservas de outros usuários
   useEffect(() => {
-    if (!offer) return;
-    if (booking) return; // se já reservou, não precisa
-    if (loadingSlots) return;
-
-    const id = setInterval(() => {
-      fetchSlots();
-    }, 12_000);
-
+    if (!offer || booking || loadingSlots) return undefined;
+    const id = setInterval(fetchSlots, 12_000);
     return () => clearInterval(id);
   }, [offer, booking, loadingSlots, fetchSlots]);
 
-  // impede seleção fantasma: slot deixou de ser FREE ou virou passado
   useEffect(() => {
     if (!selected) return;
-    const cur = slots.find(
-      (s) => s?.startAt === selected?.startAt && s?.endAt === selected?.endAt,
+    const current = slots.find(
+      (slot) => slot?.startAt === selected?.startAt && slot?.endAt === selected?.endAt,
     );
-    if (!cur) {
+    if (!current || getSlotUi(current).disabled) {
       setSelected(null);
-      return;
     }
-    if (getSlotUi(cur).disabled) setSelected(null);
-  }, [slots, slotsNow, date, selected, getSlotUi]);
+  }, [slots, selected, getSlotUi]);
 
   async function confirmBooking() {
-    if (!selected) return;
-    const selUi = getSlotUi(selected);
-    if (selUi.disabled) return;
+    if (!selected || getSlotUi(selected).disabled) return;
 
     setBusy(true);
     setSlotsErr("");
+
     try {
       const res = await api(`/p/${token}/book`, {
         method: "POST",
@@ -314,32 +316,27 @@ export default function PublicSchedule() {
           customerWhatsApp: offer?.customerWhatsApp || "",
         }),
       });
+
       if (!res?.ok) throw new Error(res?.error || "Falha ao criar reserva.");
+
       setBooking(res.booking);
 
-      // reflete HOLD imediatamente
       try {
-        const d = await api(
-          `/p/${token}/slots?date=${encodeURIComponent(date)}`,
-        );
+        const d = await api(`/p/${token}/slots?date=${encodeURIComponent(date)}`);
         setSlotsNow(d?.now || null);
-        setSlots(Array.isArray(d.slots) ? d.slots : []);
+        setSlots(Array.isArray(d?.slots) ? d.slots : []);
       } catch {}
     } catch (e) {
+      const msg = e?.message || "Falha ao criar reserva.";
       setBooking(null);
 
-      const msg = e?.message || "Falha ao criar reserva.";
-
-      // quando o backend retornar 409 "Horário indisponível."
-      if (/indisponível/i.test(msg)) {
-        setSlotsErr("Horário acabou de ser reservado. Escolha outro.");
+      if (/indisponivel/i.test(msg) || /indispon[ií]vel/i.test(msg)) {
+        setSlotsErr("Esse horario acabou de ser reservado. Escolha outro.");
         setSelected(null);
         try {
-          const d = await api(
-            `/p/${token}/slots?date=${encodeURIComponent(date)}`,
-          );
+          const d = await api(`/p/${token}/slots?date=${encodeURIComponent(date)}`);
           setSlotsNow(d?.now || null);
-          setSlots(Array.isArray(d.slots) ? d.slots : []);
+          setSlots(Array.isArray(d?.slots) ? d.slots : []);
         } catch {}
       } else {
         setSlotsErr(msg);
@@ -349,11 +346,55 @@ export default function PublicSchedule() {
     }
   }
 
+  const offerStatus = String(offer?.status || "").trim().toUpperCase();
+  const customerName = offer?.customerName || "Cliente";
+  const dateLabel = fmtDateLabel(date);
+  const bookingDateLabel = fmtDateFromIso(booking?.startAt);
+  const selectedTimeLabel = fmtRange(selected?.startAt, selected?.endAt);
+  const bookingTimeLabel = fmtRange(booking?.startAt, booking?.endAt) || selectedTimeLabel;
+  const lastUpdated = fmtTime(slotsNow);
+
+  const statusMeta = booking
+    ? { label: "Horario reservado", tone: "emerald", summary: "Seu horario foi reservado. Falta apenas o pagamento." }
+    : offerStatus === "ACCEPTED"
+      ? { label: "Proposta aceita", tone: "blue", summary: "Escolha uma data e um horario para seguir." }
+      : { label: "Agendamento", tone: "amber", summary: "Escolha uma data, reserve um horario e siga para o pagamento." };
+
+  const pageBg = cls(
+    "min-h-screen px-4 py-6 sm:px-6 lg:px-8",
+    isDark
+      ? "bg-[radial-gradient(circle_at_top,rgba(14,165,233,0.16),transparent_38%),linear-gradient(180deg,#020617,#0f172a_52%,#020617)] text-white"
+      : "bg-[radial-gradient(circle_at_top,rgba(14,165,233,0.12),transparent_38%),linear-gradient(180deg,#f8fafc,#eef2ff_48%,#f8fafc)] text-slate-950",
+  );
+
+  const heroCard = cls(
+    "relative overflow-hidden rounded-[34px] border p-5 shadow-[0_36px_100px_-56px_rgba(15,23,42,0.55)] sm:p-8",
+    isDark
+      ? "border-white/10 bg-[linear-gradient(135deg,rgba(8,15,30,0.96),rgba(15,23,42,0.92),rgba(6,78,59,0.45))]"
+      : "border-slate-200/80 bg-[linear-gradient(135deg,rgba(255,255,255,0.98),rgba(241,245,249,0.95),rgba(236,253,245,0.96))]",
+  );
+
   if (offerErr) {
     return (
-      <div className="min-h-screen bg-zinc-50 p-6">
-        <div className="mx-auto max-w-2xl rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-          {offerErr}
+      <div className={pageBg}>
+        <div className="mx-auto max-w-xl">
+          <SurfaceCard className="space-y-4 text-center">
+            <div
+              className={cls(
+                "mx-auto flex h-14 w-14 items-center justify-center rounded-2xl",
+                isDark ? "bg-rose-400/10 text-rose-200" : "bg-rose-50 text-rose-600",
+              )}
+            >
+              <CircleAlert className="h-6 w-6" />
+            </div>
+            <div className="space-y-2">
+              <h1 className="text-xl font-semibold">Nao foi possivel abrir o agendamento</h1>
+              <p className={cls("text-sm", isDark ? "text-slate-300" : "text-slate-600")}>{offerErr}</p>
+            </div>
+            <Button variant="secondary" onClick={() => navigate(`/p/${token}`)}>
+              Voltar
+            </Button>
+          </SurfaceCard>
         </div>
       </div>
     );
@@ -361,226 +402,379 @@ export default function PublicSchedule() {
 
   if (!offer) {
     return (
-      <div className="min-h-screen bg-zinc-50 p-6">
-        <div className="mx-auto max-w-2xl rounded-2xl border bg-white p-4 text-sm text-zinc-600">
-          Carregando…
+      <div className={pageBg}>
+        <div className="mx-auto max-w-5xl">
+          <div className={heroCard}>
+            <div className="relative space-y-5">
+              <div className="flex items-center gap-3">
+                <img src={brand} alt="Luminor Pay" className="h-10 w-10 rounded-2xl object-cover" />
+                <div>
+                  <p className={cls("text-xs font-semibold uppercase tracking-[0.28em]", isDark ? "text-sky-200/80" : "text-sky-700/80")}>
+                    Agendamento
+                  </p>
+                  <h1 className="text-2xl font-semibold">Preparando sua agenda</h1>
+                </div>
+              </div>
+              <div className="grid gap-4 md:grid-cols-[1.2fr_0.8fr]">
+                <SurfaceCard className={cls("space-y-3", isDark ? "bg-white/5" : "bg-white/80")}>
+                  <div className="h-4 w-32 animate-pulse rounded-full bg-current/10" />
+                  <div className="h-9 w-3/4 animate-pulse rounded-full bg-current/10" />
+                  <div className="h-4 w-full animate-pulse rounded-full bg-current/10" />
+                </SurfaceCard>
+                <SurfaceCard className={cls("space-y-3", isDark ? "bg-white/5" : "bg-white/80")}>
+                  <div className="h-4 w-24 animate-pulse rounded-full bg-current/10" />
+                  <div className="h-16 animate-pulse rounded-3xl bg-current/10" />
+                </SurfaceCard>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     );
   }
 
+  const actionLabel = booking ? "Ir para pagamento" : "Reservar horario";
+  const actionDisabled =
+    busy || loadingSlots || (!booking && (!selected || getSlotUi(selected).disabled));
+
   return (
-    <div className="min-h-screen bg-zinc-50">
-      <div className="border-b bg-white">
-        <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3">
-          <div>
-            <img
-              src={brand}
-              alt="Luminor Pay"
-              className="h-9 w-9 rounded-xl object-contain ring-1 ring-zinc-200 bg-white p-1"
-            />
-            <div className="text-sm font-semibold text-zinc-900">
-              LuminorPay
-            </div>
-            <div className="text-xs text-zinc-500">
-              Agendamento • Link público
-            </div>
-          </div>
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => navigate(`/p/${token}`)}
-          >
-            Voltar
-          </Button>
-        </div>
-      </div>
-
-      <div className="mx-auto grid max-w-2xl gap-4 px-4 py-6">
-        {String(offer?.status || "").toUpperCase() === "ACCEPTED" ? (
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
-            <div className="font-semibold">Proposta aceita!</div>
-            <div className="mt-1 text-emerald-900/90">
-              Agora escolha a data e horário para continuar.
-            </div>
-          </div>
-        ) : null}
-
-        {/* Resumo */}
-        <div className="rounded-2xl border bg-white p-6 shadow-sm">
-          <div className="text-xs font-semibold text-zinc-500">Resumo</div>
-          <div className="mt-1 text-xl font-semibold text-zinc-900">
-            {offer.title}
-          </div>
-          <div className="mt-1 text-sm text-zinc-600">
-            Para:{" "}
-            <span className="font-semibold text-zinc-900">
-              {offer.customerName}
-            </span>
-          </div>
-
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-2xl border bg-zinc-50 p-4">
-              <div className="text-xs font-semibold text-zinc-500">Total</div>
-              <div className="mt-1 text-lg font-semibold text-zinc-900">
-                {fmtBRL(view.totalCents)}
-              </div>
-              {view.depositEnabled ? (
-                <div className="mt-1 text-xs text-zinc-600">
-                  Sinal:{" "}
-                  <span className="font-semibold">
-                    {fmtBRL(view.depositCents)}
-                  </span>{" "}
-                  ({view.depositPct}%) • Restante:{" "}
-                  <span className="font-semibold">
-                    {fmtBRL(view.remainingCents)}
-                  </span>
-                </div>
-              ) : (
-                <div className="mt-1 text-xs text-zinc-600">
-                  Pagamento integral
-                </div>
-              )}
-            </div>
-
-            <div className="rounded-2xl border bg-zinc-50 p-4">
-              <div className="text-xs font-semibold text-zinc-500">Duração</div>
-              <div className="mt-1 text-lg font-semibold text-zinc-900">
-                {offer.durationMin || 0} min
-              </div>
-              <div className="mt-1 text-xs text-zinc-600">
-                Escolha um horário disponível para reservar.
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Seleção de data */}
-        <div className="rounded-2xl border bg-white p-6 shadow-sm">
-          <div className="text-sm font-semibold text-zinc-900">
-            Selecione a data
-          </div>
-          <div className="mt-2 max-w-xs">
-            <Input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-            />
-          </div>
-        </div>
-
-        {/* Slots */}
-        <div className="rounded-2xl border bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div className="text-sm font-semibold text-zinc-900">
-              Horários disponíveis
-            </div>
-            {loadingSlots ? (
-              <div className="text-xs text-zinc-500">Carregando…</div>
-            ) : null}
-          </div>
-
-          {slotsErr ? (
-            <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-              {slotsErr}
-            </div>
-          ) : null}
-
-          {isToday ? (
-            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-              Horários passados ficam indisponíveis automaticamente.
-            </div>
-          ) : null}
-
-          {loadingSlots ? (
-            <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="h-10 rounded-xl bg-zinc-100" />
-              ))}
-            </div>
-          ) : slots.length === 0 ? (
-            <div className="mt-3 text-sm text-zinc-600">
-              Sem horários disponíveis.
-            </div>
-          ) : (
-            <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {slots.map((s) => {
-                const ui = getSlotUi(s);
-                const disabled = ui.disabled;
-                const isSel = selected?.startAt === s.startAt;
-
-                const baseCls =
-                  "rounded-xl border px-3 py-2 text-sm font-semibold transition text-left";
-
-                const cls =
-                  ui.tone === "FREE"
-                    ? "bg-white text-zinc-900 hover:bg-zinc-50 border-zinc-200"
-                    : ui.tone === "PAST"
-                      ? "cursor-not-allowed bg-zinc-50 text-zinc-400 border-zinc-200"
-                      : "cursor-not-allowed bg-amber-50 text-amber-900 border-amber-200";
-
-                const selCls = isSel
-                  ? "border-emerald-500 ring-2 ring-emerald-100"
-                  : "";
-
-                return (
-                  <button
-                    key={s.startAt}
-                    type="button"
-                    disabled={disabled || busy || !!booking}
-                    onClick={() => {
-                      if (disabled || busy || booking) return;
-                      setSelected(s);
-                    }}
-                    className={[baseCls, cls, selCls].filter(Boolean).join(" ")}
-                    aria-pressed={isSel}
-                    title={disabled && ui.label ? ui.label : ""}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span>{fmtTime(s.startAt)}</span>
-                      {ui.tone !== "FREE" ? (
-                        <span className="text-[10px] font-bold rounded-full px-2 py-0.5 border border-amber-200 bg-white/60">
-                          BLOQUEADO
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="text-xs font-medium opacity-80">
-                      {ui.label}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="text-xs text-zinc-600">
-              {selected ? (
-                <>
-                  Selecionado:{" "}
-                  <span className="font-semibold">
-                    {fmtTime(selected.startAt)}
-                  </span>
-                </>
-              ) : (
-                "Selecione um horário para reservar."
-              )}
-            </div>
-
-            {booking ? (
-              <Button type="button" onClick={onGoPay}>
-                Ir para pagamento
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                onClick={confirmBooking}
-                disabled={!selected || busy}
-              >
-                {busy ? "Reservando…" : "Reservar horário"}
-              </Button>
+    <div className={pageBg}>
+      <div className="mx-auto max-w-5xl space-y-6">
+        <section className={heroCard}>
+          <div
+            className={cls(
+              "pointer-events-none absolute inset-0",
+              isDark
+                ? "bg-[radial-gradient(circle_at_top_right,rgba(56,189,248,0.16),transparent_32%),radial-gradient(circle_at_bottom_left,rgba(16,185,129,0.14),transparent_28%)]"
+                : "bg-[radial-gradient(circle_at_top_right,rgba(56,189,248,0.16),transparent_32%),radial-gradient(circle_at_bottom_left,rgba(16,185,129,0.12),transparent_28%)]",
             )}
+          />
+
+          <div className="relative space-y-5">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <img src={brand} alt="Luminor Pay" className="h-11 w-11 rounded-2xl object-cover shadow-sm" />
+                <div className="min-w-0">
+                  <p
+                    className={cls(
+                      "text-[11px] font-semibold uppercase tracking-[0.28em]",
+                      isDark ? "text-sky-200/80" : "text-sky-700/80",
+                    )}
+                  >
+                    Etapa 2 de 3
+                  </p>
+                  <h1 className="truncate text-2xl font-semibold sm:text-3xl">Escolha seu horario</h1>
+                </div>
+              </div>
+
+              <Button variant="secondary" size="sm" onClick={() => navigate(`/p/${token}`)}>
+                Voltar
+              </Button>
+            </div>
+
+            <div className="space-y-3">
+              <Pill tone={statusMeta.tone} label={statusMeta.label} />
+              <div className="space-y-2">
+                <h2 className="max-w-2xl text-2xl font-semibold leading-tight sm:text-[2rem]">
+                  Reserve e finalize em poucos passos.
+                </h2>
+                <p className={cls("max-w-2xl text-sm sm:text-base", isDark ? "text-slate-300" : "text-slate-600")}>
+                  {statusMeta.summary}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2.5">
+              <Pill tone="slate" label={`${offer?.durationMin || 0} min`} />
+              <Pill
+                tone="slate"
+                label={
+                  view.depositEnabled
+                    ? `${fmtBRL(view.depositCents)} de entrada`
+                    : fmtBRL(view.totalCents)
+                }
+              />
+              {(bookingTimeLabel || selectedTimeLabel) ? (
+                <Pill tone="slate" label={bookingTimeLabel || selectedTimeLabel} />
+              ) : null}
+            </div>
           </div>
+        </section>
+
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+          <SurfaceCard className="space-y-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="space-y-1">
+                <p className={cls("text-xs font-semibold uppercase tracking-[0.22em]", isDark ? "text-slate-400" : "text-slate-500")}>
+                  Agendamento
+                </p>
+                <h2 className="text-xl font-semibold">Escolha a data e o horario</h2>
+                <p className={cls("text-sm", isDark ? "text-slate-300" : "text-slate-600")}>
+                  Veja os horarios livres e toque no melhor para voce.
+                </p>
+              </div>
+
+              {lastUpdated ? <Pill tone="slate" label={`Atualizado ${lastUpdated}`} /> : null}
+            </div>
+
+            <div className="space-y-3">
+              <label className="space-y-2">
+                <span className={cls("text-sm font-medium", isDark ? "text-slate-200" : "text-slate-700")}>
+                  Data desejada
+                </span>
+                <Input
+                  type="date"
+                  value={date}
+                  min={toDateInputValue()}
+                  onChange={(e) => setDate(e.target.value)}
+                  disabled={!!booking}
+                  className={cls(
+                    "h-12 rounded-2xl border text-base shadow-none",
+                    isDark
+                      ? "border-white/10 bg-white/5 text-white"
+                      : "border-slate-200 bg-white text-slate-900",
+                  )}
+                />
+              </label>
+
+              <div
+                className={cls(
+                  "rounded-2xl border px-4 py-3 text-sm",
+                  isDark ? "border-white/10 bg-white/5 text-slate-200" : "border-slate-200 bg-slate-50 text-slate-700",
+                )}
+              >
+                <div className="flex items-center gap-2 font-medium">
+                  <CalendarDays className="h-4 w-4" />
+                  <span>{dateLabel || "Escolha uma data"}</span>
+                </div>
+                <p className={cls("mt-1 text-xs", isDark ? "text-slate-400" : "text-slate-500")}>
+                  Os horarios abaixo sao atualizados automaticamente.
+                </p>
+              </div>
+            </div>
+
+            {slotsErr ? (
+              <div
+                className={cls(
+                  "flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm",
+                  isDark ? "border-rose-400/20 bg-rose-400/10 text-rose-100" : "border-rose-200 bg-rose-50 text-rose-700",
+                )}
+              >
+                <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{slotsErr}</span>
+              </div>
+            ) : null}
+
+            {isToday && !booking ? (
+              <div
+                className={cls(
+                  "flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm",
+                  isDark ? "border-amber-400/20 bg-amber-400/10 text-amber-100" : "border-amber-200 bg-amber-50 text-amber-700",
+                )}
+              >
+                <Clock3 className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>Horarios que ja passaram ficam bloqueados automaticamente.</span>
+              </div>
+            ) : null}
+
+            {loadingSlots ? (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {Array.from({ length: 6 }).map((_, index) => (
+                  <div
+                    key={index}
+                    className={cls(
+                      "h-24 animate-pulse rounded-3xl border",
+                      isDark ? "border-white/10 bg-white/5" : "border-slate-200 bg-slate-100",
+                    )}
+                  />
+                ))}
+              </div>
+            ) : slots.length ? (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {slots.map((slot) => {
+                  const ui = getSlotUi(slot);
+                  const active =
+                    !!selected &&
+                    selected.startAt === slot.startAt &&
+                    selected.endAt === slot.endAt;
+
+                  return (
+                    <button
+                      key={`${slot.startAt}-${slot.endAt}`}
+                      type="button"
+                      disabled={ui.disabled || !!booking}
+                      onClick={() => setSelected(slot)}
+                      className={cls(
+                        "rounded-[26px] border px-4 py-4 text-left transition duration-200",
+                        "focus:outline-none focus:ring-2 focus:ring-sky-400/40",
+                        active
+                          ? isDark
+                            ? "border-sky-300/70 bg-sky-400/15 shadow-[0_20px_45px_-30px_rgba(56,189,248,0.9)]"
+                            : "border-sky-300 bg-sky-50 shadow-[0_20px_45px_-30px_rgba(14,165,233,0.45)]"
+                          : ui.disabled || booking
+                            ? isDark
+                              ? "border-white/8 bg-white/[0.03] text-slate-400"
+                              : "border-slate-200 bg-slate-50 text-slate-400"
+                            : isDark
+                              ? "border-white/10 bg-white/5 text-white hover:border-sky-300/40 hover:bg-sky-400/10"
+                              : "border-slate-200 bg-white text-slate-900 hover:border-sky-200 hover:bg-sky-50/70",
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-lg font-semibold">{fmtTime(slot.startAt)}</p>
+                          <p className={cls("mt-1 text-xs", active ? (isDark ? "text-sky-100" : "text-sky-700") : isDark ? "text-slate-400" : "text-slate-500")}>
+                            {fmtRange(slot.startAt, slot.endAt)}
+                          </p>
+                        </div>
+                        {ui.disabled || booking ? (
+                          <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+                        ) : (
+                          <Sparkles className={cls("mt-0.5 h-4 w-4 shrink-0", active ? (isDark ? "text-sky-100" : "text-sky-700") : isDark ? "text-sky-200" : "text-sky-600")} />
+                        )}
+                      </div>
+
+                      <p
+                        className={cls(
+                          "mt-3 text-xs font-medium",
+                          active
+                            ? isDark
+                              ? "text-sky-100"
+                              : "text-sky-700"
+                            : ui.disabled || booking
+                              ? isDark
+                                ? "text-slate-400"
+                                : "text-slate-500"
+                              : isDark
+                                ? "text-slate-300"
+                                : "text-slate-600",
+                        )}
+                      >
+                        {booking ? "Ja reservado" : ui.label}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div
+                className={cls(
+                  "rounded-[28px] border px-5 py-8 text-center",
+                  isDark ? "border-white/10 bg-white/5" : "border-slate-200 bg-slate-50",
+                )}
+              >
+                <p className="text-base font-semibold">Nenhum horario livre nesta data</p>
+                <p className={cls("mt-2 text-sm", isDark ? "text-slate-300" : "text-slate-600")}>
+                  Escolha outro dia para ver novas opcoes.
+                </p>
+              </div>
+            )}
+          </SurfaceCard>
+
+          <SurfaceCard className="space-y-5 lg:sticky lg:top-6">
+            <div className="space-y-1">
+              <p className={cls("text-xs font-semibold uppercase tracking-[0.22em]", isDark ? "text-slate-400" : "text-slate-500")}>
+                Resumo
+              </p>
+              <h2 className="text-xl font-semibold">{offer?.title || "Sua proposta"}</h2>
+              <p className={cls("text-sm", isDark ? "text-slate-300" : "text-slate-600")}>
+                Para {customerName}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div
+                className={cls(
+                  "rounded-2xl border px-4 py-3",
+                  isDark ? "border-white/10 bg-white/5" : "border-slate-200 bg-slate-50",
+                )}
+              >
+                <p className={cls("text-[11px] font-semibold uppercase tracking-[0.18em]", isDark ? "text-slate-400" : "text-slate-500")}>
+                  Valor
+                </p>
+                <p className="mt-2 text-base font-semibold">
+                  {view.depositEnabled ? fmtBRL(view.depositCents) : fmtBRL(view.totalCents)}
+                </p>
+                <p className={cls("mt-1 text-xs", isDark ? "text-slate-400" : "text-slate-500")}>
+                  {view.depositEnabled ? "Entrada para reservar" : "Pagamento da proposta"}
+                </p>
+              </div>
+
+              <div
+                className={cls(
+                  "rounded-2xl border px-4 py-3",
+                  isDark ? "border-white/10 bg-white/5" : "border-slate-200 bg-slate-50",
+                )}
+              >
+                <p className={cls("text-[11px] font-semibold uppercase tracking-[0.18em]", isDark ? "text-slate-400" : "text-slate-500")}>
+                  Duracao
+                </p>
+                <p className="mt-2 text-base font-semibold">{offer?.durationMin || 0} min</p>
+                <p className={cls("mt-1 text-xs", isDark ? "text-slate-400" : "text-slate-500")}>
+                  Tempo reservado na agenda
+                </p>
+              </div>
+            </div>
+
+            <div
+              className={cls(
+                "rounded-[26px] border px-4 py-4",
+                booking
+                  ? isDark
+                    ? "border-emerald-400/20 bg-emerald-400/10"
+                    : "border-emerald-200 bg-emerald-50"
+                  : selected
+                    ? isDark
+                      ? "border-sky-400/20 bg-sky-400/10"
+                      : "border-sky-200 bg-sky-50"
+                    : isDark
+                      ? "border-white/10 bg-white/5"
+                      : "border-slate-200 bg-slate-50",
+              )}
+            >
+              <p className={cls("text-[11px] font-semibold uppercase tracking-[0.18em]", isDark ? "text-slate-300" : "text-slate-500")}>
+                {booking ? "Horario reservado" : selected ? "Horario escolhido" : "Proximo passo"}
+              </p>
+
+              {booking ? (
+                <div className="mt-3 space-y-1">
+                  <p className="text-base font-semibold">{bookingDateLabel || dateLabel}</p>
+                  <p className={cls("text-sm", isDark ? "text-emerald-100" : "text-emerald-700")}>{bookingTimeLabel}</p>
+                </div>
+              ) : selected ? (
+                <div className="mt-3 space-y-1">
+                  <p className="text-base font-semibold">{dateLabel}</p>
+                  <p className={cls("text-sm", isDark ? "text-sky-100" : "text-sky-700")}>{selectedTimeLabel}</p>
+                </div>
+              ) : (
+                <p className={cls("mt-3 text-sm", isDark ? "text-slate-300" : "text-slate-600")}>
+                  Selecione um horario para liberar a reserva.
+                </p>
+              )}
+            </div>
+
+            <Button
+              className="h-12 w-full rounded-2xl text-base font-semibold"
+              onClick={booking ? onGoPay : confirmBooking}
+              disabled={actionDisabled}
+            >
+              <span>{busy ? "Confirmando..." : actionLabel}</span>
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+
+            <div className={cls("rounded-2xl border px-4 py-3 text-sm", isDark ? "border-white/10 bg-white/5 text-slate-300" : "border-slate-200 bg-slate-50 text-slate-600")}>
+              <div className="flex items-start gap-2">
+                <Wallet className="mt-0.5 h-4 w-4 shrink-0" />
+                <p>
+                  {booking
+                    ? "Seu horario ja esta reservado. Agora e so seguir para o pagamento."
+                    : view.depositEnabled
+                      ? `Ao reservar, voce segue para pagar a entrada de ${fmtBRL(view.depositCents)}.`
+                      : "Depois da reserva, voce segue direto para a etapa de pagamento."}
+                </p>
+              </div>
+            </div>
+          </SurfaceCard>
         </div>
       </div>
     </div>

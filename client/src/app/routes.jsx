@@ -1,5 +1,5 @@
 //src/app/routes.jsx
-import { createBrowserRouter, Navigate } from "react-router-dom";
+import { createBrowserRouter, Navigate, Outlet, useLocation } from "react-router-dom";
 
 import Home from "../pages/Home.jsx";
 
@@ -27,6 +27,7 @@ import PublicOfferDone from "../pages/PublicOfferDone.jsx";
 import PublicPaidGuard from "../pages/PublicPaidGuard.jsx";
 import SettingsAgenda from "../pages/SettingsAgenda.jsx";
 import SettingsNotifications from "../pages/SettingsNotifications.jsx";
+import WhatsNewModalHost from "../components/whats-new/WhatsNewModalHost.jsx";
 
 // ✅ billing
 import BillingPlans from "../pages/BillingPlans.jsx";
@@ -37,8 +38,24 @@ import BillingCancel from "../pages/BillingCancel.jsx";
 import Reports from "../pages/ReportsDashboard.jsx";
 import RecurringReportsPage from "../pages/RecurringReportsPage.jsx";
 
+function RouterShell() {
+  const location = useLocation();
+  const pathname = String(location?.pathname || "");
+  const isPublicOfferPath = /^\/p\/[^/]+(?:\/|$)/i.test(pathname);
+
+  return (
+    <>
+      <Outlet />
+      {isPublicOfferPath ? null : <WhatsNewModalHost />}
+    </>
+  );
+}
+
 export const router = createBrowserRouter(
   [
+    {
+      element: <RouterShell />,
+      children: [
     { path: "/login", element: <Login /> },
     { path: "/register", element: <Register /> },
     { path: "/", element: <Home /> },
@@ -238,6 +255,8 @@ export const router = createBrowserRouter(
     { path: "/p/:token/manage", element: <PublicBookingManage /> },
 
     { path: "/p/:token/done", element: <PublicOfferDone /> },
+      ],
+    },
   ],
   { future: { v7_startTransition: true } },
 );
