@@ -134,6 +134,14 @@ const OfferSchema = new mongoose.Schema(
 
     status: { type: String, default: "PUBLIC", index: true },
     acceptedAt: { type: Date, default: null },
+    cancelledAt: { type: Date, default: null },
+    cancelledByUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
+    },
+    cancelReason: { type: String, default: null },
 
     // ✅ status de pagamento separado do status de fluxo (compat)
     paymentStatus: { type: String, default: "PENDING", index: true },
@@ -197,5 +205,10 @@ const OfferSchema = new mongoose.Schema(
   },
   { timestamps: true },
 );
+
+OfferSchema.pre("validate", function normalizeLegacyStatus(next) {
+  if (this.status === "CANCELED") this.status = "CANCELLED";
+  next();
+});
 
 export const Offer = mongoose.model("Offer", OfferSchema);

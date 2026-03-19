@@ -21,6 +21,12 @@ export function getAmountCents(o) {
 export function getPaymentLabel(o) {
   const pay = norm(o?.paymentStatus);
   const flow = norm(o?.status || "PUBLIC");
+  if (flow === "CANCELLED") {
+    return { tone: "CANCELLED", text: "Cancelado", code: "CANCELLED" };
+  }
+  if (flow === "EXPIRED") {
+    return { tone: "EXPIRED", text: "Expirado", code: "EXPIRED" };
+  }
   const paid =
     ["PAID", "CONFIRMED"].includes(pay) || ["PAID", "CONFIRMED"].includes(flow);
 

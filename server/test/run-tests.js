@@ -16,6 +16,12 @@ import {
 } from "../src/services/whatsapp-ai/whatsappAi.schemas.js";
 import { buildConfirmationSummary } from "../src/services/whatsapp-ai/whatsappQuestionBuilder.service.js";
 import { buildOfferPayloadFromSession } from "../src/services/whatsapp-ai/whatsappOfferCreation.service.js";
+import {
+  DEFAULT_NOTIFICATION_SETTINGS,
+  getNotificationFeatureAvailability,
+  mergeNotificationSettings,
+} from "../src/services/notificationSettings.js";
+import { getPlanFeatureMatrix } from "../src/utils/planFeatures.js";
 
 process.env.MONGODB_URI = process.env.MONGODB_URI || "mongodb://localhost:27017/test";
 const { buildUserPayload, validateRegisterPayload } = await import(
@@ -158,6 +164,49 @@ await check("buildUserPayload exposes whatsappPhone", () => {
       whatsappPhone: "11 99999-8888",
     },
   );
+});
+
+await check("notification settings include offer cancelled toggle", () => {
+  const merged = mergeNotificationSettings(DEFAULT_NOTIFICATION_SETTINGS, {
+    whatsapp: {
+      offerCancelledEnabled: true,
+    },
+  });
+
+  assert.equal(
+    DEFAULT_NOTIFICATION_SETTINGS.whatsapp.offerCancelledEnabled,
+    false,
+  );
+  assert.equal(merged.whatsapp.offerCancelledEnabled, true);
+});
+
+await check("plan matrix enables offer cancelled whatsapp on Pro+", () => {
+  assert.equal(getPlanFeatureMatrix("start").whatsappOfferCancelled, false);
+  assert.equal(getPlanFeatureMatrix("pro").whatsappOfferCancelled, true);
+});
+
+await check("feature availability evaluates offer cancelled toggle", () => {
+  const availability = getNotificationFeatureAvailability({
+    settings: mergeNotificationSettings(DEFAULT_NOTIFICATION_SETTINGS, {
+      whatsapp: {
+        masterEnabled: true,
+        offerCancelledEnabled: true,
+      },
+    }),
+    capabilities: {
+      environment: {
+        whatsapp: { available: true, reason: "", reasons: [] },
+      },
+      plan: {
+        value: "pro",
+        features: {
+          whatsappOfferCancelled: true,
+        },
+      },
+    },
+  });
+
+  assert.equal(availability.whatsappOfferCancelled.available, true);
 });
 
 await check("parseStructuredExtraction normalizes AI output", () => {

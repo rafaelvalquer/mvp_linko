@@ -4,6 +4,7 @@ import { api } from "../app/api.js";
 
 function stepFromPath(pathname = "") {
   const p = String(pathname || "");
+  if (p.endsWith("/cancelled")) return "CANCELED";
   if (p.endsWith("/done")) return "DONE";
   if (p.endsWith("/pay") || p.endsWith("/payment")) return "PAYMENT";
   if (p.endsWith("/schedule")) return "SCHEDULE";
@@ -13,6 +14,8 @@ function stepFromPath(pathname = "") {
 function buildUrlForStep({ step, token, bookingId }) {
   const q = bookingId ? `?bookingId=${encodeURIComponent(bookingId)}` : "";
   switch (step) {
+    case "CANCELED":
+      return `/p/${token}/cancelled`;
     case "SCHEDULE":
       return `/p/${token}/schedule`;
     case "PAYMENT":
@@ -58,7 +61,7 @@ export default function PublicPaidGuard({ children }) {
           ).trim() || "";
 
         // EXPIRED / CANCELED: renderiza uma tela simples aqui (caso não exista rota dedicada)
-        if (flowStep === "EXPIRED" || flowStep === "CANCELED") {
+        if (flowStep === "EXPIRED") {
           if (!alive) return;
           setBlocked({
             title:

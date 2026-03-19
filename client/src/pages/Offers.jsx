@@ -267,8 +267,10 @@ export default function Offers() {
                       const pay = getPaymentLabel(o);
                       const publicUrl = `/p/${o.publicToken}`;
                       const copied = copiedId === o._id;
-                      const paymentStatus = norm(o?.paymentStatus);
-                      const isPendingAlert = paymentStatus === "PENDING";
+                      const flowStatus = norm(o?.status || "PUBLIC");
+                      const isPendingAlert =
+                        pay?.code === "PENDING" &&
+                        !["CANCELLED", "EXPIRED"].includes(flowStatus);
                       const isWaitingConfirmation =
                         pay?.code === "WAITING_CONFIRMATION";
                       const isRecurring = String(o?.generatedBy || "manual").toLowerCase() === "recurring";

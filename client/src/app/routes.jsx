@@ -23,6 +23,7 @@ import PublicOffer from "../pages/PublicOffer.jsx";
 import PublicSchedule from "../pages/PublicSchedule.jsx";
 import PublicPixPayment from "../pages/PublicPixPayment.jsx";
 import PublicBookingManage from "../pages/PublicBookingManage.jsx";
+import PublicOfferCancelled from "../pages/PublicOfferCancelled.jsx";
 import PublicOfferDone from "../pages/PublicOfferDone.jsx";
 import PublicPaidGuard from "../pages/PublicPaidGuard.jsx";
 import SettingsAccount from "../pages/SettingsAccount.jsx";
@@ -258,6 +259,14 @@ export const router = createBrowserRouter(
       element: (
         <PublicPaidGuard>
           <PublicPixPayment />
+        </PublicPaidGuard>
+      ),
+    },
+    {
+      path: "/p/:token/cancelled",
+      element: (
+        <PublicPaidGuard>
+          <PublicOfferCancelled />
         </PublicPaidGuard>
       ),
     },

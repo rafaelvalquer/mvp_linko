@@ -12,6 +12,9 @@ export function getPlanFeatureMatrix(value) {
   const whatsappPaymentStatus = ["pro", "business", "enterprise"].includes(
     plan,
   );
+  const whatsappOfferCancelled = ["pro", "business", "enterprise"].includes(
+    plan,
+  );
   const whatsappRecurringAutoSend = ["pro", "business", "enterprise"].includes(
     plan,
   );
@@ -32,6 +35,7 @@ export function getPlanFeatureMatrix(value) {
     plan,
     recurring,
     whatsappPaymentStatus,
+    whatsappOfferCancelled,
     whatsappRecurringAutoSend,
     whatsappBookingReminders,
     whatsappBookingChanges,
@@ -50,6 +54,10 @@ export function canUseRecurringPlan(value) {
 
 export function canUseNotifyWhatsAppOnPaid(value) {
   return getPlanFeatureMatrix(value).whatsappPaymentStatus;
+}
+
+export function canUseOfferCancelledWhatsApp(value) {
+  return getPlanFeatureMatrix(value).whatsappOfferCancelled;
 }
 
 export function canUseRecurringAutoSend(value) {

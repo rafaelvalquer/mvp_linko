@@ -135,6 +135,7 @@ const NotificationWhatsAppSchema = new mongoose.Schema(
   {
     masterEnabled: { type: Boolean, default: true },
     paymentStatusUpdatesEnabled: { type: Boolean, default: true },
+    offerCancelledEnabled: { type: Boolean, default: false },
     recurringAutoSendDefault: { type: Boolean, default: false },
     bookingReminders: {
       type: NotificationBookingRemindersSchema,

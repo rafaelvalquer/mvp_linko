@@ -10,6 +10,7 @@ import { Client } from "../models/Client.js";
 import { Workspace } from "../models/Workspace.js";
 import { readPaymentProofBase64 } from "../services/storageLocal.js";
 import {
+  notifyOfferCancelled,
   notifyPaymentConfirmed,
   notifyPaymentRejected,
 } from "../services/whatsappNotify.js";
@@ -25,6 +26,7 @@ import {
   resolveWorkspaceNotificationContext,
 } from "../services/notificationSettings.js";
 import { createOfferFromPayload } from "../services/offers/createOffer.service.js";
+import { buildOfferPublicUrl } from "../services/publicUrl.service.js";
 
 const r = Router();
 
@@ -424,6 +426,52 @@ async function safeNotifyPaymentConfirmed(offerId) {
   }
 }
 
+async function safeNotifyOfferCancelled(offerId, options = {}) {
+  try {
+    return await notifyOfferCancelled(offerId, options);
+  } catch (err) {
+    return {
+      ok: false,
+      status: "FAILED",
+      error: {
+        message: String(err?.message || "Falha ao notificar WhatsApp"),
+        code: String(err?.code || err?.name || "NOTIFY_FAILED"),
+      },
+    };
+  }
+}
+
+async function cancelActiveBookingsForOffer({ offer, actionAt, reason }) {
+  if (!offer?._id || !offer?.workspaceId) return 0;
+
+  const result = await Booking.updateMany(
+    {
+      offerId: offer._id,
+      workspaceId: offer.workspaceId,
+      status: { $in: ["HOLD", "CONFIRMED"] },
+    },
+    {
+      $set: {
+        status: "CANCELLED",
+        cancelledAt: actionAt,
+        cancelledBy: "workspace",
+        cancelReason: reason || "Proposta cancelada no backoffice.",
+      },
+      $push: {
+        changeHistory: {
+          action: "cancel",
+          actor: "workspace",
+          changedAt: actionAt,
+          reason: reason || "Proposta cancelada no backoffice.",
+        },
+      },
+    },
+    { strict: false },
+  ).catch(() => ({ modifiedCount: 0 }));
+
+  return Number(result?.modifiedCount || 0);
+}
+
 async function safeNotifySellerPixPaid({ offer, booking, now }) {
   try {
     const notificationContext = await resolveWorkspaceNotificationContext({
@@ -745,6 +793,95 @@ r.post(
         };
       }
     }
+
+    return res.json({ ok: true, offer: updated, notify });
+  }),
+);
+
+r.patch(
+  "/offers/:id/cancel",
+  ensureAuth,
+  tenantFromUser,
+  asyncHandler(async (req, res) => {
+    const tenantId = req.tenantId;
+    const userId = req.user?._id;
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ ok: false, error: "invalid id" });
+    }
+
+    const q = { _id: id, workspaceId: tenantId };
+    if (userId) q.ownerUserId = userId;
+
+    const offer = await Offer.findOne(q).lean();
+    if (!offer) {
+      return res.status(404).json({ ok: false, error: "Offer not found" });
+    }
+
+    const status = String(offer?.status || "")
+      .trim()
+      .toUpperCase()
+      .replace("CANCELED", "CANCELLED");
+    const paymentStatus = String(offer?.paymentStatus || "")
+      .trim()
+      .toUpperCase()
+      .replace("CANCELED", "CANCELLED");
+    const alreadyPaid =
+      ["PAID", "CONFIRMED"].includes(status) ||
+      ["PAID", "CONFIRMED"].includes(paymentStatus) ||
+      !!offer?.paidAt;
+
+    if (alreadyPaid) {
+      return res.status(409).json({
+        ok: false,
+        error: "Propostas com pagamento confirmado nao podem ser canceladas.",
+        code: "ALREADY_PAID",
+      });
+    }
+
+    if (status === "CANCELLED") {
+      return res.json({
+        ok: true,
+        offer,
+        notify: {
+          ok: false,
+          status: "SKIPPED",
+          reason: "IDEMPOTENT",
+        },
+      });
+    }
+
+    const reason = String(req.body?.reason || "").trim();
+    const actionAt = new Date();
+
+    await Offer.updateOne(
+      { _id: offer._id },
+      {
+        $set: {
+          status: "CANCELLED",
+          cancelledAt: actionAt,
+          cancelledByUserId: userId || null,
+          cancelReason: reason || null,
+          publicLockedAt: actionAt.toISOString(),
+        },
+      },
+      { strict: false },
+    );
+
+    await cancelActiveBookingsForOffer({
+      offer,
+      actionAt,
+      reason,
+    });
+
+    const updated = await Offer.findById(offer._id).lean();
+    const publicUrl =
+      String(req.body?.publicUrl || "").trim() || buildOfferPublicUrl(updated);
+    const notify = await safeNotifyOfferCancelled(updated._id, {
+      reason,
+      publicUrl,
+    });
 
     return res.json({ ok: true, offer: updated, notify });
   }),

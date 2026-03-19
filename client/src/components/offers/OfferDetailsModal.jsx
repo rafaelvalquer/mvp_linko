@@ -223,6 +223,8 @@ export default function OfferDetailsModal({
 
   const [rejectBoxOpen, setRejectBoxOpen] = useState(false);
   const [rejectText, setRejectText] = useState("");
+  const [cancelBoxOpen, setCancelBoxOpen] = useState(false);
+  const [cancelText, setCancelText] = useState("");
 
   const [mainTab, setMainTab] = useState("overview");
   const [remindersSubTab, setRemindersSubTab] = useState("config");
@@ -253,6 +255,8 @@ export default function OfferDetailsModal({
 
     setRejectBoxOpen(false);
     setRejectText("");
+    setCancelBoxOpen(false);
+    setCancelText("");
 
     setMainTab("overview");
     setRemindersSubTab("config");
@@ -567,6 +571,72 @@ export default function OfferDetailsModal({
     [offerId, active, onOfferUpdated, refreshActive],
   );
 
+  const cancelOffer = useCallback(
+    async (reasonText) => {
+      if (!offerId) return;
+
+      const reason = String(reasonText || "").trim();
+      if (!window.confirm("Cancelar esta proposta?")) return;
+
+      try {
+        setModalFlash(null);
+        setProofErr("");
+        setActionBusy(true);
+
+        const publicUrl = buildPublicUrl(active);
+
+        const d = await api(`/offers/${offerId}/cancel`, {
+          method: "PATCH",
+          body: JSON.stringify({ reason, publicUrl }),
+        });
+        if (!d?.ok) throw new Error(d?.error || "Falha ao cancelar proposta.");
+
+        const updated = d?.offer || null;
+        if (updated?._id) {
+          setActive((prev) => ({ ...(prev || {}), ...(updated || {}) }));
+          if (typeof onOfferUpdated === "function") onOfferUpdated(updated);
+        }
+
+        const notify = d?.notify || {};
+        if (notify?.status === "SENT" || notify?.status === "QUEUED") {
+          setModalFlash({
+            kind: "success",
+            text: "Proposta cancelada e cliente notificado por WhatsApp.",
+          });
+        } else if (notify?.status === "FAILED") {
+          setModalFlash({
+            kind: "error",
+            text: "Proposta cancelada, mas a notificacao por WhatsApp falhou.",
+          });
+        } else if (notify?.status === "SKIPPED") {
+          const reasonSuffix = notify?.reason ? ` (${notify.reason})` : "";
+          setModalFlash({
+            kind: "info",
+            text: `Proposta cancelada. Notificacao nao enviada${reasonSuffix}.`,
+          });
+        } else {
+          setModalFlash({
+            kind: "success",
+            text: "Proposta cancelada com sucesso.",
+          });
+        }
+
+        setCancelBoxOpen(false);
+        setCancelText("");
+
+        await refreshActive();
+      } catch (e) {
+        setModalFlash({
+          kind: "error",
+          text: e?.message || "Falha ao cancelar proposta.",
+        });
+      } finally {
+        setActionBusy(false);
+      }
+    },
+    [offerId, active, onOfferUpdated, refreshActive],
+  );
+
   const saveReminderSettings = useCallback(async () => {
     if (!offerId) return;
     try {
@@ -657,10 +727,14 @@ export default function OfferDetailsModal({
   }, [offerId, onOfferUpdated, loadReminderHistory]);
 
   const activePay = useMemo(() => getPaymentLabel(active), [active]);
+  const activeFlow = norm(active?.status);
   const activeHasProof = !!active?.paymentProof?.storage?.key;
   const activeWaiting = norm(active?.paymentStatus) === "WAITING_CONFIRMATION";
   const activePaid = activePay?.tone === "PAID";
-  const canModerateProof = activeHasProof && activeWaiting && !activePaid;
+  const activeCancelled = activeFlow === "CANCELLED";
+  const canCancelOffer = !activeCancelled && !activePaid;
+  const canModerateProof =
+    activeHasProof && activeWaiting && !activePaid && !activeCancelled;
   const reminderGuard = useMemo(() => canSendReminder(active), [active]);
 
   const title = active?.customerName
@@ -889,6 +963,93 @@ export default function OfferDetailsModal({
                           ) : null}
                         </div>
                       ) : null}
+
+                      <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+                        <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">
+                          Acoes da proposta
+                        </div>
+
+                        {activeCancelled ? (
+                          <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                            <div className="font-semibold">
+                              Esta proposta ja foi cancelada.
+                            </div>
+                            {active?.cancelledAt ? (
+                              <div className="mt-1 text-xs text-red-700">
+                                Cancelada em {fmtDT(active.cancelledAt)}
+                              </div>
+                            ) : null}
+                            {active?.cancelReason ? (
+                              <div className="mt-2 text-xs text-red-700">
+                                Motivo: {active.cancelReason}
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <>
+                            <div className="mt-2 text-xs text-zinc-500">
+                              Cancela a proposta, preserva o historico e bloqueia
+                              o fluxo no link publico.
+                            </div>
+
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <Button
+                                variant="danger"
+                                disabled={actionBusy || !canCancelOffer}
+                                onClick={() => {
+                                  setModalFlash(null);
+                                  setCancelBoxOpen((v) => !v);
+                                }}
+                              >
+                                Cancelar proposta
+                              </Button>
+                            </div>
+
+                            {!canCancelOffer ? (
+                              <div className="mt-2 text-xs text-zinc-500">
+                                Propostas com pagamento confirmado nao podem ser
+                                canceladas.
+                              </div>
+                            ) : null}
+
+                            {cancelBoxOpen ? (
+                              <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+                                <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">
+                                  Motivo do cancelamento
+                                </div>
+                                <textarea
+                                  className="mt-2 min-h-[90px] w-full rounded-xl border border-zinc-200 bg-white p-3 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
+                                  placeholder="Opcional. Esse texto pode ser enviado ao cliente no WhatsApp."
+                                  value={cancelText}
+                                  onChange={(e) => setCancelText(e.target.value)}
+                                  disabled={actionBusy}
+                                />
+                                <div className="mt-3 flex items-center justify-end gap-2">
+                                  <Button
+                                    variant="ghost"
+                                    disabled={actionBusy}
+                                    onClick={() => {
+                                      setCancelBoxOpen(false);
+                                      setCancelText("");
+                                    }}
+                                  >
+                                    Fechar
+                                  </Button>
+                                  <Button
+                                    variant="danger"
+                                    disabled={actionBusy}
+                                    onClick={() => cancelOffer(cancelText)}
+                                  >
+                                    {actionBusy
+                                      ? "Cancelando..."
+                                      : "Confirmar cancelamento"}
+                                  </Button>
+                                </div>
+                              </div>
+                            ) : null}
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
 

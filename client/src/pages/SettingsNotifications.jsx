@@ -300,6 +300,12 @@ export default function SettingsNotifications() {
         context?.settings?.whatsapp?.paymentStatusUpdatesEnabled === true,
         "Esse fluxo fica disponível a partir do plano Pro.",
       ),
+      whatsappOfferCancelled: getWhatsAppFeatureState(
+        context,
+        "whatsappOfferCancelled",
+        context?.settings?.whatsapp?.offerCancelledEnabled === true,
+        "Notificacoes de cancelamento por WhatsApp ficam disponiveis a partir do plano Pro.",
+      ),
       whatsappBookingReminders: getWhatsAppFeatureState(
         context,
         "whatsappBookingReminders",
@@ -525,6 +531,22 @@ export default function SettingsNotifications() {
                 }))
               }
               status={statusStates.whatsappPaymentStatus}
+            />
+
+            <ToggleRow
+              label="Proposta cancelada"
+              description="Avisa o cliente por WhatsApp quando uma proposta for cancelada no backoffice."
+              checked={draft.whatsapp.offerCancelledEnabled}
+              onChange={(value) =>
+                setDraft((prev) => ({
+                  ...prev,
+                  whatsapp: {
+                    ...prev.whatsapp,
+                    offerCancelledEnabled: value,
+                  },
+                }))
+              }
+              status={statusStates.whatsappOfferCancelled}
             />
 
             <ToggleRow

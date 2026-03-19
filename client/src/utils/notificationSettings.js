@@ -19,6 +19,7 @@ export const DEFAULT_NOTIFICATION_SETTINGS = {
   whatsapp: {
     masterEnabled: true,
     paymentStatusUpdatesEnabled: true,
+    offerCancelledEnabled: false,
     recurringAutoSendDefault: false,
     bookingReminders: {
       enabled: false,
@@ -40,6 +41,13 @@ const NOTIFICATION_FEATURE_META = {
       "Confirmação de pagamento por WhatsApp disponível apenas nos planos Pro, Business e Enterprise.",
     workspaceMessage:
       "Confirmação de pagamento por WhatsApp desativada nas configurações do workspace.",
+  },
+  whatsappOfferCancelled: {
+    label: "cancelamento de proposta por WhatsApp",
+    planMessage:
+      "Cancelamento de proposta por WhatsApp disponivel apenas nos planos Pro, Business e Enterprise.",
+    workspaceMessage:
+      "Cancelamento de proposta por WhatsApp desativado nas configuracoes do workspace.",
   },
   whatsappRecurringAutoSend: {
     label: "autoenvio da recorrência por WhatsApp",
@@ -140,6 +148,11 @@ export function mergeNotificationSettings(base, patch) {
         input?.whatsapp?.paymentStatusUpdatesEnabled,
         source?.whatsapp?.paymentStatusUpdatesEnabled ??
           DEFAULT_NOTIFICATION_SETTINGS.whatsapp.paymentStatusUpdatesEnabled,
+      ),
+      offerCancelledEnabled: boolOrDefault(
+        input?.whatsapp?.offerCancelledEnabled,
+        source?.whatsapp?.offerCancelledEnabled ??
+          DEFAULT_NOTIFICATION_SETTINGS.whatsapp.offerCancelledEnabled,
       ),
       recurringAutoSendDefault: boolOrDefault(
         input?.whatsapp?.recurringAutoSendDefault,
@@ -306,6 +319,14 @@ export function getNotificationFeatureAvailability(context) {
       workspaceEnabled: whatsappSettings?.paymentStatusUpdatesEnabled === true,
       meta: NOTIFICATION_FEATURE_META.whatsappPaymentStatus,
     }),
+    whatsappOfferCancelled: buildWhatsAppFeatureAvailability({
+      envAvailable: whatsappEnvironment.available === true,
+      envReason: whatsappEnvironment.reason || "",
+      planAllowed: planFeatures?.whatsappOfferCancelled === true,
+      masterEnabled,
+      workspaceEnabled: whatsappSettings?.offerCancelledEnabled === true,
+      meta: NOTIFICATION_FEATURE_META.whatsappOfferCancelled,
+    }),
     whatsappRecurringAutoSend: buildWhatsAppFeatureAvailability({
       envAvailable: whatsappEnvironment.available === true,
       envReason: whatsappEnvironment.reason || "",
@@ -356,6 +377,13 @@ export function canSendWhatsAppPaymentStatus(context) {
   return getNotificationFeatureCapability(
     context,
     "whatsappPaymentStatus",
+  ).available === true;
+}
+
+export function canSendWhatsAppOfferCancelled(context) {
+  return getNotificationFeatureCapability(
+    context,
+    "whatsappOfferCancelled",
   ).available === true;
 }
 

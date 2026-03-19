@@ -6,9 +6,11 @@ import { MessageLog } from "../models/MessageLog.js";
 import { isWhatsAppNotificationsEnabled } from "./waGateway.js";
 import { queueOrSendWhatsApp } from "./whatsappOutbox.service.js";
 import {
+  canSendWhatsAppOfferCancelled,
   canSendWhatsAppPaymentStatus,
   resolveWorkspaceNotificationContext,
 } from "./notificationSettings.js";
+import { buildOfferPublicUrl } from "./publicUrl.service.js";
 
 function onlyDigits(v) {
   return String(v || "").replace(/\D+/g, "");
@@ -502,6 +504,35 @@ function buildRejectedMessage({ offer, reason, publicUrl }) {
   return lines.join("\n");
 }
 
+function buildOfferCancelledMessage({ offer, reason, publicUrl }) {
+  const title = String(offer?.title || offer?.name || "sua proposta").trim();
+  const cents = Number(offer?.totalCents ?? offer?.amountCents ?? 0) || 0;
+  const value = fmtMoneyBRLFromCentsSafe(cents);
+  const customerName = String(offer?.customerName || "").trim();
+  const name = (customerName && customerName.split(/\s+/)[0]) || "";
+
+  const lines = [];
+  lines.push(name ? `Oi, ${name}! Tudo bem?` : "Ola! Tudo bem?");
+  lines.push("");
+  lines.push("*Proposta cancelada*");
+  lines.push(
+    `A proposta *${title}*${value ? ` no valor de *${value}*` : ""} foi cancelada e nao pode mais ser concluida.`,
+  );
+  if (String(reason || "").trim()) {
+    lines.push("");
+    lines.push("*Motivo informado:*");
+    lines.push(String(reason || "").trim());
+  }
+  if (publicUrl) {
+    lines.push("");
+    lines.push("Se voce abrir o link, ele mostrara que a proposta foi cancelada:");
+    lines.push(publicUrl);
+  }
+  lines.push("");
+  lines.push("Se precisar de ajuda, responda esta mensagem.");
+  return lines.join("\n");
+}
+
 export async function notifyPaymentRejected(
   offerId,
   { reason, publicUrl } = {},
@@ -621,6 +652,148 @@ export async function notifyPaymentRejected(
       bookingId: null,
       eventType,
       proofKey: proofKey || null,
+    },
+  });
+}
+
+export async function notifyOfferCancelled(
+  offerId,
+  { reason, publicUrl } = {},
+) {
+  const id = String(offerId || "").trim();
+  if (!id) return { ok: false, status: "SKIPPED", reason: "NO_OFFER_ID" };
+
+  if (!isWhatsAppNotificationsEnabled()) {
+    return { ok: false, status: "SKIPPED", reason: "FEATURE_DISABLED" };
+  }
+
+  const offer = await Offer.findById(id).lean();
+  if (!offer) return { ok: false, status: "SKIPPED", reason: "NO_OFFER" };
+
+  const notificationContext = await resolveWorkspaceNotificationContext({
+    workspaceId: offer?.workspaceId || null,
+    ownerUserId: offer?.ownerUserId || null,
+  });
+
+  if (!canSendWhatsAppOfferCancelled(notificationContext)) {
+    return {
+      ok: false,
+      status: "SKIPPED",
+      reason:
+        notificationContext?.capabilities?.environment?.whatsapp?.available !==
+        true
+          ? notificationContext?.capabilities?.environment?.whatsapp?.reason ||
+            "FEATURE_DISABLED"
+          : notificationContext?.capabilities?.plan?.features
+                ?.whatsappOfferCancelled !== true
+            ? "PLAN_NOT_ALLOWED"
+            : "WORKSPACE_SETTING_DISABLED",
+    };
+  }
+
+  let customerName = String(offer?.customerName || "").trim();
+  let customerWhatsApp = String(offer?.customerWhatsApp || "").trim();
+
+  try {
+    if (offer?.customerId && (!customerName || !customerWhatsApp)) {
+      const client = await Client.findOne({
+        _id: offer.customerId,
+        workspaceId: offer?.workspaceId || null,
+      }).lean();
+
+      if (client) {
+        if (!customerName) customerName = String(client?.fullName || "").trim();
+        if (!customerWhatsApp) {
+          customerWhatsApp = String(client?.phone || "").trim();
+        }
+      }
+    }
+  } catch {}
+
+  const offerForMsg = {
+    ...offer,
+    customerName: customerName || offer?.customerName,
+    customerWhatsApp: customerWhatsApp || offer?.customerWhatsApp,
+  };
+
+  const to = normalizePhoneBR(offerForMsg?.customerWhatsApp);
+  const eventType = "OFFER_CANCELLED";
+  const resolvedPublicUrl =
+    String(publicUrl || "").trim() || buildOfferPublicUrl(offerForMsg);
+  const msg = buildOfferCancelledMessage({
+    offer: offerForMsg,
+    reason: String(reason || "").trim(),
+    publicUrl: resolvedPublicUrl,
+  });
+
+  if (!to) {
+    const filter = { offerId: offer._id, eventType };
+    const base = {
+      workspaceId: offer?.workspaceId || null,
+      offerId: offer._id,
+      bookingId: null,
+      eventType,
+      channel: "WHATSAPP",
+      provider: "whatsapp-web.js",
+      to: "",
+      message: msg,
+      status: "SKIPPED",
+      providerMessageId: null,
+      error: {
+        message: "customerWhatsApp ausente ou invalido",
+        code: "NO_PHONE",
+      },
+      sentAt: null,
+    };
+
+    await MessageLog.findOneAndUpdate(
+      filter,
+      { $setOnInsert: base },
+      { upsert: true, new: true, strict: false },
+    ).catch(() => {});
+
+    return { ok: false, status: "SKIPPED", reason: "NO_PHONE" };
+  }
+
+  const filter = { offerId: offer._id, eventType };
+  const base = {
+    workspaceId: offer?.workspaceId || null,
+    offerId: offer._id,
+    bookingId: null,
+    eventType,
+    channel: "WHATSAPP",
+    provider: "whatsapp-web.js",
+    to,
+    message: msg,
+    status: "PENDING",
+    providerMessageId: null,
+    error: null,
+    sentAt: null,
+  };
+
+  const raw = await MessageLog.findOneAndUpdate(
+    filter,
+    { $setOnInsert: base },
+    { upsert: true, new: true, includeResultMetadata: true, strict: false },
+  );
+
+  const created = raw?.lastErrorObject?.updatedExisting === false;
+  const doc = raw?.value ?? null;
+
+  if (!created) {
+    return { ok: true, status: "SKIPPED", reason: "IDEMPOTENT", log: doc };
+  }
+
+  return dispatchQueuedMessageLog({
+    doc,
+    workspaceId: offer?.workspaceId || null,
+    to,
+    message: msg,
+    dedupeKey: `offer:${offer?._id}:${eventType}`,
+    meta: {
+      offerId: offer?._id || null,
+      bookingId: null,
+      eventType,
     },
   });
 }

@@ -44,7 +44,10 @@ const NAV_LINKS = [
 ];
 
 const HERO_METRICS = [
-  { value: "+32%", label: "mais chances de fechar com proposta e Pix no mesmo fluxo" },
+  {
+    value: "+32%",
+    label: "mais chances de fechar com proposta e Pix no mesmo fluxo",
+  },
   { value: "24h", label: "para organizar cobranca, agenda e acompanhamento" },
   { value: "1 lugar", label: "para vender, receber e acompanhar cada cliente" },
 ];
@@ -166,7 +169,7 @@ const PLANS = [
     name: "Business",
     subtitle: "Equipe",
     price: "R$ 279,90",
-    badge: "Mais governanca",
+    badge: "Mais governança",
     description:
       "Pensado para pequenas empresas com equipe, mais volume de vendas e necessidade de padronizar a operacao.",
     audience: "Pequenas empresas e times comerciais",
@@ -498,8 +501,8 @@ export default function Home() {
                 </div>
 
                 <h1 className="mt-7 max-w-4xl text-5xl font-black leading-[0.96] tracking-[-0.05em] sm:text-6xl lg:text-7xl">
-                  Envie orcamentos, feche mais vendas e receba no Pix sem
-                  complicacao.
+                  Envie orçamentos, feche mais vendas e receba no Pix sem
+                  complicação.
                 </h1>
 
                 <p
@@ -897,8 +900,8 @@ export default function Home() {
                 )}
               >
                 Escolha o plano que faz sentido para o momento da sua operacao.
-                Todos ajudam voce a vender com mais organizacao, cobrar no Pix
-                e acompanhar o que foi fechado.
+                Todos ajudam voce a vender com mais organizacao, cobrar no Pix e
+                acompanhar o que foi fechado.
               </p>
             </div>
 
@@ -1278,4 +1281,3 @@ export default function Home() {
     </div>
   );
 }
-
