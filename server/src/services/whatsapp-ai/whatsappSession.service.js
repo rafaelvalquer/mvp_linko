@@ -3,6 +3,7 @@ import { WhatsAppCommandSession } from "../../models/WhatsAppCommandSession.js";
 
 export const ACTIVE_WHATSAPP_SESSION_STATES = [
   "NEW",
+  "AWAITING_INTENT_SELECTION",
   "COLLECTING_FIELDS",
   "AWAITING_CUSTOMER_SELECTION",
   "AWAITING_PRODUCT_SELECTION",
@@ -116,6 +117,7 @@ export async function createWhatsAppSession({
   originalText,
   transcriptText,
   lastUserMessageText,
+  flowType = "offer_create",
 }) {
   return WhatsAppCommandSession.create({
     workspaceId,
@@ -128,6 +130,7 @@ export async function createWhatsAppSession({
     originalText: originalText || "",
     transcriptText: transcriptText || "",
     lastUserMessageText: lastUserMessageText || "",
+    flowType,
     state: "NEW",
     pendingFields: [],
     extracted: {},

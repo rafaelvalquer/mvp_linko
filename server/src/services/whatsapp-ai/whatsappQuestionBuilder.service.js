@@ -29,12 +29,76 @@ function buildItemLine(item = {}, index = 0) {
   return `${index + 1}. ${label} - Qtd: ${qty} - Valor unitario: ${formatMoney(unitPriceCents)} - Total: ${formatMoney(totalCents)}`;
 }
 
+function formatAgendaDate(dateISO, timeZone = "America/Sao_Paulo") {
+  const value = String(dateISO || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return value || "--/--/----";
+
+  const date = new Date(`${value}T12:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
+}
+
+function resolveAgendaItemIcon(item = {}) {
+  const offerTitle = String(item?.offerTitle || "").trim().toLowerCase();
+  if (item?.status === "HOLD") return "📞";
+  if (offerTitle.includes("aula") || offerTitle.includes("curso")) return "💼";
+  return "🤝";
+}
+
+function buildAgendaDailyGoal({ dayLabel = "hoje", summary = {}, items = [] } = {}) {
+  const total = Number(summary?.total || 0);
+  if (total <= 0) {
+    return "Aproveitar os horarios livres para organizar pendencias e abrir espaco para novas oportunidades.";
+  }
+
+  const morningItems = (Array.isArray(items) ? items : []).filter((item) => {
+    const label = String(item?.timeLabel || "");
+    const hour = Number(label.slice(0, 2));
+    return Number.isFinite(hour) && hour < 12;
+  });
+
+  if (morningItems.length === total) {
+    return `Organizar os compromissos da manha e manter o foco nas atividades planejadas para ${String(
+      dayLabel || "o dia",
+    ).trim()}.`;
+  }
+
+  if (total === 1) {
+    return `Conduzir o compromisso de ${String(
+      dayLabel || "hoje",
+    ).trim()} com tranquilidade e reservar tempo para follow-ups importantes.`;
+  }
+
+  return `Priorizar os ${total} compromissos de ${String(
+    dayLabel || "hoje",
+  ).trim()} e manter o ritmo do atendimento ao longo do dia.`;
+}
+
 export function buildNotLinkedNumberMessage() {
   return "Seu numero nao esta vinculado a nenhum usuario ativo da Luminor Pay. Atualize seu numero no perfil da plataforma para usar este recurso.";
 }
 
+export function buildDuplicateLinkedNumberMessage() {
+  return "Seu numero esta vinculado a mais de um usuario ativo da Luminor Pay. Deixe este WhatsApp cadastrado em apenas uma conta para usar o agente com seguranca.";
+}
+
 export function buildPlanUpgradeRequiredMessage() {
-  return "Seu plano atual nao inclui o agente de criacao de propostas por WhatsApp. Faca upgrade para Pro, Business ou Enterprise para usar esse recurso.";
+  return "Seu plano atual nao inclui o agente da Luminor no WhatsApp. Faca upgrade para Pro, Business ou Enterprise para usar esse recurso.";
+}
+
+export function buildIntentDisambiguationQuestion() {
+  return [
+    "Voce quer fazer uma proposta ou consultar a agenda?",
+    "",
+    "1. Proposta",
+    "2. Agenda",
+  ].join("\n");
 }
 
 export function buildCustomerAmbiguityQuestion(candidates = []) {
@@ -145,6 +209,69 @@ export function buildInvalidConfirmationMessage() {
   return "Responda com CONFIRMAR ou CANCELAR.";
 }
 
+export function buildInvalidIntentSelectionMessage(originalQuestion) {
+  return [
+    "Nao entendi sua escolha. Responda com PROPOSTA, AGENDA, 1, 2 ou CANCELAR.",
+    "",
+    String(originalQuestion || buildIntentDisambiguationQuestion()).trim(),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 export function buildProcessingMessage() {
   return "Sua solicitacao ainda esta sendo processada. Aguarde alguns instantes.";
+}
+
+export function buildAgendaFreeDayMessage({
+  dayLabel = "hoje",
+  dateISO = "",
+  timeZone = "America/Sao_Paulo",
+} = {}) {
+  return [
+    "✨ *SUA AGENDA DO DIA* ✨",
+    `🗓️ ${formatAgendaDate(dateISO, timeZone)}`,
+    "",
+    `Sua agenda de ${String(dayLabel || "hoje").trim()} esta livre.`,
+    "",
+    "🚀 *Meta do dia:*",
+    buildAgendaDailyGoal({ dayLabel, summary: { total: 0 }, items: [] }),
+  ].join("\n");
+}
+
+export function buildAgendaSummaryMessage({
+  dayLabel = "hoje",
+  dateISO = "",
+  timeZone = "America/Sao_Paulo",
+  summary = {},
+  items = [],
+} = {}) {
+  const normalizedItems = Array.isArray(items) ? items : [];
+  const lines = [
+    "✨ *SUA AGENDA DO DIA* ✨",
+    `🗓️ ${formatAgendaDate(dateISO, timeZone)}`,
+  ];
+
+  if (normalizedItems.length) {
+    lines.push("");
+    normalizedItems.forEach((item) => {
+      lines.push("━━━━━━━━━━━━━━");
+      lines.push(
+        `⏰ *${String(item?.timeLabel || "").trim().replace(" - ", " — ")}*`,
+      );
+      lines.push(
+        `${resolveAgendaItemIcon(item)} ${String(
+          item?.offerTitle || "Servico",
+        ).trim()}`,
+      );
+      lines.push(`👤 ${String(item?.customerName || "Cliente").trim()}`);
+      lines.push("━━━━━━━━━━━━━━");
+      lines.push("");
+    });
+  }
+
+  lines.push("🚀 *Meta do dia:*");
+  lines.push(buildAgendaDailyGoal({ dayLabel, summary, items: normalizedItems }));
+
+  return lines.join("\n");
 }

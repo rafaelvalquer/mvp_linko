@@ -5,6 +5,20 @@ export const WHATSAPP_AI_INTENTS = [
   "unknown",
 ];
 
+export const WHATSAPP_AI_ROUTING_INTENTS = [
+  "create_offer_send_whatsapp",
+  "query_daily_agenda",
+  "ambiguous_offer_or_agenda",
+  "unknown",
+];
+
+export const WHATSAPP_AI_AGENDA_DAY_KINDS = [
+  "today",
+  "tomorrow",
+  "explicit_date",
+  "unspecified",
+];
+
 export const WHATSAPP_AI_REQUIRED_FIELDS = [
   "customer_name_raw",
   "destination_phone_n11",
@@ -41,6 +55,21 @@ function toPositiveInteger(value) {
 function normalizeIntent(value) {
   const intent = String(value || "").trim();
   return WHATSAPP_AI_INTENTS.includes(intent) ? intent : "unknown";
+}
+
+function normalizeRoutingIntent(value) {
+  const intent = String(value || "").trim();
+  return WHATSAPP_AI_ROUTING_INTENTS.includes(intent) ? intent : "unknown";
+}
+
+function normalizeAgendaDayKind(value) {
+  const kind = String(value || "").trim();
+  return WHATSAPP_AI_AGENDA_DAY_KINDS.includes(kind) ? kind : "unspecified";
+}
+
+function normalizeDateIso(value) {
+  const dateIso = String(value || "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(dateIso) ? dateIso : "";
 }
 
 function isPositiveInteger(value) {
@@ -265,6 +294,51 @@ export function buildExtractionResponseFormat() {
   };
 }
 
+export function buildIntentRoutingResponseFormat() {
+  return {
+    type: "json_schema",
+    json_schema: {
+      name: "whatsapp_intent_router",
+      strict: true,
+      schema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          intent: {
+            type: "string",
+            enum: WHATSAPP_AI_ROUTING_INTENTS,
+          },
+          source_text: { type: "string" },
+        },
+        required: ["intent", "source_text"],
+      },
+    },
+  };
+}
+
+export function buildAgendaDateResponseFormat() {
+  return {
+    type: "json_schema",
+    json_schema: {
+      name: "whatsapp_agenda_day_query",
+      strict: true,
+      schema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          requested_day_kind: {
+            type: "string",
+            enum: WHATSAPP_AI_AGENDA_DAY_KINDS,
+          },
+          requested_date_iso: { type: "string" },
+          source_text: { type: "string" },
+        },
+        required: ["requested_day_kind", "requested_date_iso", "source_text"],
+      },
+    },
+  };
+}
+
 export function createEmptyExtraction() {
   return {
     intent: "unknown",
@@ -275,6 +349,21 @@ export function createEmptyExtraction() {
     unit_price_cents: null,
     items: [],
     send_via_whatsapp: true,
+    source_text: "",
+  };
+}
+
+export function createEmptyIntentRoutingExtraction() {
+  return {
+    intent: "unknown",
+    source_text: "",
+  };
+}
+
+export function createEmptyAgendaDateExtraction() {
+  return {
+    requested_day_kind: "unspecified",
+    requested_date_iso: "",
     source_text: "",
   };
 }
@@ -331,6 +420,65 @@ export function parseStructuredExtraction(payload) {
       unit_price_cents: item.unit_price_cents,
     })),
     send_via_whatsapp: value.send_via_whatsapp !== false,
+    source_text: String(value.source_text || "").trim(),
+  };
+}
+
+export function parseIntentRoutingExtraction(payload) {
+  let value = payload;
+
+  if (typeof value === "string") {
+    value = JSON.parse(value);
+  }
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    const err = new Error("A IA retornou um payload de roteamento invalido.");
+    err.code = "WHATSAPP_AI_INVALID_ROUTING_PAYLOAD";
+    throw err;
+  }
+
+  const allowedKeys = ["intent", "source_text"];
+  const extras = Object.keys(value).filter((key) => !allowedKeys.includes(key));
+  if (extras.length) {
+    const err = new Error(
+      `Campos nao suportados no roteamento: ${extras.join(", ")}`,
+    );
+    err.code = "WHATSAPP_AI_INVALID_ROUTING_KEYS";
+    throw err;
+  }
+
+  return {
+    intent: normalizeRoutingIntent(value.intent),
+    source_text: String(value.source_text || "").trim(),
+  };
+}
+
+export function parseAgendaDateExtraction(payload) {
+  let value = payload;
+
+  if (typeof value === "string") {
+    value = JSON.parse(value);
+  }
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    const err = new Error("A IA retornou um payload de agenda invalido.");
+    err.code = "WHATSAPP_AI_INVALID_AGENDA_PAYLOAD";
+    throw err;
+  }
+
+  const allowedKeys = ["requested_day_kind", "requested_date_iso", "source_text"];
+  const extras = Object.keys(value).filter((key) => !allowedKeys.includes(key));
+  if (extras.length) {
+    const err = new Error(
+      `Campos nao suportados na consulta de agenda: ${extras.join(", ")}`,
+    );
+    err.code = "WHATSAPP_AI_INVALID_AGENDA_KEYS";
+    throw err;
+  }
+
+  return {
+    requested_day_kind: normalizeAgendaDayKind(value.requested_day_kind),
+    requested_date_iso: normalizeDateIso(value.requested_date_iso),
     source_text: String(value.source_text || "").trim(),
   };
 }

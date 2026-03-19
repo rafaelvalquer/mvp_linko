@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 
 export const WHATSAPP_COMMAND_SESSION_STATES = [
   "NEW",
+  "AWAITING_INTENT_SELECTION",
   "COLLECTING_FIELDS",
   "AWAITING_CUSTOMER_SELECTION",
   "AWAITING_PRODUCT_SELECTION",
@@ -83,6 +84,11 @@ const WhatsAppCommandSessionSchema = new mongoose.Schema(
     originalText: { type: String, default: "" },
     transcriptText: { type: String, default: "" },
     lastUserMessageText: { type: String, default: "" },
+    flowType: {
+      type: String,
+      enum: ["offer_create", "agenda_query", "intent_disambiguation"],
+      default: "offer_create",
+    },
     state: {
       type: String,
       enum: WHATSAPP_COMMAND_SESSION_STATES,

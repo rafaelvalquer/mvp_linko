@@ -17,6 +17,33 @@ function buildSharedInstructions() {
   ].join("\n");
 }
 
+function buildIntentRoutingInstructions() {
+  return [
+    "Voce e um classificador de intencao para um agente de WhatsApp da Luminor Pay.",
+    "Leia mensagens em pt-BR.",
+    "Responda somente com JSON valido e sem markdown.",
+    "Classifique se a mensagem e sobre criar proposta, consultar agenda diaria, ou se esta ambigua entre proposta e agenda.",
+    "Retorne ambiguous_offer_or_agenda quando houver duvida real entre os dois fluxos.",
+    "Retorne unknown quando a mensagem nao estiver relacionada a proposta nem agenda.",
+    "source_text deve refletir a compreensao final do texto informado.",
+  ].join("\n");
+}
+
+function buildAgendaInstructions() {
+  return [
+    "Voce e um extrator de data para consultas de agenda por WhatsApp.",
+    "Leia mensagens em pt-BR.",
+    "Responda somente com JSON valido e sem markdown.",
+    "Extraia apenas a referencia de dia solicitada.",
+    "Se a mensagem pedir hoje, retorne requested_day_kind=today.",
+    "Se a mensagem pedir amanha, retorne requested_day_kind=tomorrow.",
+    "Se houver uma data explicita, retorne requested_day_kind=explicit_date e preencha requested_date_iso em YYYY-MM-DD.",
+    "Se nao houver dia claro, retorne requested_day_kind=unspecified e requested_date_iso vazio.",
+    "Nao invente datas ausentes.",
+    "source_text deve refletir a compreensao final do texto informado.",
+  ].join("\n");
+}
+
 export function buildFreshExtractionPrompt({ text }) {
   return {
     systemPrompt: [
@@ -25,6 +52,28 @@ export function buildFreshExtractionPrompt({ text }) {
       "Quando identificar o pedido, use intent=create_offer_send_whatsapp e send_via_whatsapp=true.",
     ].join("\n\n"),
     userPrompt: [`Texto do usuario:`, String(text || "").trim() || "(vazio)"].join("\n"),
+  };
+}
+
+export function buildIntentRoutingPrompt({ text }) {
+  return {
+    systemPrompt: buildIntentRoutingInstructions(),
+    userPrompt: [`Texto do usuario:`, String(text || "").trim() || "(vazio)"].join("\n"),
+  };
+}
+
+export function buildAgendaDateExtractionPrompt({
+  text,
+  todayDateIso,
+  timeZone,
+}) {
+  return {
+    systemPrompt: buildAgendaInstructions(),
+    userPrompt: [
+      `Timezone de referencia: ${String(timeZone || "America/Sao_Paulo").trim()}`,
+      `Data de hoje na timezone: ${String(todayDateIso || "").trim() || "(desconhecida)"}`,
+      `Mensagem do usuario: ${String(text || "").trim() || "(vazio)"}`,
+    ].join("\n"),
   };
 }
 

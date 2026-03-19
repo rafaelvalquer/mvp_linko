@@ -1,9 +1,15 @@
 import {
+  buildAgendaDateExtractionPrompt,
+  buildIntentRoutingPrompt,
   buildContinuationExtractionPrompt,
   buildFreshExtractionPrompt,
 } from "./whatsappAi.prompts.js";
 import {
+  buildAgendaDateResponseFormat,
+  buildIntentRoutingResponseFormat,
   buildExtractionResponseFormat,
+  parseAgendaDateExtraction,
+  parseIntentRoutingExtraction,
   parseStructuredExtraction,
 } from "./whatsappAi.schemas.js";
 import {
@@ -12,7 +18,12 @@ import {
   isWhatsAppAiEnabled,
 } from "./openai.client.js";
 
-async function requestStructuredExtraction({ systemPrompt, userPrompt }) {
+async function requestStructuredExtraction({
+  systemPrompt,
+  userPrompt,
+  responseFormat,
+  parseResponse,
+}) {
   if (!isWhatsAppAiEnabled()) {
     const err = new Error("WhatsApp AI desabilitado.");
     err.code = "WHATSAPP_AI_DISABLED";
@@ -27,7 +38,7 @@ async function requestStructuredExtraction({ systemPrompt, userPrompt }) {
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
     ],
-    response_format: buildExtractionResponseFormat(),
+    response_format: responseFormat,
   });
 
   const content = String(response?.choices?.[0]?.message?.content || "").trim();
@@ -37,11 +48,15 @@ async function requestStructuredExtraction({ systemPrompt, userPrompt }) {
     throw err;
   }
 
-  return parseStructuredExtraction(content);
+  return parseResponse(content);
 }
 
 export async function extractWhatsAppIntent({ text }) {
-  return requestStructuredExtraction(buildFreshExtractionPrompt({ text }));
+  return requestStructuredExtraction({
+    ...buildFreshExtractionPrompt({ text }),
+    responseFormat: buildExtractionResponseFormat(),
+    parseResponse: parseStructuredExtraction,
+  });
 }
 
 export async function extractWhatsAppSessionReply({
@@ -51,11 +66,39 @@ export async function extractWhatsAppSessionReply({
   currentResolved,
 }) {
   return requestStructuredExtraction(
-    buildContinuationExtractionPrompt({
-      text,
-      lastQuestionKey,
-      pendingFields,
-      currentResolved,
-    }),
+    {
+      ...buildContinuationExtractionPrompt({
+        text,
+        lastQuestionKey,
+        pendingFields,
+        currentResolved,
+      }),
+      responseFormat: buildExtractionResponseFormat(),
+      parseResponse: parseStructuredExtraction,
+    },
   );
+}
+
+export async function routeWhatsAppMessageIntent({ text }) {
+  return requestStructuredExtraction({
+    ...buildIntentRoutingPrompt({ text }),
+    responseFormat: buildIntentRoutingResponseFormat(),
+    parseResponse: parseIntentRoutingExtraction,
+  });
+}
+
+export async function extractWhatsAppAgendaDate({
+  text,
+  todayDateIso,
+  timeZone,
+}) {
+  return requestStructuredExtraction({
+    ...buildAgendaDateExtractionPrompt({
+      text,
+      todayDateIso,
+      timeZone,
+    }),
+    responseFormat: buildAgendaDateResponseFormat(),
+    parseResponse: parseAgendaDateExtraction,
+  });
 }

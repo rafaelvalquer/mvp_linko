@@ -7,6 +7,8 @@ import {
   normalizeWhatsAppPhoneDigits,
 } from "../src/utils/phone.js";
 import {
+  parseAgendaDateExtraction,
+  parseIntentRoutingExtraction,
   listMissingMandatoryFields,
   mergeResolvedDraft,
   parseDirectReplyValue,
@@ -14,8 +16,19 @@ import {
   parseStructuredExtraction,
   normalizeResolvedItems,
 } from "../src/services/whatsapp-ai/whatsappAi.schemas.js";
-import { buildConfirmationSummary } from "../src/services/whatsapp-ai/whatsappQuestionBuilder.service.js";
+import {
+  buildAgendaFreeDayMessage,
+  buildAgendaSummaryMessage,
+  buildConfirmationSummary,
+  buildIntentDisambiguationQuestion,
+} from "../src/services/whatsapp-ai/whatsappQuestionBuilder.service.js";
 import { buildOfferPayloadFromSession } from "../src/services/whatsapp-ai/whatsappOfferCreation.service.js";
+import {
+  buildAgendaDayLabel,
+  getDateIsoForTimeZone,
+  resolveAgendaQueryDate,
+  shiftDateIso,
+} from "../src/services/whatsapp-ai/whatsappAgendaQuery.service.js";
 import {
   DEFAULT_NOTIFICATION_SETTINGS,
   getNotificationFeatureAvailability,
@@ -305,6 +318,118 @@ await check("parseStructuredExtraction keeps all extracted items", () => {
     quantity: 2,
     unit_price_cents: 3000,
   });
+});
+
+await check("parseIntentRoutingExtraction accepts agenda routing", () => {
+  const parsed = parseIntentRoutingExtraction({
+    intent: "query_daily_agenda",
+    source_text: "qual minha agenda de hoje",
+  });
+
+  assert.deepEqual(parsed, {
+    intent: "query_daily_agenda",
+    source_text: "qual minha agenda de hoje",
+  });
+});
+
+await check("parseAgendaDateExtraction normalizes requested day", () => {
+  const parsed = parseAgendaDateExtraction({
+    requested_day_kind: "tomorrow",
+    requested_date_iso: "",
+    source_text: "agenda de amanha",
+  });
+
+  assert.deepEqual(parsed, {
+    requested_day_kind: "tomorrow",
+    requested_date_iso: "",
+    source_text: "agenda de amanha",
+  });
+});
+
+await check("agenda date helpers resolve today and tomorrow", () => {
+  const now = new Date("2026-03-19T15:00:00.000Z");
+  const timeZone = "America/Sao_Paulo";
+
+  assert.equal(getDateIsoForTimeZone(now, timeZone), "2026-03-19");
+  assert.equal(shiftDateIso("2026-03-19", 1), "2026-03-20");
+  assert.equal(
+    resolveAgendaQueryDate({
+      requestedDayKind: "unspecified",
+      requestedDateIso: "",
+      now,
+      timeZone,
+    }),
+    "2026-03-19",
+  );
+  assert.equal(
+    resolveAgendaQueryDate({
+      requestedDayKind: "tomorrow",
+      requestedDateIso: "",
+      now,
+      timeZone,
+    }),
+    "2026-03-20",
+  );
+});
+
+await check("agenda messages format summary and disambiguation", () => {
+  const now = new Date("2026-03-19T15:00:00.000Z");
+  const dayLabel = buildAgendaDayLabel({
+    requestedDayKind: "tomorrow",
+    dateISO: "2026-03-20",
+    now,
+    timeZone: "America/Sao_Paulo",
+  });
+  const summary = buildAgendaSummaryMessage({
+    dayLabel,
+    dateISO: "2026-03-20",
+    timeZone: "America/Sao_Paulo",
+    summary: {
+      confirmed: 1,
+      hold: 1,
+      total: 2,
+    },
+    items: [
+      {
+        timeLabel: "09:00 - 10:00",
+        customerName: "Rafael",
+        offerTitle: "Consulta",
+        status: "CONFIRMED",
+      },
+      {
+        timeLabel: "10:30 - 11:00",
+        customerName: "Maria",
+        offerTitle: "Retorno",
+        status: "HOLD",
+      },
+    ],
+  });
+
+  assert.equal(dayLabel, "amanha");
+  assert.match(summary, /✨ \*SUA AGENDA DO DIA\* ✨/u);
+  assert.match(summary, /🗓️ 20\/03\/2026/u);
+  assert.match(summary, /⏰ \*09:00 — 10:00\*/u);
+  assert.match(summary, /🤝 Consulta/u);
+  assert.match(summary, /📞 Retorno/u);
+  assert.match(summary, /👤 Rafael/u);
+  assert.match(summary, /🚀 \*Meta do dia:\*/u);
+
+  const disambiguation = buildIntentDisambiguationQuestion();
+  assert.match(disambiguation, /1\. Proposta/);
+  assert.match(disambiguation, /2\. Agenda/);
+});
+
+await check("agenda free day message uses the WhatsApp template", () => {
+  const message = buildAgendaFreeDayMessage({
+    dayLabel: "hoje",
+    dateISO: "2026-03-19",
+    timeZone: "America/Sao_Paulo",
+  });
+
+  assert.match(message, /✨ \*SUA AGENDA DO DIA\* ✨/u);
+  assert.match(message, /🗓️ 19\/03\/2026/u);
+  assert.match(message, /Sua agenda de hoje esta livre\./);
+  assert.match(message, /🚀 \*Meta do dia:\*/u);
 });
 
 await check("mergeResolvedDraft resets linked entities when raw values change", () => {

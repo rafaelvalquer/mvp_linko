@@ -23,12 +23,17 @@ import {
   parseDirectReplyValue,
 } from "./whatsappAi.schemas.js";
 import {
+  buildAgendaFreeDayMessage,
+  buildAgendaSummaryMessage,
   buildCancelledMessage,
   buildConfirmationSummary,
   buildCustomerAmbiguityQuestion,
+  buildDuplicateLinkedNumberMessage,
   buildErrorMessage,
   buildInvalidConfirmationMessage,
+  buildInvalidIntentSelectionMessage,
   buildInvalidSelectionMessage,
+  buildIntentDisambiguationQuestion,
   buildMissingFieldQuestion,
   buildNotLinkedNumberMessage,
   buildPlanUpgradeRequiredMessage,
@@ -51,12 +56,22 @@ import {
 import { createOfferAndDispatchToCustomer } from "./whatsappOfferCreation.service.js";
 import { transcribeWhatsAppAudio } from "./whatsappAudioTranscription.service.js";
 import {
+  extractWhatsAppAgendaDate,
   extractWhatsAppIntent,
   extractWhatsAppSessionReply,
+  routeWhatsAppMessageIntent,
 } from "./whatsappIntentExtraction.service.js";
+import {
+  buildAgendaDayLabel,
+  getDateIsoForTimeZone,
+  getWorkspaceAgendaTimeZone,
+  loadDailyAgendaForWorkspace,
+  resolveAgendaQueryDate,
+} from "./whatsappAgendaQuery.service.js";
 import { isWhatsAppAiEnabled } from "./openai.client.js";
 
 const inflightInboundEventKeys = new Set();
+const INTENT_SELECTION_CONTEXT_KEY = "_intentSelectionContext";
 
 function normalizeComparableText(value) {
   return String(value || "")
@@ -75,6 +90,35 @@ function parseConfirmationReply(value) {
   ) {
     return "CANCELAR";
   }
+  return "";
+}
+
+function parseIntentSelectionReply(value) {
+  const normalized = normalizeComparableText(value);
+
+  if (
+    ["cancelar", "cancela", "cancelado"].includes(normalized) ||
+    normalized.startsWith("cancel")
+  ) {
+    return "CANCELAR";
+  }
+
+  if (
+    normalized === "1" ||
+    normalized.startsWith("proposta") ||
+    normalized.includes("orcamento")
+  ) {
+    return "PROPOSTA";
+  }
+
+  if (
+    normalized === "2" ||
+    normalized.startsWith("agenda") ||
+    normalized.includes("agenda")
+  ) {
+    return "AGENDA";
+  }
+
   return "";
 }
 
@@ -122,6 +166,33 @@ function buildSessionResolved(baseResolved = {}, patch = {}) {
     },
     patch,
   );
+}
+
+function buildSessionExtracted(baseExtracted = {}, patch = {}) {
+  return {
+    ...(baseExtracted && typeof baseExtracted === "object" && !Array.isArray(baseExtracted)
+      ? baseExtracted
+      : {}),
+    ...(patch && typeof patch === "object" && !Array.isArray(patch) ? patch : {}),
+  };
+}
+
+function stripIntentSelectionContext(resolved = {}) {
+  if (!resolved || typeof resolved !== "object" || Array.isArray(resolved)) {
+    return {};
+  }
+
+  const next = { ...resolved };
+  delete next[INTENT_SELECTION_CONTEXT_KEY];
+  return next;
+}
+
+function getIntentSelectionContext(session) {
+  const context = session?.resolved?.[INTENT_SELECTION_CONTEXT_KEY];
+  if (!context || typeof context !== "object" || Array.isArray(context)) {
+    return null;
+  }
+  return context;
 }
 
 function buildInboundEventKey(event) {
@@ -182,6 +253,20 @@ async function replyNotLinkedRequester({ event, requesterPhoneDigits }) {
   });
 }
 
+async function replyDuplicateLinkedRequester({ event, requesterPhoneDigits }) {
+  return sendWhatsAppReply({
+    workspaceId: null,
+    to: requesterPhoneDigits,
+    message: buildDuplicateLinkedNumberMessage(),
+    dedupeKey: `whatsapp-ai:duplicate-linked:${event.messageId}`,
+    meta: {
+      direction: "requester_reply",
+      reason: "DUPLICATE_LINKED_NUMBER",
+      messageId: event.messageId,
+    },
+  });
+}
+
 async function replyPlanNotAllowed({ event, user, requesterPhoneDigits }) {
   return sendWhatsAppReply({
     workspaceId: user?.workspaceId || null,
@@ -228,6 +313,244 @@ async function askSessionQuestion({
   });
 
   return updatedSession;
+}
+
+function buildRestoredProposalQuestion(context = {}, resolved = {}) {
+  if (context?.priorState === "AWAITING_CONFIRMATION") {
+    return (
+      String(context?.priorConfirmationSummaryText || "").trim() ||
+      buildConfirmationSummary(resolved)
+    );
+  }
+
+  if (String(context?.priorLastQuestionText || "").trim()) {
+    return String(context.priorLastQuestionText || "").trim();
+  }
+
+  const nextField = resolveFieldQuestionKey(context?.priorPendingFields || []);
+  if (nextField) {
+    return buildMissingFieldQuestion(nextField, resolved);
+  }
+
+  return buildIntentDisambiguationQuestion();
+}
+
+async function maybeAskForIntentSelection({
+  session,
+  user,
+  text,
+  dedupeSuffix,
+  origin = "existing_session",
+}) {
+  const routingExtraction = await routeWhatsAppMessageIntent({ text });
+
+  if (
+    !["query_daily_agenda", "ambiguous_offer_or_agenda"].includes(
+      routingExtraction.intent,
+    )
+  ) {
+    return null;
+  }
+
+  const question = buildIntentDisambiguationQuestion();
+  const resolvedWithoutContext = stripIntentSelectionContext(session?.resolved || {});
+  const context = {
+    origin,
+    pendingIntent: routingExtraction.intent,
+    pendingIntentText: text,
+    priorFlowType: session?.flowType || "offer_create",
+    priorState: session?.state || "",
+    priorPendingFields: Array.isArray(session?.pendingFields)
+      ? session.pendingFields
+      : [],
+    priorLastQuestionKey: String(session?.lastQuestionKey || "").trim(),
+    priorLastQuestionText: String(session?.lastQuestionText || "").trim(),
+    priorCandidateCustomers: Array.isArray(session?.candidateCustomers)
+      ? session.candidateCustomers
+      : [],
+    priorCandidateProducts: Array.isArray(session?.candidateProducts)
+      ? session.candidateProducts
+      : [],
+    priorConfirmationSummaryText: String(
+      session?.confirmationSummaryText || "",
+    ).trim(),
+  };
+
+  const updatedSession = await updateWhatsAppSession(session._id, {
+    flowType: "intent_disambiguation",
+    state: "AWAITING_INTENT_SELECTION",
+    pendingFields: [],
+    lastQuestionKey: "intent_selection",
+    lastQuestionText: question,
+    candidateCustomers: [],
+    candidateProducts: [],
+    confirmationSummaryText: "",
+    extracted: buildSessionExtracted(session?.extracted, {
+      intentRouting: routingExtraction,
+    }),
+    resolved: {
+      ...resolvedWithoutContext,
+      [INTENT_SELECTION_CONTEXT_KEY]: context,
+    },
+  });
+
+  await replyToSession({
+    session: updatedSession,
+    user,
+    message: question,
+    dedupeSuffix,
+  });
+
+  return {
+    ok: true,
+    status: "awaiting_intent_selection",
+    session: updatedSession,
+    routingExtraction,
+  };
+}
+
+async function runAgendaQueryForSession({
+  session,
+  user,
+  text,
+  dedupeSuffix,
+  routingExtraction = null,
+}) {
+  const timeZone = await getWorkspaceAgendaTimeZone(user.workspaceId);
+  const now = new Date();
+  const todayDateIso = getDateIsoForTimeZone(now, timeZone);
+  const agendaExtraction = await extractWhatsAppAgendaDate({
+    text,
+    todayDateIso,
+    timeZone,
+  });
+  const dateISO = resolveAgendaQueryDate({
+    requestedDayKind: agendaExtraction.requested_day_kind,
+    requestedDateIso: agendaExtraction.requested_date_iso,
+    now,
+    timeZone,
+  });
+  const dayLabel = buildAgendaDayLabel({
+    requestedDayKind: agendaExtraction.requested_day_kind,
+    dateISO,
+    now,
+    timeZone,
+  });
+  const agenda = await loadDailyAgendaForWorkspace({
+    workspaceId: user.workspaceId,
+    dateISO,
+    timeZone,
+  });
+  const message =
+    Array.isArray(agenda?.items) && agenda.items.length
+      ? buildAgendaSummaryMessage({
+          dayLabel,
+          dateISO,
+          timeZone,
+          summary: agenda.summary,
+          items: agenda.items,
+        })
+      : buildAgendaFreeDayMessage({
+          dayLabel,
+          dateISO,
+          timeZone,
+        });
+
+  const completedSession = await markSessionCompleted(session._id, {
+    flowType: "agenda_query",
+    extracted: buildSessionExtracted(session?.extracted, {
+      ...(routingExtraction ? { intentRouting: routingExtraction } : {}),
+      agendaQuery: {
+        ...agendaExtraction,
+        dateISO,
+        dayLabel,
+        timeZone,
+        summary: agenda.summary,
+      },
+    }),
+    resolved: {
+      ...stripIntentSelectionContext(session?.resolved || {}),
+      source_text: text,
+      agendaDateIso: dateISO,
+      agendaDayLabel: dayLabel,
+      agendaTimeZone: timeZone,
+    },
+  });
+
+  await closeActiveSessionsForRequester({
+    userId: user._id,
+    requesterPhoneDigits: completedSession.requesterPhoneDigits,
+    excludeSessionId: completedSession._id,
+    state: "EXPIRED",
+  });
+
+  await replyToSession({
+    session: completedSession,
+    user,
+    message,
+    dedupeSuffix,
+  });
+
+  return {
+    ok: true,
+    status: "completed",
+    session: completedSession,
+    agendaDateIso: dateISO,
+  };
+}
+
+async function initializeOfferSession({
+  session,
+  user,
+  text,
+  dedupeSuffix,
+  routingExtraction = null,
+  forceOfferFlow = false,
+}) {
+  const extracted = await extractWhatsAppIntent({ text });
+  const normalizedExtracted =
+    forceOfferFlow && extracted.intent !== "create_offer_send_whatsapp"
+      ? {
+          ...extracted,
+          intent: "create_offer_send_whatsapp",
+          send_via_whatsapp: true,
+          source_text: String(extracted?.source_text || text || "").trim(),
+        }
+      : extracted;
+
+  const resolved = buildSessionResolved(
+    stripIntentSelectionContext(session?.resolved || createEmptyResolved()),
+    normalizedExtracted,
+  );
+  const sessionAfterExtraction = await updateWhatsAppSession(session._id, {
+    flowType: "offer_create",
+    extracted: buildSessionExtracted(session?.extracted, {
+      ...normalizedExtracted,
+      ...(routingExtraction ? { intentRouting: routingExtraction } : {}),
+    }),
+    resolved,
+  });
+
+  if (normalizedExtracted.intent !== "create_offer_send_whatsapp") {
+    const erroredSession = await markSessionError(sessionAfterExtraction._id, {
+      code: "WHATSAPP_AI_UNKNOWN_INTENT",
+      message: "Intencao nao reconhecida para o fluxo de proposta.",
+    });
+
+    await replyToSession({
+      session: erroredSession,
+      user,
+      message: buildErrorMessage(),
+      dedupeSuffix,
+    });
+    return { ok: true, status: "unknown_intent" };
+  }
+
+  return advanceSessionAfterResolution({
+    session: sessionAfterExtraction,
+    user,
+    dedupeSuffix,
+  });
 }
 
 async function advanceSessionAfterResolution({ session, user, dedupeSuffix }) {
@@ -401,6 +724,116 @@ async function advanceSessionAfterResolution({ session, user, dedupeSuffix }) {
   };
 }
 
+async function handleIntentSelection({ session, user, event, text }) {
+  const selection = parseIntentSelectionReply(text);
+  const context = getIntentSelectionContext(session);
+  const pendingIntentText = String(context?.pendingIntentText || text || "").trim();
+
+  if (selection === "CANCELAR") {
+    const cancelledSession = await markSessionCancelled(session._id, {
+      resolved: stripIntentSelectionContext(session?.resolved || {}),
+    });
+    await closeActiveSessionsForRequester({
+      userId: user._id,
+      requesterPhoneDigits: session.requesterPhoneDigits,
+      excludeSessionId: cancelledSession._id,
+      state: "EXPIRED",
+    });
+    await replyToSession({
+      session: cancelledSession,
+      user,
+      message: buildCancelledMessage(),
+      dedupeSuffix: `${event.messageId}:cancel`,
+    });
+    return { ok: true, status: "cancelled", session: cancelledSession };
+  }
+
+  if (selection === "AGENDA") {
+    return runAgendaQueryForSession({
+      session,
+      user,
+      text: pendingIntentText || text,
+      dedupeSuffix: `${event.messageId}:agenda`,
+      routingExtraction: {
+        intent: "query_daily_agenda",
+        source_text: pendingIntentText || text,
+      },
+    });
+  }
+
+  if (selection === "PROPOSTA") {
+    const baseResolved = stripIntentSelectionContext(session?.resolved || {});
+
+    if (context?.origin === "existing_session") {
+      const restoredQuestion = buildRestoredProposalQuestion(context, baseResolved);
+      const restoredSession = await updateWhatsAppSession(session._id, {
+        flowType: "offer_create",
+        state: String(context?.priorState || "COLLECTING_FIELDS").trim() || "COLLECTING_FIELDS",
+        pendingFields: Array.isArray(context?.priorPendingFields)
+          ? context.priorPendingFields
+          : [],
+        lastQuestionKey: String(context?.priorLastQuestionKey || "").trim(),
+        lastQuestionText: restoredQuestion,
+        candidateCustomers: Array.isArray(context?.priorCandidateCustomers)
+          ? context.priorCandidateCustomers
+          : [],
+        candidateProducts: Array.isArray(context?.priorCandidateProducts)
+          ? context.priorCandidateProducts
+          : [],
+        confirmationSummaryText: String(
+          context?.priorConfirmationSummaryText || "",
+        ).trim(),
+        resolved: baseResolved,
+      });
+
+      await replyToSession({
+        session: restoredSession,
+        user,
+        message: restoredQuestion,
+        dedupeSuffix: `${event.messageId}:proposal-resume`,
+      });
+
+      return {
+        ok: true,
+        status: "offer_resumed",
+        session: restoredSession,
+      };
+    }
+
+    const resetSession = await updateWhatsAppSession(session._id, {
+      flowType: "offer_create",
+      state: "NEW",
+      pendingFields: [],
+      lastQuestionKey: "",
+      lastQuestionText: "",
+      candidateCustomers: [],
+      candidateProducts: [],
+      confirmationSummaryText: "",
+      resolved: baseResolved,
+    });
+
+    return initializeOfferSession({
+      session: resetSession,
+      user,
+      text: pendingIntentText || text,
+      dedupeSuffix: `${event.messageId}:proposal`,
+      routingExtraction: {
+        intent: "create_offer_send_whatsapp",
+        source_text: pendingIntentText || text,
+      },
+      forceOfferFlow: true,
+    });
+  }
+
+  await replyToSession({
+    session,
+    user,
+    message: buildInvalidIntentSelectionMessage(session?.lastQuestionText),
+    dedupeSuffix: `${event.messageId}:invalid-intent-selection`,
+  });
+  return { ok: true, status: "awaiting_intent_selection", session };
+}
+
 async function handleConfirmation({ session, user, dedupeSuffix }) {
   const processingSession = await transitionSessionToProcessing(session._id);
   if (!processingSession) {
@@ -462,12 +895,29 @@ async function handleOpenSession({ session, user, event, text }) {
 
   const dedupeSuffix = `${event.messageId}:${String(refreshedSession.state || "").toLowerCase()}`;
 
+  if (refreshedSession.state === "AWAITING_INTENT_SELECTION") {
+    return handleIntentSelection({
+      session: refreshedSession,
+      user,
+      event,
+      text,
+    });
+  }
+
   if (refreshedSession.state === "AWAITING_CUSTOMER_SELECTION") {
     const selected = pickCandidateByOrdinal(
       text,
       refreshedSession.candidateCustomers || [],
     );
     if (!selected) {
+      const intentSelection = await maybeAskForIntentSelection({
+        session: refreshedSession,
+        user,
+        text,
+        dedupeSuffix: `${event.messageId}:intent-selection`,
+      });
+      if (intentSelection) return intentSelection;
+
       await replyToSession({
         session: refreshedSession,
         user,
@@ -500,6 +950,14 @@ async function handleOpenSession({ session, user, event, text }) {
       refreshedSession.candidateProducts || [],
     );
     if (!selected) {
+      const intentSelection = await maybeAskForIntentSelection({
+        session: refreshedSession,
+        user,
+        text,
+        dedupeSuffix: `${event.messageId}:intent-selection`,
+      });
+      if (intentSelection) return intentSelection;
+
       await replyToSession({
         session: refreshedSession,
         user,
@@ -535,6 +993,14 @@ async function handleOpenSession({ session, user, event, text }) {
   if (refreshedSession.state === "AWAITING_DESTINATION_PHONE") {
     const destinationPhone = normalizeDestinationPhoneN11(text);
     if (!destinationPhone) {
+      const intentSelection = await maybeAskForIntentSelection({
+        session: refreshedSession,
+        user,
+        text,
+        dedupeSuffix: `${event.messageId}:intent-selection`,
+      });
+      if (intentSelection) return intentSelection;
+
       await replyToSession({
         session: refreshedSession,
         user,
@@ -587,6 +1053,14 @@ async function handleOpenSession({ session, user, event, text }) {
       return { ok: true, status: "cancelled", session: cancelledSession };
     }
 
+    const intentSelection = await maybeAskForIntentSelection({
+      session: refreshedSession,
+      user,
+      text,
+      dedupeSuffix: `${event.messageId}:intent-selection`,
+    });
+    if (intentSelection) return intentSelection;
+
     await replyToSession({
       session: refreshedSession,
       user,
@@ -618,6 +1092,16 @@ async function handleOpenSession({ session, user, event, text }) {
     patch = parseDirectReplyValue(refreshedSession.lastQuestionKey, text);
   }
 
+  if (!Object.keys(patch).length) {
+    const intentSelection = await maybeAskForIntentSelection({
+      session: refreshedSession,
+      user,
+      text,
+      dedupeSuffix: `${event.messageId}:intent-selection`,
+    });
+    if (intentSelection) return intentSelection;
+  }
+
   const extracted = Object.keys(patch).length
     ? patch
     : await extractWhatsAppSessionReply({
@@ -629,7 +1113,7 @@ async function handleOpenSession({ session, user, event, text }) {
 
   const resolved = buildSessionResolved(refreshedSession.resolved, extracted);
   const updatedSession = await updateWhatsAppSession(refreshedSession._id, {
-    extracted,
+    extracted: buildSessionExtracted(refreshedSession.extracted, extracted),
     resolved,
   });
 
@@ -673,9 +1157,14 @@ export async function processInboundWhatsAppEvent(event) {
       .limit(2)
       .lean();
 
-    if (users.length !== 1) {
+    if (users.length === 0) {
       await replyNotLinkedRequester({ event, requesterPhoneDigits });
       return { ok: true, status: "requester_not_linked" };
+    }
+
+    if (users.length > 1) {
+      await replyDuplicateLinkedRequester({ event, requesterPhoneDigits });
+      return { ok: true, status: "requester_phone_ambiguous" };
     }
 
     user = users[0];
@@ -772,24 +1261,39 @@ export async function processInboundWhatsAppEvent(event) {
     }
     sessionForError = createdSession;
 
-    const extracted = await extractWhatsAppIntent({ text });
-    const resolved = buildSessionResolved(createEmptyResolved(), extracted);
-    const sessionAfterExtraction = await updateWhatsAppSession(
-      createdSession._id,
-      {
-        extracted,
-        resolved,
-      },
-    );
+    const routingExtraction = await routeWhatsAppMessageIntent({ text });
+    const sessionAfterRouting = await updateWhatsAppSession(createdSession._id, {
+      extracted: buildSessionExtracted(createdSession.extracted, {
+        intentRouting: routingExtraction,
+      }),
+    });
 
-    if (extracted.intent !== "create_offer_send_whatsapp") {
-      const erroredSession = await markSessionError(
-        sessionAfterExtraction._id,
-        {
-          code: "WHATSAPP_AI_UNKNOWN_INTENT",
-          message: "Intencao nao reconhecida para o fluxo de proposta.",
-        },
-      );
+    if (routingExtraction.intent === "query_daily_agenda") {
+      return runAgendaQueryForSession({
+        session: sessionAfterRouting,
+        user,
+        text,
+        dedupeSuffix: `${event.messageId}:agenda`,
+        routingExtraction,
+      });
+    }
+
+    if (routingExtraction.intent === "ambiguous_offer_or_agenda") {
+      const intentSelection = await maybeAskForIntentSelection({
+        session: sessionAfterRouting,
+        user,
+        text,
+        dedupeSuffix: `${event.messageId}:intent-selection`,
+        origin: "new_session",
+      });
+      if (intentSelection) return intentSelection;
+    }
+
+    if (routingExtraction.intent !== "create_offer_send_whatsapp") {
+      const erroredSession = await markSessionError(sessionAfterRouting._id, {
+        code: "WHATSAPP_AI_UNKNOWN_INTENT",
+        message: "Intencao nao reconhecida para proposta nem agenda.",
+      });
 
       await replyToSession({
         session: erroredSession,
@@ -800,10 +1304,12 @@ export async function processInboundWhatsAppEvent(event) {
       return { ok: true, status: "unknown_intent" };
     }
 
-    return advanceSessionAfterResolution({
-      session: sessionAfterExtraction,
+    return initializeOfferSession({
+      session: sessionAfterRouting,
       user,
+      text,
       dedupeSuffix: `${event.messageId}:new-session`,
+      routingExtraction,
     });
   } catch (error) {
     if (typeof user !== "undefined" && sessionForError?._id) {
