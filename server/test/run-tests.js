@@ -21,7 +21,10 @@ import {
   getNotificationFeatureAvailability,
   mergeNotificationSettings,
 } from "../src/services/notificationSettings.js";
-import { getPlanFeatureMatrix } from "../src/utils/planFeatures.js";
+import {
+  assertWhatsAppAccountPhoneAllowed,
+  getPlanFeatureMatrix,
+} from "../src/utils/planFeatures.js";
 
 process.env.MONGODB_URI = process.env.MONGODB_URI || "mongodb://localhost:27017/test";
 const { buildUserPayload, validateRegisterPayload } = await import(
@@ -183,6 +186,31 @@ await check("notification settings include offer cancelled toggle", () => {
 await check("plan matrix enables offer cancelled whatsapp on Pro+", () => {
   assert.equal(getPlanFeatureMatrix("start").whatsappOfferCancelled, false);
   assert.equal(getPlanFeatureMatrix("pro").whatsappOfferCancelled, true);
+});
+
+await check("plan matrix blocks account WhatsApp editing on Start", () => {
+  assert.equal(getPlanFeatureMatrix("start").whatsappAccountPhone, false);
+  assert.equal(getPlanFeatureMatrix("pro").whatsappAccountPhone, true);
+  assert.equal(getPlanFeatureMatrix("business").whatsappAccountPhone, true);
+  assert.equal(getPlanFeatureMatrix("enterprise").whatsappAccountPhone, true);
+});
+
+await check("assertWhatsAppAccountPhoneAllowed blocks Start plan", () => {
+  assert.throws(
+    () => assertWhatsAppAccountPhoneAllowed("start"),
+    /WhatsApp da conta/i,
+  );
+  assert.equal(assertWhatsAppAccountPhoneAllowed("pro"), "pro");
+});
+
+await check("plan matrix blocks WhatsApp AI offer creation on Start", () => {
+  assert.equal(getPlanFeatureMatrix("start").whatsappAiOfferCreation, false);
+  assert.equal(getPlanFeatureMatrix("pro").whatsappAiOfferCreation, true);
+  assert.equal(getPlanFeatureMatrix("business").whatsappAiOfferCreation, true);
+  assert.equal(
+    getPlanFeatureMatrix("enterprise").whatsappAiOfferCreation,
+    true,
+  );
 });
 
 await check("feature availability evaluates offer cancelled toggle", () => {

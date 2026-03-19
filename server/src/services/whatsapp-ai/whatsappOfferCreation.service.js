@@ -1,5 +1,6 @@
 import { Workspace } from "../../models/Workspace.js";
 import { normalizeWhatsAppPhoneDigits } from "../../utils/phone.js";
+import { canUseWhatsAppAiOfferCreation } from "../../utils/planFeatures.js";
 import { createOfferFromPayload } from "../offers/createOffer.service.js";
 import { buildOfferPublicUrl } from "../publicUrl.service.js";
 import { queueOrSendWhatsApp } from "../whatsappOutbox.service.js";
@@ -74,6 +75,14 @@ export function buildOfferPayloadFromSession(session) {
 
 export async function createOfferAndDispatchToCustomer({ session, user }) {
   const workspace = await Workspace.findById(user.workspaceId).select("plan").lean();
+  if (!canUseWhatsAppAiOfferCreation(workspace?.plan || "start")) {
+    const err = new Error(
+      "Plano nao permite criar propostas pelo agente de WhatsApp.",
+    );
+    err.code = "PLAN_NOT_ALLOWED";
+    throw err;
+  }
+
   const offer = await createOfferFromPayload({
     tenantId: user.workspaceId,
     userId: user._id,

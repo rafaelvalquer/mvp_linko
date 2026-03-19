@@ -144,33 +144,38 @@ function SlotPicker({ value, onChange, disabled, step = 60 }) {
           </button>
         ))}
       </div>
-      <div className="flex items-center gap-2">
-        <Input
-          type="time"
-          className="w-32"
-          value={customTime}
-          onChange={(e) => setCustomTime(e.target.value)}
-          disabled={disabled}
-        />
-        <Button
-          type="button"
-          variant="secondary"
-          disabled={disabled || !isHHmm(customTime)}
-          onClick={() => {
-            toggle(customTime);
-            setCustomTime("");
-          }}
-        >
-          + Adicionar
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          className="text-red-600"
-          onClick={() => onChange([])}
-        >
-          Limpar tudo
-        </Button>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="w-full sm:w-32">
+          <Input
+            type="time"
+            className="w-full"
+            value={customTime}
+            onChange={(e) => setCustomTime(e.target.value)}
+            disabled={disabled}
+          />
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Button
+            type="button"
+            variant="secondary"
+            className="w-full sm:w-auto"
+            disabled={disabled || !isHHmm(customTime)}
+            onClick={() => {
+              toggle(customTime);
+              setCustomTime("");
+            }}
+          >
+            + Adicionar
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            className="w-full text-red-600 sm:w-auto"
+            onClick={() => onChange([])}
+          >
+            Limpar tudo
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -564,62 +569,67 @@ export default function SettingsAgenda() {
                   key={day}
                   className={`p-4 rounded-xl border transition-colors ${rule.open ? "bg-white border-zinc-200" : "bg-zinc-50 border-transparent opacity-60"}`}
                 >
-                  <div className="flex flex-wrap items-center gap-4">
-                    <div className="w-24">
-                      <span className="font-bold text-zinc-800">
-                        {DAY_LABEL[day]}
-                      </span>
-                    </div>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        className="rounded text-indigo-600"
-                        checked={rule.open}
-                        onChange={(e) => {
-                          const nextRules = { ...agenda.weeklyRules };
-                          nextRules[day] = {
-                            ...rule,
-                            open: e.target.checked,
-                            slots: e.target.checked
-                              ? rule.slots.length
-                                ? rule.slots
-                                : agenda.defaultSlots
-                              : [],
-                          };
-                          patchAgenda({ weeklyRules: nextRules });
-                        }}
-                      />
-                      <span className="text-sm">
-                        {rule.open ? "Aberto" : "Fechado"}
-                      </span>
-                    </label>
-
-                    {rule.open && (
-                      <div className="flex-1 flex items-center gap-3 min-w-[300px]">
-                        <select
-                          className="text-sm border-zinc-200 rounded-lg p-1.5"
+                  <div className="flex flex-col gap-4">
+                    <div className="flex flex-wrap items-center gap-4">
+                      <div className="w-24">
+                        <span className="font-bold text-zinc-800">
+                          {DAY_LABEL[day]}
+                        </span>
+                      </div>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="rounded text-indigo-600"
+                          checked={rule.open}
                           onChange={(e) => {
-                            const preset = PRESETS.find(
-                              (p) => p.value === e.target.value,
-                            );
-                            if (!preset) return;
                             const nextRules = { ...agenda.weeklyRules };
                             nextRules[day] = {
                               ...rule,
-                              slots: preset.slots,
-                              _custom: preset.value === "custom",
+                              open: e.target.checked,
+                              slots: e.target.checked
+                                ? rule.slots.length
+                                  ? rule.slots
+                                  : agenda.defaultSlots
+                                : [],
                             };
                             patchAgenda({ weeklyRules: nextRules });
                           }}
-                        >
-                          <option value="">Aplicar Modelo...</option>
-                          {PRESETS.map((p) => (
-                            <option key={p.value} value={p.value}>
-                              {p.label}
-                            </option>
-                          ))}
-                        </select>
-                        <div className="flex-1">
+                        />
+                        <span className="text-sm">
+                          {rule.open ? "Aberto" : "Fechado"}
+                        </span>
+                      </label>
+                    </div>
+
+                    {rule.open && (
+                      <div className="w-full space-y-3">
+                        <div className="w-full sm:max-w-xs">
+                          <select
+                            className="w-full rounded-lg border-zinc-200 p-2 text-sm"
+                            onChange={(e) => {
+                              const preset = PRESETS.find(
+                                (p) => p.value === e.target.value,
+                              );
+                              if (!preset) return;
+                              const nextRules = { ...agenda.weeklyRules };
+                              nextRules[day] = {
+                                ...rule,
+                                slots: preset.slots,
+                                _custom: preset.value === "custom",
+                              };
+                              patchAgenda({ weeklyRules: nextRules });
+                            }}
+                          >
+                            <option value="">Aplicar Modelo...</option>
+                            {PRESETS.map((p) => (
+                              <option key={p.value} value={p.value}>
+                                {p.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="w-full">
                           <SlotPicker
                             value={rule.slots}
                             step={agenda.slotMinutes}

@@ -33,6 +33,10 @@ export function buildNotLinkedNumberMessage() {
   return "Seu numero nao esta vinculado a nenhum usuario ativo da Luminor Pay. Atualize seu numero no perfil da plataforma para usar este recurso.";
 }
 
+export function buildPlanUpgradeRequiredMessage() {
+  return "Seu plano atual nao inclui o agente de criacao de propostas por WhatsApp. Faca upgrade para Pro, Business ou Enterprise para usar esse recurso.";
+}
+
 export function buildCustomerAmbiguityQuestion(candidates = []) {
   const options = candidates
     .map(

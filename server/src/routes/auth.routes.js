@@ -19,6 +19,7 @@ import {
 } from "../services/whatsNew.service.js";
 import { isMasterAdminEmail } from "../utils/masterAdmin.js";
 import { normalizeUserWhatsAppPhone } from "../utils/phone.js";
+import { assertWhatsAppAccountPhoneAllowed } from "../utils/planFeatures.js";
 
 const r = Router();
 
@@ -879,6 +880,21 @@ r.patch(
   "/auth/me/whatsapp-phone",
   ensureAuth,
   asyncHandler(async (req, res) => {
+    const workspace = await Workspace.findById(req.user.workspaceId)
+      .select("plan")
+      .lean();
+
+    try {
+      assertWhatsAppAccountPhoneAllowed(workspace?.plan || "start");
+    } catch (error) {
+      return sendError(
+        res,
+        error.status || error.statusCode || 403,
+        error.message || "Plano nao permite configurar o WhatsApp da conta.",
+        error.code || "WHATSAPP_ACCOUNT_PHONE_PLAN_BLOCKED",
+      );
+    }
+
     const rawValue =
       req.body?.whatsappPhone == null ? "" : String(req.body.whatsappPhone || "");
     const normalized = normalizeUserWhatsAppPhone(rawValue);

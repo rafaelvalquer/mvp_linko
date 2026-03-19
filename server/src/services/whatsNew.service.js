@@ -240,7 +240,8 @@ export async function ensureWhatsNewBaseline(userId) {
   if (!userId) return null;
 
   const now = new Date();
-  const select = "_id name email workspaceId role status whatsNewLastSeenAt";
+  const select =
+    "_id name email workspaceId role status whatsNewLastSeenAt whatsappPhone";
 
   const initialized = await User.findOneAndUpdate(
     {

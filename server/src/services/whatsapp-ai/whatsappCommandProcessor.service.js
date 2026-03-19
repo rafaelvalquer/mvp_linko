@@ -1,8 +1,10 @@
 import { User } from "../../models/User.js";
+import { Workspace } from "../../models/Workspace.js";
 import {
   normalizeDestinationPhoneN11,
   normalizeWhatsAppPhoneDigits,
 } from "../../utils/phone.js";
+import { canUseWhatsAppAiOfferCreation } from "../../utils/planFeatures.js";
 import { queueOrSendWhatsApp } from "../whatsappOutbox.service.js";
 import {
   applyCustomerSelection,
@@ -29,6 +31,7 @@ import {
   buildInvalidSelectionMessage,
   buildMissingFieldQuestion,
   buildNotLinkedNumberMessage,
+  buildPlanUpgradeRequiredMessage,
   buildProcessingMessage,
   buildProductAmbiguityQuestion,
   buildSuccessMessage,
@@ -174,6 +177,20 @@ async function replyNotLinkedRequester({ event, requesterPhoneDigits }) {
     meta: {
       direction: "requester_reply",
       reason: "NOT_LINKED",
+      messageId: event.messageId,
+    },
+  });
+}
+
+async function replyPlanNotAllowed({ event, user, requesterPhoneDigits }) {
+  return sendWhatsAppReply({
+    workspaceId: user?.workspaceId || null,
+    to: requesterPhoneDigits,
+    message: buildPlanUpgradeRequiredMessage(),
+    dedupeKey: `whatsapp-ai:plan-not-allowed:${event.messageId}`,
+    meta: {
+      direction: "requester_reply",
+      reason: "PLAN_NOT_ALLOWED",
       messageId: event.messageId,
     },
   });
@@ -662,6 +679,25 @@ export async function processInboundWhatsAppEvent(event) {
     }
 
     user = users[0];
+    const workspace = await Workspace.findById(user.workspaceId)
+      .select("plan")
+      .lean();
+    const workspacePlan = workspace?.plan || "start";
+
+    if (!canUseWhatsAppAiOfferCreation(workspacePlan)) {
+      await closeActiveSessionsForRequester({
+        userId: user._id,
+        requesterPhoneDigits,
+        state: "CANCELLED",
+      });
+      await replyPlanNotAllowed({
+        event,
+        user,
+        requesterPhoneDigits,
+      });
+      return { ok: true, status: "plan_not_allowed" };
+    }
+
     const duplicateSession = await findSessionBySourceMessageId({
       userId: user._id,
       messageId: event.messageId,

@@ -9,6 +9,16 @@ export function normalizePlan(value) {
 export function getPlanFeatureMatrix(value) {
   const plan = normalizePlan(value);
   const recurring = ["pro", "business", "enterprise"].includes(plan);
+  const whatsappAccountPhone = [
+    "pro",
+    "business",
+    "enterprise",
+  ].includes(plan);
+  const whatsappAiOfferCreation = [
+    "pro",
+    "business",
+    "enterprise",
+  ].includes(plan);
   const whatsappPaymentStatus = ["pro", "business", "enterprise"].includes(
     plan,
   );
@@ -34,6 +44,8 @@ export function getPlanFeatureMatrix(value) {
   return {
     plan,
     recurring,
+    whatsappAccountPhone,
+    whatsappAiOfferCreation,
     whatsappPaymentStatus,
     whatsappOfferCancelled,
     whatsappRecurringAutoSend,
@@ -46,6 +58,14 @@ export function getPlanFeatureMatrix(value) {
 
 export function canUseRecurring(value) {
   return getPlanFeatureMatrix(value).recurring;
+}
+
+export function canUseWhatsAppAccountPhone(value) {
+  return getPlanFeatureMatrix(value).whatsappAccountPhone;
+}
+
+export function canUseWhatsAppAiOfferCreation(value) {
+  return getPlanFeatureMatrix(value).whatsappAiOfferCreation;
 }
 
 export function canUseRecurringPlan(value) {

@@ -197,7 +197,23 @@ export function AuthProvider({ children }) {
         ...data.user,
       }));
     }
-    return data;
+    try {
+      const fresh = await authApi.me();
+      if (fresh?.user) {
+        setUser(fresh.user);
+      }
+      if (fresh?.workspace || fresh?.user?.workspace) {
+        setWorkspace(normalizeWorkspace(fresh?.workspace || fresh?.user?.workspace));
+      }
+
+      return {
+        ...data,
+        user: fresh?.user || data?.user || null,
+        workspace: fresh?.workspace || data?.workspace || null,
+      };
+    } catch {
+      return data;
+    }
   }, []);
 
   const resendRegisterCode = useCallback(async ({ email }) => {

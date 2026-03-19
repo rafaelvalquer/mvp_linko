@@ -67,6 +67,13 @@ const FEATURES = [
     highlight: "Mais rapidez no atendimento",
   },
   {
+    icon: Sparkles,
+    title: "Agente de propostas no WhatsApp",
+    description:
+      "Crie propostas por texto ou audio no WhatsApp, com preenchimento automatico dos dados e menos trabalho manual no atendimento.",
+    highlight: "Recurso Pro, Business e Enterprise",
+  },
+  {
     icon: QrCode,
     title: "Pix sem complicacao",
     description:
@@ -159,8 +166,9 @@ const PLANS = [
       "Tudo do Start",
       "Cadastro de clientes",
       "Cadastro de produtos e servicos",
-      "Dashboard avancado",
+      "Dashboard avançado",
       "Cobrancas recorrentes",
+      "Agente para criaçao de proposta por WhatsApp",
       "Notificacoes por WhatsApp",
       "Confirmacao automatica de pagamento",
     ],
@@ -201,7 +209,7 @@ const PLANS = [
       "Regras avancadas de operacao",
       "SLA dedicado",
       "Arquitetura para maior volume",
-      "Fluxos avancados de cobranca e WhatsApp",
+      "Fluxos avançados de cobranca e WhatsApp",
       "Condicoes comerciais sob consulta",
     ],
   },

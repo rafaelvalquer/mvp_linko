@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import Badge from "../components/appui/Badge.jsx";
 import Button from "../components/appui/Button.jsx";
 import Card, { CardBody, CardHeader } from "../components/appui/Card.jsx";
 import { Input } from "../components/appui/Input.jsx";
@@ -6,6 +7,7 @@ import Skeleton from "../components/appui/Skeleton.jsx";
 import SettingsLayout from "../components/settings/SettingsLayout.jsx";
 import UnsavedChangesBar from "../components/settings/UnsavedChangesBar.jsx";
 import { useAuth } from "../app/AuthContext.jsx";
+import { canUseWhatsAppAccountPhone } from "../utils/planFeatures.js";
 
 function getApiErrorMessage(error) {
   const code = String(error?.data?.code || error?.code || "")
@@ -16,31 +18,71 @@ function getApiErrorMessage(error) {
     return "Informe um numero de WhatsApp valido com DDD. Exemplo: 11999998888.";
   }
 
+  if (code === "WHATSAPP_ACCOUNT_PHONE_PLAN_BLOCKED") {
+    return "Seu plano atual nao libera o WhatsApp da conta. Faca upgrade para Pro, Business ou Enterprise para editar esse numero.";
+  }
+
   return error?.message || "Falha ao atualizar o WhatsApp do usuario.";
 }
 
+function getStatusState({ planAllowed, isConfigured }) {
+  if (!planAllowed) {
+    return {
+      tone: "ACCEPTED",
+      label: "Bloqueado pelo plano",
+      title: "WhatsApp bloqueado no plano atual",
+      note: "O numero da conta fica disponivel a partir do plano Pro.",
+    };
+  }
+
+  if (isConfigured) {
+    return {
+      tone: "PAID",
+      label: "Ativo",
+      title: "WhatsApp configurado",
+      note: "Seu numero ja pode ser usado para identificar voce no fluxo de comandos por WhatsApp.",
+    };
+  }
+
+  return {
+    tone: "DRAFT",
+    label: "Pendente",
+    title: "WhatsApp ainda nao configurado",
+    note: "Adicione seu numero com DDD para liberar os comandos por texto e audio no WhatsApp.",
+  };
+}
+
 export default function SettingsAccount() {
-  const { user, loadingMe, updateMyWhatsAppPhone } = useAuth();
+  const { user, workspace, loadingMe, updateMyWhatsAppPhone } = useAuth();
   const [draftPhone, setDraftPhone] = useState("");
-  const [savedPhone, setSavedPhone] = useState("");
+  const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
   const [okMsg, setOkMsg] = useState("");
 
-  useEffect(() => {
-    const currentPhone = String(user?.whatsappPhone || "").trim();
-    setDraftPhone(currentPhone);
-    setSavedPhone(currentPhone);
-  }, [user?.whatsappPhone]);
-
-  const dirty = useMemo(
-    () => String(draftPhone || "").trim() !== String(savedPhone || "").trim(),
-    [draftPhone, savedPhone],
+  const persistedPhone = String(user?.whatsappPhone || "").trim();
+  const hasPersistedPhone = persistedPhone.length > 0;
+  const currentPlan = String(workspace?.plan || "start").trim().toLowerCase();
+  const planAllowed = canUseWhatsAppAccountPhone(currentPlan);
+  const status = useMemo(
+    () => getStatusState({ planAllowed, isConfigured: hasPersistedPhone }),
+    [planAllowed, hasPersistedPhone],
   );
 
-  const isConfigured = String(savedPhone || "").trim().length > 0;
+  useEffect(() => {
+    setDraftPhone(persistedPhone);
+    setEditing(!persistedPhone);
+  }, [persistedPhone]);
+
+  const showEditor = planAllowed && (!hasPersistedPhone || editing);
+  const dirty = useMemo(
+    () => String(draftPhone || "").trim() !== persistedPhone,
+    [draftPhone, persistedPhone],
+  );
 
   async function handleSave() {
+    if (!planAllowed) return;
+
     try {
       setSaving(true);
       setErr("");
@@ -52,7 +94,7 @@ export default function SettingsAccount() {
 
       const nextPhone = String(data?.user?.whatsappPhone || "").trim();
       setDraftPhone(nextPhone);
-      setSavedPhone(nextPhone);
+      setEditing(!nextPhone);
       setOkMsg(
         nextPhone
           ? "WhatsApp do usuario salvo com sucesso."
@@ -67,17 +109,16 @@ export default function SettingsAccount() {
   }
 
   async function handleRemove() {
-    if (!savedPhone && !draftPhone) return;
+    if (!planAllowed || !hasPersistedPhone) return;
 
     try {
       setSaving(true);
       setErr("");
       setOkMsg("");
 
-      const data = await updateMyWhatsAppPhone({ whatsappPhone: "" });
-      const nextPhone = String(data?.user?.whatsappPhone || "").trim();
-      setDraftPhone(nextPhone);
-      setSavedPhone(nextPhone);
+      await updateMyWhatsAppPhone({ whatsappPhone: "" });
+      setDraftPhone("");
+      setEditing(true);
       setOkMsg("WhatsApp do usuario removido com sucesso.");
       setTimeout(() => setOkMsg(""), 3200);
     } catch (error) {
@@ -85,6 +126,20 @@ export default function SettingsAccount() {
     } finally {
       setSaving(false);
     }
+  }
+
+  function handleStartEdit() {
+    setDraftPhone(persistedPhone);
+    setEditing(true);
+    setErr("");
+    setOkMsg("");
+  }
+
+  function handleDiscard() {
+    setDraftPhone(persistedPhone);
+    setEditing(!hasPersistedPhone);
+    setErr("");
+    setOkMsg("");
   }
 
   if (loadingMe) {
@@ -106,9 +161,11 @@ export default function SettingsAccount() {
       title="Conta"
       subtitle="Defina o numero que identifica voce nos comandos enviados pelo WhatsApp."
       actions={
-        <Button onClick={handleSave} disabled={saving || !dirty}>
-          {saving ? "Salvando..." : "Salvar alteracoes"}
-        </Button>
+        showEditor ? (
+          <Button onClick={handleSave} disabled={saving || !dirty}>
+            {saving ? "Salvando..." : "Salvar alteracoes"}
+          </Button>
+        ) : null
       }
     >
       {err ? (
@@ -133,27 +190,14 @@ export default function SettingsAccount() {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <div className="text-sm font-semibold text-slate-950 dark:text-white">
-                  {isConfigured
-                    ? "WhatsApp configurado"
-                    : "WhatsApp ainda nao configurado"}
+                  {status.title}
                 </div>
                 <div className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                  {isConfigured
-                    ? "Seu numero ja pode ser usado para identificar voce no fluxo de comandos por WhatsApp."
-                    : "Adicione seu numero com DDD para liberar os comandos por texto e audio no WhatsApp."}
+                  {status.note}
                 </div>
               </div>
 
-              <span
-                className={[
-                  "inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em]",
-                  isConfigured
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-100"
-                    : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100",
-                ].join(" ")}
-              >
-                {isConfigured ? "Ativo" : "Pendente"}
-              </span>
+              <Badge tone={status.tone}>{status.label}</Badge>
             </div>
           </div>
         </CardBody>
@@ -162,37 +206,81 @@ export default function SettingsAccount() {
       <Card>
         <CardHeader
           title="WhatsApp do usuario"
-          subtitle="Voce pode informar, atualizar ou remover o numero a qualquer momento."
-          right={
-            <Button
-              variant="ghost"
-              className="text-red-600 dark:text-red-300"
-              onClick={handleRemove}
-              disabled={saving || (!savedPhone && !draftPhone)}
-            >
-              Remover numero
-            </Button>
+          subtitle={
+            planAllowed
+              ? "Voce pode informar, atualizar ou remover o numero a qualquer momento."
+              : "O numero da conta fica visivel, mas a edicao depende de upgrade para Pro, Business ou Enterprise."
           }
         />
         <CardBody className="space-y-4">
-          <div className="space-y-2">
-            <label className="block text-sm font-semibold text-slate-900 dark:text-white">
-              Numero de WhatsApp
-            </label>
-            <Input
-              type="tel"
-              inputMode="tel"
-              autoComplete="tel"
-              value={draftPhone}
-              onChange={(event) => setDraftPhone(event.target.value)}
-              placeholder="11 99999-8888"
-              disabled={saving}
-            />
-            <div className="text-xs leading-5 text-slate-500 dark:text-slate-400">
-              Aceita formatos brasileiros com DDD. Exemplo: 11999998888 ou +55
-              11 99999-8888.
+          <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 dark:border-white/10 dark:bg-white/5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <div className="text-sm font-semibold text-slate-950 dark:text-white">
+                  Numero cadastrado
+                </div>
+                <div className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                  {hasPersistedPhone
+                    ? "Este e o numero persistido hoje na sua conta."
+                    : "Nenhum numero foi salvo ainda para identificar voce no agente do WhatsApp."}
+                </div>
+              </div>
+
+              <Badge tone={hasPersistedPhone ? "PAID" : "DRAFT"}>
+                {hasPersistedPhone ? "Salvo" : "Nao cadastrado"}
+              </Badge>
             </div>
+
+            <div className="mt-4 rounded-2xl border border-slate-200/80 bg-slate-50/80 px-4 py-3 text-sm font-semibold text-slate-900 dark:border-white/10 dark:bg-white/4 dark:text-white">
+              {hasPersistedPhone ? persistedPhone : "Nenhum numero cadastrado"}
+            </div>
+
+            {planAllowed && hasPersistedPhone ? (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {!editing ? (
+                  <Button type="button" variant="secondary" onClick={handleStartEdit}>
+                    Editar numero
+                  </Button>
+                ) : (
+                  <Button type="button" variant="ghost" onClick={handleDiscard}>
+                    Cancelar edicao
+                  </Button>
+                )}
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-red-600 dark:text-red-300"
+                  onClick={handleRemove}
+                  disabled={saving}
+                >
+                  Remover numero
+                </Button>
+              </div>
+            ) : null}
           </div>
+
+          {showEditor || !planAllowed ? (
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold text-slate-900 dark:text-white">
+                Numero de WhatsApp
+              </label>
+              <Input
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                value={showEditor ? draftPhone : persistedPhone}
+                onChange={(event) => setDraftPhone(event.target.value)}
+                placeholder="11 99999-8888"
+                disabled={!planAllowed || saving}
+              />
+              <div className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+                {planAllowed
+                  ? "Aceita formatos brasileiros com DDD. Exemplo: 11999998888 ou +55 11 99999-8888."
+                  : "Campo bloqueado no plano atual. Faca upgrade para Pro para editar esse numero."}
+              </div>
+            </div>
+          ) : null}
 
           <div className="rounded-2xl border border-sky-100 bg-sky-50/90 p-4 text-xs leading-6 text-slate-600 dark:border-cyan-400/20 dark:bg-cyan-400/10 dark:text-slate-200">
             A Luminor usa esse numero apenas para identificar o usuario no
@@ -203,13 +291,9 @@ export default function SettingsAccount() {
       </Card>
 
       <UnsavedChangesBar
-        visible={dirty}
+        visible={showEditor && dirty}
         saving={saving}
-        onDiscard={() => {
-          setDraftPhone(savedPhone);
-          setErr("");
-          setOkMsg("");
-        }}
+        onDiscard={handleDiscard}
         onSave={handleSave}
         message="Voce tem alteracoes nao salvas no WhatsApp da sua conta."
         saveLabel="Salvar numero"
