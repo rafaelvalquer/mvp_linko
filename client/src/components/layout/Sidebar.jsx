@@ -815,7 +815,7 @@ export default function Sidebar({
 
           <div className="pt-1">
             <SidebarItem
-              to="/settings/agenda"
+              to="/settings"
               icon={Icons.Settings}
               collapsed={collapsed}
               isDark={isDark}

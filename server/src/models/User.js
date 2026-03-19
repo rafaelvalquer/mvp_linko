@@ -1,6 +1,7 @@
 //server/src/models/User.js
 
 import mongoose from "mongoose";
+import { normalizeUserWhatsAppPhone } from "../utils/phone.js";
 
 const UserSchema = new mongoose.Schema(
   {
@@ -34,8 +35,29 @@ const UserSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    whatsappPhone: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    whatsappPhoneDigits: {
+      type: String,
+      default: "",
+      index: true,
+    },
   },
   { timestamps: true },
 );
+
+UserSchema.pre("validate", function preValidate(next) {
+  try {
+    const normalized = normalizeUserWhatsAppPhone(this.whatsappPhone || "");
+    this.whatsappPhone = normalized.whatsappPhone;
+    this.whatsappPhoneDigits = normalized.whatsappPhoneDigits;
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
 
 export const User = mongoose.models.User || mongoose.model("User", UserSchema);

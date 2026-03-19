@@ -337,8 +337,10 @@ export default function Dashboard() {
   const [showToast, setShowToast] = useState(false);
   const [lastUpdate, setLastUpdate] = useState("");
 
-  const { signOut, workspace, loadingMe, refreshWorkspace } = useAuth();
+  const { signOut, user, workspace, loadingMe, refreshWorkspace } = useAuth();
   const hasRecurringPlan = canUseRecurringPlan(workspace?.plan);
+  const needsWhatsAppSetup =
+    !loadingMe && !String(user?.whatsappPhone || "").trim();
 
   const nav = useNavigate();
   const location = useLocation();
@@ -769,6 +771,41 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+
+        {needsWhatsAppSetup ? (
+          <div
+            className={[
+              "rounded-[24px] border p-4 shadow-[0_20px_40px_-28px_rgba(37,99,235,0.28)]",
+              isDark
+                ? "border-cyan-400/20 bg-[linear-gradient(135deg,rgba(8,47,73,0.3),rgba(15,23,42,0.22))] text-cyan-50"
+                : "border-cyan-200/80 bg-[linear-gradient(135deg,#ecfeff,#eff6ff)] text-slate-800",
+            ].join(" ")}
+          >
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="text-sm font-bold uppercase tracking-[0.16em] text-cyan-700 dark:text-cyan-200">
+                  Ative seus comandos por WhatsApp
+                </div>
+                <div className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-200">
+                  Adicione o WhatsApp da sua conta para liberar o envio de
+                  comandos por texto e audio para a Luminor.
+                </div>
+              </div>
+
+              <Link
+                to="/settings/account"
+                className={[
+                  "inline-flex items-center justify-center rounded-2xl px-4 py-3 text-sm font-semibold transition",
+                  isDark
+                    ? "bg-white text-slate-950 hover:bg-slate-100"
+                    : "bg-slate-950 text-white hover:bg-slate-800",
+                ].join(" ")}
+              >
+                Configurar WhatsApp
+              </Link>
+            </div>
+          </div>
+        ) : null}
 
         {error && (
           <div

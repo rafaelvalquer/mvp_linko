@@ -1,0 +1,756 @@
+import { User } from "../../models/User.js";
+import {
+  normalizeDestinationPhoneN11,
+  normalizeWhatsAppPhoneDigits,
+} from "../../utils/phone.js";
+import { queueOrSendWhatsApp } from "../whatsappOutbox.service.js";
+import {
+  applyCustomerSelection,
+  applyProductSelection,
+  pickCandidateByOrdinal,
+  resolveCustomerCandidates,
+  resolveProductCandidates,
+} from "./whatsappEntityResolver.service.js";
+import {
+  createEmptyResolved,
+  listMissingMandatoryFields,
+  mergeResolvedDraft,
+  parseDirectReplyValue,
+} from "./whatsappAi.schemas.js";
+import {
+  buildCancelledMessage,
+  buildConfirmationSummary,
+  buildCustomerAmbiguityQuestion,
+  buildErrorMessage,
+  buildInvalidConfirmationMessage,
+  buildInvalidSelectionMessage,
+  buildMissingFieldQuestion,
+  buildNotLinkedNumberMessage,
+  buildProcessingMessage,
+  buildProductAmbiguityQuestion,
+  buildSuccessMessage,
+} from "./whatsappQuestionBuilder.service.js";
+import {
+  appendInboundMessageToSession,
+  closeActiveSessionsForRequester,
+  createWhatsAppSession,
+  findOpenWhatsAppSession,
+  findSessionBySourceMessageId,
+  markSessionCancelled,
+  markSessionCompleted,
+  markSessionError,
+  transitionSessionToProcessing,
+  updateWhatsAppSession,
+} from "./whatsappSession.service.js";
+import { createOfferAndDispatchToCustomer } from "./whatsappOfferCreation.service.js";
+import { transcribeWhatsAppAudio } from "./whatsappAudioTranscription.service.js";
+import {
+  extractWhatsAppIntent,
+  extractWhatsAppSessionReply,
+} from "./whatsappIntentExtraction.service.js";
+import { isWhatsAppAiEnabled } from "./openai.client.js";
+
+const inflightInboundEventKeys = new Set();
+
+function normalizeComparableText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function parseConfirmationReply(value) {
+  const normalized = normalizeComparableText(value);
+  if (["confirmar", "confirmo", "ok", "sim", "1"].includes(normalized))
+    return "CONFIRMAR";
+  if (
+    ["cancelar", "cancela", "cancelado", "não", "nao", "2"].includes(normalized)
+  ) {
+    return "CANCELAR";
+  }
+  return "";
+}
+
+function resolveFieldQuestionKey(pendingFields = []) {
+  if (!Array.isArray(pendingFields) || !pendingFields.length) return "";
+
+  const order = [
+    "customer_name_raw",
+    "product_name_raw",
+    "quantity",
+    "unit_price_cents",
+    "destination_phone_n11",
+  ];
+
+  for (const key of order) {
+    if (pendingFields.includes(key)) return key;
+  }
+
+  return pendingFields[0] || "";
+}
+
+function buildSessionResolved(baseResolved = {}, patch = {}) {
+  return mergeResolvedDraft(
+    {
+      ...createEmptyResolved(),
+      ...(baseResolved && typeof baseResolved === "object" ? baseResolved : {}),
+    },
+    patch,
+  );
+}
+
+function buildInboundEventKey(event) {
+  const fromPhoneDigits = normalizeWhatsAppPhoneDigits(
+    event?.fromPhoneDigits || "",
+  );
+  const messageId = String(event?.messageId || "").trim();
+  return fromPhoneDigits && messageId ? `${fromPhoneDigits}:${messageId}` : "";
+}
+
+async function sendWhatsAppReply({
+  workspaceId = null,
+  session = null,
+  to,
+  message,
+  dedupeKey,
+  meta = null,
+}) {
+  if (!to || !message) return { ok: false, status: "skipped" };
+
+  return queueOrSendWhatsApp({
+    workspaceId,
+    to,
+    message,
+    dedupeKey,
+    sourceType: session ? "whatsapp_command_session" : "whatsapp_ai_inbound",
+    sourceId: session?._id || null,
+    meta,
+  });
+}
+
+async function replyToSession({ session, user, message, dedupeSuffix }) {
+  return sendWhatsAppReply({
+    workspaceId: user?.workspaceId || session?.workspaceId || null,
+    session,
+    to: normalizeWhatsAppPhoneDigits(session?.requesterPhoneDigits || ""),
+    message,
+    dedupeKey: `whatsapp-command-session:${session?._id}:${dedupeSuffix}`,
+    meta: {
+      direction: "requester_reply",
+      state: session?.state || null,
+      questionKey: session?.lastQuestionKey || null,
+    },
+  });
+}
+
+async function replyNotLinkedRequester({ event, requesterPhoneDigits }) {
+  return sendWhatsAppReply({
+    workspaceId: null,
+    to: requesterPhoneDigits,
+    message: buildNotLinkedNumberMessage(),
+    dedupeKey: `whatsapp-ai:not-linked:${event.messageId}`,
+    meta: {
+      direction: "requester_reply",
+      reason: "NOT_LINKED",
+      messageId: event.messageId,
+    },
+  });
+}
+
+async function askSessionQuestion({
+  session,
+  user,
+  state,
+  pendingFields = [],
+  lastQuestionKey,
+  lastQuestionText,
+  candidateCustomers = [],
+  candidateProducts = [],
+  confirmationSummaryText = "",
+  dedupeSuffix,
+  resolved,
+}) {
+  const updatedSession = await updateWhatsAppSession(session._id, {
+    state,
+    pendingFields,
+    lastQuestionKey,
+    lastQuestionText,
+    candidateCustomers,
+    candidateProducts,
+    confirmationSummaryText,
+    resolved,
+  });
+
+  await replyToSession({
+    session: updatedSession,
+    user,
+    message: lastQuestionText,
+    dedupeSuffix,
+  });
+
+  return updatedSession;
+}
+
+async function advanceSessionAfterResolution({ session, user, dedupeSuffix }) {
+  let resolved = {
+    ...createEmptyResolved(),
+    ...(session?.resolved && typeof session.resolved === "object"
+      ? session.resolved
+      : {}),
+  };
+
+  if (resolved.customer_name_raw && !resolved.customerId) {
+    const query = String(resolved.customer_name_raw || "").trim();
+    if (query && String(resolved.customerLookupQuery || "").trim() !== query) {
+      const candidates = await resolveCustomerCandidates({
+        workspaceId: user.workspaceId,
+        customerNameRaw: query,
+      });
+
+      if (candidates.length > 1) {
+        const question = buildCustomerAmbiguityQuestion(candidates);
+        return {
+          ok: true,
+          status: "awaiting_customer_selection",
+          session: await askSessionQuestion({
+            session,
+            user,
+            state: "AWAITING_CUSTOMER_SELECTION",
+            pendingFields: listMissingMandatoryFields(resolved),
+            lastQuestionKey: "customer_selection",
+            lastQuestionText: question,
+            candidateCustomers: candidates,
+            candidateProducts: [],
+            dedupeSuffix,
+            resolved: {
+              ...resolved,
+              customerLookupQuery: query,
+              customerLookupMiss: false,
+            },
+          }),
+        };
+      }
+
+      if (candidates.length === 1) {
+        resolved = applyCustomerSelection(resolved, candidates[0]);
+      } else {
+        resolved = buildSessionResolved(resolved, {
+          customerId: null,
+          customerName: query,
+          customerLookupQuery: query,
+          customerLookupMiss: true,
+        });
+      }
+    } else if (!resolved.customerName) {
+      resolved = buildSessionResolved(resolved, {
+        customerName: resolved.customer_name_raw,
+      });
+    }
+  }
+
+  if (resolved.product_name_raw && !resolved.productId) {
+    const query = String(resolved.product_name_raw || "").trim();
+    if (query && String(resolved.productLookupQuery || "").trim() !== query) {
+      const candidates = await resolveProductCandidates({
+        workspaceId: user.workspaceId,
+        productNameRaw: query,
+      });
+
+      if (candidates.length > 1) {
+        const question = buildProductAmbiguityQuestion(candidates);
+        return {
+          ok: true,
+          status: "awaiting_product_selection",
+          session: await askSessionQuestion({
+            session,
+            user,
+            state: "AWAITING_PRODUCT_SELECTION",
+            pendingFields: listMissingMandatoryFields(resolved),
+            lastQuestionKey: "product_selection",
+            lastQuestionText: question,
+            candidateCustomers: [],
+            candidateProducts: candidates,
+            dedupeSuffix,
+            resolved: {
+              ...resolved,
+              productLookupQuery: query,
+              productLookupMiss: false,
+            },
+          }),
+        };
+      }
+
+      if (candidates.length === 1) {
+        resolved = applyProductSelection(resolved, candidates[0]);
+      } else {
+        resolved = buildSessionResolved(resolved, {
+          productId: null,
+          productName: query,
+          productLookupQuery: query,
+          productLookupMiss: true,
+        });
+      }
+    } else if (!resolved.productName) {
+      resolved = buildSessionResolved(resolved, {
+        productName: resolved.product_name_raw,
+      });
+    }
+  }
+
+  const missingFields = listMissingMandatoryFields(resolved);
+  if (missingFields.length) {
+    const nextField = resolveFieldQuestionKey(missingFields);
+    const question = buildMissingFieldQuestion(nextField);
+    const nextState =
+      nextField === "destination_phone_n11"
+        ? "AWAITING_DESTINATION_PHONE"
+        : "COLLECTING_FIELDS";
+
+    return {
+      ok: true,
+      status: "collecting_fields",
+      session: await askSessionQuestion({
+        session,
+        user,
+        state: nextState,
+        pendingFields: missingFields,
+        lastQuestionKey: nextField,
+        lastQuestionText: question,
+        candidateCustomers: [],
+        candidateProducts: [],
+        dedupeSuffix,
+        resolved,
+      }),
+    };
+  }
+
+  const confirmationSummaryText = buildConfirmationSummary(resolved);
+  return {
+    ok: true,
+    status: "awaiting_confirmation",
+    session: await askSessionQuestion({
+      session,
+      user,
+      state: "AWAITING_CONFIRMATION",
+      pendingFields: [],
+      lastQuestionKey: "confirmation",
+      lastQuestionText: confirmationSummaryText,
+      candidateCustomers: [],
+      candidateProducts: [],
+      confirmationSummaryText,
+      dedupeSuffix,
+      resolved,
+    }),
+  };
+}
+
+async function handleConfirmation({ session, user, dedupeSuffix }) {
+  const processingSession = await transitionSessionToProcessing(session._id);
+  if (!processingSession) {
+    return { ok: true, status: "processing" };
+  }
+
+  const created = await createOfferAndDispatchToCustomer({
+    session: processingSession,
+    user,
+  });
+
+  const completedSession = await markSessionCompleted(processingSession._id, {
+    createdOfferId: created.offer?._id || null,
+    sentToCustomerAt: created.dispatch?.status ? new Date() : null,
+    resolved: {
+      ...(processingSession.resolved || {}),
+      offerPublicUrl: created.publicUrl,
+    },
+  });
+
+  await closeActiveSessionsForRequester({
+    userId: user._id,
+    requesterPhoneDigits: processingSession.requesterPhoneDigits,
+    excludeSessionId: completedSession._id,
+    state: "EXPIRED",
+  });
+
+  await replyToSession({
+    session: completedSession,
+    user,
+    message: buildSuccessMessage(
+      completedSession?.resolved?.customerName ||
+        completedSession?.resolved?.customer_name_raw,
+    ),
+    dedupeSuffix,
+  });
+
+  return {
+    ok: true,
+    status: "completed",
+    session: completedSession,
+    offerId: created.offer?._id ? String(created.offer._id) : null,
+  };
+}
+
+async function handleOpenSession({ session, user, event, text }) {
+  const refreshedSession = await appendInboundMessageToSession(session._id, {
+    sourceMessageId: event.messageId,
+    requesterPushName: event.pushName,
+    text,
+    transcriptText:
+      event.type === "audio" ? text : session.transcriptText || "",
+    originalInputType: event.type,
+  });
+
+  if (!refreshedSession) {
+    return { ok: true, status: "duplicate_message" };
+  }
+
+  const dedupeSuffix = `${event.messageId}:${String(refreshedSession.state || "").toLowerCase()}`;
+
+  if (refreshedSession.state === "AWAITING_CUSTOMER_SELECTION") {
+    const selected = pickCandidateByOrdinal(
+      text,
+      refreshedSession.candidateCustomers || [],
+    );
+    if (!selected) {
+      await replyToSession({
+        session: refreshedSession,
+        user,
+        message: buildInvalidSelectionMessage(
+          refreshedSession.lastQuestionText,
+        ),
+        dedupeSuffix,
+      });
+      return { ok: true, status: "awaiting_customer_selection" };
+    }
+
+    const resolved = applyCustomerSelection(
+      refreshedSession.resolved,
+      selected,
+    );
+    const updatedSession = await updateWhatsAppSession(refreshedSession._id, {
+      resolved,
+      candidateCustomers: [],
+    });
+    return advanceSessionAfterResolution({
+      session: updatedSession,
+      user,
+      dedupeSuffix,
+    });
+  }
+
+  if (refreshedSession.state === "AWAITING_PRODUCT_SELECTION") {
+    const selected = pickCandidateByOrdinal(
+      text,
+      refreshedSession.candidateProducts || [],
+    );
+    if (!selected) {
+      await replyToSession({
+        session: refreshedSession,
+        user,
+        message: buildInvalidSelectionMessage(
+          refreshedSession.lastQuestionText,
+        ),
+        dedupeSuffix,
+      });
+      return { ok: true, status: "awaiting_product_selection" };
+    }
+
+    const resolved = applyProductSelection(refreshedSession.resolved, selected);
+    const updatedSession = await updateWhatsAppSession(refreshedSession._id, {
+      resolved,
+      candidateProducts: [],
+    });
+    return advanceSessionAfterResolution({
+      session: updatedSession,
+      user,
+      dedupeSuffix,
+    });
+  }
+
+  if (refreshedSession.state === "AWAITING_DESTINATION_PHONE") {
+    const destinationPhone = normalizeDestinationPhoneN11(text);
+    if (!destinationPhone) {
+      await replyToSession({
+        session: refreshedSession,
+        user,
+        message: buildMissingFieldQuestion("destination_phone_n11"),
+        dedupeSuffix,
+      });
+      return { ok: true, status: "awaiting_destination_phone" };
+    }
+
+    const resolved = buildSessionResolved(refreshedSession.resolved, {
+      destination_phone_n11: destinationPhone,
+      source_text: text,
+    });
+
+    const updatedSession = await updateWhatsAppSession(refreshedSession._id, {
+      resolved,
+    });
+    return advanceSessionAfterResolution({
+      session: updatedSession,
+      user,
+      dedupeSuffix,
+    });
+  }
+
+  if (refreshedSession.state === "AWAITING_CONFIRMATION") {
+    const confirmation = parseConfirmationReply(text);
+
+    if (confirmation === "CONFIRMAR") {
+      return handleConfirmation({
+        session: refreshedSession,
+        user,
+        dedupeSuffix: `${event.messageId}:confirm`,
+      });
+    }
+
+    if (confirmation === "CANCELAR") {
+      const cancelledSession = await markSessionCancelled(refreshedSession._id);
+      await closeActiveSessionsForRequester({
+        userId: user._id,
+        requesterPhoneDigits: refreshedSession.requesterPhoneDigits,
+        excludeSessionId: cancelledSession._id,
+        state: "EXPIRED",
+      });
+      await replyToSession({
+        session: cancelledSession,
+        user,
+        message: buildCancelledMessage(),
+        dedupeSuffix: `${event.messageId}:cancel`,
+      });
+      return { ok: true, status: "cancelled", session: cancelledSession };
+    }
+
+    await replyToSession({
+      session: refreshedSession,
+      user,
+      message: buildInvalidConfirmationMessage(),
+      dedupeSuffix,
+    });
+    return { ok: true, status: "awaiting_confirmation" };
+  }
+
+  if (refreshedSession.state === "PROCESSING_CREATE") {
+    await replyToSession({
+      session: refreshedSession,
+      user,
+      message: buildProcessingMessage(),
+      dedupeSuffix,
+    });
+    return { ok: true, status: "processing" };
+  }
+
+  const pendingFields = Array.isArray(refreshedSession.pendingFields)
+    ? refreshedSession.pendingFields
+    : [];
+
+  let patch = {};
+  if (
+    refreshedSession.lastQuestionKey &&
+    pendingFields.includes(refreshedSession.lastQuestionKey)
+  ) {
+    patch = parseDirectReplyValue(refreshedSession.lastQuestionKey, text);
+  }
+
+  const extracted = Object.keys(patch).length
+    ? patch
+    : await extractWhatsAppSessionReply({
+        text,
+        lastQuestionKey: refreshedSession.lastQuestionKey,
+        pendingFields,
+        currentResolved: refreshedSession.resolved || {},
+      });
+
+  const resolved = buildSessionResolved(refreshedSession.resolved, extracted);
+  const updatedSession = await updateWhatsAppSession(refreshedSession._id, {
+    extracted,
+    resolved,
+  });
+
+  return advanceSessionAfterResolution({
+    session: updatedSession,
+    user,
+    dedupeSuffix,
+  });
+}
+
+export async function processInboundWhatsAppEvent(event) {
+  if (!isWhatsAppAiEnabled()) {
+    return { ok: true, status: "disabled" };
+  }
+
+  const inboundEventKey = buildInboundEventKey(event);
+  if (inboundEventKey && inflightInboundEventKeys.has(inboundEventKey)) {
+    return { ok: true, status: "duplicate_message" };
+  }
+
+  if (inboundEventKey) {
+    inflightInboundEventKeys.add(inboundEventKey);
+  }
+
+  const requesterPhoneDigits = normalizeWhatsAppPhoneDigits(
+    event.fromPhoneDigits || "",
+  );
+  let user = null;
+  let sessionForError = null;
+
+  try {
+    if (!requesterPhoneDigits) {
+      return { ok: false, status: "invalid_from_phone" };
+    }
+
+    const users = await User.find({
+      whatsappPhoneDigits: requesterPhoneDigits,
+      status: "active",
+    })
+      .select("_id workspaceId name email role status whatsappPhone")
+      .limit(2)
+      .lean();
+
+    if (users.length !== 1) {
+      await replyNotLinkedRequester({ event, requesterPhoneDigits });
+      return { ok: true, status: "requester_not_linked" };
+    }
+
+    user = users[0];
+    const duplicateSession = await findSessionBySourceMessageId({
+      userId: user._id,
+      messageId: event.messageId,
+    });
+    if (duplicateSession) {
+      return { ok: true, status: "duplicate_message" };
+    }
+
+    sessionForError = await findOpenWhatsAppSession({
+      userId: user._id,
+      requesterPhoneDigits,
+    });
+
+    let text = String(event.text || "").trim();
+
+    if (event.type === "audio") {
+      text = await transcribeWhatsAppAudio({
+        audioBase64: event.audioBase64,
+        mimeType: event.mimeType,
+      });
+    }
+
+    if (!text) {
+      const err = new Error("Mensagem vazia recebida.");
+      err.code = "EMPTY_INBOUND_MESSAGE";
+      throw err;
+    }
+
+    if (sessionForError) {
+      return handleOpenSession({ session: sessionForError, user, event, text });
+    }
+
+    let createdSession = null;
+    try {
+      createdSession = await createWhatsAppSession({
+        workspaceId: user.workspaceId,
+        userId: user._id,
+        requesterPhoneRaw: String(event.fromPhoneDigits || ""),
+        requesterPhoneDigits,
+        requesterPushName: String(event.pushName || "").trim(),
+        sourceMessageId: event.messageId,
+        originalInputType: event.type,
+        originalText: event.type === "text" ? text : "",
+        transcriptText: event.type === "audio" ? text : "",
+        lastUserMessageText: text,
+      });
+    } catch (error) {
+      if (error?.code === 11000) {
+        const duplicateCreatedSession = await findSessionBySourceMessageId({
+          userId: user._id,
+          messageId: event.messageId,
+        });
+        if (duplicateCreatedSession) {
+          return { ok: true, status: "duplicate_message" };
+        }
+
+        sessionForError = await findOpenWhatsAppSession({
+          userId: user._id,
+          requesterPhoneDigits,
+        });
+        if (sessionForError) {
+          return handleOpenSession({
+            session: sessionForError,
+            user,
+            event,
+            text,
+          });
+        }
+      }
+
+      throw error;
+    }
+    sessionForError = createdSession;
+
+    const extracted = await extractWhatsAppIntent({ text });
+    const resolved = buildSessionResolved(createEmptyResolved(), extracted);
+    const sessionAfterExtraction = await updateWhatsAppSession(
+      createdSession._id,
+      {
+        extracted,
+        resolved,
+      },
+    );
+
+    if (extracted.intent !== "create_offer_send_whatsapp") {
+      const erroredSession = await markSessionError(
+        sessionAfterExtraction._id,
+        {
+          code: "WHATSAPP_AI_UNKNOWN_INTENT",
+          message: "Intencao nao reconhecida para o fluxo de proposta.",
+        },
+      );
+
+      await replyToSession({
+        session: erroredSession,
+        user,
+        message: buildErrorMessage(),
+        dedupeSuffix: `${event.messageId}:unknown-intent`,
+      });
+      return { ok: true, status: "unknown_intent" };
+    }
+
+    return advanceSessionAfterResolution({
+      session: sessionAfterExtraction,
+      user,
+      dedupeSuffix: `${event.messageId}:new-session`,
+    });
+  } catch (error) {
+    if (typeof user !== "undefined" && sessionForError?._id) {
+      const erroredSession = await markSessionError(sessionForError._id, error);
+      await replyToSession({
+        session: erroredSession,
+        user,
+        message: buildErrorMessage(),
+        dedupeSuffix: `${event.messageId}:error`,
+      });
+    } else if (typeof user !== "undefined") {
+      await sendWhatsAppReply({
+        workspaceId: user.workspaceId,
+        to: requesterPhoneDigits,
+        message: buildErrorMessage(),
+        dedupeKey: `whatsapp-ai:error:${event.messageId}`,
+        meta: {
+          direction: "requester_reply",
+          reason: "UNHANDLED_ERROR",
+        },
+      });
+    }
+
+    return {
+      ok: false,
+      status: "error",
+      error: String(error?.message || "Falha ao processar evento inbound."),
+    };
+  } finally {
+    if (inboundEventKey) {
+      inflightInboundEventKeys.delete(inboundEventKey);
+    }
+  }
+}

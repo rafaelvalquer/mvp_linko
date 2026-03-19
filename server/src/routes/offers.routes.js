@@ -24,6 +24,7 @@ import {
   isEmailNotificationEnabled,
   resolveWorkspaceNotificationContext,
 } from "../services/notificationSettings.js";
+import { createOfferFromPayload } from "../services/offers/createOffer.service.js";
 
 const r = Router();
 
@@ -147,7 +148,7 @@ async function createOfferLocal({
     }
 
     customerId = c._id;
-    customerName = String(c.name || customerName || "").trim();
+    customerName = String(c.fullName || customerName || "").trim();
     customerEmail = String(c.email || customerEmail || "").trim();
     customerDoc = onlyDigits(c.cpfCnpjDigits || c.cpfCnpj || customerDoc || "");
     customerWhatsApp = String(c.phone || customerWhatsApp || "").trim();
@@ -794,7 +795,7 @@ r.post(
       action: "ativar a confirmacao de pagamento por WhatsApp nesta proposta",
     });
 
-    const offer = await createOfferLocal({
+    const offer = await createOfferFromPayload({
       tenantId: req.tenantId,
       userId: req.user?._id,
       workspacePlan: workspace?.plan || "start",

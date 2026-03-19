@@ -5,6 +5,8 @@ import { Offer } from "../models/Offer.js";
 import { Workspace } from "../models/Workspace.js";
 import { RecurringOffer } from "../models/RecurringOffer.js";
 import { queueOrSendWhatsApp } from "./whatsappOutbox.service.js";
+import { createOfferFromPayload as createOfferFromPayloadShared } from "./offers/createOffer.service.js";
+import { buildOfferPublicUrl } from "./publicUrl.service.js";
 import {
   assertRecurringPlanAllowed,
   canUseNotifyWhatsAppOnPaid,
@@ -134,7 +136,7 @@ async function resolveCustomerSnapshot({ tenantId, body }) {
     }
 
     customerId = client._id;
-    customerName = String(client.name || customerName || "").trim();
+    customerName = String(client.fullName || customerName || "").trim();
     customerEmail = String(client.email || customerEmail || "").trim();
     customerDoc = onlyDigits(
       client.cpfCnpjDigits || client.cpfCnpj || customerDoc || "",
@@ -276,49 +278,14 @@ export async function createOfferFromPayload({
   recurringMeta = null,
   notificationContext = null,
 }) {
-  const customer = await resolveCustomerSnapshot({ tenantId, body });
-  const effectiveNotificationContext =
-    notificationContext ||
-    (await resolveWorkspaceNotificationContext({
-      workspaceId: tenantId,
-      ownerUserId: userId || null,
-      workspacePlan,
-    }));
-  const snapshot = buildOfferSnapshotFields({
-    body,
+  return createOfferFromPayloadShared({
+    tenantId,
+    userId,
     workspacePlan,
-    customer,
-    notificationContext: effectiveNotificationContext,
+    body,
+    recurringMeta,
+    notificationContext,
   });
-  validateOfferSnapshotFields(snapshot);
-
-  const publicToken = await generateUniquePublicToken();
-  const expiresAt = addDays(
-    new Date(),
-    Number.isFinite(LINK_TTL_DAYS) ? LINK_TTL_DAYS : 90,
-  );
-
-  const doc = {
-    ...(HAS_TENANT ? { workspaceId: tenantId } : {}),
-    ...(HAS_OWNER && userId ? { ownerUserId: userId } : {}),
-
-    ...snapshot,
-
-    publicToken,
-    expiresAt,
-    status: "PUBLIC",
-    paymentMethod: "MANUAL_PIX",
-    paymentStatus: "PENDING",
-    recurringOfferId: recurringMeta?.recurringOfferId || null,
-    recurringSequence: Number.isFinite(Number(recurringMeta?.sequence))
-      ? Number(recurringMeta.sequence)
-      : null,
-    generatedBy: recurringMeta?.recurringOfferId ? "recurring" : "manual",
-    recurringNameSnapshot: recurringMeta?.name || null,
-    originMeta: recurringMeta?.originMeta || null,
-  };
-
-  return Offer.create(doc);
 }
 
 function normalizeEndMode(value) {
@@ -396,8 +363,7 @@ function normalizePhoneForWa(raw) {
 function buildOfferAutoSendMessage({ recurring, offer, origin }) {
   const name = firstName(recurring?.customerName);
   const greeting = name ? `Olá ${name}!` : "Olá!";
-  const base = trimTrailingSlash(origin) || "";
-  const publicUrl = offer?.publicToken ? `${base}/p/${offer.publicToken}` : "";
+  const publicUrl = buildOfferPublicUrl(offer, origin);
 
   return {
     publicUrl,

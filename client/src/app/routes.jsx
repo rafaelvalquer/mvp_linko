@@ -25,6 +25,7 @@ import PublicPixPayment from "../pages/PublicPixPayment.jsx";
 import PublicBookingManage from "../pages/PublicBookingManage.jsx";
 import PublicOfferDone from "../pages/PublicOfferDone.jsx";
 import PublicPaidGuard from "../pages/PublicPaidGuard.jsx";
+import SettingsAccount from "../pages/SettingsAccount.jsx";
 import SettingsAgenda from "../pages/SettingsAgenda.jsx";
 import SettingsNotifications from "../pages/SettingsNotifications.jsx";
 import WhatsNewModalHost from "../components/whats-new/WhatsNewModalHost.jsx";
@@ -171,7 +172,15 @@ export const router = createBrowserRouter(
       path: "/settings",
       element: (
         <RequireAuth>
-          <Navigate to="/settings/notifications" replace />
+          <Navigate to="/settings/account" replace />
+        </RequireAuth>
+      ),
+    },
+    {
+      path: "/settings/account",
+      element: (
+        <RequireAuth>
+          <SettingsAccount />
         </RequireAuth>
       ),
     },

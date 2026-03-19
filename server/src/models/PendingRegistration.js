@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { normalizeUserWhatsAppPhone } from "../utils/phone.js";
 
 const PendingRegistrationSchema = new mongoose.Schema(
   {
@@ -17,6 +18,16 @@ const PendingRegistrationSchema = new mongoose.Schema(
       select: false,
     },
     workspaceName: { type: String, required: true, trim: true },
+    whatsappPhone: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    whatsappPhoneDigits: {
+      type: String,
+      default: "",
+      index: true,
+    },
     plan: {
       type: String,
       enum: ["start", "pro", "business", "enterprise"],
@@ -45,6 +56,17 @@ const PendingRegistrationSchema = new mongoose.Schema(
   },
   { timestamps: true },
 );
+
+PendingRegistrationSchema.pre("validate", function preValidate(next) {
+  try {
+    const normalized = normalizeUserWhatsAppPhone(this.whatsappPhone || "");
+    this.whatsappPhone = normalized.whatsappPhone;
+    this.whatsappPhoneDigits = normalized.whatsappPhoneDigits;
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
 
 PendingRegistrationSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 

@@ -175,7 +175,7 @@ export function AuthProvider({ children }) {
   );
 
   const signUp = useCallback(
-    async ({ name, email, password, workspaceName }) => {
+    async ({ name, email, password, workspaceName, whatsappPhone }) => {
       setLoadingMe(false);
 
       return authApi.register({
@@ -183,10 +183,22 @@ export function AuthProvider({ children }) {
         email,
         password,
         workspaceName,
+        whatsappPhone,
       });
     },
     [],
   );
+
+  const updateMyWhatsAppPhone = useCallback(async ({ whatsappPhone }) => {
+    const data = await authApi.updateMyWhatsAppPhone({ whatsappPhone });
+    if (data?.user) {
+      setUser((prev) => ({
+        ...(prev && typeof prev === "object" ? prev : {}),
+        ...data.user,
+      }));
+    }
+    return data;
+  }, []);
 
   const resendRegisterCode = useCallback(async ({ email }) => {
     return api("/auth/register/resend-code", {
@@ -255,6 +267,8 @@ export function AuthProvider({ children }) {
       refreshMe: refreshWorkspace,
       refreshBilling,
       refreshSession: refreshWorkspace,
+      updateMyWhatsAppPhone,
+      saveMyWhatsAppPhone: updateMyWhatsAppPhone,
     }),
     [
       loadingMe,
@@ -272,6 +286,7 @@ export function AuthProvider({ children }) {
       signOut,
       refreshWorkspace,
       refreshBilling,
+      updateMyWhatsAppPhone,
     ],
   );
 

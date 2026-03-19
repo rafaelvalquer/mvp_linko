@@ -18,6 +18,7 @@ import {
   listWhatsNewForUser,
 } from "../services/whatsNew.service.js";
 import { isMasterAdminEmail } from "../utils/masterAdmin.js";
+import { normalizeUserWhatsAppPhone } from "../utils/phone.js";
 
 const r = Router();
 
@@ -121,12 +122,13 @@ function getWorkspaceName(name, workspaceName) {
   return "Meu Workspace";
 }
 
-function validateRegisterPayload(body = {}) {
+export function validateRegisterPayload(body = {}) {
   const name = String(body?.name || "").trim();
   const email = normEmail(body?.email);
   const password = String(body?.password || "");
   const workspaceName = getWorkspaceName(name, body?.workspaceName);
   const plan = normalizePlan(body?.plan || "start");
+  const normalizedWhatsApp = normalizeUserWhatsAppPhone(body?.whatsappPhone || "");
 
   if (!name) {
     const err = new Error("Nome obrigatório.");
@@ -156,7 +158,15 @@ function validateRegisterPayload(body = {}) {
     throw err;
   }
 
-  return { name, email, password, workspaceName, plan };
+  return {
+    name,
+    email,
+    password,
+    workspaceName,
+    plan,
+    whatsappPhone: normalizedWhatsApp.whatsappPhone,
+    whatsappPhoneDigits: normalizedWhatsApp.whatsappPhoneDigits,
+  };
 }
 
 function buildPendingRegistrationResponse(pending) {
@@ -212,7 +222,7 @@ function buildWorkspacePayload(ws) {
   };
 }
 
-function buildUserPayload(user) {
+export function buildUserPayload(user) {
   if (!user) return null;
 
   const isMasterAdmin = isMasterAdminEmail(user?.email);
@@ -225,6 +235,7 @@ function buildUserPayload(user) {
     status: user.status,
     isMasterAdmin,
     whatsNewLastSeenAt: user.whatsNewLastSeenAt || null,
+    whatsappPhone: user.whatsappPhone || "",
   };
 }
 
@@ -257,6 +268,8 @@ async function createPendingRegistration(data) {
         email: data.email,
         passwordHash,
         workspaceName: data.workspaceName,
+        whatsappPhone: data.whatsappPhone || "",
+        whatsappPhoneDigits: data.whatsappPhoneDigits || "",
         plan: data.plan,
         code,
         expiresAt,
@@ -640,6 +653,8 @@ r.post(
               workspaceId,
               role: "owner",
               status: "active",
+              whatsappPhone: pending.whatsappPhone || "",
+              whatsappPhoneDigits: pending.whatsappPhoneDigits || "",
             },
           ],
           { session },
@@ -856,6 +871,34 @@ r.get(
       ok: true,
       user: buildUserPayload(authUser || req.user),
       workspace: buildWorkspacePayload(ws),
+    });
+  }),
+);
+
+r.patch(
+  "/auth/me/whatsapp-phone",
+  ensureAuth,
+  asyncHandler(async (req, res) => {
+    const rawValue =
+      req.body?.whatsappPhone == null ? "" : String(req.body.whatsappPhone || "");
+    const normalized = normalizeUserWhatsAppPhone(rawValue);
+
+    await User.updateOne(
+      { _id: req.user._id },
+      {
+        $set: {
+          whatsappPhone: normalized.whatsappPhone,
+          whatsappPhoneDigits: normalized.whatsappPhoneDigits,
+        },
+      },
+      { runValidators: true },
+    );
+
+    const freshUser = await User.findById(req.user._id).lean();
+
+    return res.json({
+      ok: true,
+      user: buildUserPayload(freshUser || req.user),
     });
   }),
 );

@@ -363,7 +363,7 @@ export async function notifyPaymentConfirmed(offerId) {
       }).lean();
 
       if (c) {
-        if (!customerName) customerName = String(c?.name || "").trim();
+        if (!customerName) customerName = String(c?.fullName || "").trim();
         if (!customerWhatsApp) customerWhatsApp = String(c?.phone || "").trim();
       }
     }

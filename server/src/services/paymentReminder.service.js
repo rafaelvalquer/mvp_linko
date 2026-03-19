@@ -6,6 +6,7 @@ import { queueOrSendWhatsApp } from "./whatsappOutbox.service.js";
 import {
   resolveWorkspaceNotificationContext,
 } from "./notificationSettings.js";
+import { buildOfferPublicUrl } from "./publicUrl.service.js";
 
 const TZ = "America/Sao_Paulo";
 
@@ -38,26 +39,6 @@ function normStatus(v) {
     .toUpperCase();
   if (!s) return "";
   return s === "CANCELED" ? "CANCELLED" : s;
-}
-
-function trimTrailingSlash(v) {
-  return String(v || "").replace(/\/+$/g, "");
-}
-
-function baseOrigin(origin) {
-  const explicit = trimTrailingSlash(origin);
-  if (explicit) return explicit;
-
-  const fromEnv = trimTrailingSlash(String(env.corsOrigin || "").split(",")[0]);
-  if (fromEnv) return fromEnv;
-
-  return "http://localhost:5173";
-}
-
-export function buildOfferPublicUrl(offer, origin) {
-  const token = String(offer?.publicToken || "").trim();
-  if (!token) return "";
-  return `${baseOrigin(origin)}/p/${token}`;
 }
 
 function formatDateTimeSP(date) {

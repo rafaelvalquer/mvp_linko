@@ -31,6 +31,7 @@ export async function authOptional(req, _res, next) {
       role: u.role,
       status: u.status,
       whatsNewLastSeenAt: u.whatsNewLastSeenAt || null,
+      whatsappPhone: u.whatsappPhone || "",
     });
     return next();
   } catch {

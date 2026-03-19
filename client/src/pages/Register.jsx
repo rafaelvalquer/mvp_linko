@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   LockKeyhole,
   Mail,
+  Smartphone,
   Store,
   User,
 } from "lucide-react";
@@ -89,6 +90,9 @@ function getApiErrorMessage(err, fallback = "Falha ao processar seu cadastro.") 
   }
   if (code === "WORKSPACE_NAME_REQUIRED") {
     return "Informe um nome de workspace valido.";
+  }
+  if (code === "INVALID_WHATSAPP_PHONE") {
+    return "Informe um numero de WhatsApp valido com DDD. Exemplo: 11999998888.";
   }
   if (code === "INVALID_CODE") return "Codigo invalido.";
   if (code === "CODE_INVALID_FORMAT") {
@@ -257,6 +261,7 @@ function Field({
   hint,
   disabled,
   icon: Icon,
+  inputMode,
 }) {
   return (
     <div>
@@ -278,6 +283,7 @@ function Field({
           onChange={onChange}
           onBlur={onBlur}
           type={type}
+          inputMode={inputMode}
           autoComplete={autoComplete}
           placeholder={placeholder}
           disabled={disabled}
@@ -371,12 +377,14 @@ export default function Register() {
     name: "",
     workspaceName: "",
     email: "",
+    whatsappPhone: "",
     password: "",
   });
   const [touched, setTouched] = useState({
     name: false,
     workspaceName: false,
     email: false,
+    whatsappPhone: false,
     password: false,
   });
   const [submitAttempted, setSubmitAttempted] = useState(false);
@@ -435,6 +443,7 @@ export default function Register() {
       name: true,
       workspaceName: true,
       email: true,
+      whatsappPhone: true,
       password: true,
     });
     setError("");
@@ -451,6 +460,7 @@ export default function Register() {
         email: String(values.email || "")
           .trim()
           .toLowerCase(),
+        whatsappPhone: String(values.whatsappPhone || "").trim(),
         password: String(values.password || ""),
         workspaceName: String(values.workspaceName || "").trim() || undefined,
       });
@@ -554,6 +564,20 @@ export default function Register() {
               error={getVisibleError("email")}
               disabled={loading}
               icon={Mail}
+            />
+
+            <Field
+              label="WhatsApp (opcional)"
+              value={values.whatsappPhone}
+              onChange={(event) => setField("whatsappPhone", event.target.value)}
+              onBlur={() => markTouched("whatsappPhone")}
+              autoComplete="tel"
+              inputMode="tel"
+              placeholder="11 99999-8888"
+              hint="Use esse numero para liberar os comandos por WhatsApp depois."
+              error={getVisibleError("whatsappPhone")}
+              disabled={loading}
+              icon={Smartphone}
             />
 
             <Field

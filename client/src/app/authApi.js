@@ -9,7 +9,13 @@ export function login({ email, password }) {
   });
 }
 
-export function register({ name, email, password, workspaceName }) {
+export function register({
+  name,
+  email,
+  password,
+  workspaceName,
+  whatsappPhone,
+}) {
   return api("/auth/register", {
     method: "POST",
     body: JSON.stringify({
@@ -17,12 +23,20 @@ export function register({ name, email, password, workspaceName }) {
       email,
       password,
       workspaceName,
+      whatsappPhone,
     }),
   });
 }
 
 export function me() {
   return api("/auth/me");
+}
+
+export function updateMyWhatsAppPhone({ whatsappPhone }) {
+  return api("/auth/me/whatsapp-phone", {
+    method: "PATCH",
+    body: JSON.stringify({ whatsappPhone }),
+  });
 }
 
 export function getWhatsNew() {

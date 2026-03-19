@@ -7,6 +7,12 @@ import useThemeToggle from "../../app/useThemeToggle.js";
 
 const TABS = [
   {
+    key: "account",
+    to: "/settings/account",
+    label: "Conta",
+    description: "Dados do usuario e numero para comandos no WhatsApp.",
+  },
+  {
     key: "notifications",
     to: "/settings/notifications",
     label: "Notificacoes",
@@ -29,7 +35,7 @@ function formatPlanLabel(value) {
 }
 
 export default function SettingsLayout({
-  activeTab = "notifications",
+  activeTab = "account",
   title,
   subtitle,
   actions = null,
@@ -71,7 +77,11 @@ export default function SettingsLayout({
             <div
               className={[
                 "grid gap-2",
-                TABS.length > 1 ? "sm:grid-cols-2" : "sm:grid-cols-1",
+                TABS.length > 2
+                  ? "sm:grid-cols-2 lg:grid-cols-3"
+                  : TABS.length > 1
+                    ? "sm:grid-cols-2"
+                    : "sm:grid-cols-1",
               ].join(" ")}
             >
               {TABS.map((tab) => {

@@ -34,6 +34,23 @@ const RECONNECT_MAX_MS = Math.max(
   RECONNECT_BASE_MS,
   Number(process.env.WA_RECONNECT_MAX_MS || 60000) || 60000,
 );
+const WA_INBOUND_FORWARD_ENABLED =
+  String(process.env.WA_INBOUND_FORWARD_ENABLED || "true").toLowerCase() ===
+  "true";
+const SERVER_INTERNAL_WEBHOOK_URL = String(
+  process.env.SERVER_INTERNAL_WEBHOOK_URL || "",
+).replace(/\/+$/g, "");
+const SERVER_INTERNAL_WEBHOOK_KEY = String(
+  process.env.SERVER_INTERNAL_WEBHOOK_KEY || "",
+).trim();
+const WA_INBOUND_FORWARD_TIMEOUT_MS = Math.max(
+  5000,
+  Number(process.env.WA_INBOUND_FORWARD_TIMEOUT_MS || 30000) || 30000,
+);
+const WA_INBOUND_DEDUPE_TTL_MS = Math.max(
+  30000,
+  Number(process.env.WA_INBOUND_DEDUPE_TTL_MS || 2 * 60 * 1000) || 2 * 60 * 1000,
+);
 
 const HEADLESS =
   String(process.env.WA_PUPPETEER_HEADLESS || "true").toLowerCase() === "true";
@@ -77,13 +94,38 @@ let clientGeneration = 0;
 
 let waClient = null;
 let isInitializing = false;
+const recentInboundMessageIds = new Map();
+const inflightInboundMessageIds = new Set();
 
 function nowISO() {
   return new Date().toISOString();
 }
 
+function nowMs() {
+  return Date.now();
+}
+
 function touch() {
   lastSeen = nowISO();
+}
+
+function pruneRecentInboundMessages() {
+  const cutoff = nowMs() - WA_INBOUND_DEDUPE_TTL_MS;
+  for (const [messageId, seenAt] of recentInboundMessageIds.entries()) {
+    if (seenAt < cutoff) {
+      recentInboundMessageIds.delete(messageId);
+    }
+  }
+}
+
+function hasRecentInboundMessage(messageId) {
+  pruneRecentInboundMessages();
+  return recentInboundMessageIds.has(messageId);
+}
+
+function markRecentInboundMessage(messageId) {
+  if (!messageId) return;
+  recentInboundMessageIds.set(messageId, nowMs());
 }
 
 function clearReconnectSchedule() {
@@ -242,6 +284,199 @@ function normalizeToBR(toRaw) {
     return digits;
 
   return null;
+}
+
+function normalizeInboundPhoneDigits(raw) {
+  return String(raw || "").replace(/\D/g, "");
+}
+
+function normalizeMessageTimestamp(rawTimestamp) {
+  const numeric = Number(rawTimestamp);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return new Date(numeric * 1000).toISOString();
+  }
+
+  return nowISO();
+}
+
+async function resolvePushName(message) {
+  const direct = String(
+    message?._data?.notifyName || message?.notifyName || "",
+  ).trim();
+  if (direct) return direct;
+
+  try {
+    const contact = await message.getContact();
+    return String(
+      contact?.pushname || contact?.name || contact?.shortName || "",
+    ).trim();
+  } catch {
+    return "";
+  }
+}
+
+async function forwardInboundEvent(payload) {
+  if (!WA_INBOUND_FORWARD_ENABLED) {
+    return { ok: true, status: "DISABLED" };
+  }
+
+  if (!SERVER_INTERNAL_WEBHOOK_URL || !SERVER_INTERNAL_WEBHOOK_KEY) {
+    return { ok: false, status: "MISCONFIGURED" };
+  }
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), WA_INBOUND_FORWARD_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(
+      `${SERVER_INTERNAL_WEBHOOK_URL}/api/internal/whatsapp/inbound`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-internal-key": SERVER_INTERNAL_WEBHOOK_KEY,
+        },
+        body: JSON.stringify(payload),
+        signal: ctrl.signal,
+      },
+    );
+
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok || data?.ok === false) {
+      return {
+        ok: false,
+        status: `HTTP_${response.status}`,
+        error: data?.error || data?.status || "FORWARD_FAILED",
+      };
+    }
+
+    return {
+      ok: true,
+      status: String(data?.status || "FORWARDED"),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: error?.name === "AbortError" ? "TIMEOUT" : "NETWORK_ERROR",
+      error: error?.message || String(error),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function shouldIgnoreInboundMessage(message) {
+  const from = String(message?.from || "");
+  if (message?.fromMe) return true;
+  if (!from) return true;
+  if (from === "status@broadcast") return true;
+  if (from.endsWith("@broadcast")) return true;
+  if (from.endsWith("@g.us")) return true;
+  return false;
+}
+
+async function handleInboundMessage(message) {
+  if (shouldIgnoreInboundMessage(message)) return;
+
+  const messageId =
+    message?.id?._serialized || message?.id?.id || `msg-${Date.now()}`;
+  if (inflightInboundMessageIds.has(messageId) || hasRecentInboundMessage(messageId)) {
+    console.log(`[inbound] skipped duplicate messageId=${messageId}`);
+    return;
+  }
+
+  inflightInboundMessageIds.add(messageId);
+
+  try {
+    const fromPhoneDigits = normalizeInboundPhoneDigits(message?.from || "");
+
+    if (!fromPhoneDigits) {
+      console.warn(`[inbound] skipped without phone messageId=${messageId}`);
+      return;
+    }
+
+    const pushName = await resolvePushName(message);
+    const timestamp = normalizeMessageTimestamp(message?.timestamp);
+    const messageType = String(message?.type || "")
+      .trim()
+      .toLowerCase();
+
+    if (messageType === "chat" || messageType === "text") {
+      const text = String(message?.body || "").trim();
+      if (!text) return;
+
+      const result = await forwardInboundEvent({
+        messageId,
+        fromPhoneDigits,
+        pushName,
+        type: "text",
+        text,
+        timestamp,
+      });
+
+      if (result.ok) {
+        markRecentInboundMessage(messageId);
+        console.log(
+          `[inbound] forwarded text ok messageId=${messageId} from=${fromPhoneDigits} status=${result.status}`,
+        );
+      } else {
+        console.warn(
+          `[inbound] forwarded text fail messageId=${messageId} from=${fromPhoneDigits} status=${result.status} error="${compactForLog(
+            result.error,
+            160,
+          )}"`,
+        );
+      }
+
+      return;
+    }
+
+    if (
+      message?.hasMedia &&
+      (messageType === "ptt" || messageType === "audio")
+    ) {
+      const media = await message.downloadMedia().catch((error) => {
+        console.warn(
+          `[inbound] audio download failed messageId=${messageId} error="${compactForLog(
+            error?.message || String(error),
+            160,
+          )}"`,
+        );
+        return null;
+      });
+
+      if (!media?.data || !media?.mimetype) {
+        return;
+      }
+
+      const result = await forwardInboundEvent({
+        messageId,
+        fromPhoneDigits,
+        pushName,
+        type: "audio",
+        mimeType: media.mimetype,
+        audioBase64: media.data,
+        timestamp,
+      });
+
+      if (result.ok) {
+        markRecentInboundMessage(messageId);
+        console.log(
+          `[inbound] forwarded audio ok messageId=${messageId} from=${fromPhoneDigits} status=${result.status}`,
+        );
+      } else {
+        console.warn(
+          `[inbound] forwarded audio fail messageId=${messageId} from=${fromPhoneDigits} status=${result.status} error="${compactForLog(
+            result.error,
+            160,
+          )}"`,
+        );
+      }
+    }
+  } finally {
+    inflightInboundMessageIds.delete(messageId);
+  }
 }
 
 const app = express();
@@ -562,6 +797,19 @@ async function initWhatsApp() {
       markDisconnected(reason);
       setLastError("disconnected", reason);
       scheduleReconnect("disconnected");
+    });
+
+    waClient.on("message", (message) => {
+      if (generation !== clientGeneration) return;
+      touch();
+      Promise.resolve(handleInboundMessage(message)).catch((error) => {
+        console.warn(
+          `[inbound] unhandled failure at=${nowISO()} error="${compactForLog(
+            error?.message || String(error),
+            160,
+          )}"`,
+        );
+      });
     });
 
     await waClient.initialize();

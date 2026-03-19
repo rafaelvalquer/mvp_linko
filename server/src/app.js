@@ -8,6 +8,7 @@ import offersRoutes from "./routes/offers.routes.js";
 import recurringOffersRoutes from "./routes/recurring-offers.routes.js";
 import publicRoutes from "./routes/public.routes.js";
 import authRoutes from "./routes/auth.routes.js";
+import whatsappAiRoutes from "./routes/whatsapp-ai.routes.js";
 import { authOptional } from "./middleware/auth.js";
 import bookingsRoutes from "./routes/bookings.routes.js";
 import withdrawRoutes from "./routes/withdraws.routes.js";
@@ -61,13 +62,24 @@ export function createApp() {
       return cb(err);
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "Authorization", "x-internal-key"],
     credentials: false,
     optionsSuccessStatus: 204,
   };
 
   app.use(cors(corsOptions));
   app.options("*", cors(corsOptions));
+
+  app.use(
+    "/api/internal/whatsapp",
+    express.json({
+      limit: "35mb",
+      verify: (req, _res, buf) => {
+        req.rawBody = buf;
+      },
+    }),
+    whatsappAiRoutes,
+  );
 
   app.use(
     express.json({
