@@ -12,7 +12,10 @@ import {
   parseDirectReplyValue,
   parseMoneyToCents,
   parseStructuredExtraction,
+  normalizeResolvedItems,
 } from "../src/services/whatsapp-ai/whatsappAi.schemas.js";
+import { buildConfirmationSummary } from "../src/services/whatsapp-ai/whatsappQuestionBuilder.service.js";
+import { buildOfferPayloadFromSession } from "../src/services/whatsapp-ai/whatsappOfferCreation.service.js";
 
 process.env.MONGODB_URI = process.env.MONGODB_URI || "mongodb://localhost:27017/test";
 const { buildUserPayload, validateRegisterPayload } = await import(
@@ -165,6 +168,13 @@ await check("parseStructuredExtraction normalizes AI output", () => {
     product_name_raw: "Televisao",
     quantity: 2,
     unit_price_cents: 10000,
+    items: [
+      {
+        product_name_raw: "Televisao",
+        quantity: 2,
+        unit_price_cents: 10000,
+      },
+    ],
     send_via_whatsapp: true,
     source_text: "texto final",
   });
@@ -176,8 +186,47 @@ await check("parseStructuredExtraction normalizes AI output", () => {
     product_name_raw: "Televisao",
     quantity: 2,
     unit_price_cents: 10000,
+    items: [
+      {
+        product_name_raw: "Televisao",
+        quantity: 2,
+        unit_price_cents: 10000,
+      },
+    ],
     send_via_whatsapp: true,
     source_text: "texto final",
+  });
+});
+
+await check("parseStructuredExtraction keeps all extracted items", () => {
+  const parsed = parseStructuredExtraction({
+    intent: "create_offer_send_whatsapp",
+    customer_name_raw: "Joao",
+    destination_phone_n11: "11999998888",
+    product_name_raw: "Televisao",
+    quantity: 1,
+    unit_price_cents: 5000,
+    items: [
+      {
+        product_name_raw: "Televisao",
+        quantity: 1,
+        unit_price_cents: 5000,
+      },
+      {
+        product_name_raw: "Suporte",
+        quantity: 2,
+        unit_price_cents: 3000,
+      },
+    ],
+    send_via_whatsapp: true,
+    source_text: "texto final",
+  });
+
+  assert.equal(parsed.items.length, 2);
+  assert.deepEqual(parsed.items[1], {
+    product_name_raw: "Suporte",
+    quantity: 2,
+    unit_price_cents: 3000,
   });
 });
 
@@ -203,16 +252,63 @@ await check("mergeResolvedDraft resets linked entities when raw values change", 
   assert.equal(next.productName, "");
 });
 
+await check("mergeResolvedDraft updates indexed item replies", () => {
+  const next = mergeResolvedDraft(
+    {
+      customer_name_raw: "Joao",
+      destination_phone_n11: "11999998888",
+      items: [
+        {
+          product_name_raw: "Televisao",
+          quantity: 1,
+          unit_price_cents: 5000,
+        },
+        {
+          product_name_raw: "Suporte",
+          quantity: null,
+          unit_price_cents: 3000,
+        },
+      ],
+    },
+    parseDirectReplyValue("items.1.quantity", "2"),
+  );
+
+  assert.deepEqual(normalizeResolvedItems(next)[1], {
+    product_name_raw: "Suporte",
+    quantity: 2,
+    unit_price_cents: 3000,
+    productId: null,
+    productName: "",
+    productLookupQuery: "",
+    productLookupMiss: false,
+  });
+});
+
 await check("listMissingMandatoryFields reports unresolved inputs", () => {
   assert.deepEqual(
     listMissingMandatoryFields({
       customer_name_raw: "Joao",
       destination_phone_n11: "",
-      product_name_raw: "",
-      quantity: null,
-      unit_price_cents: 1000,
+      items: [
+        {
+          product_name_raw: "",
+          quantity: null,
+          unit_price_cents: 1000,
+        },
+        {
+          product_name_raw: "Suporte",
+          quantity: null,
+          unit_price_cents: null,
+        },
+      ],
     }),
-    ["destination_phone_n11", "product_name_raw", "quantity"],
+    [
+      "items.0.product_name_raw",
+      "items.0.quantity",
+      "items.1.quantity",
+      "items.1.unit_price_cents",
+      "destination_phone_n11",
+    ],
   );
 });
 
@@ -229,12 +325,77 @@ await check("parseDirectReplyValue handles quantity, money and phone", () => {
     unit_price_cents: 10050,
     source_text: "R$ 100,50",
   });
+  assert.deepEqual(parseDirectReplyValue("items.1.quantity", "3"), {
+    items: [
+      ,
+      {
+        quantity: 3,
+      },
+    ],
+    source_text: "3",
+  });
 });
 
 await check("parseMoneyToCents supports integer and decimal BRL", () => {
   assert.equal(parseMoneyToCents("100"), 10000);
   assert.equal(parseMoneyToCents("100,99"), 10099);
   assert.equal(parseMoneyToCents("1.250,40"), 125040);
+});
+
+await check("buildConfirmationSummary lists all items and total", () => {
+  const summary = buildConfirmationSummary({
+    customer_name_raw: "Joao",
+    destination_phone_n11: "11999998888",
+    items: [
+      {
+        product_name_raw: "Televisao",
+        quantity: 1,
+        unit_price_cents: 5000,
+      },
+      {
+        product_name_raw: "Suporte",
+        quantity: 2,
+        unit_price_cents: 3000,
+      },
+    ],
+  });
+
+  assert.match(summary, /1\. Televisao/);
+  assert.match(summary, /2\. Suporte/);
+  assert.match(summary, /Total geral: R\$\s*110,00/);
+});
+
+await check("buildOfferPayloadFromSession preserves the full item list", () => {
+  const payload = buildOfferPayloadFromSession({
+    _id: "session-1",
+    requesterPhoneDigits: "5511999999999",
+    resolved: {
+      customerId: null,
+      customer_name_raw: "Joao",
+      destination_phone_n11: "11999998888",
+      items: [
+        {
+          product_name_raw: "Televisao",
+          quantity: 1,
+          unit_price_cents: 5000,
+        },
+        {
+          product_name_raw: "Suporte",
+          quantity: 2,
+          unit_price_cents: 3000,
+        },
+      ],
+    },
+  });
+
+  assert.equal(payload.items.length, 2);
+  assert.equal(payload.totalCents, 11000);
+  assert.deepEqual(payload.items[1], {
+    description: "Suporte",
+    qty: 2,
+    unitPriceCents: 3000,
+    lineTotalCents: 6000,
+  });
 });
 
 await check("validateInboundPayload accepts text and audio payloads", () => {

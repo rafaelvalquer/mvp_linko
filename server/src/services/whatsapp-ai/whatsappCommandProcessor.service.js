@@ -6,15 +6,18 @@ import {
 import { queueOrSendWhatsApp } from "../whatsappOutbox.service.js";
 import {
   applyCustomerSelection,
-  applyProductSelection,
+  applyProductSelectionToItem,
   pickCandidateByOrdinal,
   resolveCustomerCandidates,
   resolveProductCandidates,
 } from "./whatsappEntityResolver.service.js";
 import {
+  buildSparseItemPatch,
   createEmptyResolved,
   listMissingMandatoryFields,
   mergeResolvedDraft,
+  normalizeResolvedItems,
+  parseItemFieldKey,
   parseDirectReplyValue,
 } from "./whatsappAi.schemas.js";
 import {
@@ -75,16 +78,34 @@ function parseConfirmationReply(value) {
 function resolveFieldQuestionKey(pendingFields = []) {
   if (!Array.isArray(pendingFields) || !pendingFields.length) return "";
 
-  const order = [
-    "customer_name_raw",
-    "product_name_raw",
-    "quantity",
-    "unit_price_cents",
-    "destination_phone_n11",
-  ];
+  if (pendingFields.includes("customer_name_raw")) return "customer_name_raw";
 
-  for (const key of order) {
-    if (pendingFields.includes(key)) return key;
+  const itemFields = pendingFields
+    .map((field) => ({
+      field,
+      parsed: parseItemFieldKey(field),
+    }))
+    .filter((entry) => entry.parsed);
+
+  if (itemFields.length) {
+    const fieldOrder = {
+      product_name_raw: 0,
+      quantity: 1,
+      unit_price_cents: 2,
+    };
+
+    itemFields.sort((a, b) => {
+      if (a.parsed.itemIndex !== b.parsed.itemIndex) {
+        return a.parsed.itemIndex - b.parsed.itemIndex;
+      }
+      return (fieldOrder[a.parsed.field] ?? 99) - (fieldOrder[b.parsed.field] ?? 99);
+    });
+
+    return itemFields[0]?.field || "";
+  }
+
+  if (pendingFields.includes("destination_phone_n11")) {
+    return "destination_phone_n11";
   }
 
   return pendingFields[0] || "";
@@ -249,16 +270,27 @@ async function advanceSessionAfterResolution({ session, user, dedupeSuffix }) {
     }
   }
 
-  if (resolved.product_name_raw && !resolved.productId) {
-    const query = String(resolved.product_name_raw || "").trim();
-    if (query && String(resolved.productLookupQuery || "").trim() !== query) {
+  const resolvedItems = normalizeResolvedItems(resolved);
+  for (let itemIndex = 0; itemIndex < resolvedItems.length; itemIndex += 1) {
+    const item = normalizeResolvedItems(resolved)[itemIndex] || {};
+    const query = String(item.product_name_raw || "").trim();
+    const lookupQuery = String(item.productLookupQuery || "").trim();
+
+    if (!query) {
+      continue;
+    }
+
+    if (!item.productId && query && lookupQuery !== query) {
       const candidates = await resolveProductCandidates({
         workspaceId: user.workspaceId,
         productNameRaw: query,
       });
 
       if (candidates.length > 1) {
-        const question = buildProductAmbiguityQuestion(candidates);
+        const question = buildProductAmbiguityQuestion(candidates, {
+          itemIndex,
+          itemLabel: ` (${query})`,
+        });
         return {
           ok: true,
           status: "awaiting_product_selection",
@@ -267,41 +299,48 @@ async function advanceSessionAfterResolution({ session, user, dedupeSuffix }) {
             user,
             state: "AWAITING_PRODUCT_SELECTION",
             pendingFields: listMissingMandatoryFields(resolved),
-            lastQuestionKey: "product_selection",
+            lastQuestionKey: `items.${itemIndex}.product_selection`,
             lastQuestionText: question,
             candidateCustomers: [],
             candidateProducts: candidates,
             dedupeSuffix,
-            resolved: {
-              ...resolved,
-              productLookupQuery: query,
-              productLookupMiss: false,
-            },
+            resolved: buildSessionResolved(
+              resolved,
+              buildSparseItemPatch(itemIndex, {
+                productLookupQuery: query,
+                productLookupMiss: false,
+              }),
+            ),
           }),
         };
       }
 
       if (candidates.length === 1) {
-        resolved = applyProductSelection(resolved, candidates[0]);
+        resolved = applyProductSelectionToItem(resolved, itemIndex, candidates[0]);
       } else {
         resolved = buildSessionResolved(resolved, {
-          productId: null,
-          productName: query,
-          productLookupQuery: query,
-          productLookupMiss: true,
+          ...buildSparseItemPatch(itemIndex, {
+            productId: null,
+            productName: query,
+            productLookupQuery: query,
+            productLookupMiss: true,
+          }),
         });
       }
-    } else if (!resolved.productName) {
-      resolved = buildSessionResolved(resolved, {
-        productName: resolved.product_name_raw,
-      });
+    } else if (!item.productName) {
+      resolved = buildSessionResolved(
+        resolved,
+        buildSparseItemPatch(itemIndex, {
+          productName: query,
+        }),
+      );
     }
   }
 
   const missingFields = listMissingMandatoryFields(resolved);
   if (missingFields.length) {
     const nextField = resolveFieldQuestionKey(missingFields);
-    const question = buildMissingFieldQuestion(nextField);
+    const question = buildMissingFieldQuestion(nextField, resolved);
     const nextState =
       nextField === "destination_phone_n11"
         ? "AWAITING_DESTINATION_PHONE"
@@ -455,7 +494,16 @@ async function handleOpenSession({ session, user, event, text }) {
       return { ok: true, status: "awaiting_product_selection" };
     }
 
-    const resolved = applyProductSelection(refreshedSession.resolved, selected);
+    const productSelectionField = parseItemFieldKey(refreshedSession.lastQuestionKey);
+    const itemIndex =
+      productSelectionField?.field === "product_selection"
+        ? productSelectionField.itemIndex
+        : 0;
+    const resolved = applyProductSelectionToItem(
+      refreshedSession.resolved,
+      itemIndex,
+      selected,
+    );
     const updatedSession = await updateWhatsAppSession(refreshedSession._id, {
       resolved,
       candidateProducts: [],

@@ -1,6 +1,11 @@
 import { Client } from "../../models/Client.js";
 import { Product } from "../../models/Product.js";
 import { normalizeDestinationPhoneN11 } from "../../utils/phone.js";
+import {
+  buildSparseItemPatch,
+  mergeResolvedDraft,
+  normalizeResolvedItems,
+} from "./whatsappAi.schemas.js";
 
 function escapeRegex(value) {
   return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -103,20 +108,35 @@ export function applyCustomerSelection(resolved = {}, candidate = null) {
 }
 
 export function applyProductSelection(resolved = {}, candidate = null) {
+  return applyProductSelectionToItem(resolved, 0, candidate);
+}
+
+export function applyProductSelectionToItem(
+  resolved = {},
+  itemIndex = 0,
+  candidate = null,
+) {
   if (!candidate) return resolved;
 
-  return {
-    ...resolved,
-    productId: candidate.productId || null,
-    productName: String(candidate.name || resolved.product_name_raw || "").trim(),
-    product_name_raw: String(
-      resolved.product_name_raw || candidate.name || "",
-    ).trim(),
-    productLookupQuery: String(
-      resolved.product_name_raw || candidate.name || "",
-    ).trim(),
-    productLookupMiss: false,
-  };
+  const items = normalizeResolvedItems(resolved);
+  const currentItem = items[itemIndex] || null;
+  const productNameRaw = String(
+    currentItem?.product_name_raw || candidate.name || "",
+  ).trim();
+
+  return mergeResolvedDraft(
+    {
+      ...resolved,
+      items,
+    },
+    buildSparseItemPatch(itemIndex, {
+      productId: candidate.productId || null,
+      productName: String(candidate.name || productNameRaw).trim(),
+      product_name_raw: productNameRaw,
+      productLookupQuery: productNameRaw,
+      productLookupMiss: false,
+    }),
+  );
 }
 
 export async function resolveCustomerCandidates({

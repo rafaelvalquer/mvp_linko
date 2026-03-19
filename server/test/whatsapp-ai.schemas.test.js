@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   listMissingMandatoryFields,
   mergeResolvedDraft,
+  normalizeResolvedItems,
   parseDirectReplyValue,
   parseMoneyToCents,
   parseStructuredExtraction,
@@ -17,6 +18,13 @@ test("parseStructuredExtraction normalizes expected fields", () => {
     product_name_raw: "Televisao",
     quantity: 2,
     unit_price_cents: 10000,
+    items: [
+      {
+        product_name_raw: "Televisao",
+        quantity: 2,
+        unit_price_cents: 10000,
+      },
+    ],
     send_via_whatsapp: true,
     source_text: "texto final",
   });
@@ -28,8 +36,47 @@ test("parseStructuredExtraction normalizes expected fields", () => {
     product_name_raw: "Televisao",
     quantity: 2,
     unit_price_cents: 10000,
+    items: [
+      {
+        product_name_raw: "Televisao",
+        quantity: 2,
+        unit_price_cents: 10000,
+      },
+    ],
     send_via_whatsapp: true,
     source_text: "texto final",
+  });
+});
+
+test("parseStructuredExtraction keeps multiple items", () => {
+  const parsed = parseStructuredExtraction({
+    intent: "create_offer_send_whatsapp",
+    customer_name_raw: "Joao",
+    destination_phone_n11: "11999998888",
+    product_name_raw: "Televisao",
+    quantity: 1,
+    unit_price_cents: 5000,
+    items: [
+      {
+        product_name_raw: "Televisao",
+        quantity: 1,
+        unit_price_cents: 5000,
+      },
+      {
+        product_name_raw: "Suporte",
+        quantity: 2,
+        unit_price_cents: 3000,
+      },
+    ],
+    send_via_whatsapp: true,
+    source_text: "texto final",
+  });
+
+  assert.equal(parsed.items.length, 2);
+  assert.deepEqual(parsed.items[1], {
+    product_name_raw: "Suporte",
+    quantity: 2,
+    unit_price_cents: 3000,
   });
 });
 
@@ -59,11 +106,26 @@ test("listMissingMandatoryFields reports unresolved required inputs", () => {
     listMissingMandatoryFields({
       customer_name_raw: "Joao",
       destination_phone_n11: "",
-      product_name_raw: "",
-      quantity: null,
-      unit_price_cents: 1000,
+      items: [
+        {
+          product_name_raw: "",
+          quantity: null,
+          unit_price_cents: 1000,
+        },
+        {
+          product_name_raw: "Suporte",
+          quantity: null,
+          unit_price_cents: null,
+        },
+      ],
     }),
-    ["destination_phone_n11", "product_name_raw", "quantity"],
+    [
+      "items.0.product_name_raw",
+      "items.0.quantity",
+      "items.1.quantity",
+      "items.1.unit_price_cents",
+      "destination_phone_n11",
+    ],
   );
 });
 
@@ -82,6 +144,30 @@ test("parseDirectReplyValue handles quantity, money and destination phone", () =
     unit_price_cents: 10050,
     source_text: "R$ 100,50",
   });
+});
+
+test("mergeResolvedDraft applies indexed item replies", () => {
+  const next = mergeResolvedDraft(
+    {
+      customer_name_raw: "Joao",
+      destination_phone_n11: "11999998888",
+      items: [
+        {
+          product_name_raw: "Televisao",
+          quantity: 1,
+          unit_price_cents: 5000,
+        },
+        {
+          product_name_raw: "Suporte",
+          quantity: null,
+          unit_price_cents: 3000,
+        },
+      ],
+    },
+    parseDirectReplyValue("items.1.quantity", "2"),
+  );
+
+  assert.equal(normalizeResolvedItems(next)[1]?.quantity, 2);
 });
 
 test("parseMoneyToCents supports integer and decimal BRL", () => {
