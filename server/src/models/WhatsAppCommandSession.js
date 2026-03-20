@@ -6,8 +6,11 @@ export const WHATSAPP_COMMAND_SESSION_STATES = [
   "COLLECTING_FIELDS",
   "AWAITING_CUSTOMER_SELECTION",
   "AWAITING_PRODUCT_SELECTION",
+  "AWAITING_BOOKING_SELECTION",
   "AWAITING_DESTINATION_PHONE",
   "AWAITING_CONFIRMATION",
+  "AWAITING_NEW_BOOKING_TIME",
+  "AWAITING_BOOKING_CHANGE_CONFIRMATION",
   "PROCESSING_CREATE",
   "COMPLETED",
   "CANCELLED",
@@ -53,6 +56,35 @@ const CandidateProductSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const CandidateBookingSchema = new mongoose.Schema(
+  {
+    bookingId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Booking",
+      default: null,
+    },
+    offerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Offer",
+      default: null,
+    },
+    ownerUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    customerName: { type: String, default: "" },
+    offerTitle: { type: String, default: "" },
+    status: { type: String, default: "" },
+    startAt: { type: Date, default: null },
+    endAt: { type: Date, default: null },
+    timeZone: { type: String, default: "" },
+    displayLabel: { type: String, default: "" },
+    score: { type: Number, default: 0 },
+  },
+  { _id: false },
+);
+
 const WhatsAppCommandSessionSchema = new mongoose.Schema(
   {
     workspaceId: {
@@ -86,7 +118,13 @@ const WhatsAppCommandSessionSchema = new mongoose.Schema(
     lastUserMessageText: { type: String, default: "" },
     flowType: {
       type: String,
-      enum: ["offer_create", "agenda_query", "intent_disambiguation"],
+      enum: [
+        "offer_create",
+        "agenda_query",
+        "booking_reschedule",
+        "booking_cancel",
+        "intent_disambiguation",
+      ],
       default: "offer_create",
     },
     state: {
@@ -100,6 +138,7 @@ const WhatsAppCommandSessionSchema = new mongoose.Schema(
     resolved: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
     candidateCustomers: { type: [CandidateCustomerSchema], default: [] },
     candidateProducts: { type: [CandidateProductSchema], default: [] },
+    candidateBookings: { type: [CandidateBookingSchema], default: [] },
     confirmationSummaryText: { type: String, default: "" },
     createdOfferId: {
       type: mongoose.Schema.Types.ObjectId,

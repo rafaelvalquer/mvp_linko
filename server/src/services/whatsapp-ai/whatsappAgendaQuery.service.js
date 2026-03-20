@@ -193,3 +193,71 @@ export async function loadDailyAgendaForWorkspace({
     items,
   };
 }
+
+export async function loadWeeklyAgendaForWorkspace({
+  workspaceId,
+  startDateISO,
+  days = 7,
+  timeZone = DEFAULT_TIMEZONE,
+}) {
+  const effectiveTimeZone = normalizeTimeZone(timeZone);
+  const startIso =
+    /^\d{4}-\d{2}-\d{2}$/.test(String(startDateISO || "").trim())
+      ? String(startDateISO || "").trim()
+      : getDateIsoForTimeZone(new Date(), effectiveTimeZone);
+  const totalDays = Math.max(1, Math.min(7, Number(days || 7)));
+  const agendaDays = [];
+
+  for (let index = 0; index < totalDays; index += 1) {
+    const dateISO = shiftDateIso(startIso, index);
+    // eslint-disable-next-line no-await-in-loop
+    const day = await loadDailyAgendaForWorkspace({
+      workspaceId,
+      dateISO,
+      timeZone: effectiveTimeZone,
+    });
+    agendaDays.push(day);
+  }
+
+  return {
+    timeZone: effectiveTimeZone,
+    startDateISO: startIso,
+    endDateISO: shiftDateIso(startIso, totalDays - 1),
+    days: agendaDays,
+  };
+}
+
+export async function findNextBookingForWorkspace({
+  workspaceId,
+  now = new Date(),
+  timeZone = DEFAULT_TIMEZONE,
+}) {
+  const effectiveTimeZone = normalizeTimeZone(timeZone);
+  const doc = await Booking.findOne({
+    workspaceId,
+    status: { $in: ["HOLD", "CONFIRMED"] },
+    startAt: { $gte: now instanceof Date ? now : new Date(now) },
+  })
+    .sort({ startAt: 1 })
+    .populate("offerId", "_id title publicToken")
+    .lean();
+
+  if (!doc?._id) return null;
+
+  const status = normalizeBookingStatus(doc?.status);
+  return {
+    bookingId: String(doc._id),
+    offerId: doc?.offerId?._id ? String(doc.offerId._id) : "",
+    customerName: String(doc?.customerName || "").trim() || "Cliente",
+    offerTitle: String(doc?.offerId?.title || "").trim() || "Servico",
+    status,
+    statusLabel: status === "CONFIRMED" ? "Confirmado" : "Reserva",
+    startAt: doc?.startAt || null,
+    endAt: doc?.endAt || null,
+    timeZone: effectiveTimeZone,
+    timeLabel: `${formatTime(doc?.startAt, effectiveTimeZone)} - ${formatTime(
+      doc?.endAt,
+      effectiveTimeZone,
+    )}`,
+  };
+}

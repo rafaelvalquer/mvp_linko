@@ -8,6 +8,7 @@ import {
 } from "../src/utils/phone.js";
 import {
   parseAgendaDateExtraction,
+  parseBookingOperationExtraction,
   parseIntentRoutingExtraction,
   listMissingMandatoryFields,
   mergeResolvedDraft,
@@ -19,6 +20,10 @@ import {
 import {
   buildAgendaFreeDayMessage,
   buildAgendaSummaryMessage,
+  buildBookingCancelConfirmation,
+  buildBookingRescheduleConfirmation,
+  buildNextBookingMessage,
+  buildWeeklyAgendaMessage,
   buildConfirmationSummary,
   buildIntentDisambiguationQuestion,
 } from "../src/services/whatsapp-ai/whatsappQuestionBuilder.service.js";
@@ -322,13 +327,37 @@ await check("parseStructuredExtraction keeps all extracted items", () => {
 
 await check("parseIntentRoutingExtraction accepts agenda routing", () => {
   const parsed = parseIntentRoutingExtraction({
-    intent: "query_daily_agenda",
-    source_text: "qual minha agenda de hoje",
+    intent: "query_weekly_agenda",
+    source_text: "qual minha agenda da semana",
   });
 
   assert.deepEqual(parsed, {
-    intent: "query_daily_agenda",
-    source_text: "qual minha agenda de hoje",
+    intent: "query_weekly_agenda",
+    source_text: "qual minha agenda da semana",
+  });
+});
+
+await check("parseBookingOperationExtraction normalizes booking operations", () => {
+  const parsed = parseBookingOperationExtraction({
+    intent: "reschedule_booking",
+    target_customer_name: "Rafael",
+    target_date_iso: "2026-03-20",
+    target_time_hhmm: "9:00",
+    target_reference: "explicit",
+    new_date_iso: "2026-03-21",
+    new_time_hhmm: "14:30",
+    source_text: "remarque o Rafael para 21/03 as 14:30",
+  });
+
+  assert.deepEqual(parsed, {
+    intent: "reschedule_booking",
+    target_customer_name: "Rafael",
+    target_date_iso: "2026-03-20",
+    target_time_hhmm: "09:00",
+    target_reference: "explicit",
+    new_date_iso: "2026-03-21",
+    new_time_hhmm: "14:30",
+    source_text: "remarque o Rafael para 21/03 as 14:30",
   });
 });
 
@@ -430,6 +459,67 @@ await check("agenda free day message uses the WhatsApp template", () => {
   assert.match(message, /🗓️ 19\/03\/2026/u);
   assert.match(message, /Sua agenda de hoje esta livre\./);
   assert.match(message, /🚀 \*Meta do dia:\*/u);
+});
+
+await check("weekly agenda and booking operation messages render summaries", () => {
+  const weekly = buildWeeklyAgendaMessage({
+    startDateISO: "2026-03-19",
+    endDateISO: "2026-03-25",
+    timeZone: "America/Sao_Paulo",
+    days: [
+      {
+        dateISO: "2026-03-19",
+        items: [
+          {
+            timeLabel: "09:00 - 10:00",
+            customerName: "Rafael",
+            offerTitle: "Consulta",
+          },
+        ],
+      },
+    ],
+  });
+
+  assert.match(weekly, /SUA AGENDA DA SEMANA/);
+  assert.match(weekly, /19\/03\/2026 ate 25\/03\/2026/);
+  assert.match(weekly, /09:00/);
+  assert.match(weekly, /Rafael/);
+
+  const nextBooking = buildNextBookingMessage({
+    bookingId: "booking-1",
+    customerName: "Rafael",
+    offerTitle: "Consulta",
+    status: "CONFIRMED",
+    startAt: "2026-03-19T12:00:00.000Z",
+    timeZone: "America/Sao_Paulo",
+  });
+
+  assert.match(nextBooking, /PROXIMO COMPROMISSO/);
+  assert.match(nextBooking, /Rafael/);
+  assert.match(nextBooking, /Consulta/);
+
+  const rescheduleSummary = buildBookingRescheduleConfirmation(
+    {
+      customerName: "Rafael",
+      offerTitle: "Consulta",
+      startAt: "2026-03-19T12:00:00.000Z",
+      timeZone: "America/Sao_Paulo",
+    },
+    {
+      startAt: "2026-03-20T15:00:00.000Z",
+    },
+  );
+  assert.match(rescheduleSummary, /Confirma o reagendamento/);
+  assert.match(rescheduleSummary, /Digite CONFIRMAR/);
+
+  const cancelSummary = buildBookingCancelConfirmation({
+    customerName: "Rafael",
+    offerTitle: "Consulta",
+    startAt: "2026-03-19T12:00:00.000Z",
+    timeZone: "America/Sao_Paulo",
+  });
+  assert.match(cancelSummary, /Confirma o cancelamento/);
+  assert.match(cancelSummary, /Digite CONFIRMAR/);
 });
 
 await check("mergeResolvedDraft resets linked entities when raw values change", () => {

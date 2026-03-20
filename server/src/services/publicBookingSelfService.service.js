@@ -1470,3 +1470,98 @@ export async function cancelPublicBooking({
     notifications,
   };
 }
+
+export async function notifyWorkspaceBookingChange({
+  type,
+  offerRaw,
+  bookingBefore,
+  bookingAfter,
+  reason = "",
+  timeZone = DEFAULT_TIMEZONE,
+}) {
+  const notificationContext = await resolveWorkspaceNotificationContext({
+    workspaceId: offerRaw?.workspaceId || null,
+    ownerUserId: offerRaw?.ownerUserId || null,
+  });
+  const whatsappCapability = getNotificationFeatureCapability(
+    notificationContext,
+    "whatsappBookingChanges",
+  );
+  const whatsappEnabled = whatsappCapability?.available === true;
+  const customerName = String(
+    bookingAfter?.customerName ||
+      bookingBefore?.customerName ||
+      offerRaw?.customerName ||
+      "Cliente",
+  ).trim();
+  const serviceName = getServiceName(offerRaw);
+  const currentWhen = formatDateTime(
+    bookingAfter?.startAt || bookingBefore?.startAt,
+    timeZone,
+  );
+  const previousWhen = formatDateTime(bookingBefore?.startAt, timeZone);
+  const nextWhen = formatDateTime(bookingAfter?.startAt, timeZone);
+  const first = firstName(customerName);
+  const greeting = first ? `Oi, ${first}!` : "Oi!";
+  const eventType =
+    type === "cancel"
+      ? `BOOKING_CANCELLED_BY_WORKSPACE:${String(bookingAfter?._id || bookingBefore?._id || "")}`
+      : `BOOKING_RESCHEDULED_BY_WORKSPACE:${String(bookingAfter?._id || bookingBefore?._id || "")}:${dateToIsoString(toDate(bookingAfter?.startAt)) || ""}`;
+
+  const message =
+    type === "cancel"
+      ? [
+          greeting,
+          "",
+          `Seu agendamento de *${serviceName}* em *${currentWhen}* foi cancelado pela equipe responsavel.`,
+          reason ? `*Motivo informado:* ${reason}` : "",
+          "",
+          "Se precisar reagendar, e so responder esta mensagem.",
+        ]
+          .filter(Boolean)
+          .join("\n")
+      : [
+          greeting,
+          "",
+          "Seu agendamento foi atualizado pela equipe responsavel.",
+          "",
+          `*Servico:* ${serviceName}`,
+          `*Antes:* ${previousWhen}`,
+          `*Novo horario:* ${nextWhen}`,
+          "",
+          "Se precisar alinhar mais algum detalhe, e so responder esta mensagem.",
+        ]
+          .filter(Boolean)
+          .join("\n");
+
+  const customerWhatsApp = whatsappEnabled
+    ? await sendCustomerWhatsAppNotification({
+        offerRaw,
+        booking: bookingAfter || bookingBefore,
+        eventType,
+        message,
+        meta: {
+          type,
+          reason: reason || null,
+          initiator: "workspace",
+        },
+      }).catch((error) => ({
+        ok: false,
+        status: "FAILED",
+        reason: error?.message || "Falha ao enviar WhatsApp",
+      }))
+    : {
+        ok: false,
+        skipped: true,
+        reason: whatsappCapability?.code || "whatsapp_booking_changes_disabled",
+      };
+
+  return {
+    eventType,
+    notificationSettings: {
+      whatsappEnabled,
+      whatsappCode: whatsappCapability?.code || "",
+    },
+    customerWhatsApp,
+  };
+}

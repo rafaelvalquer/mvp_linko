@@ -8,6 +8,11 @@ export const WHATSAPP_AI_INTENTS = [
 export const WHATSAPP_AI_ROUTING_INTENTS = [
   "create_offer_send_whatsapp",
   "query_daily_agenda",
+  "query_weekly_agenda",
+  "query_next_booking",
+  "reschedule_booking",
+  "cancel_booking",
+  "ambiguous_booking_operation",
   "ambiguous_offer_or_agenda",
   "unknown",
 ];
@@ -16,6 +21,12 @@ export const WHATSAPP_AI_AGENDA_DAY_KINDS = [
   "today",
   "tomorrow",
   "explicit_date",
+  "unspecified",
+];
+
+export const WHATSAPP_AI_BOOKING_TARGET_REFERENCES = [
+  "next",
+  "explicit",
   "unspecified",
 ];
 
@@ -67,9 +78,38 @@ function normalizeAgendaDayKind(value) {
   return WHATSAPP_AI_AGENDA_DAY_KINDS.includes(kind) ? kind : "unspecified";
 }
 
+function normalizeBookingTargetReference(value) {
+  const reference = String(value || "").trim();
+  return WHATSAPP_AI_BOOKING_TARGET_REFERENCES.includes(reference)
+    ? reference
+    : "unspecified";
+}
+
 function normalizeDateIso(value) {
   const dateIso = String(value || "").trim();
   return /^\d{4}-\d{2}-\d{2}$/.test(dateIso) ? dateIso : "";
+}
+
+function normalizeTimeHhmm(value) {
+  const raw = String(value || "")
+    .trim()
+    .replace(/[hH]/g, ":")
+    .replace(/[^\d:]/g, "");
+  if (!raw) return "";
+
+  if (/^\d{1,2}:\d{2}$/.test(raw)) {
+    const [hours, minutes] = raw.split(":").map(Number);
+    if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+      return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+    }
+  }
+
+  if (/^\d{1,2}$/.test(raw)) {
+    const hours = Number(raw);
+    if (hours >= 0 && hours <= 23) return `${String(hours).padStart(2, "0")}:00`;
+  }
+
+  return "";
 }
 
 function isPositiveInteger(value) {
@@ -339,6 +379,51 @@ export function buildAgendaDateResponseFormat() {
   };
 }
 
+export function buildBookingOperationResponseFormat() {
+  return {
+    type: "json_schema",
+    json_schema: {
+      name: "whatsapp_booking_operation",
+      strict: true,
+      schema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          intent: {
+            type: "string",
+            enum: [
+              "reschedule_booking",
+              "cancel_booking",
+              "query_next_booking",
+              "unknown",
+            ],
+          },
+          target_customer_name: { type: "string" },
+          target_date_iso: { type: "string" },
+          target_time_hhmm: { type: "string" },
+          target_reference: {
+            type: "string",
+            enum: WHATSAPP_AI_BOOKING_TARGET_REFERENCES,
+          },
+          new_date_iso: { type: "string" },
+          new_time_hhmm: { type: "string" },
+          source_text: { type: "string" },
+        },
+        required: [
+          "intent",
+          "target_customer_name",
+          "target_date_iso",
+          "target_time_hhmm",
+          "target_reference",
+          "new_date_iso",
+          "new_time_hhmm",
+          "source_text",
+        ],
+      },
+    },
+  };
+}
+
 export function createEmptyExtraction() {
   return {
     intent: "unknown",
@@ -364,6 +449,19 @@ export function createEmptyAgendaDateExtraction() {
   return {
     requested_day_kind: "unspecified",
     requested_date_iso: "",
+    source_text: "",
+  };
+}
+
+export function createEmptyBookingOperationExtraction() {
+  return {
+    intent: "unknown",
+    target_customer_name: "",
+    target_date_iso: "",
+    target_time_hhmm: "",
+    target_reference: "unspecified",
+    new_date_iso: "",
+    new_time_hhmm: "",
     source_text: "",
   };
 }
@@ -479,6 +577,57 @@ export function parseAgendaDateExtraction(payload) {
   return {
     requested_day_kind: normalizeAgendaDayKind(value.requested_day_kind),
     requested_date_iso: normalizeDateIso(value.requested_date_iso),
+    source_text: String(value.source_text || "").trim(),
+  };
+}
+
+export function parseBookingOperationExtraction(payload) {
+  let value = payload;
+
+  if (typeof value === "string") {
+    value = JSON.parse(value);
+  }
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    const err = new Error("A IA retornou um payload de operacao de agenda invalido.");
+    err.code = "WHATSAPP_AI_INVALID_BOOKING_OPERATION_PAYLOAD";
+    throw err;
+  }
+
+  const allowedKeys = [
+    "intent",
+    "target_customer_name",
+    "target_date_iso",
+    "target_time_hhmm",
+    "target_reference",
+    "new_date_iso",
+    "new_time_hhmm",
+    "source_text",
+  ];
+  const extras = Object.keys(value).filter((key) => !allowedKeys.includes(key));
+  if (extras.length) {
+    const err = new Error(
+      `Campos nao suportados na operacao de agenda: ${extras.join(", ")}`,
+    );
+    err.code = "WHATSAPP_AI_INVALID_BOOKING_OPERATION_KEYS";
+    throw err;
+  }
+
+  const normalizedIntent = normalizeRoutingIntent(value.intent);
+  const allowedIntents = [
+    "reschedule_booking",
+    "cancel_booking",
+    "query_next_booking",
+  ];
+
+  return {
+    intent: allowedIntents.includes(normalizedIntent) ? normalizedIntent : "unknown",
+    target_customer_name: String(value.target_customer_name || "").trim(),
+    target_date_iso: normalizeDateIso(value.target_date_iso),
+    target_time_hhmm: normalizeTimeHhmm(value.target_time_hhmm),
+    target_reference: normalizeBookingTargetReference(value.target_reference),
+    new_date_iso: normalizeDateIso(value.new_date_iso),
+    new_time_hhmm: normalizeTimeHhmm(value.new_time_hhmm),
     source_text: String(value.source_text || "").trim(),
   };
 }

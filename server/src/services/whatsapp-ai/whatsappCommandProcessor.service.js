@@ -15,6 +15,7 @@ import {
 } from "./whatsappEntityResolver.service.js";
 import {
   buildSparseItemPatch,
+  createEmptyBookingOperationExtraction,
   createEmptyResolved,
   listMissingMandatoryFields,
   mergeResolvedDraft,
@@ -25,21 +26,31 @@ import {
 import {
   buildAgendaFreeDayMessage,
   buildAgendaSummaryMessage,
+  buildBookingAmbiguityQuestion,
+  buildBookingCancelConfirmation,
+  buildBookingCancelledSuccessMessage,
+  buildBookingOperationDisambiguationQuestion,
+  buildBookingRescheduleConfirmation,
+  buildBookingRescheduledSuccessMessage,
   buildCancelledMessage,
   buildConfirmationSummary,
   buildCustomerAmbiguityQuestion,
   buildDuplicateLinkedNumberMessage,
   buildErrorMessage,
+  buildInvalidBookingOperationSelectionMessage,
   buildInvalidConfirmationMessage,
   buildInvalidIntentSelectionMessage,
   buildInvalidSelectionMessage,
   buildIntentDisambiguationQuestion,
   buildMissingFieldQuestion,
+  buildMissingBookingTimeQuestion,
+  buildNextBookingMessage,
   buildNotLinkedNumberMessage,
   buildPlanUpgradeRequiredMessage,
   buildProcessingMessage,
   buildProductAmbiguityQuestion,
   buildSuccessMessage,
+  buildWeeklyAgendaMessage,
 } from "./whatsappQuestionBuilder.service.js";
 import {
   appendInboundMessageToSession,
@@ -57,17 +68,28 @@ import { createOfferAndDispatchToCustomer } from "./whatsappOfferCreation.servic
 import { transcribeWhatsAppAudio } from "./whatsappAudioTranscription.service.js";
 import {
   extractWhatsAppAgendaDate,
+  extractWhatsAppBookingOperation,
   extractWhatsAppIntent,
   extractWhatsAppSessionReply,
   routeWhatsAppMessageIntent,
 } from "./whatsappIntentExtraction.service.js";
 import {
   buildAgendaDayLabel,
+  findNextBookingForWorkspace,
   getDateIsoForTimeZone,
   getWorkspaceAgendaTimeZone,
   loadDailyAgendaForWorkspace,
+  loadWeeklyAgendaForWorkspace,
   resolveAgendaQueryDate,
 } from "./whatsappAgendaQuery.service.js";
+import {
+  cancelBookingByWorkspace,
+  pickBookingCandidateByOrdinal,
+  previewBookingReschedule,
+  resolveBookingCandidates,
+  resolveNextBookingSchedule,
+  rescheduleBookingByWorkspace,
+} from "./whatsappBookingOperations.service.js";
 import { isWhatsAppAiEnabled } from "./openai.client.js";
 
 const inflightInboundEventKeys = new Set();
@@ -117,6 +139,39 @@ function parseIntentSelectionReply(value) {
     normalized.includes("agenda")
   ) {
     return "AGENDA";
+  }
+
+  return "";
+}
+
+function parseBookingOperationSelectionReply(value) {
+  const normalized = normalizeComparableText(value);
+
+  if (
+    ["cancelar", "cancela", "cancelado"].includes(normalized) ||
+    normalized.startsWith("cancel")
+  ) {
+    return "CANCELAR_COMPROMISSO";
+  }
+
+  if (
+    normalized === "1" ||
+    normalized.startsWith("agenda") ||
+    normalized.includes("consult")
+  ) {
+    return "CONSULTAR_AGENDA";
+  }
+
+  if (
+    normalized === "2" ||
+    normalized.startsWith("reagendar") ||
+    normalized.includes("remarcar")
+  ) {
+    return "REAGENDAR";
+  }
+
+  if (normalized === "3") {
+    return "CANCELAR_COMPROMISSO";
   }
 
   return "";
@@ -193,6 +248,33 @@ function getIntentSelectionContext(session) {
     return null;
   }
   return context;
+}
+
+function getBookingOperationDraft(session) {
+  const draft = session?.resolved?.bookingOperation;
+  if (!draft || typeof draft !== "object" || Array.isArray(draft)) {
+    return createEmptyBookingOperationExtraction();
+  }
+  return {
+    ...createEmptyBookingOperationExtraction(),
+    ...draft,
+  };
+}
+
+function getSelectedBookingCandidate(session) {
+  const candidate = session?.resolved?.selectedBookingCandidate;
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+    return null;
+  }
+  return candidate;
+}
+
+function getSelectedBookingPreview(session) {
+  const preview = session?.resolved?.selectedBookingPreview;
+  if (!preview || typeof preview !== "object" || Array.isArray(preview)) {
+    return null;
+  }
+  return preview;
 }
 
 function buildInboundEventKey(event) {
@@ -345,7 +427,14 @@ async function maybeAskForIntentSelection({
   const routingExtraction = await routeWhatsAppMessageIntent({ text });
 
   if (
-    !["query_daily_agenda", "ambiguous_offer_or_agenda"].includes(
+    ![
+      "query_daily_agenda",
+      "query_weekly_agenda",
+      "query_next_booking",
+      "reschedule_booking",
+      "cancel_booking",
+      "ambiguous_offer_or_agenda",
+    ].includes(
       routingExtraction.intent,
     )
   ) {
@@ -406,6 +495,48 @@ async function maybeAskForIntentSelection({
     status: "awaiting_intent_selection",
     session: updatedSession,
     routingExtraction,
+  };
+}
+
+async function askBookingOperationSelection({
+  session,
+  user,
+  dedupeSuffix,
+  pendingIntentText,
+  origin = "new_session",
+}) {
+  const question = buildBookingOperationDisambiguationQuestion();
+  const resolvedWithoutContext = stripIntentSelectionContext(session?.resolved || {});
+  const updatedSession = await updateWhatsAppSession(session._id, {
+    flowType: "intent_disambiguation",
+    state: "AWAITING_INTENT_SELECTION",
+    pendingFields: [],
+    lastQuestionKey: "booking_operation_selection",
+    lastQuestionText: question,
+    candidateCustomers: [],
+    candidateProducts: [],
+    confirmationSummaryText: "",
+    resolved: {
+      ...resolvedWithoutContext,
+      [INTENT_SELECTION_CONTEXT_KEY]: {
+        selectionType: "booking_operation",
+        origin,
+        pendingIntentText: String(pendingIntentText || "").trim(),
+      },
+    },
+  });
+
+  await replyToSession({
+    session: updatedSession,
+    user,
+    message: question,
+    dedupeSuffix,
+  });
+
+  return {
+    ok: true,
+    status: "awaiting_intent_selection",
+    session: updatedSession,
   };
 }
 
@@ -499,6 +630,126 @@ async function runAgendaQueryForSession({
   };
 }
 
+async function runWeeklyAgendaQueryForSession({
+  session,
+  user,
+  text,
+  dedupeSuffix,
+  routingExtraction = null,
+}) {
+  const timeZone = await getWorkspaceAgendaTimeZone(user.workspaceId);
+  const now = new Date();
+  const startDateISO = getDateIsoForTimeZone(now, timeZone);
+  const weeklyAgenda = await loadWeeklyAgendaForWorkspace({
+    workspaceId: user.workspaceId,
+    startDateISO,
+    days: 7,
+    timeZone,
+  });
+  const message = buildWeeklyAgendaMessage({
+    startDateISO: weeklyAgenda.startDateISO,
+    endDateISO: weeklyAgenda.endDateISO,
+    days: weeklyAgenda.days,
+    timeZone,
+  });
+
+  const completedSession = await markSessionCompleted(session._id, {
+    flowType: "agenda_query",
+    extracted: buildSessionExtracted(session?.extracted, {
+      ...(routingExtraction ? { intentRouting: routingExtraction } : {}),
+      agendaQuery: {
+        requested_day_kind: "week",
+        requested_date_iso: weeklyAgenda.startDateISO,
+        source_text: text,
+        startDateISO: weeklyAgenda.startDateISO,
+        endDateISO: weeklyAgenda.endDateISO,
+        timeZone,
+      },
+    }),
+    resolved: {
+      ...stripIntentSelectionContext(session?.resolved || {}),
+      source_text: text,
+      agendaDateIso: weeklyAgenda.startDateISO,
+      agendaTimeZone: timeZone,
+    },
+  });
+
+  await closeActiveSessionsForRequester({
+    userId: user._id,
+    requesterPhoneDigits: completedSession.requesterPhoneDigits,
+    excludeSessionId: completedSession._id,
+    state: "EXPIRED",
+  });
+
+  await replyToSession({
+    session: completedSession,
+    user,
+    message,
+    dedupeSuffix,
+  });
+
+  return {
+    ok: true,
+    status: "completed",
+    session: completedSession,
+  };
+}
+
+async function runNextBookingQueryForSession({
+  session,
+  user,
+  text,
+  dedupeSuffix,
+  routingExtraction = null,
+}) {
+  const timeZone = await getWorkspaceAgendaTimeZone(user.workspaceId);
+  const nextBooking = await findNextBookingForWorkspace({
+    workspaceId: user.workspaceId,
+    now: new Date(),
+    timeZone,
+  });
+  const message = buildNextBookingMessage(nextBooking);
+
+  const completedSession = await markSessionCompleted(session._id, {
+    flowType: "agenda_query",
+    extracted: buildSessionExtracted(session?.extracted, {
+      ...(routingExtraction ? { intentRouting: routingExtraction } : {}),
+      agendaQuery: {
+        requested_day_kind: "next_booking",
+        requested_date_iso: "",
+        source_text: text,
+        timeZone,
+      },
+    }),
+    resolved: {
+      ...stripIntentSelectionContext(session?.resolved || {}),
+      source_text: text,
+      agendaTimeZone: timeZone,
+      nextBookingId: nextBooking?.bookingId || "",
+    },
+  });
+
+  await closeActiveSessionsForRequester({
+    userId: user._id,
+    requesterPhoneDigits: completedSession.requesterPhoneDigits,
+    excludeSessionId: completedSession._id,
+    state: "EXPIRED",
+  });
+
+  await replyToSession({
+    session: completedSession,
+    user,
+    message,
+    dedupeSuffix,
+  });
+
+  return {
+    ok: true,
+    status: "completed",
+    session: completedSession,
+  };
+}
+
 async function initializeOfferSession({
   session,
   user,
@@ -548,6 +799,270 @@ async function initializeOfferSession({
 
   return advanceSessionAfterResolution({
     session: sessionAfterExtraction,
+    user,
+    dedupeSuffix,
+  });
+}
+
+async function advanceBookingOperationSession({ session, user, dedupeSuffix }) {
+  const draft = getBookingOperationDraft(session);
+  const selectedBookingCandidate = getSelectedBookingCandidate(session);
+  const timeZone =
+    String(selectedBookingCandidate?.timeZone || draft.timeZone || "").trim() ||
+    (await getWorkspaceAgendaTimeZone(user.workspaceId));
+
+  let workingDraft = {
+    ...draft,
+    timeZone,
+  };
+  let candidate = selectedBookingCandidate;
+
+  if (!candidate) {
+    const candidates = await resolveBookingCandidates({
+      workspaceId: user.workspaceId,
+      targetCustomerName: workingDraft.target_customer_name,
+      targetDateIso: workingDraft.target_date_iso,
+      targetTimeHhmm: workingDraft.target_time_hhmm,
+      targetReference: workingDraft.target_reference,
+      now: new Date(),
+      limit: 5,
+    });
+
+    if (!candidates.length) {
+      const erroredSession = await markSessionError(session._id, {
+        code: "BOOKING_NOT_FOUND",
+        message: "Nenhum compromisso elegivel encontrado para esta solicitacao.",
+      });
+      await replyToSession({
+        session: erroredSession,
+        user,
+        message: "Nao encontrei um compromisso elegivel para essa solicitacao.",
+        dedupeSuffix,
+      });
+      return { ok: true, status: "booking_not_found", session: erroredSession };
+    }
+
+    if (candidates.length > 1) {
+      const question = buildBookingAmbiguityQuestion(
+        candidates,
+        workingDraft.intent === "cancel_booking" ? "cancelar" : "reagendar",
+      );
+      const updatedSession = await updateWhatsAppSession(session._id, {
+        flowType:
+          workingDraft.intent === "cancel_booking"
+            ? "booking_cancel"
+            : "booking_reschedule",
+        state: "AWAITING_BOOKING_SELECTION",
+        lastQuestionKey: "booking_selection",
+        lastQuestionText: question,
+        candidateBookings: candidates,
+        resolved: {
+          ...(session?.resolved || {}),
+          bookingOperation: workingDraft,
+          selectedBookingCandidate: null,
+          selectedBookingPreview: null,
+        },
+      });
+      await replyToSession({
+        session: updatedSession,
+        user,
+        message: question,
+        dedupeSuffix,
+      });
+      return {
+        ok: true,
+        status: "awaiting_booking_selection",
+        session: updatedSession,
+      };
+    }
+
+    candidate = candidates[0];
+  }
+
+  if (workingDraft.intent === "cancel_booking") {
+    const question = buildBookingCancelConfirmation(candidate);
+    const updatedSession = await updateWhatsAppSession(session._id, {
+      flowType: "booking_cancel",
+      state: "AWAITING_BOOKING_CHANGE_CONFIRMATION",
+      lastQuestionKey: "booking_cancel_confirmation",
+      lastQuestionText: question,
+      confirmationSummaryText: question,
+      candidateBookings: [],
+      resolved: {
+        ...(session?.resolved || {}),
+        bookingOperation: workingDraft,
+        selectedBookingCandidate: candidate,
+        selectedBookingPreview: null,
+      },
+    });
+    await replyToSession({
+      session: updatedSession,
+      user,
+      message: question,
+      dedupeSuffix,
+    });
+    return {
+      ok: true,
+      status: "awaiting_booking_change_confirmation",
+      session: updatedSession,
+    };
+  }
+
+  const nextSchedule = resolveNextBookingSchedule({
+    booking: candidate,
+    newDateIso: workingDraft.new_date_iso,
+    newTimeHhmm: workingDraft.new_time_hhmm,
+    timeZone,
+  });
+
+  if (!nextSchedule?.startAt || !nextSchedule?.endAt) {
+    const question = buildMissingBookingTimeQuestion(candidate);
+    const updatedSession = await updateWhatsAppSession(session._id, {
+      flowType: "booking_reschedule",
+      state: "AWAITING_NEW_BOOKING_TIME",
+      lastQuestionKey: "booking_new_time",
+      lastQuestionText: question,
+      candidateBookings: [],
+      resolved: {
+        ...(session?.resolved || {}),
+        bookingOperation: workingDraft,
+        selectedBookingCandidate: candidate,
+        selectedBookingPreview: null,
+      },
+    });
+    await replyToSession({
+      session: updatedSession,
+      user,
+      message: question,
+      dedupeSuffix,
+    });
+    return {
+      ok: true,
+      status: "awaiting_new_booking_time",
+      session: updatedSession,
+    };
+  }
+
+  try {
+    await previewBookingReschedule({
+      bookingId: candidate.bookingId,
+      workspaceId: user.workspaceId,
+      startAt: nextSchedule.startAt,
+      endAt: nextSchedule.endAt,
+      now: new Date(),
+    });
+  } catch (error) {
+    const question = [
+      String(error?.message || "Nao consegui validar esse horario."),
+      "",
+      buildMissingBookingTimeQuestion(candidate),
+    ].join("\n");
+    const updatedSession = await updateWhatsAppSession(session._id, {
+      flowType: "booking_reschedule",
+      state: "AWAITING_NEW_BOOKING_TIME",
+      lastQuestionKey: "booking_new_time",
+      lastQuestionText: question,
+      candidateBookings: [],
+      resolved: {
+        ...(session?.resolved || {}),
+        bookingOperation: workingDraft,
+        selectedBookingCandidate: candidate,
+        selectedBookingPreview: null,
+      },
+    });
+    await replyToSession({
+      session: updatedSession,
+      user,
+      message: question,
+      dedupeSuffix,
+    });
+    return {
+      ok: true,
+      status: "awaiting_new_booking_time",
+      session: updatedSession,
+    };
+  }
+
+  const question = buildBookingRescheduleConfirmation(candidate, nextSchedule);
+  const updatedSession = await updateWhatsAppSession(session._id, {
+    flowType: "booking_reschedule",
+    state: "AWAITING_BOOKING_CHANGE_CONFIRMATION",
+    lastQuestionKey: "booking_reschedule_confirmation",
+    lastQuestionText: question,
+    confirmationSummaryText: question,
+    candidateBookings: [],
+    resolved: {
+      ...(session?.resolved || {}),
+      bookingOperation: workingDraft,
+      selectedBookingCandidate: candidate,
+      selectedBookingPreview: nextSchedule,
+    },
+  });
+  await replyToSession({
+    session: updatedSession,
+    user,
+    message: question,
+    dedupeSuffix,
+  });
+  return {
+    ok: true,
+    status: "awaiting_booking_change_confirmation",
+    session: updatedSession,
+  };
+}
+
+async function initializeBookingOperationSession({
+  session,
+  user,
+  text,
+  dedupeSuffix,
+  routingExtraction = null,
+}) {
+  const timeZone = await getWorkspaceAgendaTimeZone(user.workspaceId);
+  const todayDateIso = getDateIsoForTimeZone(new Date(), timeZone);
+  const extraction = await extractWhatsAppBookingOperation({
+    text,
+    todayDateIso,
+    timeZone,
+  });
+
+  const updatedSession = await updateWhatsAppSession(session._id, {
+    flowType:
+      extraction.intent === "cancel_booking"
+        ? "booking_cancel"
+        : "booking_reschedule",
+    extracted: buildSessionExtracted(session?.extracted, {
+      ...(routingExtraction ? { intentRouting: routingExtraction } : {}),
+      bookingOperation: extraction,
+    }),
+    resolved: {
+      ...(stripIntentSelectionContext(session?.resolved || {})),
+      source_text: text,
+      bookingOperation: {
+        ...extraction,
+        timeZone,
+      },
+      selectedBookingCandidate: null,
+      selectedBookingPreview: null,
+    },
+  });
+
+  if (!["reschedule_booking", "cancel_booking"].includes(extraction.intent)) {
+    const erroredSession = await markSessionError(updatedSession._id, {
+      code: "WHATSAPP_AI_UNKNOWN_BOOKING_OPERATION",
+      message: "Intencao de operacao de agenda nao reconhecida.",
+    });
+    await replyToSession({
+      session: erroredSession,
+      user,
+      message: buildErrorMessage(),
+      dedupeSuffix,
+    });
+    return { ok: true, status: "unknown_intent", session: erroredSession };
+  }
+
+  return advanceBookingOperationSession({
+    session: updatedSession,
     user,
     dedupeSuffix,
   });
@@ -725,8 +1240,11 @@ async function advanceSessionAfterResolution({ session, user, dedupeSuffix }) {
 }
 
 async function handleIntentSelection({ session, user, event, text }) {
-  const selection = parseIntentSelectionReply(text);
   const context = getIntentSelectionContext(session);
+  const selection =
+    context?.selectionType === "booking_operation"
+      ? parseBookingOperationSelectionReply(text)
+      : parseIntentSelectionReply(text);
   const pendingIntentText = String(context?.pendingIntentText || text || "").trim();
 
   if (selection === "CANCELAR") {
@@ -748,7 +1266,114 @@ async function handleIntentSelection({ session, user, event, text }) {
     return { ok: true, status: "cancelled", session: cancelledSession };
   }
 
+  if (selection === "CONSULTAR_AGENDA") {
+    return runAgendaQueryForSession({
+      session,
+      user,
+      text: pendingIntentText || text,
+      dedupeSuffix: `${event.messageId}:agenda`,
+      routingExtraction: {
+        intent: "query_daily_agenda",
+        source_text: pendingIntentText || text,
+      },
+    });
+  }
+
+  if (selection === "REAGENDAR") {
+    const resetSession = await updateWhatsAppSession(session._id, {
+      flowType: "booking_reschedule",
+      state: "NEW",
+      pendingFields: [],
+      lastQuestionKey: "",
+      lastQuestionText: "",
+      candidateCustomers: [],
+      candidateProducts: [],
+      candidateBookings: [],
+      confirmationSummaryText: "",
+      resolved: stripIntentSelectionContext(session?.resolved || {}),
+    });
+
+    return initializeBookingOperationSession({
+      session: resetSession,
+      user,
+      text: pendingIntentText || text,
+      dedupeSuffix: `${event.messageId}:reschedule`,
+      routingExtraction: {
+        intent: "reschedule_booking",
+        source_text: pendingIntentText || text,
+      },
+    });
+  }
+
+  if (selection === "CANCELAR_COMPROMISSO") {
+    const resetSession = await updateWhatsAppSession(session._id, {
+      flowType: "booking_cancel",
+      state: "NEW",
+      pendingFields: [],
+      lastQuestionKey: "",
+      lastQuestionText: "",
+      candidateCustomers: [],
+      candidateProducts: [],
+      candidateBookings: [],
+      confirmationSummaryText: "",
+      resolved: stripIntentSelectionContext(session?.resolved || {}),
+    });
+
+    return initializeBookingOperationSession({
+      session: resetSession,
+      user,
+      text: pendingIntentText || text,
+      dedupeSuffix: `${event.messageId}:cancel-booking`,
+      routingExtraction: {
+        intent: "cancel_booking",
+        source_text: pendingIntentText || text,
+      },
+    });
+  }
+
   if (selection === "AGENDA") {
+    const routedIntent =
+      String(context?.pendingIntent || "").trim() || "query_daily_agenda";
+
+    if (routedIntent === "query_weekly_agenda") {
+      return runWeeklyAgendaQueryForSession({
+        session,
+        user,
+        text: pendingIntentText || text,
+        dedupeSuffix: `${event.messageId}:weekly-agenda`,
+        routingExtraction: {
+          intent: "query_weekly_agenda",
+          source_text: pendingIntentText || text,
+        },
+      });
+    }
+
+    if (routedIntent === "query_next_booking") {
+      return runNextBookingQueryForSession({
+        session,
+        user,
+        text: pendingIntentText || text,
+        dedupeSuffix: `${event.messageId}:next-booking`,
+        routingExtraction: {
+          intent: "query_next_booking",
+          source_text: pendingIntentText || text,
+        },
+      });
+    }
+
+    if (["reschedule_booking", "cancel_booking"].includes(routedIntent)) {
+      return initializeBookingOperationSession({
+        session,
+        user,
+        text: pendingIntentText || text,
+        dedupeSuffix: `${event.messageId}:agenda-operation`,
+        routingExtraction: {
+          intent: routedIntent,
+          source_text: pendingIntentText || text,
+        },
+      });
+    }
+
     return runAgendaQueryForSession({
       session,
       user,
@@ -828,7 +1453,10 @@ async function handleIntentSelection({ session, user, event, text }) {
   await replyToSession({
     session,
     user,
-    message: buildInvalidIntentSelectionMessage(session?.lastQuestionText),
+    message:
+      context?.selectionType === "booking_operation"
+        ? buildInvalidBookingOperationSelectionMessage(session?.lastQuestionText)
+        : buildInvalidIntentSelectionMessage(session?.lastQuestionText),
     dedupeSuffix: `${event.messageId}:invalid-intent-selection`,
   });
   return { ok: true, status: "awaiting_intent_selection", session };
@@ -877,6 +1505,139 @@ async function handleConfirmation({ session, user, dedupeSuffix }) {
     session: completedSession,
     offerId: created.offer?._id ? String(created.offer._id) : null,
   };
+}
+
+async function handleBookingChangeConfirmation({
+  session,
+  user,
+  text,
+  event,
+}) {
+  const confirmation = parseConfirmationReply(text);
+
+  if (confirmation === "CANCELAR") {
+    const cancelledSession = await markSessionCancelled(session._id);
+    await closeActiveSessionsForRequester({
+      userId: user._id,
+      requesterPhoneDigits: session.requesterPhoneDigits,
+      excludeSessionId: cancelledSession._id,
+      state: "EXPIRED",
+    });
+    await replyToSession({
+      session: cancelledSession,
+      user,
+      message: buildCancelledMessage(),
+      dedupeSuffix: `${event.messageId}:cancel`,
+    });
+    return { ok: true, status: "cancelled", session: cancelledSession };
+  }
+
+  if (confirmation !== "CONFIRMAR") {
+    await replyToSession({
+      session,
+      user,
+      message: buildInvalidConfirmationMessage(),
+      dedupeSuffix: `${event.messageId}:invalid-confirmation`,
+    });
+    return { ok: true, status: "awaiting_booking_change_confirmation", session };
+  }
+
+  const processingSession = await updateWhatsAppSession(session._id, {
+    state: "PROCESSING_CREATE",
+  });
+  const candidate = getSelectedBookingCandidate(processingSession);
+  const preview = getSelectedBookingPreview(processingSession);
+  const draft = getBookingOperationDraft(processingSession);
+
+  if (!candidate?.bookingId) {
+    const erroredSession = await markSessionError(processingSession._id, {
+      code: "BOOKING_NOT_FOUND",
+      message: "Compromisso selecionado nao encontrado na sessao.",
+    });
+    await replyToSession({
+      session: erroredSession,
+      user,
+      message: buildErrorMessage(),
+      dedupeSuffix: `${event.messageId}:booking-error`,
+    });
+    return { ok: true, status: "error", session: erroredSession };
+  }
+
+  if (draft.intent === "cancel_booking") {
+    const result = await cancelBookingByWorkspace({
+      bookingId: candidate.bookingId,
+      workspaceId: user.workspaceId,
+      now: new Date(),
+    });
+    const completedSession = await markSessionCompleted(processingSession._id, {
+      resolved: {
+        ...(processingSession.resolved || {}),
+        bookingOperationResult: {
+          bookingId: result.booking?._id ? String(result.booking._id) : candidate.bookingId,
+          status: "CANCELLED",
+        },
+      },
+    });
+    await closeActiveSessionsForRequester({
+      userId: user._id,
+      requesterPhoneDigits: processingSession.requesterPhoneDigits,
+      excludeSessionId: completedSession._id,
+      state: "EXPIRED",
+    });
+    await replyToSession({
+      session: completedSession,
+      user,
+      message: buildBookingCancelledSuccessMessage(candidate),
+      dedupeSuffix: `${event.messageId}:booking-cancelled`,
+    });
+    return { ok: true, status: "completed", session: completedSession };
+  }
+
+  if (!preview?.startAt || !preview?.endAt) {
+    const erroredSession = await markSessionError(processingSession._id, {
+      code: "BOOKING_PREVIEW_MISSING",
+      message: "Preview do reagendamento nao encontrado na sessao.",
+    });
+    await replyToSession({
+      session: erroredSession,
+      user,
+      message: buildErrorMessage(),
+      dedupeSuffix: `${event.messageId}:booking-error`,
+    });
+    return { ok: true, status: "error", session: erroredSession };
+  }
+
+  const result = await rescheduleBookingByWorkspace({
+    bookingId: candidate.bookingId,
+    workspaceId: user.workspaceId,
+    startAt: preview.startAt,
+    endAt: preview.endAt,
+    now: new Date(),
+  });
+  const completedSession = await markSessionCompleted(processingSession._id, {
+    resolved: {
+      ...(processingSession.resolved || {}),
+      bookingOperationResult: {
+        bookingId: result.booking?._id ? String(result.booking._id) : candidate.bookingId,
+        status: "RESCHEDULED",
+        startAt: result.booking?.startAt || preview.startAt,
+        endAt: result.booking?.endAt || preview.endAt,
+      },
+    },
+  });
+  await closeActiveSessionsForRequester({
+    userId: user._id,
+    requesterPhoneDigits: processingSession.requesterPhoneDigits,
+    excludeSessionId: completedSession._id,
+    state: "EXPIRED",
+  });
+  await replyToSession({
+    session: completedSession,
+    user,
+    message: buildBookingRescheduledSuccessMessage(candidate, preview),
+    dedupeSuffix: `${event.messageId}:booking-rescheduled`,
+  });
+  return { ok: true, status: "completed", session: completedSession };
 }
 
 async function handleOpenSession({ session, user, event, text }) {
@@ -1025,6 +1786,89 @@ async function handleOpenSession({ session, user, event, text }) {
     });
   }
 
+  if (refreshedSession.state === "AWAITING_BOOKING_SELECTION") {
+    const selected = pickBookingCandidateByOrdinal(
+      text,
+      refreshedSession.candidateBookings || [],
+    );
+    if (!selected) {
+      await replyToSession({
+        session: refreshedSession,
+        user,
+        message: buildInvalidSelectionMessage(refreshedSession.lastQuestionText),
+        dedupeSuffix,
+      });
+      return { ok: true, status: "awaiting_booking_selection", session: refreshedSession };
+    }
+
+    const updatedSession = await updateWhatsAppSession(refreshedSession._id, {
+      candidateBookings: [],
+      resolved: {
+        ...(refreshedSession.resolved || {}),
+        selectedBookingCandidate: selected,
+      },
+    });
+    return advanceBookingOperationSession({
+      session: updatedSession,
+      user,
+      dedupeSuffix,
+    });
+  }
+
+  if (refreshedSession.state === "AWAITING_NEW_BOOKING_TIME") {
+    const confirmation = parseConfirmationReply(text);
+    if (confirmation === "CANCELAR") {
+      const cancelledSession = await markSessionCancelled(refreshedSession._id);
+      await closeActiveSessionsForRequester({
+        userId: user._id,
+        requesterPhoneDigits: refreshedSession.requesterPhoneDigits,
+        excludeSessionId: cancelledSession._id,
+        state: "EXPIRED",
+      });
+      await replyToSession({
+        session: cancelledSession,
+        user,
+        message: buildCancelledMessage(),
+        dedupeSuffix: `${event.messageId}:cancel`,
+      });
+      return { ok: true, status: "cancelled", session: cancelledSession };
+    }
+
+    const timeZone =
+      getSelectedBookingCandidate(refreshedSession)?.timeZone ||
+      getBookingOperationDraft(refreshedSession)?.timeZone ||
+      (await getWorkspaceAgendaTimeZone(user.workspaceId));
+    const todayDateIso = getDateIsoForTimeZone(new Date(), timeZone);
+    const extracted = await extractWhatsAppBookingOperation({
+      text,
+      todayDateIso,
+      timeZone,
+    });
+    const currentDraft = getBookingOperationDraft(refreshedSession);
+    const mergedDraft = {
+      ...currentDraft,
+      new_date_iso: extracted.new_date_iso || currentDraft.new_date_iso || "",
+      new_time_hhmm: extracted.new_time_hhmm || currentDraft.new_time_hhmm || "",
+      source_text: String(extracted.source_text || text || "").trim(),
+      timeZone,
+    };
+
+    const updatedSession = await updateWhatsAppSession(refreshedSession._id, {
+      extracted: buildSessionExtracted(refreshedSession.extracted, {
+        bookingOperation: mergedDraft,
+      }),
+      resolved: {
+        ...(refreshedSession.resolved || {}),
+        bookingOperation: mergedDraft,
+      },
+    });
+    return advanceBookingOperationSession({
+      session: updatedSession,
+      user,
+      dedupeSuffix,
+    });
+  }
+
   if (refreshedSession.state === "AWAITING_CONFIRMATION") {
     const confirmation = parseConfirmationReply(text);
 
@@ -1068,6 +1912,15 @@ async function handleOpenSession({ session, user, event, text }) {
       dedupeSuffix,
     });
     return { ok: true, status: "awaiting_confirmation" };
+  }
+
+  if (refreshedSession.state === "AWAITING_BOOKING_CHANGE_CONFIRMATION") {
+    return handleBookingChangeConfirmation({
+      session: refreshedSession,
+      user,
+      text,
+      event,
+    });
   }
 
   if (refreshedSession.state === "PROCESSING_CREATE") {
@@ -1278,6 +2131,26 @@ export async function processInboundWhatsAppEvent(event) {
       });
     }
 
+    if (routingExtraction.intent === "query_weekly_agenda") {
+      return runWeeklyAgendaQueryForSession({
+        session: sessionAfterRouting,
+        user,
+        text,
+        dedupeSuffix: `${event.messageId}:weekly-agenda`,
+        routingExtraction,
+      });
+    }
+
+    if (routingExtraction.intent === "query_next_booking") {
+      return runNextBookingQueryForSession({
+        session: sessionAfterRouting,
+        user,
+        text,
+        dedupeSuffix: `${event.messageId}:next-booking`,
+        routingExtraction,
+      });
+    }
+
     if (routingExtraction.intent === "ambiguous_offer_or_agenda") {
       const intentSelection = await maybeAskForIntentSelection({
         session: sessionAfterRouting,
@@ -1287,6 +2160,27 @@ export async function processInboundWhatsAppEvent(event) {
         origin: "new_session",
       });
       if (intentSelection) return intentSelection;
+    }
+
+    if (routingExtraction.intent === "ambiguous_booking_operation") {
+      return askBookingOperationSelection({
+        session: sessionAfterRouting,
+        user,
+        pendingIntentText: text,
+        dedupeSuffix: `${event.messageId}:booking-intent-selection`,
+      });
+    }
+
+    if (
+      ["reschedule_booking", "cancel_booking"].includes(routingExtraction.intent)
+    ) {
+      return initializeBookingOperationSession({
+        session: sessionAfterRouting,
+        user,
+        text,
+        dedupeSuffix: `${event.messageId}:booking-operation`,
+        routingExtraction,
+      });
     }
 
     if (routingExtraction.intent !== "create_offer_send_whatsapp") {

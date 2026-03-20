@@ -44,6 +44,20 @@ function formatAgendaDate(dateISO, timeZone = "America/Sao_Paulo") {
   }).format(date);
 }
 
+function formatAgendaDateTime(value, timeZone = "America/Sao_Paulo") {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
 function resolveAgendaItemIcon(item = {}) {
   const offerTitle = String(item?.offerTitle || "").trim().toLowerCase();
   if (item?.status === "HOLD") return "📞";
@@ -99,6 +113,27 @@ export function buildIntentDisambiguationQuestion() {
     "1. Proposta",
     "2. Agenda",
   ].join("\n");
+}
+
+export function buildBookingOperationDisambiguationQuestion() {
+  return [
+    "Voce quer consultar a agenda, reagendar ou cancelar um compromisso?",
+    "",
+    "1. Consultar agenda",
+    "2. Reagendar compromisso",
+    "3. Cancelar compromisso",
+  ].join("\n");
+}
+
+export function buildBookingAmbiguityQuestion(candidates = [], actionLabel = "esse compromisso") {
+  const options = candidates
+    .map(
+      (candidate, index) =>
+        `${index + 1}. ${String(candidate?.displayLabel || "").trim() || "Compromisso"}`,
+    )
+    .join("\n");
+
+  return `Encontrei ${candidates.length} compromissos para ${actionLabel}. Responda com o numero:\n${options}`;
 }
 
 export function buildCustomerAmbiguityQuestion(candidates = []) {
@@ -219,8 +254,121 @@ export function buildInvalidIntentSelectionMessage(originalQuestion) {
     .join("\n");
 }
 
+export function buildInvalidBookingOperationSelectionMessage(originalQuestion) {
+  return [
+    "Nao entendi sua escolha. Responda com AGENDA, REAGENDAR, CANCELAR, 1, 2 ou 3.",
+    "",
+    String(originalQuestion || buildBookingOperationDisambiguationQuestion()).trim(),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 export function buildProcessingMessage() {
   return "Sua solicitacao ainda esta sendo processada. Aguarde alguns instantes.";
+}
+
+export function buildWeeklyAgendaMessage({
+  startDateISO = "",
+  endDateISO = "",
+  days = [],
+  timeZone = "America/Sao_Paulo",
+} = {}) {
+  const lines = [
+    "✨ *SUA AGENDA DA SEMANA* ✨",
+    `🗓️ ${formatAgendaDate(startDateISO, timeZone)} ate ${formatAgendaDate(
+      endDateISO,
+      timeZone,
+    )}`,
+    "",
+  ];
+
+  if (!Array.isArray(days) || !days.length) {
+    lines.push("Nenhum compromisso encontrado nos proximos 7 dias.");
+  } else {
+    days.forEach((day) => {
+      lines.push(`*${formatAgendaDate(day?.dateISO, timeZone)}*`);
+      if (!Array.isArray(day?.items) || !day.items.length) {
+        lines.push("Livre");
+      } else {
+        day.items.forEach((item) => {
+          lines.push(
+            `- ${String(item?.timeLabel || "").trim().replace(" - ", " — ")} | ${String(
+              item?.customerName || "Cliente",
+            ).trim()} | ${String(item?.offerTitle || "Servico").trim()}`,
+          );
+        });
+      }
+      lines.push("");
+    });
+  }
+
+  return lines.join("\n").trim();
+}
+
+export function buildNextBookingMessage(candidate = {}) {
+  if (!candidate?.bookingId) {
+    return "Nao encontrei um proximo compromisso na sua agenda.";
+  }
+
+  return [
+    "📍 *PROXIMO COMPROMISSO*",
+    "",
+    `Cliente: ${String(candidate?.customerName || "Cliente").trim()}`,
+    `Servico: ${String(candidate?.offerTitle || "Servico").trim()}`,
+    `Horario: ${formatAgendaDateTime(candidate?.startAt, candidate?.timeZone)}`,
+    `Status: ${String(candidate?.status || "").trim() || "CONFIRMED"}`,
+  ].join("\n");
+}
+
+export function buildMissingBookingTimeQuestion(candidate = {}) {
+  return [
+    "Qual e o novo horario do compromisso?",
+    `Atual: ${formatAgendaDateTime(candidate?.startAt, candidate?.timeZone)}`,
+    "Exemplo: 14:00 ou 21/03/2026 14:00",
+  ].join("\n");
+}
+
+export function buildBookingRescheduleConfirmation(candidate = {}, nextSchedule = {}) {
+  return [
+    "Confirma o reagendamento deste compromisso?",
+    "",
+    `Cliente: ${String(candidate?.customerName || "Cliente").trim()}`,
+    `Servico: ${String(candidate?.offerTitle || "Servico").trim()}`,
+    `Horario atual: ${formatAgendaDateTime(candidate?.startAt, candidate?.timeZone)}`,
+    `Novo horario: ${formatAgendaDateTime(
+      nextSchedule?.startAt,
+      candidate?.timeZone,
+    )}`,
+    "",
+    "Digite CONFIRMAR para continuar ou CANCELAR para desistir.",
+  ].join("\n");
+}
+
+export function buildBookingCancelConfirmation(candidate = {}) {
+  return [
+    "Confirma o cancelamento deste compromisso?",
+    "",
+    `Cliente: ${String(candidate?.customerName || "Cliente").trim()}`,
+    `Servico: ${String(candidate?.offerTitle || "Servico").trim()}`,
+    `Horario atual: ${formatAgendaDateTime(candidate?.startAt, candidate?.timeZone)}`,
+    "",
+    "Digite CONFIRMAR para continuar ou CANCELAR para desistir.",
+  ].join("\n");
+}
+
+export function buildBookingRescheduledSuccessMessage(candidate = {}, nextSchedule = {}) {
+  return `Compromisso reagendado com sucesso para ${formatAgendaDateTime(
+    nextSchedule?.startAt,
+    candidate?.timeZone,
+  )}.`;
+}
+
+export function buildBookingCancelledSuccessMessage(candidate = {}) {
+  return `Compromisso cancelado com sucesso: ${formatAgendaDateTime(
+    candidate?.startAt,
+    candidate?.timeZone,
+  )}.`;
 }
 
 export function buildAgendaFreeDayMessage({

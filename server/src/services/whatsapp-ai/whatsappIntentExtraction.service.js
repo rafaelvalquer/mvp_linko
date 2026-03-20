@@ -1,14 +1,17 @@
 import {
   buildAgendaDateExtractionPrompt,
+  buildBookingOperationPrompt,
   buildIntentRoutingPrompt,
   buildContinuationExtractionPrompt,
   buildFreshExtractionPrompt,
 } from "./whatsappAi.prompts.js";
 import {
   buildAgendaDateResponseFormat,
+  buildBookingOperationResponseFormat,
   buildIntentRoutingResponseFormat,
   buildExtractionResponseFormat,
   parseAgendaDateExtraction,
+  parseBookingOperationExtraction,
   parseIntentRoutingExtraction,
   parseStructuredExtraction,
 } from "./whatsappAi.schemas.js";
@@ -100,5 +103,21 @@ export async function extractWhatsAppAgendaDate({
     }),
     responseFormat: buildAgendaDateResponseFormat(),
     parseResponse: parseAgendaDateExtraction,
+  });
+}
+
+export async function extractWhatsAppBookingOperation({
+  text,
+  todayDateIso,
+  timeZone,
+}) {
+  return requestStructuredExtraction({
+    ...buildBookingOperationPrompt({
+      text,
+      todayDateIso,
+      timeZone,
+    }),
+    responseFormat: buildBookingOperationResponseFormat(),
+    parseResponse: parseBookingOperationExtraction,
   });
 }

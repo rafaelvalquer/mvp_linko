@@ -22,8 +22,9 @@ function buildIntentRoutingInstructions() {
     "Voce e um classificador de intencao para um agente de WhatsApp da Luminor Pay.",
     "Leia mensagens em pt-BR.",
     "Responda somente com JSON valido e sem markdown.",
-    "Classifique se a mensagem e sobre criar proposta, consultar agenda diaria, ou se esta ambigua entre proposta e agenda.",
+    "Classifique se a mensagem e sobre criar proposta, consultar agenda diaria, consultar agenda semanal, consultar proximo compromisso, reagendar compromisso, cancelar agendamento, ou se esta ambigua.",
     "Retorne ambiguous_offer_or_agenda quando houver duvida real entre os dois fluxos.",
+    "Retorne ambiguous_booking_operation quando houver duvida real entre consultar agenda e operar um agendamento.",
     "Retorne unknown quando a mensagem nao estiver relacionada a proposta nem agenda.",
     "source_text deve refletir a compreensao final do texto informado.",
   ].join("\n");
@@ -40,6 +41,22 @@ function buildAgendaInstructions() {
     "Se houver uma data explicita, retorne requested_day_kind=explicit_date e preencha requested_date_iso em YYYY-MM-DD.",
     "Se nao houver dia claro, retorne requested_day_kind=unspecified e requested_date_iso vazio.",
     "Nao invente datas ausentes.",
+    "source_text deve refletir a compreensao final do texto informado.",
+  ].join("\n");
+}
+
+function buildBookingOperationInstructions() {
+  return [
+    "Voce e um extrator de parametros para operacoes de agenda por WhatsApp.",
+    "Leia mensagens em pt-BR.",
+    "Responda somente com JSON valido e sem markdown.",
+    "Extraia apenas parametros operacionais de reagendamento, cancelamento ou consulta do proximo compromisso.",
+    "Use target_reference=next quando a mensagem mencionar o proximo compromisso ou o proximo agendamento.",
+    "Use target_reference=explicit quando houver cliente, data ou hora suficientes para apontar um compromisso especifico.",
+    "Se nao houver referencia clara ao booking alvo, use target_reference=unspecified.",
+    "target_time_hhmm e new_time_hhmm devem vir em HH:MM.",
+    "new_date_iso e new_time_hhmm so devem ser preenchidos quando o usuario informar o novo horario.",
+    "Nao invente data ou hora ausentes.",
     "source_text deve refletir a compreensao final do texto informado.",
   ].join("\n");
 }
@@ -69,6 +86,21 @@ export function buildAgendaDateExtractionPrompt({
 }) {
   return {
     systemPrompt: buildAgendaInstructions(),
+    userPrompt: [
+      `Timezone de referencia: ${String(timeZone || "America/Sao_Paulo").trim()}`,
+      `Data de hoje na timezone: ${String(todayDateIso || "").trim() || "(desconhecida)"}`,
+      `Mensagem do usuario: ${String(text || "").trim() || "(vazio)"}`,
+    ].join("\n"),
+  };
+}
+
+export function buildBookingOperationPrompt({
+  text,
+  todayDateIso,
+  timeZone,
+}) {
+  return {
+    systemPrompt: buildBookingOperationInstructions(),
     userPrompt: [
       `Timezone de referencia: ${String(timeZone || "America/Sao_Paulo").trim()}`,
       `Data de hoje na timezone: ${String(todayDateIso || "").trim() || "(desconhecida)"}`,
