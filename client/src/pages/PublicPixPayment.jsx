@@ -109,6 +109,19 @@ function getFileExtension(name) {
   return parts.length > 1 ? parts.pop() : "";
 }
 
+function inferProofMimeType(file) {
+  const mime = String(file?.type || "")
+    .trim()
+    .toLowerCase();
+  if (mime) return mime;
+
+  const ext = getFileExtension(file?.name);
+  if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
+  if (ext === "png") return "image/png";
+  if (ext === "pdf") return "application/pdf";
+  return "application/octet-stream";
+}
+
 function validateProofFile(file) {
   if (!file) {
     return {
@@ -215,6 +228,48 @@ function buildUploadFile(blob, name, type) {
   }
 }
 
+async function readProofFileBuffer(file) {
+  if (typeof file?.arrayBuffer === "function") {
+    return file.arrayBuffer();
+  }
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      if (reader.result instanceof ArrayBuffer) {
+        resolve(reader.result);
+        return;
+      }
+
+      reject(new Error("Nao foi possivel ler o arquivo selecionado."));
+    };
+
+    reader.onerror = () => {
+      reject(reader.error || new Error("Nao foi possivel ler o arquivo selecionado."));
+    };
+
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+async function materializeProofFile(file) {
+  try {
+    const buffer = await readProofFileBuffer(file);
+    const type = inferProofMimeType(file);
+    const blob = new Blob([buffer], { type });
+
+    return buildUploadFile(blob, file?.name || "comprovante", type);
+  } catch (error) {
+    const materializeError = new Error(
+      "Nao foi possivel acessar esse arquivo diretamente da nuvem. Salve ou baixe o comprovante para o aparelho e tente novamente.",
+    );
+    materializeError.code = "CLOUD_FILE_UNAVAILABLE";
+    materializeError.cause = error;
+    throw materializeError;
+  }
+}
+
 async function optimizeProofImageFile(file) {
   if (!shouldOptimizeProofImage(file)) {
     return {
@@ -307,9 +362,71 @@ async function optimizeProofImageFile(file) {
   };
 }
 
+async function prepareProofFile(file, { onStageChange } = {}) {
+  const setStage = typeof onStageChange === "function" ? onStageChange : () => {};
+
+  setStage("materializing");
+  const materializedFile = await materializeProofFile(file);
+  const materializedValidation = validateProofFile(materializedFile);
+
+  if (!materializedValidation.ok) {
+    const error = new Error(materializedValidation.message);
+    error.code = materializedValidation.code;
+    throw error;
+  }
+
+  if (!shouldOptimizeProofImage(materializedFile)) {
+    setStage("ready");
+    return {
+      file: materializedFile,
+      materialized: true,
+      optimized: false,
+      optimizationFailed: false,
+      originalSize: Number(file?.size || 0),
+      materializedSize: Number(materializedFile.size || 0),
+    };
+  }
+
+  try {
+    setStage("optimizing");
+    const optimized = await optimizeProofImageFile(materializedFile);
+    const finalValidation = validateProofFile(optimized.file);
+
+    if (!finalValidation.ok) {
+      const error = new Error(finalValidation.message);
+      error.code = finalValidation.code;
+      throw error;
+    }
+
+    setStage("ready");
+    return {
+      file: optimized.file,
+      materialized: true,
+      optimized: optimized.optimized,
+      optimizationFailed: false,
+      originalSize: Number(file?.size || 0),
+      materializedSize: Number(materializedFile.size || 0),
+    };
+  } catch {
+    setStage("ready");
+    return {
+      file: materializedFile,
+      materialized: true,
+      optimized: false,
+      optimizationFailed: true,
+      originalSize: Number(file?.size || 0),
+      materializedSize: Number(materializedFile.size || 0),
+    };
+  }
+}
+
 function getProofUploadErrorMessage(error, file) {
   const code = String(error?.code || "").trim().toUpperCase();
   const rawMessage = String(error?.message || "").trim();
+
+  if (code === "CLOUD_FILE_UNAVAILABLE") {
+    return "Nao foi possivel acessar esse arquivo diretamente da nuvem. Salve ou baixe o comprovante para o aparelho e tente novamente.";
+  }
 
   if (code === "FILE_TOO_LARGE" || Number(error?.status) === 413) {
     return `Arquivo muito grande${file ? ` (${formatFileSize(file.size)})` : ""}. Envie um comprovante com ate 10MB. No celular, imagens PNG podem ficar pesadas; se precisar, reduza o arquivo ou envie em JPG/PDF.`;
@@ -524,12 +641,12 @@ export default function PublicPixPayment() {
   const [details, setDetails] = useState(null);
   const [status, setStatus] = useState("PENDING");
   const [file, setFile] = useState(null);
-  const [fileDraftLabel, setFileDraftLabel] = useState("");
+  const [selectedFileMeta, setSelectedFileMeta] = useState(null);
   const [note, setNote] = useState("");
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadErr, setUploadErr] = useState("");
   const [uploadInfo, setUploadInfo] = useState("");
-  const [preparingFile, setPreparingFile] = useState(false);
+  const [prepareStage, setPrepareStage] = useState("idle");
   const fileSelectionRef = useRef(0);
 
   async function refreshStatus() {
@@ -606,78 +723,56 @@ export default function PublicPixPayment() {
 
     if (!nextFile) {
       setFile(null);
-      setFileDraftLabel("");
-      setPreparingFile(false);
+      setSelectedFileMeta(null);
+      setPrepareStage("idle");
       return;
     }
 
     setFile(null);
-    setFileDraftLabel(`${nextFile.name} (${formatFileSize(nextFile.size)})`);
-
-    const initialValidation = validateProofFile(nextFile);
-    const canOptimize = shouldOptimizeProofImage(nextFile);
-
-    if (!canOptimize && !initialValidation.ok) {
-      setFile(null);
-      setFileDraftLabel("");
-      setPreparingFile(false);
-      setUploadErr(initialValidation.message);
-      return;
-    }
-
-    if (!canOptimize) {
-      setPreparingFile(false);
-      setFile(nextFile);
-      return;
-    }
-
-    setPreparingFile(true);
-    setUploadInfo("Otimizando a imagem para facilitar o envio no celular...");
+    setSelectedFileMeta({
+      name: nextFile.name || "comprovante",
+      size: Number(nextFile.size || 0),
+      type: inferProofMimeType(nextFile),
+    });
+    setPrepareStage("materializing");
+    setUploadInfo("Preparando arquivo para envio...");
 
     try {
-      const prepared = await optimizeProofImageFile(nextFile);
+      const prepared = await prepareProofFile(nextFile, {
+        onStageChange: setPrepareStage,
+      });
       if (fileSelectionRef.current !== selectionId) return;
 
-      const finalValidation = validateProofFile(prepared.file);
-      if (!finalValidation.ok) {
-        setFile(null);
-        setFileDraftLabel("");
-        setUploadInfo("");
-        setUploadErr(finalValidation.message);
-        return;
-      }
-
       setFile(prepared.file);
-      setFileDraftLabel(
-        `${prepared.file.name} (${formatFileSize(prepared.file.size)})`,
-      );
+      setPrepareStage("ready");
 
       if (prepared.optimized && prepared.file.size < prepared.originalSize) {
         setUploadInfo(
           `Imagem otimizada automaticamente para facilitar o envio: ${formatFileSize(prepared.originalSize)} -> ${formatFileSize(prepared.file.size)}.`,
         );
+      } else if (prepared.optimizationFailed) {
+        setUploadInfo(
+          "Nao foi possivel otimizar a imagem, mas o arquivo foi preparado localmente para envio.",
+        );
       } else {
         setUploadInfo("");
       }
-    } catch {
+    } catch (error) {
       if (fileSelectionRef.current !== selectionId) return;
 
-      if (initialValidation.ok) {
-        setFile(nextFile);
-        setFileDraftLabel(`${nextFile.name} (${formatFileSize(nextFile.size)})`);
-        setUploadInfo("");
-        return;
-      }
-
       setFile(null);
-      setFileDraftLabel("");
+      setPrepareStage("error");
       setUploadInfo("");
-      setUploadErr(
-        "Nao foi possivel preparar a imagem no seu dispositivo. Tente novamente ou envie um JPG/PDF menor.",
-      );
+      setUploadErr(getProofUploadErrorMessage(error, nextFile));
     } finally {
       if (fileSelectionRef.current === selectionId) {
-        setPreparingFile(false);
+        setPrepareStage((current) => {
+          if (current === "materializing" || current === "optimizing") {
+            return "ready";
+          }
+
+          return current;
+        });
       }
     }
   }
@@ -700,9 +795,10 @@ export default function PublicPixPayment() {
       await postForm(`/p/${token}/payment/proof`, fd);
 
       setFile(null);
-      setFileDraftLabel("");
+      setSelectedFileMeta(null);
       setNote("");
       setUploadInfo("");
+      setPrepareStage("idle");
       setStatus("WAITING_CONFIRMATION");
     } catch (e) {
       setUploadErr(getProofUploadErrorMessage(e, file));
@@ -722,9 +818,13 @@ export default function PublicPixPayment() {
     status === "PENDING" || status === "REJECTED" || status === "WAITING_PROOF";
 
   const statusMeta = STATUS_META[status] || STATUS_META.PENDING;
+  const isPreparingFile =
+    prepareStage === "materializing" || prepareStage === "optimizing";
   const selectedFileLabel = file
     ? `${file.name} (${formatFileSize(file.size)})`
-    : fileDraftLabel;
+    : selectedFileMeta
+      ? `${selectedFileMeta.name} (${formatFileSize(selectedFileMeta.size)})`
+      : "";
 
   if (loading) {
     return (
@@ -1175,10 +1275,12 @@ export default function PublicPixPayment() {
 
                       <div className="min-w-0">
                         <div className="text-sm font-semibold">
-                          {preparingFile
-                            ? "Otimizando imagem..."
+                          {prepareStage === "materializing"
+                            ? "Preparando arquivo para envio..."
+                            : prepareStage === "optimizing"
+                              ? "Otimizando imagem..."
                             : file
-                              ? "Arquivo selecionado"
+                              ? "Arquivo pronto para envio"
                               : "Selecione o comprovante"}
                         </div>
                         <div
@@ -1284,13 +1386,13 @@ export default function PublicPixPayment() {
 
                   <div className="mt-5 flex justify-end">
                     <Button
-                      disabled={uploadBusy || preparingFile || !file}
+                      disabled={uploadBusy || isPreparingFile || !file}
                       onClick={uploadProof}
                       className="w-full sm:w-auto"
                     >
                       {uploadBusy
                         ? "Enviando..."
-                        : preparingFile
+                        : isPreparingFile
                           ? "Preparando..."
                           : "Enviar comprovante"}
                       <ArrowRight className="h-4 w-4" />
