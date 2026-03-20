@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ArrowRight, BellRing, Clock3 } from "lucide-react";
 
 import * as authApi from "../../app/authApi.js";
@@ -44,7 +44,6 @@ export default function WhatsNewModalHost() {
   const { user, loadingMe } = useAuth();
   const { isDark } = useThemeToggle();
 
-  const fetchedUserIdRef = useRef("");
   const [open, setOpen] = useState(false);
   const [ackBusy, setAckBusy] = useState(false);
   const [snapshotAt, setSnapshotAt] = useState("");
@@ -57,16 +56,12 @@ export default function WhatsNewModalHost() {
     if (loadingMe) return;
 
     if (!userId) {
-      fetchedUserIdRef.current = "";
       setOpen(false);
       setSnapshotAt("");
       setItems([]);
       setError("");
       return;
     }
-
-    if (fetchedUserIdRef.current === userId) return;
-    fetchedUserIdRef.current = userId;
 
     let alive = true;
 

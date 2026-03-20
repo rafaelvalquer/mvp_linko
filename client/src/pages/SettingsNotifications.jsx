@@ -328,7 +328,7 @@ export default function SettingsNotifications() {
         context,
         "whatsappPaymentReminders",
         context?.settings?.whatsapp?.paymentReminders?.enabled === true,
-        "Lembretes de pagamento por WhatsApp exigem plano Business ou Enterprise.",
+        "Lembretes de pagamento por WhatsApp ficam disponiveis a partir do plano Pro.",
       ),
     }),
     [context],
@@ -605,7 +605,7 @@ export default function SettingsNotifications() {
 
             <ToggleRow
               label="Lembretes de pagamento"
-              description="Liga os lembretes manuais e os defaults automáticos para novas propostas."
+              description="Controla o envio manual no detalhe da proposta e também os defaults automáticos para novas propostas."
               checked={draft.whatsapp.paymentReminders.enabled}
               onChange={(value) =>
                 setDraft((prev) => ({
@@ -650,7 +650,7 @@ export default function SettingsNotifications() {
                     context,
                     "whatsappPaymentReminders",
                     draft.whatsapp.paymentReminders.enabled === true && checked,
-                    "Lembretes de pagamento por WhatsApp exigem plano Business ou Enterprise.",
+                    "Lembretes de pagamento por WhatsApp ficam disponiveis a partir do plano Pro.",
                   );
 
                   return (
@@ -740,6 +740,7 @@ export default function SettingsNotifications() {
                 key: "pro",
                 lines: [
                   "Confirmações e status por WhatsApp.",
+                  "Lembretes manuais e automáticos de pagamento por WhatsApp.",
                   "Lembretes de agendamento para clientes.",
                   "Alterações de agenda por WhatsApp.",
                   "Autoenvio padrão de recorrência.",
@@ -748,8 +749,8 @@ export default function SettingsNotifications() {
               {
                 key: "business",
                 lines: [
-                  "Tudo do Pro.",
-                  "Lembretes manuais e automáticos de pagamento por WhatsApp.",
+                  "Mesma matriz de notificações do Pro.",
+                  "Mantém lembretes e automações liberados.",
                 ],
               },
               {

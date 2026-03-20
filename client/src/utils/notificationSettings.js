@@ -79,6 +79,11 @@ const NOTIFICATION_FEATURE_META = {
   },
 };
 
+NOTIFICATION_FEATURE_META.whatsappPaymentReminders.planMessage =
+  "Lembretes de pagamento por WhatsApp disponiveis apenas nos planos Pro, Business e Enterprise.";
+NOTIFICATION_FEATURE_META.whatsappPaymentReminders.workspaceMessage =
+  "Lembretes de pagamento por WhatsApp desativados nas configuracoes do workspace.";
+
 function boolOrDefault(value, fallback) {
   if (value === true) return true;
   if (value === false) return false;

@@ -182,6 +182,42 @@ function canSendReminder(offer) {
   return { ok: true, reason: "" };
 }
 
+function getReminderResultMessage(code, fallback) {
+  const normalizedCode = String(code || "")
+    .trim()
+    .toUpperCase();
+  const fallbackText = String(fallback || "").trim();
+
+  if (normalizedCode === "NO_PHONE") {
+    return "O cliente nao possui WhatsApp valido cadastrado.";
+  }
+  if (
+    normalizedCode === "WHATSAPP_ENVIRONMENT_DISABLED" ||
+    normalizedCode === "FEATURE_DISABLED"
+  ) {
+    return "O envio por WhatsApp esta indisponivel no ambiente configurado.";
+  }
+  if (normalizedCode === "PLAN_NOT_ALLOWED") {
+    return "Seu plano atual nao libera lembretes de pagamento por WhatsApp.";
+  }
+  if (normalizedCode === "WHATSAPP_MASTER_DISABLED") {
+    return "O WhatsApp do workspace esta desativado na chave mestre.";
+  }
+  if (normalizedCode === "WORKSPACE_SETTING_DISABLED") {
+    return "Os lembretes por WhatsApp estao desativados nas configuracoes do workspace.";
+  }
+  if (normalizedCode === "REMINDER_NOT_ALLOWED") {
+    return fallback || "A proposta nao pode receber lembretes no status atual.";
+  }
+  if (normalizedCode === "OFFER_NOT_FOUND") {
+    return "Nao encontrei a proposta para enviar o lembrete.";
+  }
+  if (fallbackText.toLowerCase() === "forbidden") {
+    return "Nao foi possivel enviar o lembrete porque a sessao atual nao tem permissao para essa operacao. Atualize a pagina e tente novamente.";
+  }
+  return fallbackText || "O lembrete nao foi enviado.";
+}
+
 function SectionTabButton({ active, children, onClick }) {
   return (
     <button
@@ -660,10 +696,12 @@ export default function OfferDetailsModal({
         text: "Configurações de lembretes automáticos salvas com sucesso.",
       });
     } catch (e) {
-      setRemindersErr(e?.message || "Falha ao salvar lembretes automáticos.");
       setRemindersFlash({
         kind: "error",
-        text: e?.message || "Falha ao salvar lembretes automáticos.",
+        text: getReminderResultMessage(
+          e?.code,
+          e?.reason || e?.message || "Falha ao salvar lembretes automáticos.",
+        ),
       });
     } finally {
       setRemindersBusy(false);
@@ -696,30 +734,29 @@ export default function OfferDetailsModal({
       } else if (result.status === "skipped") {
         setRemindersFlash({
           kind: "info",
-          text:
-            result.reason === "NO_PHONE"
-              ? "O cliente não possui WhatsApp válido cadastrado."
-              : result.reason === "FEATURE_DISABLED"
-                ? "O envio por WhatsApp está desabilitado na configuração do ambiente."
-                : result.reason === "PLAN_NOT_ALLOWED"
-                  ? "Seu plano atual não libera lembretes de pagamento por WhatsApp."
-                  : result.reason === "WORKSPACE_SETTING_DISABLED"
-                    ? "Os lembretes por WhatsApp estão desativados nas configurações do workspace."
-                    : "O lembrete não foi enviado.",
+          text: getReminderResultMessage(
+            result.code || result.reason,
+            result.message || result.reason || "O lembrete não foi enviado.",
+          ),
         });
       } else {
         setRemindersFlash({
           kind: "error",
-          text: result.error || "Falha ao enviar lembrete.",
+          text: getReminderResultMessage(
+            result.code,
+            result.error || result.message || result.reason || "Falha ao enviar lembrete.",
+          ),
         });
       }
 
       await loadReminderHistory(offerId);
     } catch (e) {
-      setRemindersErr(e?.message || "Falha ao enviar lembrete.");
       setRemindersFlash({
         kind: "error",
-        text: e?.message || "Falha ao enviar lembrete.",
+        text: getReminderResultMessage(
+          e?.code,
+          e?.reason || e?.message || "Falha ao enviar lembrete.",
+        ),
       });
     } finally {
       setRemindersBusy(false);

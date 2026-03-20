@@ -6,10 +6,14 @@ import { ensureAuth, ensureMasterAdmin } from "../middleware/auth.js";
 import { Workspace } from "../models/Workspace.js";
 import { User } from "../models/User.js";
 import { Client } from "../models/Client.js";
+import { AppSettings } from "../models/AppSettings.js";
 import { Offer } from "../models/Offer.js";
 import { MessageLog } from "../models/MessageLog.js";
 import { WhatsAppOutbox } from "../models/WhatsAppOutbox.js";
+import { WhatsAppCommandSession } from "../models/WhatsAppCommandSession.js";
+import OfferReminderLog from "../models/OfferReminderLog.js";
 import { getSystemHealthSnapshot, getSystemServicesStatus } from "../services/systemStatus.service.js";
+import { resolveWorkspaceNotificationContext } from "../services/notificationSettings.js";
 import { isMasterAdminEmail } from "../utils/masterAdmin.js";
 
 const r = Router();
@@ -189,6 +193,153 @@ function logAdminAudit(req) {
     method: req.method,
     path: req.originalUrl,
   });
+}
+
+function buildLastActivityAt(...values) {
+  return values.reduce((latest, current) => {
+    if (!current) return latest;
+    const date = current instanceof Date ? current : new Date(current);
+    if (Number.isNaN(date.getTime())) return latest;
+    if (!latest) return date;
+    return date.getTime() > latest.getTime() ? date : latest;
+  }, null);
+}
+
+function mapCountRows(rows = []) {
+  return rows
+    .map((row) => ({
+      key: String(row?._id || "").trim(),
+      count: Number(row?.count || 0),
+    }))
+    .filter((row) => row.key)
+    .sort((a, b) => b.count - a.count);
+}
+
+function serializeOutboxEntry(item) {
+  if (!item) return null;
+  return {
+    _id: item._id,
+    to: item.to,
+    status: item.status,
+    sourceType: item.sourceType || "",
+    providerMessageId: item.providerMessageId || "",
+    messagePreview: buildMessagePreview(item.message),
+    createdAt: item.createdAt || null,
+    updatedAt: item.updatedAt || null,
+    sentAt: item.sentAt || null,
+    nextAttemptAt: item.nextAttemptAt || null,
+    attempts: Number(item.attempts || 0),
+    maxAttempts: Number(item.maxAttempts || 0),
+    error: item.lastError || null,
+    payload: item,
+  };
+}
+
+function serializeMessageLogEntry(item) {
+  if (!item) return null;
+  return {
+    _id: item._id,
+    eventType: item.eventType || "",
+    to: item.to || "",
+    status: item.status || "",
+    provider: item.provider || "",
+    providerMessageId: item.providerMessageId || "",
+    messagePreview: buildMessagePreview(item.message),
+    createdAt: item.createdAt || null,
+    updatedAt: item.updatedAt || null,
+    sentAt: item.sentAt || null,
+    error: item.error || null,
+    payload: item,
+  };
+}
+
+function serializeSessionEntry(item) {
+  if (!item) return null;
+  return {
+    _id: item._id,
+    flowType: item.flowType || "",
+    state: item.state || "",
+    requesterPhoneDigits: item.requesterPhoneDigits || "",
+    requesterPushName: item.requesterPushName || "",
+    lastUserMessageText: item.lastUserMessageText || "",
+    lastQuestionKey: item.lastQuestionKey || "",
+    createdAt: item.createdAt || null,
+    updatedAt: item.updatedAt || null,
+    error: item.lastError || null,
+    payload: item,
+  };
+}
+
+function buildRecentErrorRows({
+  sessionErrors = [],
+  outboxFailures = [],
+  messageLogFailures = [],
+  reminderFailures = [],
+}) {
+  const rows = [];
+
+  sessionErrors.forEach((item) => {
+    rows.push({
+      _id: `session:${item._id}`,
+      origin: "agent_session",
+      sourceLabel: "Agente",
+      code: item?.lastError?.code || item?.state || "SESSION_ERROR",
+      message:
+        item?.lastError?.message ||
+        "Sessao do agente terminou com erro.",
+      summary:
+        item?.lastError?.message ||
+        `${item?.flowType || "fluxo"} em ${item?.state || "estado desconhecido"}`,
+      occurredAt: item?.updatedAt || item?.createdAt || null,
+      payload: item,
+    });
+  });
+
+  outboxFailures.forEach((item) => {
+    rows.push({
+      _id: `outbox:${item._id}`,
+      origin: "whatsapp_outbox",
+      sourceLabel: "Outbox",
+      code: item?.lastError?.code || "OUTBOX_FAILED",
+      message: item?.lastError?.message || "Falha na fila do WhatsApp.",
+      summary: `${item?.status || "failed"} • ${buildMessagePreview(item?.message, 90)}`,
+      occurredAt: item?.updatedAt || item?.createdAt || null,
+      payload: item,
+    });
+  });
+
+  messageLogFailures.forEach((item) => {
+    rows.push({
+      _id: `message_log:${item._id}`,
+      origin: "message_log",
+      sourceLabel: "Message log",
+      code: item?.error?.code || "MESSAGE_LOG_FAILED",
+      message: item?.error?.message || "Falha ao registrar envio.",
+      summary: `${item?.eventType || "evento"} • ${buildMessagePreview(item?.message, 90)}`,
+      occurredAt: item?.updatedAt || item?.createdAt || null,
+      payload: item,
+    });
+  });
+
+  reminderFailures.forEach((item) => {
+    rows.push({
+      _id: `offer_reminder:${item._id}`,
+      origin: "offer_reminder",
+      sourceLabel: "Lembrete",
+      code: item?.error?.code || "REMINDER_FAILED",
+      message: item?.error?.message || "Falha no lembrete de pagamento.",
+      summary: `${item?.kind || "manual"} • ${buildMessagePreview(item?.message, 90)}`,
+      occurredAt: item?.updatedAt || item?.createdAt || null,
+      payload: item,
+    });
+  });
+
+  return rows
+    .sort(
+      (a, b) =>
+        new Date(b?.occurredAt || 0).getTime() - new Date(a?.occurredAt || 0).getTime(),
+    )
+    .slice(0, 10);
 }
 
 r.use(ensureAuth, ensureMasterAdmin);
@@ -588,6 +739,362 @@ r.get(
         ),
       })),
       pagination: buildPagination(total, page, limit),
+    });
+  }),
+);
+
+r.get(
+  "/admin/tenants/:workspaceId/diagnostics",
+  asyncHandler(async (req, res) => {
+    const workspaceId = parseObjectId(req.params.workspaceId);
+    if (!workspaceId) {
+      return res.status(400).json({
+        ok: false,
+        error: "workspace_id_invalid",
+        message: "Workspace invalido.",
+      });
+    }
+
+    const days = clampInt(req.query.days, 7, { min: 1, max: 30 });
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+    const workspace = await Workspace.findById(workspaceId)
+      .select(
+        "_id name slug ownerUserId plan planStatus createdAt updatedAt payoutPixKeyType payoutPixKeyMasked pixReceiverName pixReceiverCity pixKeyEnabled payoutUpdatedAt subscription",
+      )
+      .lean();
+
+    if (!workspace) {
+      return res.status(404).json({
+        ok: false,
+        error: "workspace_not_found",
+        message: "Workspace nao encontrado.",
+      });
+    }
+
+    const [owner, settingsDoc, notificationContext] = await Promise.all([
+      User.findById(workspace.ownerUserId)
+        .select("_id name email status")
+        .lean(),
+      AppSettings.findOne({ workspaceId })
+        .select("ownerUserId agenda.timezone updatedAt")
+        .lean(),
+      resolveWorkspaceNotificationContext({
+        workspaceId,
+        ownerUserId: workspace.ownerUserId,
+        workspacePlan: workspace.plan,
+      }),
+    ]);
+
+    const [
+      totalOffers,
+      pendingPaymentOffers,
+      waitingConfirmationOffers,
+      cancelledOffers,
+      paidOffers,
+      sessionTotal,
+      sessionCompleted,
+      sessionCancelledOrExpired,
+      sessionErrors,
+      sessionStateRows,
+      sessionFlowRows,
+      recentSessionErrors,
+      recentSessions,
+      currentOutboxStatusRows,
+      recentOutboxStatusRows,
+      outboxFailures,
+      outboxRecentMessages,
+      currentMessageLogStatusRows,
+      recentMessageLogStatusRows,
+      messageLogFailures,
+      messageLogRecentMessages,
+      reminderFailures,
+      lastOffer,
+      lastOutbox,
+      lastMessageLog,
+      lastSession,
+      lastReminder,
+    ] = await Promise.all([
+      Offer.countDocuments({ workspaceId }),
+      Offer.countDocuments({
+        workspaceId,
+        paymentStatus: "PENDING",
+        status: { $nin: ["CANCELLED", "CANCELED", "EXPIRED", "CONFIRMED", "PAID"] },
+      }),
+      Offer.countDocuments({
+        workspaceId,
+        status: "WAITING_CONFIRMATION",
+      }),
+      Offer.countDocuments({
+        workspaceId,
+        status: { $in: ["CANCELLED", "CANCELED"] },
+      }),
+      Offer.countDocuments({
+        workspaceId,
+        $or: [{ paymentStatus: "PAID" }, { status: "PAID" }],
+      }),
+      WhatsAppCommandSession.countDocuments({
+        workspaceId,
+        createdAt: { $gte: since },
+      }),
+      WhatsAppCommandSession.countDocuments({
+        workspaceId,
+        createdAt: { $gte: since },
+        state: "COMPLETED",
+      }),
+      WhatsAppCommandSession.countDocuments({
+        workspaceId,
+        createdAt: { $gte: since },
+        state: { $in: ["CANCELLED", "EXPIRED"] },
+      }),
+      WhatsAppCommandSession.countDocuments({
+        workspaceId,
+        updatedAt: { $gte: since },
+        $or: [
+          { state: "ERROR" },
+          { "lastError.message": { $exists: true, $nin: [null, ""] } },
+          { "lastError.code": { $exists: true, $nin: [null, ""] } },
+        ],
+      }),
+      WhatsAppCommandSession.aggregate([
+        { $match: { workspaceId, createdAt: { $gte: since } } },
+        { $group: { _id: "$state", count: { $sum: 1 } } },
+      ]),
+      WhatsAppCommandSession.aggregate([
+        { $match: { workspaceId, createdAt: { $gte: since } } },
+        { $group: { _id: "$flowType", count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+      ]),
+      WhatsAppCommandSession.find({
+        workspaceId,
+        updatedAt: { $gte: since },
+        $or: [
+          { state: "ERROR" },
+          { "lastError.message": { $exists: true, $nin: [null, ""] } },
+          { "lastError.code": { $exists: true, $nin: [null, ""] } },
+        ],
+      })
+        .sort({ updatedAt: -1 })
+        .limit(5)
+        .select(
+          "_id flowType state requesterPhoneDigits requesterPushName lastUserMessageText lastQuestionKey lastError createdAt updatedAt",
+        )
+        .lean(),
+      WhatsAppCommandSession.find({
+        workspaceId,
+        createdAt: { $gte: since },
+      })
+        .sort({ updatedAt: -1 })
+        .limit(5)
+        .select(
+          "_id flowType state requesterPhoneDigits requesterPushName lastUserMessageText createdAt updatedAt",
+        )
+        .lean(),
+      WhatsAppOutbox.aggregate([
+        { $match: { workspaceId } },
+        { $group: { _id: "$status", count: { $sum: 1 } } },
+      ]),
+      WhatsAppOutbox.aggregate([
+        { $match: { workspaceId, createdAt: { $gte: since } } },
+        { $group: { _id: "$status", count: { $sum: 1 } } },
+      ]),
+      WhatsAppOutbox.find({
+        workspaceId,
+        status: "failed",
+        updatedAt: { $gte: since },
+      })
+        .sort({ updatedAt: -1 })
+        .limit(5)
+        .select(
+          "_id to message status sourceType providerMessageId attempts maxAttempts nextAttemptAt lastError meta createdAt updatedAt sentAt",
+        )
+        .lean(),
+      WhatsAppOutbox.find({
+        workspaceId,
+        status: "sent",
+      })
+        .sort({ sentAt: -1, updatedAt: -1 })
+        .limit(5)
+        .select(
+          "_id to message status sourceType providerMessageId attempts maxAttempts nextAttemptAt lastError meta createdAt updatedAt sentAt",
+        )
+        .lean(),
+      MessageLog.aggregate([
+        { $match: { workspaceId } },
+        { $group: { _id: "$status", count: { $sum: 1 } } },
+      ]),
+      MessageLog.aggregate([
+        { $match: { workspaceId, createdAt: { $gte: since } } },
+        { $group: { _id: "$status", count: { $sum: 1 } } },
+      ]),
+      MessageLog.find({
+        workspaceId,
+        status: "FAILED",
+        updatedAt: { $gte: since },
+      })
+        .sort({ updatedAt: -1 })
+        .limit(5)
+        .select(
+          "_id eventType provider to message status providerMessageId error sentAt createdAt updatedAt",
+        )
+        .lean(),
+      MessageLog.find({
+        workspaceId,
+        status: "SENT",
+      })
+        .sort({ sentAt: -1, createdAt: -1 })
+        .limit(5)
+        .select(
+          "_id eventType provider to message status providerMessageId error sentAt createdAt updatedAt",
+        )
+        .lean(),
+      OfferReminderLog.find({
+        workspaceId,
+        status: "failed",
+        updatedAt: { $gte: since },
+      })
+        .sort({ updatedAt: -1 })
+        .limit(5)
+        .select(
+          "_id kind status to message provider providerMessageId error meta sentAt createdAt updatedAt",
+        )
+        .lean(),
+      Offer.findOne({ workspaceId }).sort({ updatedAt: -1 }).select("updatedAt").lean(),
+      WhatsAppOutbox.findOne({ workspaceId })
+        .sort({ updatedAt: -1 })
+        .select("updatedAt")
+        .lean(),
+      MessageLog.findOne({ workspaceId })
+        .sort({ updatedAt: -1 })
+        .select("updatedAt")
+        .lean(),
+      WhatsAppCommandSession.findOne({ workspaceId })
+        .sort({ updatedAt: -1 })
+        .select("updatedAt")
+        .lean(),
+      OfferReminderLog.findOne({ workspaceId })
+        .sort({ updatedAt: -1 })
+        .select("updatedAt")
+        .lean(),
+    ]);
+
+    const recentErrors = buildRecentErrorRows({
+      sessionErrors: recentSessionErrors,
+      outboxFailures,
+      messageLogFailures,
+      reminderFailures,
+    });
+
+    const lastActivityAt = buildLastActivityAt(
+      workspace.updatedAt,
+      lastOffer?.updatedAt,
+      lastOutbox?.updatedAt,
+      lastMessageLog?.updatedAt,
+      lastSession?.updatedAt,
+      lastReminder?.updatedAt,
+    );
+
+    const agendaTimezone =
+      settingsDoc?.agenda?.timezone || "America/Sao_Paulo";
+    const whatsappEnvironment =
+      notificationContext?.capabilities?.environment?.whatsapp || {
+        available: false,
+        reason: "",
+        reasons: [],
+      };
+    const pixConfigured = Boolean(
+      workspace.payoutPixKeyType &&
+        workspace.payoutPixKeyMasked &&
+        workspace.pixReceiverName,
+    );
+
+    res.json({
+      ok: true,
+      diagnostics: {
+        generatedAt: new Date().toISOString(),
+        windowDays: days,
+        workspace: {
+          _id: workspace._id,
+          name: workspace.name,
+          slug: workspace.slug,
+          plan: workspace.plan,
+          planStatus: workspace.planStatus,
+          createdAt: workspace.createdAt,
+          updatedAt: workspace.updatedAt,
+          lastActivityAt,
+          subscription: {
+            status: workspace.subscription?.status || "inactive",
+            currentPeriodStart:
+              workspace.subscription?.currentPeriodStart || null,
+            currentPeriodEnd: workspace.subscription?.currentPeriodEnd || null,
+            stripeCustomerId:
+              workspace.subscription?.stripeCustomerId || "",
+            stripeSubscriptionId:
+              workspace.subscription?.stripeSubscriptionId || "",
+          },
+        },
+        owner: serializeOwner(owner),
+        pix: {
+          enabled: workspace.pixKeyEnabled === true,
+          connected: pixConfigured,
+          status: pixConfigured
+            ? workspace.pixKeyEnabled === true
+              ? "active"
+              : "inactive"
+            : "warning",
+          keyType: workspace.payoutPixKeyType || "",
+          keyMasked: workspace.payoutPixKeyMasked || "",
+          receiverName: workspace.pixReceiverName || "",
+          receiverCity: workspace.pixReceiverCity || "",
+          updatedAt: workspace.payoutUpdatedAt || null,
+        },
+        settings: {
+          agendaTimezone,
+          updatedAt: settingsDoc?.updatedAt || null,
+        },
+        notificationContextResolved: {
+          plan: notificationContext?.plan || workspace.plan || "start",
+          environment: {
+            whatsapp: whatsappEnvironment,
+          },
+          masterEnabled:
+            notificationContext?.settings?.whatsapp?.masterEnabled === true,
+          featureAvailability: notificationContext?.featureAvailability || {},
+        },
+        agentUsage: {
+          totalSessions: sessionTotal,
+          completedSessions: sessionCompleted,
+          cancelledOrExpiredSessions: sessionCancelledOrExpired,
+          errorSessions: sessionErrors,
+          stateCounts: reduceStatusCounts(sessionStateRows),
+          flowCounts: mapCountRows(sessionFlowRows),
+          recentSessions: recentSessions.map(serializeSessionEntry),
+          recentErrors: recentSessionErrors.map(serializeSessionEntry),
+          lastActivityAt: lastSession?.updatedAt || null,
+        },
+        outboxSummary: {
+          currentStatusCounts: reduceStatusCounts(currentOutboxStatusRows),
+          recentStatusCounts: reduceStatusCounts(recentOutboxStatusRows),
+          failures: outboxFailures.map(serializeOutboxEntry),
+          recentMessages: outboxRecentMessages.map(serializeOutboxEntry),
+          lastActivityAt: lastOutbox?.updatedAt || null,
+        },
+        messageLogSummary: {
+          currentStatusCounts: reduceStatusCounts(currentMessageLogStatusRows),
+          recentStatusCounts: reduceStatusCounts(recentMessageLogStatusRows),
+          failures: messageLogFailures.map(serializeMessageLogEntry),
+          recentMessages: messageLogRecentMessages.map(serializeMessageLogEntry),
+          lastActivityAt: lastMessageLog?.updatedAt || null,
+        },
+        offerHealth: {
+          total: totalOffers,
+          pendingPayment: pendingPaymentOffers,
+          waitingConfirmation: waitingConfirmationOffers,
+          cancelled: cancelledOffers,
+          paid: paidOffers,
+        },
+        recentErrors,
+      },
     });
   }),
 );

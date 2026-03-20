@@ -40,3 +40,7 @@ export function listAdminWhatsAppOutbox(params = {}) {
 export function listAdminWhatsAppMessageLogs(params = {}) {
   return api(`/admin/whatsapp/message-logs${toQueryString(params)}`);
 }
+
+export function getAdminTenantDiagnostics(workspaceId, params = {}) {
+  return api(`/admin/tenants/${workspaceId}/diagnostics${toQueryString(params)}`);
+}

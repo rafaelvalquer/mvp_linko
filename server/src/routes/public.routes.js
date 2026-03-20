@@ -1026,6 +1026,10 @@ async function loadOfferForProof(req, res, next) {
   }
 }
 
+function sendPublicProofUploadError(res, status, code, error) {
+  return res.status(status).json({ ok: false, code, error });
+}
+
 /**
  * POST /p/:token/payment/proof (multipart/form-data)
  * - file (obrigatório): jpg/png/pdf
@@ -1035,14 +1039,14 @@ router.post("/p/:token/payment/proof", async (req, res, next) => {
   try {
     const { token } = req.params;
 
-    const offer = await Offer.findOne({ publicToken: token })
-      .select("_id workspaceId ownerUserId status paymentStatus offerType")
-      .lean();
-
+    const offer = await findOfferByPublicToken(token, { withTenant: true });
     if (!offer) {
-      return res
-        .status(404)
-        .json({ ok: false, error: "Proposta não encontrada." });
+      return sendPublicProofUploadError(
+        res,
+        404,
+        "OFFER_NOT_FOUND",
+        "Proposta nao encontrada.",
+      );
     }
 
     // ✅ trava se já estiver confirmado
@@ -1050,11 +1054,12 @@ router.post("/p/:token/payment/proof", async (req, res, next) => {
       .trim()
       .toUpperCase();
     if (ps === "PAID" || ps === "CONFIRMED" || offer?.paidAt) {
-      return res.status(409).json({
-        ok: false,
-        error: "Pagamento já confirmado.",
-        code: "ALREADY_CONFIRMED",
-      });
+      return sendPublicProofUploadError(
+        res,
+        409,
+        "ALREADY_CONFIRMED",
+        "Pagamento ja confirmado.",
+      );
     }
 
     // ✅ passa offerId para o filename do multer
@@ -1065,20 +1070,37 @@ router.post("/p/:token/payment/proof", async (req, res, next) => {
       try {
         if (err) {
           const isSize = err?.code === "LIMIT_FILE_SIZE";
-          const msg =
-            err?.statusCode === 400
+          const isTypeError = err?.statusCode === 400;
+          const code = isSize
+            ? "FILE_TOO_LARGE"
+            : isTypeError
+              ? "INVALID_FILE_TYPE"
+              : "UPLOAD_FAILED";
+          const status = isSize ? 413 : 400;
+          const message = isSize
+            ? "Arquivo muito grande. Envie um comprovante com ate 10MB."
+            : isTypeError
               ? err.message
-              : isSize
-                ? "Arquivo muito grande (máx 10MB)."
-                : "Falha no upload do comprovante.";
-          return res.status(400).json({ ok: false, error: msg });
+              : "Falha no upload do comprovante. Tente novamente com uma conexao estavel e um arquivo menor.";
+
+          console.warn("[public-payment-proof] upload rejected", {
+            offerId: String(offer._id),
+            code,
+            detail: err?.message || "",
+            contentType: String(req.headers["content-type"] || ""),
+          });
+
+          return sendPublicProofUploadError(res, status, code, message);
         }
 
         const f = req.file;
         if (!f) {
-          return res
-            .status(400)
-            .json({ ok: false, error: "Arquivo obrigatório." });
+          return sendPublicProofUploadError(
+            res,
+            400,
+            "MISSING_FILE",
+            "Selecione um comprovante em JPG, PNG ou PDF antes de enviar.",
+          );
         }
 
         const note = String(req.body?.note || "").trim();

@@ -1,9 +1,8 @@
-import { env } from "../config/env.js";
 import { Offer } from "../models/Offer.js";
 import OfferReminderLog from "../models/OfferReminderLog.js";
-import { getPlanFeatureMatrix } from "../utils/planFeatures.js";
 import { queueOrSendWhatsApp } from "./whatsappOutbox.service.js";
 import {
+  getNotificationFeatureCapability,
   resolveWorkspaceNotificationContext,
 } from "./notificationSettings.js";
 import { buildOfferPublicUrl } from "./publicUrl.service.js";
@@ -176,51 +175,20 @@ function boolValue(v) {
 }
 
 function getOfferPaymentReminderCapability(notificationContext) {
-  const whatsappEnvironment =
-    notificationContext?.capabilities?.environment?.whatsapp || {};
-  const planValue = notificationContext?.capabilities?.plan?.value || "start";
-  const planFeatures = {
-    ...getPlanFeatureMatrix(planValue),
-    ...(notificationContext?.capabilities?.plan?.features || {}),
-  };
-  const masterEnabled =
-    notificationContext?.settings?.whatsapp?.masterEnabled === true;
-
-  if (whatsappEnvironment.available !== true) {
-    return {
-      available: false,
-      code: "FEATURE_DISABLED",
-      reason:
-        whatsappEnvironment.reason || "WhatsApp desabilitado na configuracao do ambiente.",
-      status: 503,
-    };
-  }
-
-  if (planFeatures?.whatsappOfferPaymentReminders !== true) {
-    return {
-      available: false,
-      code: "PLAN_NOT_ALLOWED",
-      reason:
-        "Lembretes por WhatsApp disponiveis apenas nos planos Pro, Business e Enterprise.",
-      status: 403,
-    };
-  }
-
-  if (!masterEnabled) {
-    return {
-      available: false,
-      code: "WORKSPACE_SETTING_DISABLED",
-      reason: "WhatsApp desativado nas configuracoes do workspace.",
-      status: 409,
-    };
-  }
-
+  const capability = getNotificationFeatureCapability(
+    notificationContext,
+    "whatsappPaymentReminders",
+  );
   return {
-    available: true,
-    code: "",
-    reason: "",
-    status: 200,
+    available: capability?.available === true,
+    code: capability?.code || "",
+    reason: capability?.reason || "",
+    status: Number(capability?.statusCode) || 200,
   };
+}
+
+function logManualReminder(payload) {
+  console.info("[offer-reminder-manual]", payload);
 }
 
 export async function updateOfferPaymentReminderSettings({
@@ -361,6 +329,16 @@ export async function dispatchPaymentReminder({
     ownerUserId: offer?.ownerUserId || userId || null,
   });
   const capability = getOfferPaymentReminderCapability(notificationContext);
+  const manualLogContext =
+    meta?.source === "manual"
+      ? {
+          offerId: String(offer?._id || ""),
+          workspaceId: String(workspaceId || offer?.workspaceId || ""),
+          userId: userId ? String(userId) : "",
+          capabilityCode: capability.code || "AVAILABLE",
+          capabilityAvailable: capability.available === true,
+        }
+      : null;
   const baseMeta = {
     ...(meta || {}),
     publicUrl,
@@ -387,13 +365,23 @@ export async function dispatchPaymentReminder({
       triggerKey,
     });
 
-    return {
+    const response = {
       ok: false,
       status: "skipped",
-      reason: capability.code,
+      code: capability.code,
+      reason: capability.reason,
       log,
       offer: await Offer.findById(offer._id).lean(),
     };
+    if (manualLogContext) {
+      logManualReminder({
+        ...manualLogContext,
+        status: response.status,
+        code: response.code,
+        reason: response.reason,
+      });
+    }
+    return response;
   }
 
   if (!to) {
@@ -415,13 +403,23 @@ export async function dispatchPaymentReminder({
       triggerKey,
     });
 
-    return {
+    const response = {
       ok: false,
       status: "skipped",
-      reason: "NO_PHONE",
+      code: "NO_PHONE",
+      reason: "Cliente sem WhatsApp valido para receber lembrete.",
       log,
       offer: await Offer.findById(offer._id).lean(),
     };
+    if (manualLogContext) {
+      logManualReminder({
+        ...manualLogContext,
+        status: response.status,
+        code: response.code,
+        reason: response.reason,
+      });
+    }
+    return response;
   }
 
   const maybeExisting = triggerKey
@@ -429,13 +427,23 @@ export async function dispatchPaymentReminder({
     : null;
 
   if (maybeExisting) {
-    return {
+    const response = {
       ok: true,
       status: "skipped",
-      reason: "ALREADY_TRIGGERED",
+      code: "ALREADY_TRIGGERED",
+      reason: "Este lembrete ja foi processado anteriormente.",
       log: maybeExisting,
       offer: await Offer.findById(offer._id).lean(),
     };
+    if (manualLogContext) {
+      logManualReminder({
+        ...manualLogContext,
+        status: response.status,
+        code: response.code,
+        reason: response.reason,
+      });
+    }
+    return response;
   }
 
   const log = await createReminderLog({
@@ -456,13 +464,23 @@ export async function dispatchPaymentReminder({
   });
 
   if (log?.status && log.status !== "pending") {
-    return {
+    const response = {
       ok: true,
       status: "skipped",
-      reason: "ALREADY_TRIGGERED",
+      code: "ALREADY_TRIGGERED",
+      reason: "Este lembrete ja foi processado anteriormente.",
       log,
       offer: await Offer.findById(offer._id).lean(),
     };
+    if (manualLogContext) {
+      logManualReminder({
+        ...manualLogContext,
+        status: response.status,
+        code: response.code,
+        reason: response.reason,
+      });
+    }
+    return response;
   }
 
   const result = await queueOrSendWhatsApp({
@@ -481,30 +499,59 @@ export async function dispatchPaymentReminder({
   });
 
   if (result?.status === "sent") {
-    return {
+    const response = {
       ok: true,
       status: "sent",
+      code: "",
+      reason: "",
       log: await OfferReminderLog.findById(log._id).lean(),
       offer: await Offer.findById(offer._id).lean(),
     };
+    if (manualLogContext) {
+      logManualReminder({
+        ...manualLogContext,
+        status: response.status,
+      });
+    }
+    return response;
   }
 
   if (result?.status === "queued") {
-    return {
+    const response = {
       ok: true,
       status: "queued",
+      code: "",
+      reason: "",
       log: await OfferReminderLog.findById(log._id).lean(),
       offer: await Offer.findById(offer._id).lean(),
     };
+    if (manualLogContext) {
+      logManualReminder({
+        ...manualLogContext,
+        status: response.status,
+      });
+    }
+    return response;
   }
 
-  return {
+  const response = {
     ok: false,
     status: "failed",
+    code: result?.error?.code || "SEND_FAILED",
+    reason: String(result?.error?.message || "Falha ao enviar lembrete."),
     error: result?.error || new Error("Falha ao enviar lembrete"),
     log: await OfferReminderLog.findById(log._id).lean(),
     offer: await Offer.findById(offer._id).lean(),
   };
+  if (manualLogContext) {
+    logManualReminder({
+      ...manualLogContext,
+      status: response.status,
+      code: response.code,
+      reason: response.reason,
+    });
+  }
+  return response;
 }
 
 export async function sendManualPaymentReminder({
@@ -525,14 +572,28 @@ export async function sendManualPaymentReminder({
     });
   }
 
-  return dispatchPaymentReminder({
-    offer,
-    workspaceId,
-    userId,
-    kind: "manual",
-    origin,
-    meta: { source: "manual" },
-  });
+  try {
+    return await dispatchPaymentReminder({
+      offer,
+      workspaceId,
+      userId,
+      kind: "manual",
+      origin,
+      meta: { source: "manual" },
+    });
+  } catch (error) {
+    logManualReminder({
+      offerId: String(offer._id),
+      workspaceId: String(workspaceId),
+      userId: userId ? String(userId) : "",
+      capabilityCode: error?.code || "",
+      capabilityAvailable: false,
+      status: "failed",
+      code: error?.code || "UNKNOWN_ERROR",
+      reason: String(error?.message || error?.reason || "Falha ao enviar lembrete."),
+    });
+    throw error;
+  }
 }
 
 function hoursSince(date, now) {

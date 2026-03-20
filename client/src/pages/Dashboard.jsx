@@ -23,6 +23,7 @@ import { useAuth } from "../app/AuthContext.jsx";
 import useThemeToggle from "../app/useThemeToggle.js";
 import AnalyticsSection from "../components/dashboard/AnalyticsSection.jsx";
 import PixSettingsModal from "../components/PixSettingsModal.jsx";
+import WhatsNewModalHost from "../components/whats-new/WhatsNewModalHost.jsx";
 
 import OfferDetailsModal from "../components/offers/OfferDetailsModal.jsx";
 import {
@@ -1201,6 +1202,8 @@ export default function Dashboard() {
         copyLink={copyLink}
         copiedId={copiedId}
       />
+
+      <WhatsNewModalHost />
     </Shell>
   );
 }

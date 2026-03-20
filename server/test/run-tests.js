@@ -218,6 +218,16 @@ await check("plan matrix enables offer cancelled whatsapp on Pro+", () => {
   assert.equal(getPlanFeatureMatrix("pro").whatsappOfferCancelled, true);
 });
 
+await check("plan matrix enables payment reminder whatsapp on Pro+", () => {
+  assert.equal(getPlanFeatureMatrix("start").whatsappPaymentReminders, false);
+  assert.equal(getPlanFeatureMatrix("pro").whatsappPaymentReminders, true);
+  assert.equal(getPlanFeatureMatrix("business").whatsappPaymentReminders, true);
+  assert.equal(
+    getPlanFeatureMatrix("enterprise").whatsappPaymentReminders,
+    true,
+  );
+});
+
 await check("plan matrix blocks account WhatsApp editing on Start", () => {
   assert.equal(getPlanFeatureMatrix("start").whatsappAccountPhone, false);
   assert.equal(getPlanFeatureMatrix("pro").whatsappAccountPhone, true);
@@ -265,6 +275,32 @@ await check("feature availability evaluates offer cancelled toggle", () => {
   });
 
   assert.equal(availability.whatsappOfferCancelled.available, true);
+});
+
+await check("feature availability evaluates payment reminder toggle on Pro", () => {
+  const availability = getNotificationFeatureAvailability({
+    settings: mergeNotificationSettings(DEFAULT_NOTIFICATION_SETTINGS, {
+      whatsapp: {
+        masterEnabled: true,
+        paymentReminders: {
+          enabled: true,
+        },
+      },
+    }),
+    capabilities: {
+      environment: {
+        whatsapp: { available: true, reason: "", reasons: [] },
+      },
+      plan: {
+        value: "pro",
+        features: {
+          whatsappPaymentReminders: true,
+        },
+      },
+    },
+  });
+
+  assert.equal(availability.whatsappPaymentReminders.available, true);
 });
 
 await check("parseStructuredExtraction normalizes AI output", () => {

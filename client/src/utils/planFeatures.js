@@ -39,7 +39,9 @@ export function getPlanFeatureMatrix(value) {
     "business",
     "enterprise",
   ].includes(plan);
-  const whatsappPaymentReminders = ["business", "enterprise"].includes(plan);
+  const whatsappPaymentReminders = ["pro", "business", "enterprise"].includes(
+    plan,
+  );
 
   return {
     plan,

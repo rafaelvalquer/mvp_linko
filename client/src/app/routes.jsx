@@ -1,5 +1,5 @@
 //src/app/routes.jsx
-import { createBrowserRouter, Navigate, Outlet, useLocation } from "react-router-dom";
+import { createBrowserRouter, Navigate, Outlet } from "react-router-dom";
 
 import Home from "../pages/Home.jsx";
 
@@ -30,7 +30,6 @@ import SettingsAccount from "../pages/SettingsAccount.jsx";
 import SettingsAgentGuide from "../pages/SettingsAgentGuide.jsx";
 import SettingsAgenda from "../pages/SettingsAgenda.jsx";
 import SettingsNotifications from "../pages/SettingsNotifications.jsx";
-import WhatsNewModalHost from "../components/whats-new/WhatsNewModalHost.jsx";
 
 // ✅ billing
 import BillingPlans from "../pages/BillingPlans.jsx";
@@ -40,18 +39,28 @@ import BillingCancel from "../pages/BillingCancel.jsx";
 // ✅ NOVO: Relatórios
 import Reports from "../pages/ReportsDashboard.jsx";
 import RecurringReportsPage from "../pages/RecurringReportsPage.jsx";
+import { useAuth } from "./AuthContext.jsx";
 
 function RouterShell() {
-  const location = useLocation();
-  const pathname = String(location?.pathname || "");
-  const isPublicOfferPath = /^\/p\/[^/]+(?:\/|$)/i.test(pathname);
+  return <Outlet />;
+}
 
-  return (
-    <>
-      <Outlet />
-      {isPublicOfferPath ? null : <WhatsNewModalHost />}
-    </>
-  );
+function RootEntry() {
+  const { user, loadingMe } = useAuth();
+
+  if (loadingMe && !user) {
+    return (
+      <div className="min-h-[50vh] flex items-center justify-center text-sm text-zinc-500">
+        Carregando...
+      </div>
+    );
+  }
+
+  if (user) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <Home />;
 }
 
 export const router = createBrowserRouter(
@@ -61,7 +70,7 @@ export const router = createBrowserRouter(
       children: [
     { path: "/login", element: <Login /> },
     { path: "/register", element: <Register /> },
-    { path: "/", element: <Home /> },
+    { path: "/", element: <RootEntry /> },
 
     {
       path: "/billing/plans",

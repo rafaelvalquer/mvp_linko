@@ -50,7 +50,11 @@ r.post(
       ok: true,
       result: {
         status: result.status,
+        code: result.code || "",
         reason: result.reason || "",
+        message:
+          result.reason ||
+          (result.error ? String(result.error?.message || result.error) : ""),
         error: result.error
           ? String(result.error?.message || result.error)
           : "",

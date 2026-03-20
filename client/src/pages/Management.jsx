@@ -19,9 +19,11 @@ import Button from "../components/appui/Button.jsx";
 import Skeleton from "../components/appui/Skeleton.jsx";
 import ModalShell from "../components/appui/ModalShell.jsx";
 import { Input } from "../components/appui/Input.jsx";
+import TenantDiagnosticsPanel from "../components/admin/TenantDiagnosticsPanel.jsx";
 import {
   getAdminOverview,
   getAdminServices,
+  getAdminTenantDiagnostics,
   listAdminClients,
   listAdminUsers,
   listAdminWhatsAppMessageLogs,
@@ -327,6 +329,24 @@ function PaginationBar({ pagination, onPageChange }) {
   );
 }
 
+function scrollToSection(id) {
+  if (typeof document === "undefined") return;
+  document.getElementById(id)?.scrollIntoView({
+    behavior: "smooth",
+    block: "start",
+  });
+}
+
+async function copyTextToClipboard(value) {
+  if (!value) return false;
+  if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
+    return false;
+  }
+
+  await navigator.clipboard.writeText(String(value));
+  return true;
+}
+
 function DetailModal({ detail, onClose }) {
   const { isDark } = useThemeToggle();
 
@@ -401,6 +421,9 @@ export default function Management() {
   const { isDark } = useThemeToggle();
   const [refreshKey, setRefreshKey] = useState(0);
   const [detail, setDetail] = useState(null);
+  const [diagnosticWorkspaceId, setDiagnosticWorkspaceId] = useState("");
+  const [diagnosticTab, setDiagnosticTab] = useState("overview");
+  const [diagnosticFlash, setDiagnosticFlash] = useState("");
 
   const [workspaceParams, setWorkspaceParams] = useState({
     page: 1,
@@ -411,6 +434,7 @@ export default function Management() {
   const [userParams, setUserParams] = useState({
     page: 1,
     search: "",
+    workspaceId: "",
   });
   const [clientParams, setClientParams] = useState({
     page: 1,
@@ -446,6 +470,10 @@ export default function Management() {
     () => listAdminUsers({ ...userParams, limit: 8 }),
     [userParams],
   );
+  const tenantDiagnosticsLoader = useCallback(() => {
+    if (!diagnosticWorkspaceId) return Promise.resolve(null);
+    return getAdminTenantDiagnostics(diagnosticWorkspaceId, { days: 7 });
+  }, [diagnosticWorkspaceId]);
   const clientsLoader = useCallback(
     () => listAdminClients({ ...clientParams, limit: 25 }),
     [clientParams],
@@ -473,6 +501,11 @@ export default function Management() {
     [workspacesLoader, refreshKey],
     { items: [], pagination: null },
   );
+  const tenantDiagnosticsState = useAsyncData(
+    tenantDiagnosticsLoader,
+    [tenantDiagnosticsLoader, refreshKey],
+    null,
+  );
   const usersState = useAsyncData(usersLoader, [usersLoader, refreshKey], {
     items: [],
     pagination: null,
@@ -491,12 +524,23 @@ export default function Management() {
     { items: [], pagination: null },
   );
 
-  const workspaceOptions = useMemo(
-    () => workspaceOptionsState.data?.items || [],
-    [workspaceOptionsState.data],
-  );
+  const workspaceOptions = useMemo(() => {
+    const map = new Map();
+    for (const workspace of workspaceOptionsState.data?.items || []) {
+      map.set(String(workspace._id), workspace);
+    }
+    for (const workspace of workspacesState.data?.items || []) {
+      map.set(String(workspace._id), workspace);
+    }
+    return Array.from(map.values());
+  }, [workspaceOptionsState.data, workspacesState.data]);
 
   const overview = overviewState.data?.overview || null;
+  const tenantDiagnostics =
+    String(tenantDiagnosticsState.data?.diagnostics?.workspace?._id || "") ===
+    String(diagnosticWorkspaceId || "")
+      ? tenantDiagnosticsState.data?.diagnostics || null
+      : null;
   const services = servicesState.data?.items || [];
   const workspaces = workspacesState.data?.items || [];
   const users = usersState.data?.items || [];
@@ -507,6 +551,12 @@ export default function Management() {
   const outboxCounts = overview?.whatsapp?.outboxStatusCounts || {};
   const messageLogCounts = overview?.whatsapp?.messageLogStatusCounts || {};
 
+  useEffect(() => {
+    if (!diagnosticFlash) return undefined;
+    const timeoutId = window.setTimeout(() => setDiagnosticFlash(""), 2400);
+    return () => window.clearTimeout(timeoutId);
+  }, [diagnosticFlash]);
+
   function openDetail(title, summary, payload, extra = {}) {
     setDetail({
       title,
@@ -516,6 +566,66 @@ export default function Management() {
         ...extra,
       },
     });
+  }
+
+  async function handleCopy(label, value) {
+    if (!value) {
+      setDiagnosticFlash(`Sem ${label.toLowerCase()} para copiar.`);
+      return;
+    }
+
+    try {
+      const copied = await copyTextToClipboard(value);
+      setDiagnosticFlash(
+        copied
+          ? `${label} copiado.`
+          : `Nao foi possivel copiar ${label.toLowerCase()}.`,
+      );
+    } catch {
+      setDiagnosticFlash(`Nao foi possivel copiar ${label.toLowerCase()}.`);
+    }
+  }
+
+  function openTenantDiagnostics(workspaceId) {
+    setDiagnosticWorkspaceId(String(workspaceId || ""));
+    setDiagnosticTab("overview");
+    scrollToSection("tenant-diagnostics");
+  }
+
+  function applyUserWorkspaceFilter(workspaceId) {
+    setUserParams((current) => ({
+      ...current,
+      page: 1,
+      workspaceId: String(workspaceId || ""),
+    }));
+    scrollToSection("usuarios");
+  }
+
+  function applyClientWorkspaceFilter(workspaceId) {
+    setClientParams((current) => ({
+      ...current,
+      page: 1,
+      workspaceId: String(workspaceId || ""),
+    }));
+    scrollToSection("clientes");
+  }
+
+  function applyOutboxWorkspaceFilter(workspaceId) {
+    setOutboxParams((current) => ({
+      ...current,
+      page: 1,
+      workspaceId: String(workspaceId || ""),
+    }));
+    scrollToSection("whatsapp");
+  }
+
+  function applyMessageLogWorkspaceFilter(workspaceId) {
+    setMessageLogParams((current) => ({
+      ...current,
+      page: 1,
+      workspaceId: String(workspaceId || ""),
+    }));
+    scrollToSection("whatsapp");
   }
 
   return (
@@ -609,6 +719,7 @@ export default function Management() {
             )}
           </div>
 
+          <div id="usuarios">
           <Card>
             <CardHeader
               title="Usuarios"
@@ -627,6 +738,25 @@ export default function Management() {
                   }
                   placeholder="Buscar por nome ou email"
                 />
+                <SelectField
+                  value={userParams.workspaceId}
+                  onChange={(event) =>
+                    setUserParams((current) => ({
+                      ...current,
+                      page: 1,
+                      workspaceId: event.target.value,
+                    }))
+                  }
+                >
+                  <option value="">Todos os workspaces</option>
+                  {workspaceOptions.map((workspace) => (
+                    <option key={workspace._id} value={workspace._id}>
+                      {workspace.name}
+                    </option>
+                  ))}
+                </SelectField>
+                <div />
+                <div />
               </FilterRow>
 
               <InlineError message={usersState.error} />
@@ -689,6 +819,37 @@ export default function Management() {
               />
             </CardBody>
           </Card>
+          </div>
+        </section>
+
+        <section className="space-y-5">
+          <SectionHeading
+            id="tenant-diagnostics"
+            eyebrow="Diagnostico por tenant"
+            title="Painel rapido por workspace"
+            description="Selecione um tenant para enxergar plano, canais, uso do agente, fila do WhatsApp e falhas recentes sem sair do Gerenciamento."
+          />
+
+          <TenantDiagnosticsPanel
+            diagnosticWorkspaceId={diagnosticWorkspaceId}
+            workspaceOptions={workspaceOptions}
+            tenantDiagnosticsState={tenantDiagnosticsState}
+            tenantDiagnostics={tenantDiagnostics}
+            diagnosticTab={diagnosticTab}
+            onChangeTab={setDiagnosticTab}
+            diagnosticFlash={diagnosticFlash}
+            onSelectWorkspace={(workspaceId) => {
+              setDiagnosticWorkspaceId(workspaceId);
+              setDiagnosticTab("overview");
+            }}
+            onCopy={handleCopy}
+            onRefresh={() => setRefreshKey((current) => current + 1)}
+            onOpenUsers={applyUserWorkspaceFilter}
+            onOpenClients={applyClientWorkspaceFilter}
+            onOpenOutbox={applyOutboxWorkspaceFilter}
+            onOpenMessageLogs={applyMessageLogWorkspaceFilter}
+            onOpenDetail={openDetail}
+          />
         </section>
 
         <section className="space-y-5">
@@ -830,6 +991,7 @@ export default function Management() {
                         <th className="pb-3 font-semibold">Plano</th>
                         <th className="pb-3 font-semibold">Contagens</th>
                         <th className="pb-3 font-semibold">Ultima atividade</th>
+                        <th className="pb-3 font-semibold text-right">Diagnostico</th>
                       </tr>
                     </thead>
                     <tbody className={isDark ? "divide-y divide-white/10" : "divide-y divide-slate-200/80"}>
@@ -867,6 +1029,15 @@ export default function Management() {
                             <div className={isDark ? "text-xs text-slate-400" : "text-xs text-slate-500"}>
                               Criado em {fmtDateTime(workspace.createdAt)}
                             </div>
+                          </td>
+                          <td className="py-3 text-right">
+                            <Button
+                              variant="secondary"
+                              onClick={() => openTenantDiagnostics(workspace._id)}
+                            >
+                              <Eye className="h-4 w-4" />
+                              Diagnosticar
+                            </Button>
                           </td>
                         </tr>
                       ))}

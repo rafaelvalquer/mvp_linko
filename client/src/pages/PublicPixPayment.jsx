@@ -29,9 +29,23 @@ function fmtBRL(cents) {
   }).format(v / 100);
 }
 
+function formatFileSize(bytes) {
+  const size = Number(bytes || 0);
+  if (!Number.isFinite(size) || size <= 0) return "0 KB";
+  if (size >= 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(size / 1024))} KB`;
+}
+
 const API_BASE = (
   import.meta.env.VITE_API_BASE || "http://localhost:8011/api"
 ).replace(/\/$/, "");
+const MAX_PROOF_FILE_SIZE = 10 * 1024 * 1024;
+const ALLOWED_PROOF_MIME = new Set([
+  "image/jpeg",
+  "image/png",
+  "application/pdf",
+]);
+const ALLOWED_PROOF_EXT = new Set(["jpg", "jpeg", "png", "pdf"]);
 
 const STATUS_META = {
   PENDING: {
@@ -82,15 +96,107 @@ const STATUS_META = {
   },
 };
 
-async function postForm(path, formData) {
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: "POST",
-    body: formData,
-  });
+function getFileExtension(name) {
+  const raw = String(name || "").trim().toLowerCase();
+  const parts = raw.split(".");
+  return parts.length > 1 ? parts.pop() : "";
+}
 
-  const data = await res.json().catch(() => ({}));
+function validateProofFile(file) {
+  if (!file) {
+    return {
+      ok: false,
+      code: "MISSING_FILE",
+      message: "Selecione um arquivo JPG, PNG ou PDF.",
+    };
+  }
+
+  const mime = String(file.type || "").trim().toLowerCase();
+  const ext = getFileExtension(file.name);
+  const mimeAllowed = mime ? ALLOWED_PROOF_MIME.has(mime) : true;
+  const extAllowed = ext ? ALLOWED_PROOF_EXT.has(ext) : false;
+
+  if (!mimeAllowed && !extAllowed) {
+    return {
+      ok: false,
+      code: "INVALID_FILE_TYPE",
+      message: "Formato invalido. Envie um comprovante em JPG, PNG ou PDF.",
+    };
+  }
+
+  if (Number(file.size || 0) > MAX_PROOF_FILE_SIZE) {
+    return {
+      ok: false,
+      code: "FILE_TOO_LARGE",
+      message: `Arquivo muito grande (${formatFileSize(file.size)}). Envie um comprovante com ate 10MB. No celular, imagens PNG podem ficar pesadas; se precisar, reduza o arquivo ou envie em JPG/PDF.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function getProofUploadErrorMessage(error, file) {
+  const code = String(error?.code || "").trim().toUpperCase();
+  const rawMessage = String(error?.message || "").trim();
+
+  if (code === "FILE_TOO_LARGE" || Number(error?.status) === 413) {
+    return `Arquivo muito grande${file ? ` (${formatFileSize(file.size)})` : ""}. Envie um comprovante com ate 10MB. No celular, imagens PNG podem ficar pesadas; se precisar, reduza o arquivo ou envie em JPG/PDF.`;
+  }
+
+  if (code === "INVALID_FILE_TYPE") {
+    return "Formato invalido. Envie um comprovante em JPG, PNG ou PDF.";
+  }
+
+  if (code === "MISSING_FILE") {
+    return "Selecione um arquivo JPG, PNG ou PDF.";
+  }
+
+  if (code === "NETWORK_ERROR" || /failed to fetch/i.test(rawMessage)) {
+    if (Number(file?.size || 0) > MAX_PROOF_FILE_SIZE) {
+      return "Nao foi possivel enviar porque o arquivo parece exceder o limite de 10MB. Reduza a imagem ou envie em JPG/PDF.";
+    }
+
+    return "Nao foi possivel enviar o comprovante porque a conexao com o servidor falhou antes da resposta. Verifique a internet e tente novamente. Se estiver no celular, prefira um arquivo menor.";
+  }
+
+  return rawMessage || "Falha ao enviar comprovante.";
+}
+
+async function postForm(path, formData) {
+  let res;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      body: formData,
+    });
+  } catch (error) {
+    const networkError = new Error(
+      "Nao foi possivel enviar o comprovante porque a conexao falhou antes da resposta.",
+    );
+    networkError.code = "NETWORK_ERROR";
+    networkError.cause = error;
+    throw networkError;
+  }
+
+  const raw = await res.text().catch(() => "");
+  let data = {};
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch {
+    data = raw ? { error: raw } : {};
+  }
   if (!res.ok || data?.ok === false) {
-    throw new Error(data?.error || "Falha na requisicao.");
+    const requestError = new Error(
+      data?.error ||
+        (res.status === 413
+          ? "Arquivo muito grande."
+          : "Falha na requisicao."),
+    );
+    requestError.status = res.status;
+    requestError.code =
+      data?.code || (res.status === 413 ? "FILE_TOO_LARGE" : "REQUEST_FAILED");
+    requestError.data = data;
+    throw requestError;
   }
   return data;
 }
@@ -307,8 +413,9 @@ export default function PublicPixPayment() {
   }, [status, token, doneUrl]);
 
   async function uploadProof() {
-    if (!file) {
-      setUploadErr("Selecione um arquivo JPG, PNG ou PDF.");
+    const validation = validateProofFile(file);
+    if (!validation.ok) {
+      setUploadErr(validation.message);
       return;
     }
 
@@ -326,7 +433,7 @@ export default function PublicPixPayment() {
       setNote("");
       setStatus("WAITING_CONFIRMATION");
     } catch (e) {
-      setUploadErr(e?.message || "Falha ao enviar comprovante.");
+      setUploadErr(getProofUploadErrorMessage(e, file));
     } finally {
       setUploadBusy(false);
     }
@@ -775,7 +882,13 @@ export default function PublicPixPayment() {
                     <input
                       type="file"
                       accept="image/jpeg,image/png,application/pdf"
-                      onChange={(e) => setFile(e.target.files?.[0] || null)}
+                      onChange={(e) => {
+                        const nextFile = e.target.files?.[0] || null;
+                        setFile(nextFile);
+
+                        const validation = validateProofFile(nextFile);
+                        setUploadErr(validation.ok ? "" : validation.message);
+                      }}
                       className="sr-only"
                     />
 
@@ -802,7 +915,7 @@ export default function PublicPixPayment() {
                           )}
                         >
                           {file
-                            ? file.name
+                            ? `${file.name} (${formatFileSize(file.size)})`
                             : "Aceitamos JPG, PNG ou PDF com ate 10MB."}
                         </div>
                       </div>
