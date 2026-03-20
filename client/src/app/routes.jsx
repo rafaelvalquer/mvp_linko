@@ -27,6 +27,7 @@ import PublicOfferCancelled from "../pages/PublicOfferCancelled.jsx";
 import PublicOfferDone from "../pages/PublicOfferDone.jsx";
 import PublicPaidGuard from "../pages/PublicPaidGuard.jsx";
 import SettingsAccount from "../pages/SettingsAccount.jsx";
+import SettingsAgentGuide from "../pages/SettingsAgentGuide.jsx";
 import SettingsAgenda from "../pages/SettingsAgenda.jsx";
 import SettingsNotifications from "../pages/SettingsNotifications.jsx";
 import WhatsNewModalHost from "../components/whats-new/WhatsNewModalHost.jsx";
@@ -182,6 +183,14 @@ export const router = createBrowserRouter(
       element: (
         <RequireAuth>
           <SettingsAccount />
+        </RequireAuth>
+      ),
+    },
+    {
+      path: "/settings/account/agent-guide",
+      element: (
+        <RequireAuth>
+          <SettingsAgentGuide />
         </RequireAuth>
       ),
     },

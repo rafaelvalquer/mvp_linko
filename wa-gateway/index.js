@@ -287,7 +287,85 @@ function normalizeToBR(toRaw) {
 }
 
 function normalizeInboundPhoneDigits(raw) {
-  return String(raw || "").replace(/\D/g, "");
+  const digits = String(raw || "").replace(/\D/g, "");
+  if (!digits) return "";
+
+  if (digits.length === 10 || digits.length === 11) {
+    return `55${digits}`;
+  }
+
+  if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13)) {
+    return digits;
+  }
+
+  return "";
+}
+
+function isLidUserId(raw) {
+  return /@lid$/i.test(String(raw || "").trim());
+}
+
+async function resolvePhoneDigitsFromLid(userId) {
+  if (!userId || !waClient || typeof waClient.getContactLidAndPhone !== "function") {
+    return "";
+  }
+
+  try {
+    const results = await waClient.getContactLidAndPhone([userId]);
+    const record = Array.isArray(results) ? results[0] : null;
+    return normalizeInboundPhoneDigits(record?.pn || "");
+  } catch (error) {
+    console.warn(
+      `[inbound] lid lookup failed userId=${userId} error="${compactForLog(
+        error?.message || String(error),
+        160,
+      )}"`,
+    );
+    return "";
+  }
+}
+
+async function resolvePhoneDigitsFromContact(message) {
+  try {
+    const contact = await message.getContact();
+    const candidates = [
+      contact?.number,
+      contact?.phoneNumber,
+      contact?.id?._serialized,
+      contact?.id?.user,
+      contact?._data?.id?._serialized,
+      contact?._data?.id?.user,
+      contact?._data?.phoneNumber,
+      contact?._data?.userid,
+      contact?._data?.verifiedName,
+    ];
+
+    for (const candidate of candidates) {
+      const digits = normalizeInboundPhoneDigits(candidate);
+      if (digits) return digits;
+    }
+  } catch (error) {
+    console.warn(
+      `[inbound] contact lookup failed messageId=${
+        message?.id?._serialized || message?.id?.id || "unknown"
+      } error="${compactForLog(error?.message || String(error), 160)}"`,
+    );
+  }
+
+  return "";
+}
+
+async function resolveInboundPhoneDigits(message) {
+  const rawFrom = String(message?.from || "").trim();
+  const directDigits = normalizeInboundPhoneDigits(rawFrom);
+  if (directDigits) return directDigits;
+
+  if (isLidUserId(rawFrom)) {
+    const lidDigits = await resolvePhoneDigitsFromLid(rawFrom);
+    if (lidDigits) return lidDigits;
+  }
+
+  return resolvePhoneDigitsFromContact(message);
 }
 
 function normalizeMessageTimestamp(rawTimestamp) {
@@ -389,11 +467,26 @@ async function handleInboundMessage(message) {
   inflightInboundMessageIds.add(messageId);
 
   try {
-    const fromPhoneDigits = normalizeInboundPhoneDigits(message?.from || "");
+    const rawFrom = String(message?.from || "").trim();
+    const fromPhoneDigits = await resolveInboundPhoneDigits(message);
 
     if (!fromPhoneDigits) {
-      console.warn(`[inbound] skipped without phone messageId=${messageId}`);
+      console.warn(
+        `[inbound] skipped without phone messageId=${messageId} from="${compactForLog(
+          rawFrom,
+          120,
+        )}" status=${isLidUserId(rawFrom) ? "LID_UNRESOLVED" : "PHONE_UNRESOLVED"}`,
+      );
       return;
+    }
+
+    if (isLidUserId(rawFrom)) {
+      console.log(
+        `[inbound] resolved lid messageId=${messageId} from="${compactForLog(
+          rawFrom,
+          120,
+        )}" phone=${fromPhoneDigits}`,
+      );
     }
 
     const pushName = await resolvePushName(message);
