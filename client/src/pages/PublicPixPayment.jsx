@@ -11,6 +11,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
+import { useRef } from "react";
 import { api } from "../app/api.js";
 import useThemeToggle from "../app/useThemeToggle.js";
 import brand from "../assets/brand.png";
@@ -40,6 +41,12 @@ const API_BASE = (
   import.meta.env.VITE_API_BASE || "http://localhost:8011/api"
 ).replace(/\/$/, "");
 const MAX_PROOF_FILE_SIZE = 10 * 1024 * 1024;
+const AUTO_OPTIMIZE_IMAGE_THRESHOLD = 1.5 * 1024 * 1024;
+const TARGET_PROOF_IMAGE_BYTES = 2 * 1024 * 1024;
+const MAX_PROOF_IMAGE_DIMENSION = 1800;
+const MIN_PROOF_IMAGE_DIMENSION = 1080;
+const INITIAL_PROOF_IMAGE_QUALITY = 0.86;
+const MIN_PROOF_IMAGE_QUALITY = 0.52;
 const ALLOWED_PROOF_MIME = new Set([
   "image/jpeg",
   "image/png",
@@ -133,6 +140,171 @@ function validateProofFile(file) {
   }
 
   return { ok: true };
+}
+
+function isImageProofFile(file) {
+  const mime = String(file?.type || "")
+    .trim()
+    .toLowerCase();
+  const ext = getFileExtension(file?.name);
+
+  if (mime.startsWith("image/")) return true;
+  return ext === "jpg" || ext === "jpeg" || ext === "png";
+}
+
+function shouldOptimizeProofImage(file) {
+  if (!isImageProofFile(file)) return false;
+
+  const mime = String(file?.type || "")
+    .trim()
+    .toLowerCase();
+
+  return (
+    mime === "image/png" || Number(file?.size || 0) > AUTO_OPTIMIZE_IMAGE_THRESHOLD
+  );
+}
+
+function replaceFileExtension(name, nextExt) {
+  const raw = String(name || "comprovante").trim();
+  const base = raw.replace(/\.[^.]+$/, "") || "comprovante";
+  return `${base}.${nextExt}`;
+}
+
+function canvasToBlob(canvas, type, quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error("Nao foi possivel preparar a imagem para envio."));
+        return;
+      }
+
+      resolve(blob);
+    }, type, quality);
+  });
+}
+
+function loadImageFromFile(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(img);
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Nao foi possivel ler a imagem selecionada."));
+    };
+
+    img.src = url;
+  });
+}
+
+function buildUploadFile(blob, name, type) {
+  try {
+    return new File([blob], name, {
+      type,
+      lastModified: Date.now(),
+    });
+  } catch {
+    blob.name = name;
+    blob.lastModified = Date.now();
+    return blob;
+  }
+}
+
+async function optimizeProofImageFile(file) {
+  if (!shouldOptimizeProofImage(file)) {
+    return {
+      file,
+      optimized: false,
+      originalSize: Number(file?.size || 0),
+    };
+  }
+
+  const image = await loadImageFromFile(file);
+  const sourceWidth = Math.max(1, Number(image.naturalWidth || image.width || 1));
+  const sourceHeight = Math.max(1, Number(image.naturalHeight || image.height || 1));
+  const sourceLongestSide = Math.max(sourceWidth, sourceHeight);
+
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("Nao foi possivel preparar a imagem para envio.");
+  }
+
+  let quality = INITIAL_PROOF_IMAGE_QUALITY;
+  let longestSide = Math.min(sourceLongestSide, MAX_PROOF_IMAGE_DIMENSION);
+  let bestBlob = null;
+
+  for (let attempt = 0; attempt < 7; attempt += 1) {
+    const scale = longestSide / sourceLongestSide;
+    const width = Math.max(1, Math.round(sourceWidth * scale));
+    const height = Math.max(1, Math.round(sourceHeight * scale));
+
+    canvas.width = width;
+    canvas.height = height;
+
+    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(image, 0, 0, width, height);
+
+    const blob = await canvasToBlob(canvas, "image/jpeg", quality);
+    if (!bestBlob || blob.size < bestBlob.size) {
+      bestBlob = blob;
+    }
+
+    if (blob.size <= TARGET_PROOF_IMAGE_BYTES) {
+      break;
+    }
+
+    if (blob.size <= MAX_PROOF_FILE_SIZE && quality <= 0.62) {
+      break;
+    }
+
+    if (quality > MIN_PROOF_IMAGE_QUALITY) {
+      quality = Math.max(MIN_PROOF_IMAGE_QUALITY, quality - 0.12);
+      continue;
+    }
+
+    if (longestSide <= MIN_PROOF_IMAGE_DIMENSION) {
+      break;
+    }
+
+    longestSide = Math.max(
+      MIN_PROOF_IMAGE_DIMENSION,
+      Math.round(longestSide * 0.82),
+    );
+    quality = 0.74;
+  }
+
+  if (!bestBlob) {
+    throw new Error("Nao foi possivel preparar a imagem para envio.");
+  }
+
+  const optimizedFile = buildUploadFile(
+    bestBlob,
+    replaceFileExtension(file.name, "jpg"),
+    "image/jpeg",
+  );
+
+  const originalValidation = validateProofFile(file);
+  if (optimizedFile.size >= Number(file?.size || 0) && originalValidation.ok) {
+    return {
+      file,
+      optimized: false,
+      originalSize: Number(file?.size || 0),
+    };
+  }
+
+  return {
+    file: optimizedFile,
+    optimized: true,
+    originalSize: Number(file?.size || 0),
+  };
 }
 
 function getProofUploadErrorMessage(error, file) {
@@ -352,9 +524,13 @@ export default function PublicPixPayment() {
   const [details, setDetails] = useState(null);
   const [status, setStatus] = useState("PENDING");
   const [file, setFile] = useState(null);
+  const [fileDraftLabel, setFileDraftLabel] = useState("");
   const [note, setNote] = useState("");
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadErr, setUploadErr] = useState("");
+  const [uploadInfo, setUploadInfo] = useState("");
+  const [preparingFile, setPreparingFile] = useState(false);
+  const fileSelectionRef = useRef(0);
 
   async function refreshStatus() {
     const d = await api(`/p/${token}/payment/proof/status`);
@@ -412,6 +588,100 @@ export default function PublicPixPayment() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, token, doneUrl]);
 
+  useEffect(() => {
+    return () => {
+      fileSelectionRef.current += 1;
+    };
+  }, []);
+
+  async function handleProofFileChange(event) {
+    const nextFile = event.target.files?.[0] || null;
+    event.target.value = "";
+
+    const selectionId = fileSelectionRef.current + 1;
+    fileSelectionRef.current = selectionId;
+
+    setUploadErr("");
+    setUploadInfo("");
+
+    if (!nextFile) {
+      setFile(null);
+      setFileDraftLabel("");
+      setPreparingFile(false);
+      return;
+    }
+
+    setFile(null);
+    setFileDraftLabel(`${nextFile.name} (${formatFileSize(nextFile.size)})`);
+
+    const initialValidation = validateProofFile(nextFile);
+    const canOptimize = shouldOptimizeProofImage(nextFile);
+
+    if (!canOptimize && !initialValidation.ok) {
+      setFile(null);
+      setFileDraftLabel("");
+      setPreparingFile(false);
+      setUploadErr(initialValidation.message);
+      return;
+    }
+
+    if (!canOptimize) {
+      setPreparingFile(false);
+      setFile(nextFile);
+      return;
+    }
+
+    setPreparingFile(true);
+    setUploadInfo("Otimizando a imagem para facilitar o envio no celular...");
+
+    try {
+      const prepared = await optimizeProofImageFile(nextFile);
+      if (fileSelectionRef.current !== selectionId) return;
+
+      const finalValidation = validateProofFile(prepared.file);
+      if (!finalValidation.ok) {
+        setFile(null);
+        setFileDraftLabel("");
+        setUploadInfo("");
+        setUploadErr(finalValidation.message);
+        return;
+      }
+
+      setFile(prepared.file);
+      setFileDraftLabel(
+        `${prepared.file.name} (${formatFileSize(prepared.file.size)})`,
+      );
+
+      if (prepared.optimized && prepared.file.size < prepared.originalSize) {
+        setUploadInfo(
+          `Imagem otimizada automaticamente para facilitar o envio: ${formatFileSize(prepared.originalSize)} -> ${formatFileSize(prepared.file.size)}.`,
+        );
+      } else {
+        setUploadInfo("");
+      }
+    } catch {
+      if (fileSelectionRef.current !== selectionId) return;
+
+      if (initialValidation.ok) {
+        setFile(nextFile);
+        setFileDraftLabel(`${nextFile.name} (${formatFileSize(nextFile.size)})`);
+        setUploadInfo("");
+        return;
+      }
+
+      setFile(null);
+      setFileDraftLabel("");
+      setUploadInfo("");
+      setUploadErr(
+        "Nao foi possivel preparar a imagem no seu dispositivo. Tente novamente ou envie um JPG/PDF menor.",
+      );
+    } finally {
+      if (fileSelectionRef.current === selectionId) {
+        setPreparingFile(false);
+      }
+    }
+  }
+
   async function uploadProof() {
     const validation = validateProofFile(file);
     if (!validation.ok) {
@@ -424,13 +694,15 @@ export default function PublicPixPayment() {
 
     try {
       const fd = new FormData();
-      fd.append("file", file);
+      fd.append("file", file, file?.name || "comprovante");
       if (note.trim()) fd.append("note", note.trim());
 
       await postForm(`/p/${token}/payment/proof`, fd);
 
       setFile(null);
+      setFileDraftLabel("");
       setNote("");
+      setUploadInfo("");
       setStatus("WAITING_CONFIRMATION");
     } catch (e) {
       setUploadErr(getProofUploadErrorMessage(e, file));
@@ -450,6 +722,9 @@ export default function PublicPixPayment() {
     status === "PENDING" || status === "REJECTED" || status === "WAITING_PROOF";
 
   const statusMeta = STATUS_META[status] || STATUS_META.PENDING;
+  const selectedFileLabel = file
+    ? `${file.name} (${formatFileSize(file.size)})`
+    : fileDraftLabel;
 
   if (loading) {
     return (
@@ -882,13 +1157,7 @@ export default function PublicPixPayment() {
                     <input
                       type="file"
                       accept="image/jpeg,image/png,application/pdf"
-                      onChange={(e) => {
-                        const nextFile = e.target.files?.[0] || null;
-                        setFile(nextFile);
-
-                        const validation = validateProofFile(nextFile);
-                        setUploadErr(validation.ok ? "" : validation.message);
-                      }}
+                      onChange={handleProofFileChange}
                       className="sr-only"
                     />
 
@@ -906,7 +1175,11 @@ export default function PublicPixPayment() {
 
                       <div className="min-w-0">
                         <div className="text-sm font-semibold">
-                          {file ? "Arquivo selecionado" : "Selecione o comprovante"}
+                          {preparingFile
+                            ? "Otimizando imagem..."
+                            : file
+                              ? "Arquivo selecionado"
+                              : "Selecione o comprovante"}
                         </div>
                         <div
                           className={cls(
@@ -914,8 +1187,8 @@ export default function PublicPixPayment() {
                             isDark ? "text-slate-300" : "text-slate-600",
                           )}
                         >
-                          {file
-                            ? `${file.name} (${formatFileSize(file.size)})`
+                          {selectedFileLabel
+                            ? selectedFileLabel
                             : "Aceitamos JPG, PNG ou PDF com ate 10MB."}
                         </div>
                       </div>
@@ -939,6 +1212,19 @@ export default function PublicPixPayment() {
                       )}
                     >
                       {uploadErr}
+                    </div>
+                  ) : null}
+
+                  {!uploadErr && uploadInfo ? (
+                    <div
+                      className={cls(
+                        "rounded-[22px] border px-4 py-3 text-sm",
+                        isDark
+                          ? "border-sky-400/20 bg-sky-400/10 text-sky-100"
+                          : "border-sky-200 bg-sky-50 text-sky-700",
+                      )}
+                    >
+                      {uploadInfo}
                     </div>
                   ) : null}
                 </div>
@@ -998,11 +1284,15 @@ export default function PublicPixPayment() {
 
                   <div className="mt-5 flex justify-end">
                     <Button
-                      disabled={uploadBusy || !file}
+                      disabled={uploadBusy || preparingFile || !file}
                       onClick={uploadProof}
                       className="w-full sm:w-auto"
                     >
-                      {uploadBusy ? "Enviando..." : "Enviar comprovante"}
+                      {uploadBusy
+                        ? "Enviando..."
+                        : preparingFile
+                          ? "Preparando..."
+                          : "Enviar comprovante"}
                       <ArrowRight className="h-4 w-4" />
                     </Button>
                   </div>

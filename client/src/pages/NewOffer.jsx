@@ -244,6 +244,172 @@ function clampInt(n, min, max) {
   return Math.max(min, max != null ? Math.min(max, xi) : xi);
 }
 
+const INTEGER_FIELD_CONFIG = {
+  recurringIntervalDays: { min: 1, defaultValue: 30 },
+  recurringMaxOccurrences: { min: 1, defaultValue: 12 },
+  durationMin: { min: 1, defaultValue: 60 },
+  validityDays: { min: 1, defaultValue: 7 },
+  depositPct: { min: 0, max: 100, defaultValue: 30 },
+};
+
+function sanitizeIntegerInput(raw) {
+  return String(raw ?? "").replace(/\D+/g, "");
+}
+
+function parseIntegerInput(raw) {
+  const digits = sanitizeIntegerInput(raw);
+  if (!digits) return null;
+
+  const value = Number.parseInt(digits, 10);
+  return Number.isFinite(value) ? value : null;
+}
+
+function isIntegerInRange(value, { min = 0, max = null } = {}) {
+  if (!Number.isFinite(value)) return false;
+  if (value < min) return false;
+  if (max != null && value > max) return false;
+  return true;
+}
+
+function clampIntegerToRange(value, { min = 0, max = null } = {}) {
+  return clampInt(value, min, max);
+}
+
+function commitIntegerInput(raw, currentValue, config) {
+  const fallbackValue = clampIntegerToRange(currentValue, config);
+  const parsed = parseIntegerInput(raw);
+
+  if (parsed == null) return fallbackValue;
+  if (parsed < config.min) return fallbackValue;
+
+  return clampIntegerToRange(parsed, config);
+}
+
+function createOfferItem() {
+  return {
+    productId: "",
+    description: "",
+    qty: 1,
+    qtyInput: "1",
+    qtyPristine: true,
+    unitPrice: "0,00",
+  };
+}
+
+function buildOfferCalc(form) {
+  const items = Array.isArray(form.items) ? form.items : [];
+  const lines = items.map((it) => {
+    const qty = clampInt(it.qty, 1);
+    const unitCents = parseMoneyToCents(it.unitPrice);
+    const validUnit = Number.isFinite(unitCents) && unitCents > 0;
+    const lineTotalCents = validUnit ? qty * unitCents : NaN;
+    return {
+      description: String(it.description || ""),
+      qty,
+      unitPrice: String(it.unitPrice || ""),
+      unitPriceCents: validUnit ? unitCents : NaN,
+      lineTotalCents,
+    };
+  });
+
+  const subtotalItemsCents = lines.reduce((acc, l) => {
+    return acc + (Number.isFinite(l.lineTotalCents) ? l.lineTotalCents : 0);
+  }, 0);
+
+  const serviceBaseCents = parseMoneyToCents(form.amount);
+
+  const baseCents =
+    form.offerType === "product" ? subtotalItemsCents : serviceBaseCents;
+
+  let discountCents = 0;
+  if (form.discountEnabled) {
+    if (form.discountType === "pct") {
+      const pct = Number(String(form.discountValue).replace(",", "."));
+      if (Number.isFinite(pct) && pct > 0) {
+        discountCents = Math.round((baseCents * pct) / 100);
+      }
+    } else {
+      const fixed = parseMoneyToCents(form.discountValue);
+      if (Number.isFinite(fixed) && fixed > 0) discountCents = fixed;
+    }
+    if (discountCents < 0) discountCents = 0;
+    if (discountCents > baseCents) discountCents = baseCents;
+  }
+
+  let freightCents = 0;
+  if (form.freightEnabled) {
+    const f = parseMoneyToCents(form.freightValue);
+    if (Number.isFinite(f) && f > 0) freightCents = f;
+  }
+
+  const totalCents = Math.max(0, baseCents - discountCents + freightCents);
+
+  const depositPct = clampInt(form.depositPct, 0, 100);
+  const depositCents = form.depositEnabled
+    ? Math.round((totalCents * depositPct) / 100)
+    : 0;
+  const remainingCents = Math.max(0, totalCents - depositCents);
+
+  return {
+    lines,
+    subtotalItemsCents,
+    serviceBaseCents,
+    baseCents,
+    discountCents,
+    freightCents,
+    totalCents,
+    depositPct,
+    depositCents,
+    remainingCents,
+  };
+}
+
+function commitNumericDrafts(form) {
+  let nextForm = form;
+
+  for (const [field, config] of Object.entries(INTEGER_FIELD_CONFIG)) {
+    const inputKey = `${field}Input`;
+    const nextValue = commitIntegerInput(form[inputKey], form[field], config);
+    const nextInput = String(nextValue);
+
+    if (nextValue !== form[field] || nextInput !== String(form[inputKey] ?? "")) {
+      if (nextForm === form) nextForm = { ...form };
+      nextForm[field] = nextValue;
+      nextForm[inputKey] = nextInput;
+    }
+  }
+
+  if (Array.isArray(form.items)) {
+    let items = form.items;
+    let itemsChanged = false;
+
+    form.items.forEach((item, idx) => {
+      const nextQty = commitIntegerInput(item?.qtyInput, item?.qty, { min: 1 });
+      const nextQtyInput = String(nextQty);
+
+      if (
+        nextQty !== item?.qty ||
+        nextQtyInput !== String(item?.qtyInput ?? "")
+      ) {
+        if (!itemsChanged) items = [...form.items];
+        items[idx] = {
+          ...item,
+          qty: nextQty,
+          qtyInput: nextQtyInput,
+        };
+        itemsChanged = true;
+      }
+    });
+
+    if (itemsChanged) {
+      if (nextForm === form) nextForm = { ...form };
+      nextForm.items = items;
+    }
+  }
+
+  return nextForm;
+}
+
 export default function NewOffer() {
   const { user, perms } = useAuth();
   const [searchParams] = useSearchParams();
@@ -262,11 +428,15 @@ export default function NewOffer() {
       canUseRecurringFeatures && initialRecurringMode ? "recurring" : "single",
     recurringName: "",
     recurringIntervalDays: 30,
+    recurringIntervalDaysInput: "30",
+    recurringIntervalDaysPristine: true,
     recurringStartDate: new Date().toISOString().slice(0, 10),
     recurringTimeOfDay: "09:00",
     recurringEndMode: "never",
     recurringEndsAt: "",
     recurringMaxOccurrences: 12,
+    recurringMaxOccurrencesInput: "12",
+    recurringMaxOccurrencesPristine: true,
     recurringGenerateFirstNow: true,
     recurringAutoSendToCustomer: false,
     recurringInitialStatus: "active",
@@ -290,18 +460,24 @@ export default function NewOffer() {
     amount: "100.00",
 
     // product fields
-    items: [{ description: "", qty: 1, unitPrice: "0,00" }],
+    items: [createOfferItem()],
 
     // payment
     depositEnabled: true,
     depositPct: 30,
+    depositPctInput: "30",
+    depositPctPristine: true,
     // ✅ duração opcional (somente service)
     durationEnabled: false,
     durationMin: 60,
+    durationMinInput: "60",
+    durationMinPristine: true,
 
     // conditions toggles + values
     validityEnabled: false,
     validityDays: 7,
+    validityDaysInput: "7",
+    validityDaysPristine: true,
 
     deliveryEnabled: false,
     deliveryText: "",
@@ -530,74 +706,7 @@ export default function NewOffer() {
   }, [isPremium, activeProd, form.items]);
 
   const calc = useMemo(() => {
-    const items = Array.isArray(form.items) ? form.items : [];
-    const lines = items.map((it) => {
-      const qty = clampInt(it.qty, 1);
-      const unitCents = parseMoneyToCents(it.unitPrice);
-      const validUnit = Number.isFinite(unitCents) && unitCents > 0;
-      const lineTotalCents = validUnit ? qty * unitCents : NaN;
-      return {
-        description: String(it.description || ""),
-        qty,
-        unitPrice: String(it.unitPrice || ""),
-        unitPriceCents: validUnit ? unitCents : NaN,
-        lineTotalCents,
-      };
-    });
-
-    const subtotalItemsCents = lines.reduce((acc, l) => {
-      return acc + (Number.isFinite(l.lineTotalCents) ? l.lineTotalCents : 0);
-    }, 0);
-
-    const serviceBaseCents = parseMoneyToCents(form.amount);
-
-    const baseCents =
-      form.offerType === "product" ? subtotalItemsCents : serviceBaseCents;
-
-    // discount
-    let discountCents = 0;
-    if (form.discountEnabled) {
-      if (form.discountType === "pct") {
-        const pct = Number(String(form.discountValue).replace(",", "."));
-        if (Number.isFinite(pct) && pct > 0) {
-          discountCents = Math.round((baseCents * pct) / 100);
-        }
-      } else {
-        const fixed = parseMoneyToCents(form.discountValue);
-        if (Number.isFinite(fixed) && fixed > 0) discountCents = fixed;
-      }
-      if (discountCents < 0) discountCents = 0;
-      if (discountCents > baseCents) discountCents = baseCents;
-    }
-
-    // freight
-    let freightCents = 0;
-    if (form.freightEnabled) {
-      const f = parseMoneyToCents(form.freightValue);
-      if (Number.isFinite(f) && f > 0) freightCents = f;
-    }
-
-    const totalCents = Math.max(0, baseCents - discountCents + freightCents);
-
-    // deposit summary
-    const depositPct = clampInt(form.depositPct, 0, 100);
-    const depositCents = form.depositEnabled
-      ? Math.round((totalCents * depositPct) / 100)
-      : 0;
-    const remainingCents = Math.max(0, totalCents - depositCents);
-
-    return {
-      lines,
-      subtotalItemsCents,
-      serviceBaseCents,
-      baseCents,
-      discountCents,
-      freightCents,
-      totalCents,
-      depositPct,
-      depositCents,
-      remainingCents,
-    };
+    return buildOfferCalc(form);
   }, [form]);
 
   function setOfferType(next) {
@@ -615,13 +724,130 @@ export default function NewOffer() {
     });
   }
 
+  function handleStandaloneIntegerFocus(field, event) {
+    const pristineKey = `${field}Pristine`;
+    if (!form[pristineKey]) return;
+
+    const inputKey = `${field}Input`;
+    const defaultValue = INTEGER_FIELD_CONFIG[field]?.defaultValue;
+
+    if (String(form[inputKey] ?? "") === String(defaultValue)) {
+      event.target.select();
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      [pristineKey]: false,
+    }));
+  }
+
+  function handleStandaloneIntegerChange(field, raw) {
+    const config = INTEGER_FIELD_CONFIG[field];
+    const digits = sanitizeIntegerInput(raw);
+
+    setForm((prev) => {
+      const next = {
+        ...prev,
+        [`${field}Input`]: digits,
+        [`${field}Pristine`]: false,
+      };
+      const parsed = parseIntegerInput(digits);
+
+      if (parsed != null && isIntegerInRange(parsed, config)) {
+        next[field] = parsed;
+      }
+
+      return next;
+    });
+  }
+
+  function handleStandaloneIntegerBlur(field) {
+    const config = INTEGER_FIELD_CONFIG[field];
+
+    setForm((prev) => {
+      const nextValue = commitIntegerInput(
+        prev[`${field}Input`],
+        prev[field],
+        config,
+      );
+
+      return {
+        ...prev,
+        [field]: nextValue,
+        [`${field}Input`]: String(nextValue),
+      };
+    });
+  }
+
+  function handleItemQtyFocus(idx, event) {
+    const item = form.items?.[idx];
+    if (!item?.qtyPristine) return;
+
+    if (String(item.qtyInput ?? item.qty ?? 1) === "1") {
+      event.target.select();
+    }
+
+    setForm((prev) => {
+      const items = Array.isArray(prev.items) ? [...prev.items] : [];
+      if (!items[idx]) return prev;
+
+      items[idx] = {
+        ...items[idx],
+        qtyPristine: false,
+      };
+
+      return { ...prev, items };
+    });
+  }
+
+  function handleItemQtyChange(idx, raw) {
+    const digits = sanitizeIntegerInput(raw);
+
+    setForm((prev) => {
+      const items = Array.isArray(prev.items) ? [...prev.items] : [];
+      const current = items[idx];
+      if (!current) return prev;
+
+      const nextItem = {
+        ...current,
+        qtyInput: digits,
+        qtyPristine: false,
+      };
+      const parsed = parseIntegerInput(digits);
+
+      if (parsed != null && isIntegerInRange(parsed, { min: 1 })) {
+        nextItem.qty = parsed;
+      }
+
+      items[idx] = nextItem;
+      return { ...prev, items };
+    });
+  }
+
+  function handleItemQtyBlur(idx) {
+    setForm((prev) => {
+      const items = Array.isArray(prev.items) ? [...prev.items] : [];
+      const current = items[idx];
+      if (!current) return prev;
+
+      const nextQty = commitIntegerInput(current.qtyInput, current.qty, {
+        min: 1,
+      });
+
+      items[idx] = {
+        ...current,
+        qty: nextQty,
+        qtyInput: String(nextQty),
+      };
+
+      return { ...prev, items };
+    });
+  }
+
   function addItem() {
     setForm((prev) => ({
       ...prev,
-      items: [
-        ...(prev.items || []),
-        { productId: "", description: "", qty: 1, unitPrice: "0,00" },
-      ],
+      items: [...(prev.items || []), createOfferItem()],
     }));
   }
 
@@ -632,12 +858,7 @@ export default function NewOffer() {
 
     setForm((prev) => {
       const items = Array.isArray(prev.items) ? [...prev.items] : [];
-      const cur = items[idx] || {
-        productId: "",
-        description: "",
-        qty: 1,
-        unitPrice: "0,00",
-      };
+      const cur = items[idx] || createOfferItem();
       items[idx] = {
         ...cur,
         productId: String(pid || cur.productId || ""),
@@ -656,9 +877,7 @@ export default function NewOffer() {
       items.splice(idx, 1);
       return {
         ...p,
-        items: items.length
-          ? items
-          : [{ description: "", qty: 1, unitPrice: "0,00" }],
+        items: items.length ? items : [createOfferItem()],
       };
     });
   }
@@ -670,38 +889,49 @@ export default function NewOffer() {
     setBusy(true);
 
     try {
+      const activeForm = commitNumericDrafts(form);
+      const activeCalc = buildOfferCalc(activeForm);
+
+      if (activeForm !== form) {
+        setForm(activeForm);
+      }
+
       // base validations
-      if (!form.customerName.trim())
+      if (!activeForm.customerName.trim())
         throw new Error("Informe o nome do cliente.");
 
       // deposit validation if enabled
-      if (form.depositEnabled) {
-        const pct = clampInt(form.depositPct, 0, 100);
+      if (activeForm.depositEnabled) {
+        const pct = clampInt(activeForm.depositPct, 0, 100);
         if (!(pct >= 0 && pct <= 100))
           throw new Error("Sinal deve estar entre 0 e 100.");
       }
 
       // type-specific validations
-      if (form.offerType === "service") {
-        if (!form.title.trim()) throw new Error("Informe o título do serviço.");
+      if (activeForm.offerType === "service") {
+        if (!activeForm.title.trim())
+          throw new Error("Informe o título do serviço.");
         if (
-          !Number.isFinite(calc.serviceBaseCents) ||
-          calc.serviceBaseCents <= 0
+          !Number.isFinite(activeCalc.serviceBaseCents) ||
+          activeCalc.serviceBaseCents <= 0
         )
           throw new Error("Informe um valor válido.");
-        if (!Number.isFinite(calc.totalCents) || calc.totalCents <= 0)
+        if (
+          !Number.isFinite(activeCalc.totalCents) ||
+          activeCalc.totalCents <= 0
+        )
           throw new Error("Total do orçamento inválido.");
 
-        if (form.durationEnabled) {
-          const d = clampInt(form.durationMin, 1);
+        if (activeForm.durationEnabled) {
+          const d = clampInt(activeForm.durationMin, 1);
           if (!Number.isFinite(d) || d <= 0)
             throw new Error("Informe uma duração válida.");
         }
       } else {
-        const items = Array.isArray(form.items) ? form.items : [];
+        const items = Array.isArray(activeForm.items) ? activeForm.items : [];
         if (items.length < 1) throw new Error("Adicione pelo menos 1 item.");
-        for (let i = 0; i < calc.lines.length; i++) {
-          const l = calc.lines[i];
+        for (let i = 0; i < activeCalc.lines.length; i++) {
+          const l = activeCalc.lines[i];
           if (!l.description.trim())
             throw new Error(`Item ${i + 1}: informe a descrição.`);
           if (!(l.qty >= 1))
@@ -709,31 +939,44 @@ export default function NewOffer() {
           if (!Number.isFinite(l.unitPriceCents) || l.unitPriceCents <= 0)
             throw new Error(`Item ${i + 1}: valor unitário inválido.`);
         }
-        if (!Number.isFinite(calc.totalCents) || calc.totalCents <= 0)
+        if (
+          !Number.isFinite(activeCalc.totalCents) ||
+          activeCalc.totalCents <= 0
+        )
           throw new Error("Total do orçamento inválido.");
       }
 
       const creationMode = canUseRecurringFeatures
-        ? form.creationMode
+        ? activeForm.creationMode
         : "single";
 
       if (creationMode === "recurring") {
-        if (!String(form.recurringName || "").trim()) {
+        if (!String(activeForm.recurringName || "").trim()) {
           throw new Error("Informe um nome interno para a recorrência.");
         }
-        if (!Number.isFinite(Number(form.recurringIntervalDays)) || Number(form.recurringIntervalDays) < 1) {
+        if (
+          !Number.isFinite(Number(activeForm.recurringIntervalDays)) ||
+          Number(activeForm.recurringIntervalDays) < 1
+        ) {
           throw new Error("Informe um intervalo válido em dias para a recorrência.");
         }
-        if (!String(form.recurringStartDate || "").trim()) {
+        if (!String(activeForm.recurringStartDate || "").trim()) {
           throw new Error("Informe a data de início da recorrência.");
         }
-        if (!String(form.recurringTimeOfDay || "").trim()) {
+        if (!String(activeForm.recurringTimeOfDay || "").trim()) {
           throw new Error("Informe o horário da execução da recorrência.");
         }
-        if (form.recurringEndMode === "until_date" && !String(form.recurringEndsAt || "").trim()) {
+        if (
+          activeForm.recurringEndMode === "until_date" &&
+          !String(activeForm.recurringEndsAt || "").trim()
+        ) {
           throw new Error("Informe a data final da recorrência.");
         }
-        if (form.recurringEndMode === "until_count" && (!Number.isFinite(Number(form.recurringMaxOccurrences)) || Number(form.recurringMaxOccurrences) < 1)) {
+        if (
+          activeForm.recurringEndMode === "until_count" &&
+          (!Number.isFinite(Number(activeForm.recurringMaxOccurrences)) ||
+            Number(activeForm.recurringMaxOccurrences) < 1)
+        ) {
           throw new Error("Informe a quantidade máxima de cobranças.");
         }
       }
@@ -755,94 +998,102 @@ export default function NewOffer() {
       const payload = {
         sellerEmail,
         sellerName,
-        customerName: form.customerName,
-        customerWhatsApp: form.customerWhatsApp,
-        notifyWhatsAppOnPaid: !!form.notifyWhatsAppOnPaid,
+        customerName: activeForm.customerName,
+        customerWhatsApp: activeForm.customerWhatsApp,
+        notifyWhatsAppOnPaid: !!activeForm.notifyWhatsAppOnPaid,
 
         // ✅ envia snapshot + vínculo
-        customerId: isPremium ? form.customerId || null : null,
-        customerEmail: isPremium ? String(form.customerEmail || "").trim() : "",
-        customerDoc: isPremium ? onlyDigits(form.customerDoc) : "",
+        customerId: isPremium ? activeForm.customerId || null : null,
+        customerEmail: isPremium
+          ? String(activeForm.customerEmail || "").trim()
+          : "",
+        customerDoc: isPremium ? onlyDigits(activeForm.customerDoc) : "",
 
-        offerType: form.offerType,
+        offerType: activeForm.offerType,
 
         // keep compatibility
         title:
-          form.offerType === "service" ? form.title : form.title || "Orçamento",
+          activeForm.offerType === "service"
+            ? activeForm.title
+            : activeForm.title || "Orçamento",
         description:
-          form.offerType === "service"
-            ? form.description
-            : form.description || "",
+          activeForm.offerType === "service"
+            ? activeForm.description
+            : activeForm.description || "",
 
-        amountCents: calc.totalCents,
+        amountCents: activeCalc.totalCents,
 
-        depositEnabled: !!form.depositEnabled,
+        depositEnabled: !!activeForm.depositEnabled,
         // safer compatibility: always a number
-        depositPct: form.depositEnabled ? clampInt(form.depositPct, 0, 100) : 0,
+        depositPct: activeForm.depositEnabled
+          ? clampInt(activeForm.depositPct, 0, 100)
+          : 0,
 
         // ✅ duração (somente service, opcional)
         durationEnabled:
-          form.offerType === "service" ? !!form.durationEnabled : false,
+          activeForm.offerType === "service"
+            ? !!activeForm.durationEnabled
+            : false,
         durationMin:
-          form.offerType === "service" && form.durationEnabled
-            ? clampInt(form.durationMin, 1)
+          activeForm.offerType === "service" && activeForm.durationEnabled
+            ? clampInt(activeForm.durationMin, 1)
             : null,
 
         // optional computed
-        subtotalCents: calc.baseCents,
-        discountCents: form.discountEnabled ? calc.discountCents : null,
-        freightCents: form.freightEnabled ? calc.freightCents : null,
-        totalCents: calc.totalCents,
+        subtotalCents: activeCalc.baseCents,
+        discountCents: activeForm.discountEnabled ? activeCalc.discountCents : null,
+        freightCents: activeForm.freightEnabled ? activeCalc.freightCents : null,
+        totalCents: activeCalc.totalCents,
 
         // ✅ condições (com flags + valores)
-        validityEnabled: !!form.validityEnabled,
-        validityDays: form.validityEnabled
-          ? clampInt(form.validityDays, 1)
+        validityEnabled: !!activeForm.validityEnabled,
+        validityDays: activeForm.validityEnabled
+          ? clampInt(activeForm.validityDays, 1)
           : null,
 
-        deliveryEnabled: !!form.deliveryEnabled,
-        deliveryText: form.deliveryEnabled
-          ? String(form.deliveryText || "").trim()
+        deliveryEnabled: !!activeForm.deliveryEnabled,
+        deliveryText: activeForm.deliveryEnabled
+          ? String(activeForm.deliveryText || "").trim()
           : null,
 
-        warrantyEnabled: !!form.warrantyEnabled,
-        warrantyText: form.warrantyEnabled
-          ? String(form.warrantyText || "").trim()
+        warrantyEnabled: !!activeForm.warrantyEnabled,
+        warrantyText: activeForm.warrantyEnabled
+          ? String(activeForm.warrantyText || "").trim()
           : null,
 
-        notesEnabled: !!form.notesEnabled,
-        conditionsNotes: form.notesEnabled
-          ? String(form.conditionsNotes || "").trim()
+        notesEnabled: !!activeForm.notesEnabled,
+        conditionsNotes: activeForm.notesEnabled
+          ? String(activeForm.conditionsNotes || "").trim()
           : null,
 
-        discountEnabled: !!form.discountEnabled,
-        discountType: form.discountEnabled ? form.discountType : null,
-        discountValue: form.discountEnabled
-          ? String(form.discountValue || "")
+        discountEnabled: !!activeForm.discountEnabled,
+        discountType: activeForm.discountEnabled ? activeForm.discountType : null,
+        discountValue: activeForm.discountEnabled
+          ? String(activeForm.discountValue || "")
           : null,
 
-        freightEnabled: !!form.freightEnabled,
-        freightValue: form.freightEnabled
-          ? String(form.freightValue || "")
+        freightEnabled: !!activeForm.freightEnabled,
+        freightValue: activeForm.freightEnabled
+          ? String(activeForm.freightValue || "")
           : null,
 
-        discount: form.discountEnabled
+        discount: activeForm.discountEnabled
           ? {
-              type: form.discountType,
+              type: activeForm.discountType,
               value:
-                form.discountType === "pct"
-                  ? Number(String(form.discountValue).replace(",", "."))
-                  : parseMoneyToCents(form.discountValue),
+                activeForm.discountType === "pct"
+                  ? Number(String(activeForm.discountValue).replace(",", "."))
+                  : parseMoneyToCents(activeForm.discountValue),
             }
           : null,
 
-        freight: form.freightEnabled
-          ? parseMoneyToCents(form.freightValue)
+        freight: activeForm.freightEnabled
+          ? parseMoneyToCents(activeForm.freightValue)
           : null,
       };
 
-      if (form.offerType === "product") {
-        payload.items = calc.lines.map((l) => ({
+      if (activeForm.offerType === "product") {
+        payload.items = activeCalc.lines.map((l) => ({
           description: l.description,
           qty: l.qty,
           unitPriceCents: l.unitPriceCents,
@@ -852,30 +1103,35 @@ export default function NewOffer() {
 
       if (creationMode === "recurring") {
         const startsAt = new Date(
-          `${form.recurringStartDate}T${form.recurringTimeOfDay}:00`,
+          `${activeForm.recurringStartDate}T${activeForm.recurringTimeOfDay}:00`,
         );
 
         const recurringPayload = {
           ...payload,
-          name: String(form.recurringName || "").trim(),
-          status: String(form.recurringInitialStatus || "active").trim().toLowerCase(),
+          name: String(activeForm.recurringName || "").trim(),
+          status: String(activeForm.recurringInitialStatus || "active")
+            .trim()
+            .toLowerCase(),
           recurrence: {
-            intervalDays: clampInt(form.recurringIntervalDays, 1),
+            intervalDays: clampInt(activeForm.recurringIntervalDays, 1),
             startsAt: startsAt.toISOString(),
-            timeOfDay: String(form.recurringTimeOfDay || "09:00"),
-            endMode: String(form.recurringEndMode || "never"),
+            timeOfDay: String(activeForm.recurringTimeOfDay || "09:00"),
+            endMode: String(activeForm.recurringEndMode || "never"),
             endsAt:
-              form.recurringEndMode === "until_date" && form.recurringEndsAt
-                ? new Date(`${form.recurringEndsAt}T${form.recurringTimeOfDay}:00`).toISOString()
+              activeForm.recurringEndMode === "until_date" &&
+              activeForm.recurringEndsAt
+                ? new Date(
+                    `${activeForm.recurringEndsAt}T${activeForm.recurringTimeOfDay}:00`,
+                  ).toISOString()
                 : null,
             maxOccurrences:
-              form.recurringEndMode === "until_count"
-                ? clampInt(form.recurringMaxOccurrences, 1)
+              activeForm.recurringEndMode === "until_count"
+                ? clampInt(activeForm.recurringMaxOccurrences, 1)
                 : null,
           },
           automation: {
-            generateFirstNow: !!form.recurringGenerateFirstNow,
-            autoSendToCustomer: !!form.recurringAutoSendToCustomer,
+            generateFirstNow: !!activeForm.recurringGenerateFirstNow,
+            autoSendToCustomer: !!activeForm.recurringAutoSendToCustomer,
           },
         };
 
@@ -1493,12 +1749,13 @@ export default function NewOffer() {
                                 <Input
                                   type="number"
                                   min={1}
-                                  value={it.qty}
+                                  inputMode="numeric"
+                                  value={it.qtyInput ?? String(it.qty ?? 1)}
+                                  onFocus={(e) => handleItemQtyFocus(idx, e)}
                                   onChange={(e) =>
-                                    updateItem(idx, {
-                                      qty: clampInt(e.target.value, 1),
-                                    })
+                                    handleItemQtyChange(idx, e.target.value)
                                   }
+                                  onBlur={() => handleItemQtyBlur(idx)}
                                 />
                               </div>
                               <div className="col-span-2">
@@ -1638,13 +1895,18 @@ export default function NewOffer() {
                         <Input
                           type="number"
                           min={1}
-                          value={form.durationMin}
-                          onChange={(e) =>
-                            setForm({
-                              ...form,
-                              durationMin: clampInt(e.target.value, 1),
-                            })
+                          inputMode="numeric"
+                          value={form.durationMinInput}
+                          onFocus={(e) =>
+                            handleStandaloneIntegerFocus("durationMin", e)
                           }
+                          onChange={(e) =>
+                            handleStandaloneIntegerChange(
+                              "durationMin",
+                              e.target.value,
+                            )
+                          }
+                          onBlur={() => handleStandaloneIntegerBlur("durationMin")}
                         />
                       </div>
                     </div>
@@ -1682,13 +1944,18 @@ export default function NewOffer() {
                     <Input
                       type="number"
                       min={1}
-                      value={form.validityDays}
-                      onChange={(e) =>
-                        setForm({
-                          ...form,
-                          validityDays: clampInt(e.target.value, 1),
-                        })
+                      inputMode="numeric"
+                      value={form.validityDaysInput}
+                      onFocus={(e) =>
+                        handleStandaloneIntegerFocus("validityDays", e)
                       }
+                      onChange={(e) =>
+                        handleStandaloneIntegerChange(
+                          "validityDays",
+                          e.target.value,
+                        )
+                      }
+                      onBlur={() => handleStandaloneIntegerBlur("validityDays")}
                     />
                   </div>
                 </div>
@@ -1926,12 +2193,19 @@ export default function NewOffer() {
                     <Input
                       type="number"
                       min={1}
-                      value={form.recurringIntervalDays}
+                      inputMode="numeric"
+                      value={form.recurringIntervalDaysInput}
+                      onFocus={(e) =>
+                        handleStandaloneIntegerFocus("recurringIntervalDays", e)
+                      }
                       onChange={(e) =>
-                        setForm({
-                          ...form,
-                          recurringIntervalDays: clampInt(e.target.value, 1),
-                        })
+                        handleStandaloneIntegerChange(
+                          "recurringIntervalDays",
+                          e.target.value,
+                        )
+                      }
+                      onBlur={() =>
+                        handleStandaloneIntegerBlur("recurringIntervalDays")
                       }
                     />
                   </div>
@@ -2020,12 +2294,22 @@ export default function NewOffer() {
                       <Input
                         type="number"
                         min={1}
-                        value={form.recurringMaxOccurrences}
+                        inputMode="numeric"
+                        value={form.recurringMaxOccurrencesInput}
+                        onFocus={(e) =>
+                          handleStandaloneIntegerFocus(
+                            "recurringMaxOccurrences",
+                            e,
+                          )
+                        }
                         onChange={(e) =>
-                          setForm({
-                            ...form,
-                            recurringMaxOccurrences: clampInt(e.target.value, 1),
-                          })
+                          handleStandaloneIntegerChange(
+                            "recurringMaxOccurrences",
+                            e.target.value,
+                          )
+                        }
+                        onBlur={() =>
+                          handleStandaloneIntegerBlur("recurringMaxOccurrences")
                         }
                       />
                     </div>
@@ -2186,13 +2470,18 @@ export default function NewOffer() {
                             type="number"
                             min={0}
                             max={100}
-                            value={form.depositPct}
-                            onChange={(e) =>
-                              setForm({
-                                ...form,
-                                depositPct: clampInt(e.target.value, 0, 100),
-                              })
+                            inputMode="numeric"
+                            value={form.depositPctInput}
+                            onFocus={(e) =>
+                              handleStandaloneIntegerFocus("depositPct", e)
                             }
+                            onChange={(e) =>
+                              handleStandaloneIntegerChange(
+                                "depositPct",
+                                e.target.value,
+                              )
+                            }
+                            onBlur={() => handleStandaloneIntegerBlur("depositPct")}
                           />
                         </div>
 
