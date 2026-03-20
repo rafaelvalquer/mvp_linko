@@ -7,10 +7,12 @@ export const WHATSAPP_COMMAND_SESSION_STATES = [
   "AWAITING_CUSTOMER_SELECTION",
   "AWAITING_PRODUCT_SELECTION",
   "AWAITING_BOOKING_SELECTION",
+  "AWAITING_OFFER_SELECTION",
   "AWAITING_DESTINATION_PHONE",
   "AWAITING_CONFIRMATION",
   "AWAITING_NEW_BOOKING_TIME",
   "AWAITING_BOOKING_CHANGE_CONFIRMATION",
+  "AWAITING_OFFER_ACTION_CONFIRMATION",
   "PROCESSING_CREATE",
   "COMPLETED",
   "CANCELLED",
@@ -85,6 +87,32 @@ const CandidateBookingSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const CandidateOfferSchema = new mongoose.Schema(
+  {
+    offerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Offer",
+      default: null,
+    },
+    ownerUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    customerName: { type: String, default: "" },
+    title: { type: String, default: "" },
+    totalCents: { type: Number, default: null },
+    status: { type: String, default: "" },
+    paymentStatus: { type: String, default: "" },
+    createdAt: { type: Date, default: null },
+    expiresAt: { type: Date, default: null },
+    publicToken: { type: String, default: "" },
+    displayLabel: { type: String, default: "" },
+    score: { type: Number, default: 0 },
+  },
+  { _id: false },
+);
+
 const WhatsAppCommandSessionSchema = new mongoose.Schema(
   {
     workspaceId: {
@@ -120,6 +148,9 @@ const WhatsAppCommandSessionSchema = new mongoose.Schema(
       type: String,
       enum: [
         "offer_create",
+        "offer_query",
+        "offer_payment_reminder",
+        "offer_cancel",
         "agenda_query",
         "booking_reschedule",
         "booking_cancel",
@@ -139,6 +170,7 @@ const WhatsAppCommandSessionSchema = new mongoose.Schema(
     candidateCustomers: { type: [CandidateCustomerSchema], default: [] },
     candidateProducts: { type: [CandidateProductSchema], default: [] },
     candidateBookings: { type: [CandidateBookingSchema], default: [] },
+    candidateOffers: { type: [CandidateOfferSchema], default: [] },
     confirmationSummaryText: { type: String, default: "" },
     createdOfferId: {
       type: mongoose.Schema.Types.ObjectId,

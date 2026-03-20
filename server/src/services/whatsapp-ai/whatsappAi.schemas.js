@@ -12,8 +12,12 @@ export const WHATSAPP_AI_ROUTING_INTENTS = [
   "query_next_booking",
   "reschedule_booking",
   "cancel_booking",
+  "query_pending_offers",
+  "send_offer_payment_reminder",
+  "cancel_offer",
   "ambiguous_booking_operation",
   "ambiguous_offer_or_agenda",
+  "ambiguous_offer_sales_operation",
   "unknown",
 ];
 
@@ -27,6 +31,14 @@ export const WHATSAPP_AI_AGENDA_DAY_KINDS = [
 export const WHATSAPP_AI_BOOKING_TARGET_REFERENCES = [
   "next",
   "explicit",
+  "unspecified",
+];
+
+export const WHATSAPP_AI_OFFER_TARGET_DAY_KINDS = [
+  "today",
+  "yesterday",
+  "last_week",
+  "explicit_date",
   "unspecified",
 ];
 
@@ -82,6 +94,13 @@ function normalizeBookingTargetReference(value) {
   const reference = String(value || "").trim();
   return WHATSAPP_AI_BOOKING_TARGET_REFERENCES.includes(reference)
     ? reference
+    : "unspecified";
+}
+
+function normalizeOfferTargetDayKind(value) {
+  const kind = String(value || "").trim();
+  return WHATSAPP_AI_OFFER_TARGET_DAY_KINDS.includes(kind)
+    ? kind
     : "unspecified";
 }
 
@@ -424,6 +443,45 @@ export function buildBookingOperationResponseFormat() {
   };
 }
 
+export function buildOfferSalesOperationResponseFormat() {
+  return {
+    type: "json_schema",
+    json_schema: {
+      name: "whatsapp_offer_sales_operation",
+      strict: true,
+      schema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          intent: {
+            type: "string",
+            enum: [
+              "query_pending_offers",
+              "send_offer_payment_reminder",
+              "cancel_offer",
+              "unknown",
+            ],
+          },
+          target_customer_name: { type: "string" },
+          target_created_day_kind: {
+            type: "string",
+            enum: WHATSAPP_AI_OFFER_TARGET_DAY_KINDS,
+          },
+          target_created_date_iso: { type: "string" },
+          source_text: { type: "string" },
+        },
+        required: [
+          "intent",
+          "target_customer_name",
+          "target_created_day_kind",
+          "target_created_date_iso",
+          "source_text",
+        ],
+      },
+    },
+  };
+}
+
 export function createEmptyExtraction() {
   return {
     intent: "unknown",
@@ -462,6 +520,16 @@ export function createEmptyBookingOperationExtraction() {
     target_reference: "unspecified",
     new_date_iso: "",
     new_time_hhmm: "",
+    source_text: "",
+  };
+}
+
+export function createEmptyOfferSalesOperationExtraction() {
+  return {
+    intent: "unknown",
+    target_customer_name: "",
+    target_created_day_kind: "unspecified",
+    target_created_date_iso: "",
     source_text: "",
   };
 }
@@ -628,6 +696,53 @@ export function parseBookingOperationExtraction(payload) {
     target_reference: normalizeBookingTargetReference(value.target_reference),
     new_date_iso: normalizeDateIso(value.new_date_iso),
     new_time_hhmm: normalizeTimeHhmm(value.new_time_hhmm),
+    source_text: String(value.source_text || "").trim(),
+  };
+}
+
+export function parseOfferSalesOperationExtraction(payload) {
+  let value = payload;
+
+  if (typeof value === "string") {
+    value = JSON.parse(value);
+  }
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    const err = new Error("A IA retornou um payload de operacao de oferta invalido.");
+    err.code = "WHATSAPP_AI_INVALID_OFFER_OPERATION_PAYLOAD";
+    throw err;
+  }
+
+  const allowedKeys = [
+    "intent",
+    "target_customer_name",
+    "target_created_day_kind",
+    "target_created_date_iso",
+    "source_text",
+  ];
+  const extras = Object.keys(value).filter((key) => !allowedKeys.includes(key));
+  if (extras.length) {
+    const err = new Error(
+      `Campos nao suportados na operacao de oferta: ${extras.join(", ")}`,
+    );
+    err.code = "WHATSAPP_AI_INVALID_OFFER_OPERATION_KEYS";
+    throw err;
+  }
+
+  const normalizedIntent = normalizeRoutingIntent(value.intent);
+  const allowedIntents = [
+    "query_pending_offers",
+    "send_offer_payment_reminder",
+    "cancel_offer",
+  ];
+
+  return {
+    intent: allowedIntents.includes(normalizedIntent) ? normalizedIntent : "unknown",
+    target_customer_name: String(value.target_customer_name || "").trim(),
+    target_created_day_kind: normalizeOfferTargetDayKind(
+      value.target_created_day_kind,
+    ),
+    target_created_date_iso: normalizeDateIso(value.target_created_date_iso),
     source_text: String(value.source_text || "").trim(),
   };
 }

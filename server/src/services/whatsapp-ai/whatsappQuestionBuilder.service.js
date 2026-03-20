@@ -125,6 +125,25 @@ export function buildBookingOperationDisambiguationQuestion() {
   ].join("\n");
 }
 
+export function buildOfferSalesOperationDisambiguationQuestion() {
+  return [
+    "Voce quer consultar pendentes, cobrar um cliente ou cancelar uma proposta?",
+    "",
+    "1. Consultar pendentes",
+    "2. Cobrar cliente",
+    "3. Cancelar proposta",
+  ].join("\n");
+}
+
+export function buildOfferSalesContextSwitchQuestion() {
+  return [
+    "Existe uma proposta em andamento. Voce quer continuar a proposta atual ou seguir com cobranca e vendas?",
+    "",
+    "1. Proposta",
+    "2. Cobranca e vendas",
+  ].join("\n");
+}
+
 export function buildBookingAmbiguityQuestion(candidates = [], actionLabel = "esse compromisso") {
   const options = candidates
     .map(
@@ -262,6 +281,127 @@ export function buildInvalidBookingOperationSelectionMessage(originalQuestion) {
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+export function buildInvalidOfferSalesSelectionMessage(originalQuestion) {
+  return [
+    "Nao entendi sua escolha. Responda com PENDENTES, COBRAR, CANCELAR, 1, 2 ou 3.",
+    "",
+    String(originalQuestion || buildOfferSalesOperationDisambiguationQuestion()).trim(),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function buildInvalidOfferSalesContextSwitchMessage(originalQuestion) {
+  return [
+    "Nao entendi sua escolha. Responda com PROPOSTA, COBRANCA, 1, 2 ou CANCELAR.",
+    "",
+    String(originalQuestion || buildOfferSalesContextSwitchQuestion()).trim(),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function buildPendingOffersEmptyMessage() {
+  return "Nao ha cobrancas pendentes no momento.";
+}
+
+export function buildPendingOffersSummaryMessage(offers = []) {
+  const safeOffers = Array.isArray(offers) ? offers : [];
+  const lines = [
+    `Propostas aguardando pagamento agora: ${safeOffers.length}`,
+    "",
+  ];
+
+  safeOffers.forEach((offer, index) => {
+    lines.push(
+      `${index + 1}. ${String(offer?.displayLabel || "").trim() || "Proposta pendente"}`,
+    );
+  });
+
+  return lines.join("\n").trim();
+}
+
+export function buildOfferAmbiguityQuestion(candidates = [], actionLabel = "essa proposta") {
+  const options = candidates
+    .map(
+      (candidate, index) =>
+        `${index + 1}. ${String(candidate?.displayLabel || "").trim() || "Proposta"}`,
+    )
+    .join("\n");
+
+  return `Encontrei ${candidates.length} propostas para ${actionLabel}. Responda com o numero:\n${options}`;
+}
+
+export function buildOfferReminderConfirmation(candidate = {}) {
+  const createdAt =
+    formatAgendaDateTime(candidate?.createdAt, "America/Sao_Paulo") || "--";
+  const expiresAt = candidate?.expiresAt
+    ? formatAgendaDateTime(candidate.expiresAt, "America/Sao_Paulo")
+    : "";
+
+  return [
+    "Confirma o envio do lembrete desta proposta?",
+    "",
+    `Cliente: ${String(candidate?.customerName || "Cliente").trim()}`,
+    `Proposta: ${String(candidate?.title || "Proposta").trim()}`,
+    `Valor: ${formatMoney(candidate?.totalCents)}`,
+    `Criada em: ${createdAt}`,
+    expiresAt ? `Vence em: ${expiresAt}` : "",
+    "",
+    "Digite CONFIRMAR para continuar ou CANCELAR para desistir.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function buildOfferCancelConfirmation(candidate = {}) {
+  const createdAt =
+    formatAgendaDateTime(candidate?.createdAt, "America/Sao_Paulo") || "--";
+  const expiresAt = candidate?.expiresAt
+    ? formatAgendaDateTime(candidate.expiresAt, "America/Sao_Paulo")
+    : "";
+
+  return [
+    "Confirma o cancelamento desta proposta?",
+    "",
+    `Cliente: ${String(candidate?.customerName || "Cliente").trim()}`,
+    `Proposta: ${String(candidate?.title || "Proposta").trim()}`,
+    `Valor: ${formatMoney(candidate?.totalCents)}`,
+    `Criada em: ${createdAt}`,
+    expiresAt ? `Vence em: ${expiresAt}` : "",
+    "",
+    "Digite CONFIRMAR para continuar ou CANCELAR para desistir.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function buildOfferReminderResultMessage(candidate = {}, result = {}) {
+  const customerName = String(candidate?.customerName || "o cliente").trim();
+
+  if (result?.status === "sent") {
+    return `Lembrete enviado com sucesso para ${customerName}.`;
+  }
+
+  if (result?.status === "queued") {
+    return `Lembrete enfileirado com sucesso para ${customerName}.`;
+  }
+
+  if (result?.status === "skipped") {
+    return `Nao foi possivel enviar o lembrete para ${customerName}: ${String(
+      result?.reason || "regra nao permitiu o envio",
+    ).trim()}.`;
+  }
+
+  return `Nao consegui enviar o lembrete para ${customerName} agora.`;
+}
+
+export function buildOfferCancelledSuccessMessage(candidate = {}) {
+  return `Proposta cancelada com sucesso para ${String(
+    candidate?.customerName || "o cliente",
+  ).trim()}.`;
 }
 
 export function buildProcessingMessage() {

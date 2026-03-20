@@ -22,9 +22,10 @@ function buildIntentRoutingInstructions() {
     "Voce e um classificador de intencao para um agente de WhatsApp da Luminor Pay.",
     "Leia mensagens em pt-BR.",
     "Responda somente com JSON valido e sem markdown.",
-    "Classifique se a mensagem e sobre criar proposta, consultar agenda diaria, consultar agenda semanal, consultar proximo compromisso, reagendar compromisso, cancelar agendamento, ou se esta ambigua.",
+    "Classifique se a mensagem e sobre criar proposta, consultar agenda diaria, consultar agenda semanal, consultar proximo compromisso, reagendar compromisso, cancelar agendamento, consultar propostas pendentes, cobrar cliente de uma proposta, cancelar proposta, ou se esta ambigua.",
     "Retorne ambiguous_offer_or_agenda quando houver duvida real entre os dois fluxos.",
     "Retorne ambiguous_booking_operation quando houver duvida real entre consultar agenda e operar um agendamento.",
+    "Retorne ambiguous_offer_sales_operation quando houver duvida real entre consultar pendentes, cobrar cliente ou cancelar proposta.",
     "Retorne unknown quando a mensagem nao estiver relacionada a proposta nem agenda.",
     "source_text deve refletir a compreensao final do texto informado.",
   ].join("\n");
@@ -57,6 +58,21 @@ function buildBookingOperationInstructions() {
     "target_time_hhmm e new_time_hhmm devem vir em HH:MM.",
     "new_date_iso e new_time_hhmm so devem ser preenchidos quando o usuario informar o novo horario.",
     "Nao invente data ou hora ausentes.",
+    "source_text deve refletir a compreensao final do texto informado.",
+  ].join("\n");
+}
+
+function buildOfferSalesOperationInstructions() {
+  return [
+    "Voce e um extrator de parametros para cobranca e vendas por WhatsApp.",
+    "Leia mensagens em pt-BR.",
+    "Responda somente com JSON valido e sem markdown.",
+    "Extraia apenas parametros operacionais para consultar propostas pendentes, cobrar cliente de uma proposta ou cancelar proposta.",
+    "target_customer_name deve ser preenchido apenas quando o usuario mencionar o cliente.",
+    "Use target_created_day_kind=today, yesterday, last_week, explicit_date ou unspecified.",
+    "Se houver uma data explicita, preencha target_created_date_iso em YYYY-MM-DD.",
+    "Se nao houver referencia temporal clara, use target_created_day_kind=unspecified e target_created_date_iso vazio.",
+    "Nao invente cliente nem data ausentes.",
     "source_text deve refletir a compreensao final do texto informado.",
   ].join("\n");
 }
@@ -101,6 +117,21 @@ export function buildBookingOperationPrompt({
 }) {
   return {
     systemPrompt: buildBookingOperationInstructions(),
+    userPrompt: [
+      `Timezone de referencia: ${String(timeZone || "America/Sao_Paulo").trim()}`,
+      `Data de hoje na timezone: ${String(todayDateIso || "").trim() || "(desconhecida)"}`,
+      `Mensagem do usuario: ${String(text || "").trim() || "(vazio)"}`,
+    ].join("\n"),
+  };
+}
+
+export function buildOfferSalesOperationPrompt({
+  text,
+  todayDateIso,
+  timeZone,
+}) {
+  return {
+    systemPrompt: buildOfferSalesOperationInstructions(),
     userPrompt: [
       `Timezone de referencia: ${String(timeZone || "America/Sao_Paulo").trim()}`,
       `Data de hoje na timezone: ${String(todayDateIso || "").trim() || "(desconhecida)"}`,

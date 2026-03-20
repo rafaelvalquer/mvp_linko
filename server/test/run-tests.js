@@ -10,6 +10,7 @@ import {
   parseAgendaDateExtraction,
   parseBookingOperationExtraction,
   parseIntentRoutingExtraction,
+  parseOfferSalesOperationExtraction,
   listMissingMandatoryFields,
   mergeResolvedDraft,
   parseDirectReplyValue,
@@ -23,6 +24,9 @@ import {
   buildBookingCancelConfirmation,
   buildBookingRescheduleConfirmation,
   buildNextBookingMessage,
+  buildOfferCancelConfirmation,
+  buildOfferReminderConfirmation,
+  buildPendingOffersSummaryMessage,
   buildWeeklyAgendaMessage,
   buildConfirmationSummary,
   buildIntentDisambiguationQuestion,
@@ -361,6 +365,24 @@ await check("parseBookingOperationExtraction normalizes booking operations", () 
   });
 });
 
+await check("parseOfferSalesOperationExtraction normalizes sales operations", () => {
+  const parsed = parseOfferSalesOperationExtraction({
+    intent: "send_offer_payment_reminder",
+    target_customer_name: "Rafael",
+    target_created_day_kind: "yesterday",
+    target_created_date_iso: "",
+    source_text: "cobrar Rafael da proposta de ontem",
+  });
+
+  assert.deepEqual(parsed, {
+    intent: "send_offer_payment_reminder",
+    target_customer_name: "Rafael",
+    target_created_day_kind: "yesterday",
+    target_created_date_iso: "",
+    source_text: "cobrar Rafael da proposta de ontem",
+  });
+});
+
 await check("parseAgendaDateExtraction normalizes requested day", () => {
   const parsed = parseAgendaDateExtraction({
     requested_day_kind: "tomorrow",
@@ -520,6 +542,42 @@ await check("weekly agenda and booking operation messages render summaries", () 
   });
   assert.match(cancelSummary, /Confirma o cancelamento/);
   assert.match(cancelSummary, /Digite CONFIRMAR/);
+});
+
+await check("offer sales messages render pending list and confirmations", () => {
+  const pendingSummary = buildPendingOffersSummaryMessage([
+    {
+      displayLabel:
+        "Rafael - Televisao - R$ 50,00 - criada em 19/03/2026 - vence em 20/03/2026",
+    },
+    {
+      displayLabel: "Maria - Curso - R$ 200,00 - criada em 18/03/2026",
+    },
+  ]);
+
+  assert.match(pendingSummary, /Propostas aguardando pagamento agora: 2/);
+  assert.match(pendingSummary, /1\. Rafael/);
+  assert.match(pendingSummary, /2\. Maria/);
+
+  const reminderSummary = buildOfferReminderConfirmation({
+    customerName: "Rafael",
+    title: "Televisao",
+    totalCents: 5000,
+    createdAt: "2026-03-19T12:00:00.000Z",
+    expiresAt: "2026-03-20T12:00:00.000Z",
+  });
+  assert.match(reminderSummary, /Confirma o envio do lembrete/);
+  assert.match(reminderSummary, /Rafael/);
+  assert.match(reminderSummary, /Digite CONFIRMAR/);
+
+  const cancelSummary = buildOfferCancelConfirmation({
+    customerName: "Rafael",
+    title: "Televisao",
+    totalCents: 5000,
+    createdAt: "2026-03-19T12:00:00.000Z",
+  });
+  assert.match(cancelSummary, /Confirma o cancelamento desta proposta/);
+  assert.match(cancelSummary, /Televisao/);
 });
 
 await check("mergeResolvedDraft resets linked entities when raw values change", () => {
