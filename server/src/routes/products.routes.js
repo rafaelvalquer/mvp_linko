@@ -7,6 +7,10 @@ import mongoose from "mongoose";
 
 import { ensureAuth, tenantFromUser } from "../middleware/auth.js";
 import { Product } from "../models/Product.js";
+import {
+  createProductForWorkspace,
+  updateProductForWorkspace,
+} from "../services/products/product.service.js";
 
 const r = Router();
 
@@ -105,8 +109,6 @@ r.post(
       const description = String(req.body?.description || "").trim();
       const priceCents = toInt(req.body?.priceCents, -1);
 
-      if (!productId)
-        return res.status(400).json({ ok: false, error: "productId required" });
       if (!name)
         return res.status(400).json({ ok: false, error: "name required" });
       if (!Number.isFinite(priceCents) || priceCents < 0)
@@ -114,7 +116,7 @@ r.post(
 
       const imageUrl = req.file ? `/uploads/products/${req.file.filename}` : "";
 
-      const doc = await Product.create({
+      const doc = await createProductForWorkspace({
         workspaceId: req.tenantId,
         ownerUserId: req.user._id,
         productId,
@@ -127,7 +129,7 @@ r.post(
       return res.json({ ok: true, product: doc });
     } catch (e) {
       // conflito de unique index
-      if (e?.code === 11000) {
+      if (e?.code === 11000 || e?.code === "PRODUCT_ID_CONFLICT") {
         return res
           .status(409)
           .json({
@@ -164,17 +166,14 @@ r.put(
       if (!Number.isFinite(priceCents) || priceCents < 0)
         return res.status(400).json({ ok: false, error: "priceCents invalid" });
 
-      const patch = { name, description, priceCents };
-
-      if (req.file) {
-        patch.imageUrl = `/uploads/products/${req.file.filename}`;
-      }
-
-      const updated = await Product.findOneAndUpdate(
-        { _id: id, workspaceId: req.tenantId },
-        { $set: patch },
-        { new: true },
-      ).lean();
+      const updated = await updateProductForWorkspace({
+        workspaceId: req.tenantId,
+        productMongoId: id,
+        name,
+        description,
+        priceCents,
+        ...(req.file ? { imageUrl: `/uploads/products/${req.file.filename}` } : {}),
+      });
 
       if (!updated)
         return res

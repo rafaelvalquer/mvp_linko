@@ -9,6 +9,8 @@ function buildSharedInstructions() {
     "Converta valores monetarios para centavos em unit_price_cents.",
     "Extraia todos os itens mencionados em um array items.",
     "Cada item deve conter product_name_raw, quantity e unit_price_cents.",
+    "Quando o usuario mencionar codigo ou id do produto, preencha product_code no item correspondente.",
+    "Se houver apenas um item com codigo, copie o codigo tambem para o campo top-level product_code.",
     "Se houver pelo menos um item, copie os dados do primeiro item para os campos top-level product_name_raw, quantity e unit_price_cents.",
     "quantity e obrigatoria em cada item e nao pode receber default automatico.",
     "destination_phone_n11 deve vir com exatamente 11 digitos, sem +55.",
@@ -22,11 +24,12 @@ function buildIntentRoutingInstructions() {
     "Voce e um classificador de intencao para um agente de WhatsApp da Luminor Pay.",
     "Leia mensagens em pt-BR.",
     "Responda somente com JSON valido e sem markdown.",
-    "Classifique se a mensagem e sobre criar proposta, consultar agenda diaria, consultar agenda semanal, consultar proximo compromisso, reagendar compromisso, cancelar agendamento, consultar propostas pendentes, cobrar cliente de uma proposta, cancelar proposta, ou se esta ambigua.",
+    "Classifique se a mensagem e sobre criar proposta, consultar agenda diaria, consultar agenda semanal, consultar proximo compromisso, reagendar compromisso, cancelar agendamento, consultar propostas pendentes, cobrar cliente de uma proposta, cancelar proposta, cadastrar cliente, cadastrar produto, atualizar preco de produto, consultar telefone de cliente ou consultar produtos, ou se esta ambigua.",
     "Retorne ambiguous_offer_or_agenda quando houver duvida real entre os dois fluxos.",
     "Retorne ambiguous_booking_operation quando houver duvida real entre consultar agenda e operar um agendamento.",
     "Retorne ambiguous_offer_sales_operation quando houver duvida real entre consultar pendentes, cobrar cliente ou cancelar proposta.",
-    "Retorne unknown quando a mensagem nao estiver relacionada a proposta nem agenda.",
+    "Retorne ambiguous_backoffice_operation quando houver duvida real entre cadastrar cliente, cadastrar produto, atualizar preco de produto ou consultar dados rapidos de cliente/produto.",
+    "Retorne unknown quando a mensagem nao estiver relacionada aos fluxos de proposta, agenda, cobranca e vendas ou backoffice.",
     "source_text deve refletir a compreensao final do texto informado.",
   ].join("\n");
 }
@@ -73,6 +76,27 @@ function buildOfferSalesOperationInstructions() {
     "Se houver uma data explicita, preencha target_created_date_iso em YYYY-MM-DD.",
     "Se nao houver referencia temporal clara, use target_created_day_kind=unspecified e target_created_date_iso vazio.",
     "Nao invente cliente nem data ausentes.",
+    "source_text deve refletir a compreensao final do texto informado.",
+  ].join("\n");
+}
+
+function buildBackofficeOperationInstructions() {
+  return [
+    "Voce e um extrator de parametros para operacoes de backoffice e cadastro por WhatsApp.",
+    "Leia mensagens em pt-BR.",
+    "Responda somente com JSON valido e sem markdown.",
+    "Extraia apenas parametros para cadastrar cliente, cadastrar produto, atualizar preco de produto, consultar telefone de cliente ou consultar produtos.",
+    "Nao invente email, CPF/CNPJ, telefone, nome de cliente, nome de produto, preco ou descricao.",
+    "Para cliente, use client_full_name, client_phone, client_email e client_cpf_cnpj.",
+    "Para produto, use product_name, product_code, product_lookup_mode, product_price_cents e product_description.",
+    "Use product_code apenas quando o usuario mencionar codigo, id do produto ou equivalente.",
+    "Use product_lookup_mode=by_code quando a consulta de produto mencionar codigo ou id do produto.",
+    "Use product_lookup_mode=by_name quando a consulta de produto mencionar nome ou descricao do produto.",
+    "Se o modo de consulta nao estiver claro, use product_lookup_mode=unspecified.",
+    "Converta valores monetarios para centavos em product_price_cents.",
+    "Se o pedido for apenas consulta de telefone, use intent=lookup_client_phone.",
+    "Se o pedido for apenas consulta de produto, use intent=lookup_product.",
+    "Campos ausentes devem permanecer vazios ou null.",
     "source_text deve refletir a compreensao final do texto informado.",
   ].join("\n");
 }
@@ -137,6 +161,15 @@ export function buildOfferSalesOperationPrompt({
       `Data de hoje na timezone: ${String(todayDateIso || "").trim() || "(desconhecida)"}`,
       `Mensagem do usuario: ${String(text || "").trim() || "(vazio)"}`,
     ].join("\n"),
+  };
+}
+
+export function buildBackofficeOperationPrompt({ text }) {
+  return {
+    systemPrompt: buildBackofficeOperationInstructions(),
+    userPrompt: [`Mensagem do usuario: ${String(text || "").trim() || "(vazio)"}`].join(
+      "\n",
+    ),
   };
 }
 

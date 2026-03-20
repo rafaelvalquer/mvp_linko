@@ -8,6 +8,7 @@ import {
 } from "../src/utils/phone.js";
 import {
   parseAgendaDateExtraction,
+  parseBackofficeOperationExtraction,
   parseBookingOperationExtraction,
   parseIntentRoutingExtraction,
   parseOfferSalesOperationExtraction,
@@ -21,12 +22,18 @@ import {
 import {
   buildAgendaFreeDayMessage,
   buildAgendaSummaryMessage,
+  buildBackofficeOperationDisambiguationQuestion,
   buildBookingCancelConfirmation,
   buildBookingRescheduleConfirmation,
+  buildClientCreateConfirmation,
+  buildClientLookupMessage,
   buildNextBookingMessage,
   buildOfferCancelConfirmation,
   buildOfferReminderConfirmation,
   buildPendingOffersSummaryMessage,
+  buildProductCreateConfirmation,
+  buildProductLookupMessage,
+  buildProductPriceUpdateConfirmation,
   buildWeeklyAgendaMessage,
   buildConfirmationSummary,
   buildIntentDisambiguationQuestion,
@@ -47,6 +54,7 @@ import {
   assertWhatsAppAccountPhoneAllowed,
   getPlanFeatureMatrix,
 } from "../src/utils/planFeatures.js";
+import { applyProductSelectionToItem } from "../src/services/whatsapp-ai/whatsappEntityResolver.service.js";
 
 process.env.MONGODB_URI = process.env.MONGODB_URI || "mongodb://localhost:27017/test";
 const { buildUserPayload, validateRegisterPayload } = await import(
@@ -265,11 +273,13 @@ await check("parseStructuredExtraction normalizes AI output", () => {
     customer_name_raw: "Joao",
     destination_phone_n11: "+55 (11) 99999-8888",
     product_name_raw: "Televisao",
+    product_code: "",
     quantity: 2,
     unit_price_cents: 10000,
     items: [
       {
         product_name_raw: "Televisao",
+        product_code: "",
         quantity: 2,
         unit_price_cents: 10000,
       },
@@ -283,11 +293,13 @@ await check("parseStructuredExtraction normalizes AI output", () => {
     customer_name_raw: "Joao",
     destination_phone_n11: "11999998888",
     product_name_raw: "Televisao",
+    product_code: "",
     quantity: 2,
     unit_price_cents: 10000,
     items: [
       {
         product_name_raw: "Televisao",
+        product_code: "",
         quantity: 2,
         unit_price_cents: 10000,
       },
@@ -303,16 +315,19 @@ await check("parseStructuredExtraction keeps all extracted items", () => {
     customer_name_raw: "Joao",
     destination_phone_n11: "11999998888",
     product_name_raw: "Televisao",
+    product_code: "101010",
     quantity: 1,
     unit_price_cents: 5000,
     items: [
       {
         product_name_raw: "Televisao",
+        product_code: "101010",
         quantity: 1,
         unit_price_cents: 5000,
       },
       {
         product_name_raw: "Suporte",
+        product_code: "",
         quantity: 2,
         unit_price_cents: 3000,
       },
@@ -324,9 +339,11 @@ await check("parseStructuredExtraction keeps all extracted items", () => {
   assert.equal(parsed.items.length, 2);
   assert.deepEqual(parsed.items[1], {
     product_name_raw: "Suporte",
+    product_code: "",
     quantity: 2,
     unit_price_cents: 3000,
   });
+  assert.equal(parsed.product_code, "101010");
 });
 
 await check("parseIntentRoutingExtraction accepts agenda routing", () => {
@@ -380,6 +397,64 @@ await check("parseOfferSalesOperationExtraction normalizes sales operations", ()
     target_created_day_kind: "yesterday",
     target_created_date_iso: "",
     source_text: "cobrar Rafael da proposta de ontem",
+  });
+});
+
+await check("parseBackofficeOperationExtraction normalizes backoffice operations", () => {
+  const parsed = parseBackofficeOperationExtraction({
+    intent: "create_client",
+    client_full_name: "Rafael Silva",
+    client_phone: "11 99999-8888",
+    client_email: "RAFAEL@EXAMPLE.COM",
+    client_cpf_cnpj: "123.456.789-09",
+    product_name: "",
+    product_price_cents: null,
+    product_description: "",
+    source_text: "crie um cliente Rafael Silva, telefone 11 99999-8888",
+  });
+
+  assert.deepEqual(parsed, {
+    intent: "create_client",
+    client_full_name: "Rafael Silva",
+    client_phone: "11 99999-8888",
+    client_email: "rafael@example.com",
+    client_cpf_cnpj: "123.456.789-09",
+    product_name: "",
+    product_code: "",
+    product_lookup_mode: "unspecified",
+    product_price_cents: null,
+    product_description: "",
+    source_text: "crie um cliente Rafael Silva, telefone 11 99999-8888",
+  });
+});
+
+await check("parseBackofficeOperationExtraction keeps product code lookups explicit", () => {
+  const parsed = parseBackofficeOperationExtraction({
+    intent: "lookup_product",
+    client_full_name: "",
+    client_phone: "",
+    client_email: "",
+    client_cpf_cnpj: "",
+    product_name: "",
+    product_code: "101010",
+    product_lookup_mode: "by_code",
+    product_price_cents: null,
+    product_description: "",
+    source_text: "qual e o produto de codigo 101010",
+  });
+
+  assert.deepEqual(parsed, {
+    intent: "lookup_product",
+    client_full_name: "",
+    client_phone: "",
+    client_email: "",
+    client_cpf_cnpj: "",
+    product_name: "",
+    product_code: "101010",
+    product_lookup_mode: "by_code",
+    product_price_cents: null,
+    product_description: "",
+    source_text: "qual e o produto de codigo 101010",
   });
 });
 
@@ -580,6 +655,81 @@ await check("offer sales messages render pending list and confirmations", () => 
   assert.match(cancelSummary, /Televisao/);
 });
 
+await check("backoffice messages render confirmations and lookups", () => {
+  const selection = buildBackofficeOperationDisambiguationQuestion();
+  assert.match(selection, /1\. Cadastrar cliente/);
+  assert.match(selection, /4\. Consultar dados/);
+
+  const clientConfirmation = buildClientCreateConfirmation({
+    client_full_name: "Rafael Silva",
+    client_phone: "11999998888",
+    client_email: "rafael@example.com",
+    client_cpf_cnpj: "12345678909",
+  });
+  assert.match(clientConfirmation, /Confirma a criacao deste cliente/);
+  assert.match(clientConfirmation, /Rafael Silva/);
+  assert.match(clientConfirmation, /Digite CONFIRMAR/);
+
+  const productConfirmation = buildProductCreateConfirmation({
+    product_name: "Televisao 50",
+    product_code: "101010",
+    product_price_cents: 250000,
+    product_description: "Smart TV",
+  });
+  assert.match(productConfirmation, /Confirma o cadastro deste produto/);
+  assert.match(productConfirmation, /Televisao 50/);
+  assert.match(productConfirmation, /Codigo: 101010/);
+  assert.match(productConfirmation, /R\$\s*2.500,00/);
+
+  const automaticCodeConfirmation = buildProductCreateConfirmation({
+    product_name: "Banana",
+    product_price_cents: 1000,
+  });
+  assert.match(automaticCodeConfirmation, /Codigo: sera gerado automaticamente/);
+
+  const priceUpdateConfirmation = buildProductPriceUpdateConfirmation(
+    {
+      name: "Suporte premium",
+      priceCents: 7900,
+    },
+    {
+      product_price_cents: 8900,
+    },
+  );
+  assert.match(priceUpdateConfirmation, /Confirma a atualizacao deste produto/);
+  assert.match(priceUpdateConfirmation, /Suporte premium/);
+  assert.match(priceUpdateConfirmation, /R\$\s*89,00/);
+
+  const clientLookup = buildClientLookupMessage("Maria", [
+    "1. Maria Silva - (11) 99999-8888",
+  ]);
+  assert.match(clientLookup, /Telefone\(s\) encontrado\(s\) para Maria/);
+  assert.match(clientLookup, /Maria Silva/);
+
+  const productLookup = buildProductLookupMessage("televisao", [
+    "1. Televisao 50 - Codigo: 101010 - R$ 2.500,00",
+  ]);
+  assert.match(productLookup, /Produtos encontrados para televisao/);
+  assert.match(productLookup, /Televisao 50/);
+
+  const productLookupByCode = buildProductLookupMessage("", [], {
+    lookupMode: "by_code",
+    productCode: "101010",
+    items: [
+      {
+        externalProductId: "101010",
+        name: "Banana",
+        priceCents: 1000,
+        description: "Fruta",
+      },
+    ],
+  });
+  assert.match(productLookupByCode, /Produto encontrado para o codigo 101010/);
+  assert.match(productLookupByCode, /Nome: Banana/);
+  assert.match(productLookupByCode, /Codigo: 101010/);
+  assert.match(productLookupByCode, /Descricao: Fruta/);
+});
+
 await check("mergeResolvedDraft resets linked entities when raw values change", () => {
   const next = mergeResolvedDraft(
     {
@@ -587,6 +737,7 @@ await check("mergeResolvedDraft resets linked entities when raw values change", 
       customerId: "abc",
       customerName: "Joao Silva",
       product_name_raw: "TV 32",
+      product_code: "101010",
       productId: "def",
       productName: "TV 32 Polegadas",
     },
@@ -600,6 +751,7 @@ await check("mergeResolvedDraft resets linked entities when raw values change", 
   assert.equal(next.customerName, "");
   assert.equal(next.productId, null);
   assert.equal(next.productName, "");
+  assert.equal(next.product_code, "");
 });
 
 await check("mergeResolvedDraft updates indexed item replies", () => {
@@ -625,11 +777,51 @@ await check("mergeResolvedDraft updates indexed item replies", () => {
 
   assert.deepEqual(normalizeResolvedItems(next)[1], {
     product_name_raw: "Suporte",
+    productCode: "",
     quantity: 2,
     unit_price_cents: 3000,
     productId: null,
     productName: "",
     productLookupQuery: "",
+    productLookupMiss: false,
+  });
+});
+
+await check("applyProductSelectionToItem hydrates catalog price when resolved by code", () => {
+  const next = applyProductSelectionToItem(
+    {
+      customer_name_raw: "Joao",
+      destination_phone_n11: "11999998888",
+      items: [
+        {
+          product_name_raw: "codigo 101010",
+          productCode: "101010",
+          quantity: 2,
+          unit_price_cents: 999999,
+        },
+      ],
+    },
+    0,
+    {
+      productId: "mongo-product-1",
+      name: "Banana",
+      externalProductId: "101010",
+      priceCents: 1000,
+    },
+    {
+      replaceRawName: true,
+      useCatalogPrice: true,
+    },
+  );
+
+  assert.deepEqual(normalizeResolvedItems(next)[0], {
+    product_name_raw: "Banana",
+    productCode: "101010",
+    quantity: 2,
+    unit_price_cents: 1000,
+    productId: "mongo-product-1",
+    productName: "Banana",
+    productLookupQuery: "Banana",
     productLookupMiss: false,
   });
 });
@@ -662,7 +854,7 @@ await check("listMissingMandatoryFields reports unresolved inputs", () => {
   );
 });
 
-await check("parseDirectReplyValue handles quantity, money and phone", () => {
+await check("parseDirectReplyValue handles quantity, money, phone and product code", () => {
   assert.deepEqual(parseDirectReplyValue("quantity", "2"), {
     quantity: 2,
     source_text: "2",
@@ -674,6 +866,24 @@ await check("parseDirectReplyValue handles quantity, money and phone", () => {
   assert.deepEqual(parseDirectReplyValue("unit_price_cents", "R$ 100,50"), {
     unit_price_cents: 10050,
     source_text: "R$ 100,50",
+  });
+  assert.deepEqual(parseDirectReplyValue("product_name_raw", "codigo 101010"), {
+    product_name_raw: "codigo 101010",
+    product_code: "101010",
+    source_text: "codigo 101010",
+  });
+  assert.deepEqual(parseDirectReplyValue("items.0.unit_price_cents", "codigo 101010"), {
+    items: [
+      {
+        productCode: "101010",
+      },
+    ],
+    source_text: "codigo 101010",
+  });
+  assert.deepEqual(parseDirectReplyValue("product_code", "codigo 101010"), {
+    product_code: "101010",
+    product_lookup_mode: "by_code",
+    source_text: "codigo 101010",
   });
   assert.deepEqual(parseDirectReplyValue("items.1.quantity", "3"), {
     items: [
@@ -699,6 +909,7 @@ await check("buildConfirmationSummary lists all items and total", () => {
     items: [
       {
         product_name_raw: "Televisao",
+        productCode: "101010",
         quantity: 1,
         unit_price_cents: 5000,
       },
@@ -711,6 +922,7 @@ await check("buildConfirmationSummary lists all items and total", () => {
   });
 
   assert.match(summary, /1\. Televisao/);
+  assert.match(summary, /Codigo: 101010/);
   assert.match(summary, /2\. Suporte/);
   assert.match(summary, /Total geral: R\$\s*110,00/);
 });

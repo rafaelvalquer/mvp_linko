@@ -11,21 +11,29 @@ import {
   applyProductSelectionToItem,
   pickCandidateByOrdinal,
   resolveCustomerCandidates,
+  resolveProductByCode,
   resolveProductCandidates,
 } from "./whatsappEntityResolver.service.js";
 import {
   buildSparseItemPatch,
+  createEmptyBackofficeOperationExtraction,
   createEmptyBookingOperationExtraction,
   createEmptyResolved,
   listMissingMandatoryFields,
   mergeResolvedDraft,
   normalizeResolvedItems,
+  parseCpfCnpjDigits,
+  parseEmailFromText,
   parseItemFieldKey,
+  parseProductCodeFromText,
   parseDirectReplyValue,
 } from "./whatsappAi.schemas.js";
 import {
   buildAgendaFreeDayMessage,
   buildAgendaSummaryMessage,
+  buildBackofficeContextSwitchQuestion,
+  buildBackofficeMissingFieldQuestion,
+  buildBackofficeOperationDisambiguationQuestion,
   buildBookingAmbiguityQuestion,
   buildBookingCancelConfirmation,
   buildBookingCancelledSuccessMessage,
@@ -38,6 +46,8 @@ import {
   buildDuplicateLinkedNumberMessage,
   buildErrorMessage,
   buildInvalidBookingOperationSelectionMessage,
+  buildInvalidBackofficeContextSwitchMessage,
+  buildInvalidBackofficeSelectionMessage,
   buildInvalidConfirmationMessage,
   buildInvalidIntentSelectionMessage,
   buildInvalidOfferSalesSelectionMessage,
@@ -59,9 +69,20 @@ import {
   buildPendingOffersSummaryMessage,
   buildPlanUpgradeRequiredMessage,
   buildProcessingMessage,
+  buildProductCodeConflictMessage,
+  buildProductCreateConfirmation,
+  buildProductCreatedSuccessMessage,
   buildProductAmbiguityQuestion,
+  buildProductCodeNotFoundQuestion,
+  buildProductLookupMessage,
+  buildProductPriceUpdateConfirmation,
+  buildProductPriceUpdatedSuccessMessage,
   buildSuccessMessage,
   buildWeeklyAgendaMessage,
+  buildClientCreateConfirmation,
+  buildClientCreatedSuccessMessage,
+  buildClientExistingMatchesQuestion,
+  buildClientLookupMessage,
 } from "./whatsappQuestionBuilder.service.js";
 import {
   appendInboundMessageToSession,
@@ -79,6 +100,7 @@ import { createOfferAndDispatchToCustomer } from "./whatsappOfferCreation.servic
 import { transcribeWhatsAppAudio } from "./whatsappAudioTranscription.service.js";
 import {
   extractWhatsAppAgendaDate,
+  extractWhatsAppBackofficeOperation,
   extractWhatsAppBookingOperation,
   extractWhatsAppIntent,
   extractWhatsAppOfferSalesOperation,
@@ -106,9 +128,19 @@ import {
   listPendingOffers,
   resolveOfferCandidates,
 } from "./whatsappOfferOperations.service.js";
+import { createClientForWorkspace } from "../clients/createClient.service.js";
+import { createProductForWorkspace, updateProductPriceForWorkspace } from "../products/product.service.js";
 import { sendManualPaymentReminder } from "../paymentReminder.service.js";
 import { cancelOfferByWorkspace } from "../offers/cancelOffer.service.js";
 import { isWhatsAppAiEnabled } from "./openai.client.js";
+import {
+  lookupClientPhones,
+  findProductByCode,
+  lookupProducts,
+  normalizeClientPhoneForStorage,
+  searchClientCandidates,
+  searchProductCandidates,
+} from "./whatsappBackofficeOperations.service.js";
 
 const inflightInboundEventKeys = new Set();
 const INTENT_SELECTION_CONTEXT_KEY = "_intentSelectionContext";
@@ -233,6 +265,49 @@ function parseOfferSalesOperationSelectionReply(value) {
   return "";
 }
 
+function parseBackofficeOperationSelectionReply(value) {
+  const normalized = normalizeComparableText(value);
+
+  if (
+    ["cancelar", "cancela", "cancelado"].includes(normalized) ||
+    normalized === "0"
+  ) {
+    return "CANCELAR";
+  }
+
+  if (
+    normalized === "1" ||
+    (normalized.includes("cliente") && normalized.includes("cad"))
+  ) {
+    return "CRIAR_CLIENTE";
+  }
+
+  if (
+    normalized === "2" ||
+    (normalized.includes("produto") && normalized.includes("cad"))
+  ) {
+    return "CRIAR_PRODUTO";
+  }
+
+  if (
+    normalized === "3" ||
+    normalized.includes("preco") ||
+    normalized.includes("valor")
+  ) {
+    return "ATUALIZAR_PRECO";
+  }
+
+  if (
+    normalized === "4" ||
+    normalized.includes("consult") ||
+    normalized.includes("telefone")
+  ) {
+    return "CONSULTAR";
+  }
+
+  return "";
+}
+
 function parseOfferSalesContextSwitchReply(value) {
   const normalized = normalizeComparableText(value);
 
@@ -261,6 +336,60 @@ function parseOfferSalesContextSwitchReply(value) {
   }
 
   return "";
+}
+
+function parseBackofficeContextSwitchReply(value) {
+  const normalized = normalizeComparableText(value);
+
+  if (
+    ["cancelar", "cancela", "cancelado"].includes(normalized) ||
+    normalized.startsWith("cancel")
+  ) {
+    return "CANCELAR";
+  }
+
+  if (
+    normalized === "1" ||
+    normalized.startsWith("proposta") ||
+    normalized.includes("orcamento")
+  ) {
+    return "PROPOSTA";
+  }
+
+  if (
+    normalized === "2" ||
+    normalized.startsWith("backoffice") ||
+    normalized.includes("cadastro") ||
+    normalized.includes("cliente") ||
+    normalized.includes("produto")
+  ) {
+    return "BACKOFFICE";
+  }
+
+  return "";
+}
+
+function isValidClientPhoneInput(value) {
+  const normalized = normalizeClientPhoneForStorage(value);
+  return String(normalized || "").trim().length > 0;
+}
+
+function validateBackofficeFieldValue(field, text) {
+  const trimmed = String(text || "").trim();
+  if (!trimmed) return false;
+
+  if (field === "client_full_name") return true;
+  if (field === "client_phone") return isValidClientPhoneInput(trimmed);
+  if (field === "client_email") return Boolean(parseEmailFromText(trimmed));
+  if (field === "client_cpf_cnpj") return Boolean(parseCpfCnpjDigits(trimmed));
+  if (field === "product_name") return true;
+  if (field === "product_code") return Boolean(parseProductCodeFromText(trimmed));
+  if (field === "product_price_cents") {
+    const parsed = parseDirectReplyValue("product_price_cents", trimmed);
+    return Number.isFinite(Number(parsed?.product_price_cents));
+  }
+  if (field === "product_description") return true;
+  return false;
 }
 
 function resolveFieldQuestionKey(pendingFields = []) {
@@ -391,6 +520,87 @@ function getSelectedOfferCandidate(session) {
     return null;
   }
   return candidate;
+}
+
+function getBackofficeOperationDraft(session) {
+  const draft = session?.resolved?.backofficeOperation;
+  if (!draft || typeof draft !== "object" || Array.isArray(draft)) {
+    return createEmptyBackofficeOperationExtraction();
+  }
+
+  return {
+    ...createEmptyBackofficeOperationExtraction(),
+    ...draft,
+  };
+}
+
+function getSelectedBackofficeProduct(session) {
+  const product = session?.resolved?.selectedBackofficeProduct;
+  if (!product || typeof product !== "object" || Array.isArray(product)) {
+    return null;
+  }
+  return product;
+}
+
+function listMissingBackofficeFields(draft = {}) {
+  const intent = String(draft?.intent || "").trim();
+  const missing = [];
+
+  if (intent === "create_client") {
+    if (!String(draft.client_full_name || "").trim()) missing.push("client_full_name");
+    if (!isValidClientPhoneInput(draft.client_phone || "")) missing.push("client_phone");
+    if (!parseEmailFromText(draft.client_email || "")) missing.push("client_email");
+    if (!parseCpfCnpjDigits(draft.client_cpf_cnpj || "")) missing.push("client_cpf_cnpj");
+    return missing;
+  }
+
+  if (intent === "create_product") {
+    if (!String(draft.product_name || "").trim()) missing.push("product_name");
+    if (!Number.isFinite(Number(draft.product_price_cents))) {
+      missing.push("product_price_cents");
+    }
+    return missing;
+  }
+
+  if (intent === "update_product_price") {
+    if (!String(draft.product_name || "").trim()) missing.push("product_name");
+    if (!Number.isFinite(Number(draft.product_price_cents))) {
+      missing.push("product_price_cents");
+    }
+    return missing;
+  }
+
+  if (intent === "lookup_client_phone") {
+    if (!String(draft.client_full_name || "").trim()) missing.push("client_full_name");
+    return missing;
+  }
+
+  if (intent === "lookup_product") {
+    const productLookupMode = String(draft.product_lookup_mode || "").trim();
+    const hasProductCode = Boolean(String(draft.product_code || "").trim());
+    const hasProductName = Boolean(String(draft.product_name || "").trim());
+    const sourceSuggestsCode = /\b(?:codigo|id(?: do produto)?|cod)\b/i.test(
+      String(draft.source_text || ""),
+    );
+
+    if (productLookupMode === "by_code" || (sourceSuggestsCode && !hasProductName)) {
+      if (!hasProductCode) missing.push("product_code");
+      return missing;
+    }
+
+    if (!hasProductCode && !hasProductName) missing.push("product_name");
+    return missing;
+  }
+
+  return missing;
+}
+
+function mergeBackofficeOperationDraft(currentDraft = {}, patch = {}) {
+  return {
+    ...createEmptyBackofficeOperationExtraction(),
+    ...(currentDraft && typeof currentDraft === "object" ? currentDraft : {}),
+    ...(patch && typeof patch === "object" ? patch : {}),
+  };
 }
 
 function buildInboundEventKey(event) {
@@ -704,6 +914,50 @@ async function askOfferSalesOperationSelection({
   };
 }
 
+async function askBackofficeOperationSelection({
+  session,
+  user,
+  dedupeSuffix,
+  pendingIntentText,
+  origin = "new_session",
+}) {
+  const question = buildBackofficeOperationDisambiguationQuestion();
+  const resolvedWithoutContext = stripIntentSelectionContext(session?.resolved || {});
+  const updatedSession = await updateWhatsAppSession(session._id, {
+    flowType: "intent_disambiguation",
+    state: "AWAITING_INTENT_SELECTION",
+    pendingFields: [],
+    lastQuestionKey: "backoffice_operation_selection",
+    lastQuestionText: question,
+    candidateCustomers: [],
+    candidateProducts: [],
+    candidateBookings: [],
+    candidateOffers: [],
+    confirmationSummaryText: "",
+    resolved: {
+      ...resolvedWithoutContext,
+      [INTENT_SELECTION_CONTEXT_KEY]: {
+        selectionType: "backoffice_operation",
+        origin,
+        pendingIntentText: String(pendingIntentText || "").trim(),
+      },
+    },
+  });
+
+  await replyToSession({
+    session: updatedSession,
+    user,
+    message: question,
+    dedupeSuffix,
+  });
+
+  return {
+    ok: true,
+    status: "awaiting_intent_selection",
+    session: updatedSession,
+  };
+}
+
 async function maybeAskForOfferSalesContextSwitch({
   session,
   user,
@@ -754,6 +1008,88 @@ async function maybeAskForOfferSalesContextSwitch({
     state: "AWAITING_INTENT_SELECTION",
     pendingFields: [],
     lastQuestionKey: "offer_sales_context_switch",
+    lastQuestionText: question,
+    candidateCustomers: [],
+    candidateProducts: [],
+    candidateBookings: [],
+    candidateOffers: [],
+    confirmationSummaryText: "",
+    extracted: buildSessionExtracted(session?.extracted, {
+      intentRouting: routingExtraction,
+    }),
+    resolved: {
+      ...resolvedWithoutContext,
+      [INTENT_SELECTION_CONTEXT_KEY]: context,
+    },
+  });
+
+  await replyToSession({
+    session: updatedSession,
+    user,
+    message: question,
+    dedupeSuffix,
+  });
+
+  return {
+    ok: true,
+    status: "awaiting_intent_selection",
+    session: updatedSession,
+    routingExtraction,
+  };
+}
+
+async function maybeAskForBackofficeContextSwitch({
+  session,
+  user,
+  text,
+  dedupeSuffix,
+  origin = "existing_session",
+}) {
+  const routingExtraction = await routeWhatsAppMessageIntent({ text });
+
+  if (
+    ![
+      "create_client",
+      "create_product",
+      "update_product_price",
+      "lookup_client_phone",
+      "lookup_product",
+      "ambiguous_backoffice_operation",
+    ].includes(routingExtraction.intent)
+  ) {
+    return null;
+  }
+
+  const question = buildBackofficeContextSwitchQuestion();
+  const resolvedWithoutContext = stripIntentSelectionContext(session?.resolved || {});
+  const context = {
+    selectionType: "backoffice_context_switch",
+    origin,
+    pendingIntent: routingExtraction.intent,
+    pendingIntentText: text,
+    priorFlowType: session?.flowType || "offer_create",
+    priorState: session?.state || "",
+    priorPendingFields: Array.isArray(session?.pendingFields)
+      ? session.pendingFields
+      : [],
+    priorLastQuestionKey: String(session?.lastQuestionKey || "").trim(),
+    priorLastQuestionText: String(session?.lastQuestionText || "").trim(),
+    priorCandidateCustomers: Array.isArray(session?.candidateCustomers)
+      ? session.candidateCustomers
+      : [],
+    priorCandidateProducts: Array.isArray(session?.candidateProducts)
+      ? session.candidateProducts
+      : [],
+    priorConfirmationSummaryText: String(
+      session?.confirmationSummaryText || "",
+    ).trim(),
+  };
+
+  const updatedSession = await updateWhatsAppSession(session._id, {
+    flowType: "intent_disambiguation",
+    state: "AWAITING_INTENT_SELECTION",
+    pendingFields: [],
+    lastQuestionKey: "backoffice_context_switch",
     lastQuestionText: question,
     candidateCustomers: [],
     candidateProducts: [],
@@ -1545,6 +1881,455 @@ async function initializeOfferSalesOperationSession({
   });
 }
 
+function resolveBackofficeFlowType(intent) {
+  if (intent === "create_client") return "client_create";
+  if (intent === "create_product") return "product_create";
+  if (intent === "update_product_price") return "product_update";
+  return "lookup_query";
+}
+
+async function runBackofficeLookupForSession({
+  session,
+  user,
+  text,
+  dedupeSuffix,
+  routingExtraction = null,
+  draftOverride = null,
+}) {
+  const draft = draftOverride
+    ? mergeBackofficeOperationDraft(getBackofficeOperationDraft(session), draftOverride)
+    : getBackofficeOperationDraft(session);
+
+  const missingFields = listMissingBackofficeFields(draft);
+  if (missingFields.length) {
+    const nextField = missingFields[0];
+    const question = buildBackofficeMissingFieldQuestion(nextField);
+    const updatedSession = await updateWhatsAppSession(session._id, {
+      flowType: "lookup_query",
+      state: "COLLECTING_FIELDS",
+      pendingFields: missingFields,
+      lastQuestionKey: nextField,
+      lastQuestionText: question,
+      resolved: {
+        ...(session?.resolved || {}),
+        backofficeOperation: draft,
+      },
+    });
+    await replyToSession({
+      session: updatedSession,
+      user,
+      message: question,
+      dedupeSuffix,
+    });
+    return { ok: true, status: "collecting_fields", session: updatedSession };
+  }
+
+  let message = "";
+  let lookupCount = 0;
+
+  if (draft.intent === "lookup_client_phone") {
+    const lookup = await lookupClientPhones({
+      workspaceId: user.workspaceId,
+      clientNameRaw: draft.client_full_name,
+      limit: 5,
+    });
+    lookupCount = lookup.count;
+    message = buildClientLookupMessage(draft.client_full_name, lookup.lines);
+  } else {
+    const sourceSuggestsCode = /\b(?:codigo|id(?: do produto)?|cod)\b/i.test(
+      String(draft.source_text || ""),
+    );
+    const lookupMode =
+      String(draft.product_lookup_mode || "").trim() === "by_code" ||
+      sourceSuggestsCode ||
+      (String(draft.product_code || "").trim() &&
+        !String(draft.product_name || "").trim())
+        ? "by_code"
+        : "by_name";
+    const lookup = await lookupProducts({
+      workspaceId: user.workspaceId,
+      productNameRaw: draft.product_name,
+      productCode: draft.product_code,
+      lookupMode,
+      limit: 8,
+    });
+    lookupCount = lookup.count;
+    message = buildProductLookupMessage(draft.product_name, lookup.lines, {
+      lookupMode,
+      productCode: draft.product_code,
+      items: lookup.items,
+    });
+  }
+
+  const completedSession = await markSessionCompleted(session._id, {
+    flowType: "lookup_query",
+    extracted: buildSessionExtracted(session?.extracted, {
+      ...(routingExtraction ? { intentRouting: routingExtraction } : {}),
+      backofficeOperation: draft,
+    }),
+    resolved: {
+      ...(stripIntentSelectionContext(session?.resolved || {})),
+      source_text: text,
+      backofficeOperation: draft,
+      lookupCount,
+    },
+  });
+
+  await closeActiveSessionsForRequester({
+    userId: user._id,
+    requesterPhoneDigits: completedSession.requesterPhoneDigits,
+    excludeSessionId: completedSession._id,
+    state: "EXPIRED",
+  });
+
+  await replyToSession({
+    session: completedSession,
+    user,
+    message,
+    dedupeSuffix,
+  });
+
+  return {
+    ok: true,
+    status: "completed",
+    session: completedSession,
+  };
+}
+
+async function advanceBackofficeOperationSession({ session, user, dedupeSuffix }) {
+  let draft = getBackofficeOperationDraft(session);
+  const flowType = resolveBackofficeFlowType(draft.intent);
+
+  if (!draft.intent || draft.intent === "unknown") {
+    const erroredSession = await markSessionError(session._id, {
+      code: "WHATSAPP_AI_UNKNOWN_BACKOFFICE_OPERATION",
+      message: "Intencao de backoffice nao reconhecida.",
+    });
+    await replyToSession({
+      session: erroredSession,
+      user,
+      message: buildErrorMessage(),
+      dedupeSuffix,
+    });
+    return { ok: true, status: "unknown_intent", session: erroredSession };
+  }
+
+  if (["lookup_client_phone", "lookup_product"].includes(draft.intent)) {
+    return runBackofficeLookupForSession({
+      session,
+      user,
+      text: String(draft.source_text || session?.lastUserMessageText || "").trim(),
+      dedupeSuffix,
+      draftOverride: draft,
+    });
+  }
+
+  if (draft.intent === "create_client" && !draft.allow_create_new) {
+    const query = String(draft.client_full_name || "").trim();
+    if (
+      query &&
+      String(draft.client_existing_lookup_query || "").trim() !== query
+    ) {
+      const existingClients = await searchClientCandidates({
+        workspaceId: user.workspaceId,
+        clientNameRaw: query,
+        limit: 5,
+      });
+
+      if (existingClients.length) {
+        const question = buildClientExistingMatchesQuestion(existingClients);
+        const updatedSession = await updateWhatsAppSession(session._id, {
+          flowType: "client_create",
+          state: "AWAITING_CUSTOMER_SELECTION",
+          pendingFields: [],
+          lastQuestionKey: "client_create_existing_selection",
+          lastQuestionText: question,
+          candidateCustomers: existingClients,
+          resolved: {
+            ...(session?.resolved || {}),
+            backofficeOperation: mergeBackofficeOperationDraft(draft, {
+              client_existing_lookup_query: query,
+            }),
+          },
+        });
+        await replyToSession({
+          session: updatedSession,
+          user,
+          message: question,
+          dedupeSuffix,
+        });
+        return {
+          ok: true,
+          status: "awaiting_customer_selection",
+          session: updatedSession,
+        };
+      }
+
+      draft = mergeBackofficeOperationDraft(draft, {
+        client_existing_lookup_query: query,
+        allow_create_new: true,
+      });
+    }
+  }
+
+  const missingFields = listMissingBackofficeFields(draft);
+  if (missingFields.length) {
+    const nextField = missingFields[0];
+    const question = buildBackofficeMissingFieldQuestion(nextField);
+    const updatedSession = await updateWhatsAppSession(session._id, {
+      flowType,
+      state: "COLLECTING_FIELDS",
+      pendingFields: missingFields,
+      lastQuestionKey: nextField,
+      lastQuestionText: question,
+      candidateCustomers: [],
+      candidateProducts: [],
+      resolved: {
+        ...(session?.resolved || {}),
+        backofficeOperation: draft,
+      },
+    });
+    await replyToSession({
+      session: updatedSession,
+      user,
+      message: question,
+      dedupeSuffix,
+    });
+    return { ok: true, status: "collecting_fields", session: updatedSession };
+  }
+
+  if (draft.intent === "create_client") {
+    const question = buildClientCreateConfirmation(draft);
+    const updatedSession = await updateWhatsAppSession(session._id, {
+      flowType: "client_create",
+      state: "AWAITING_BACKOFFICE_ACTION_CONFIRMATION",
+      lastQuestionKey: "client_create_confirmation",
+      lastQuestionText: question,
+      confirmationSummaryText: question,
+      candidateCustomers: [],
+      candidateProducts: [],
+      resolved: {
+        ...(session?.resolved || {}),
+        backofficeOperation: draft,
+      },
+    });
+    await replyToSession({
+      session: updatedSession,
+      user,
+      message: question,
+      dedupeSuffix,
+    });
+    return {
+      ok: true,
+      status: "awaiting_backoffice_action_confirmation",
+      session: updatedSession,
+    };
+  }
+
+  if (draft.intent === "create_product") {
+    const explicitProductCode = String(draft.product_code || "").trim();
+    if (explicitProductCode) {
+      const existingProduct = await findProductByCode({
+        workspaceId: user.workspaceId,
+        productCode: explicitProductCode,
+      });
+
+      if (existingProduct) {
+        const message = buildProductCodeConflictMessage(explicitProductCode);
+        const completedSession = await markSessionCompleted(session._id, {
+          flowType: "product_create",
+          resolved: {
+            ...(session?.resolved || {}),
+            backofficeOperation: draft,
+            backofficeResult: {
+              type: "product_create",
+              status: "skipped",
+              reason: "PRODUCT_CODE_CONFLICT",
+              externalProductId: explicitProductCode,
+              existingProductMongoId: existingProduct?.productId
+                ? String(existingProduct.productId)
+                : null,
+            },
+          },
+        });
+        await closeActiveSessionsForRequester({
+          userId: user._id,
+          requesterPhoneDigits: completedSession.requesterPhoneDigits,
+          excludeSessionId: completedSession._id,
+          state: "EXPIRED",
+        });
+        await replyToSession({
+          session: completedSession,
+          user,
+          message,
+          dedupeSuffix,
+        });
+        return { ok: true, status: "completed", session: completedSession };
+      }
+    }
+
+    const question = buildProductCreateConfirmation(draft);
+    const updatedSession = await updateWhatsAppSession(session._id, {
+      flowType: "product_create",
+      state: "AWAITING_BACKOFFICE_ACTION_CONFIRMATION",
+      lastQuestionKey: "product_create_confirmation",
+      lastQuestionText: question,
+      confirmationSummaryText: question,
+      candidateCustomers: [],
+      candidateProducts: [],
+      resolved: {
+        ...(session?.resolved || {}),
+        backofficeOperation: draft,
+      },
+    });
+    await replyToSession({
+      session: updatedSession,
+      user,
+      message: question,
+      dedupeSuffix,
+    });
+    return {
+      ok: true,
+      status: "awaiting_backoffice_action_confirmation",
+      session: updatedSession,
+    };
+  }
+
+  let selectedProduct = getSelectedBackofficeProduct(session);
+  if (!selectedProduct) {
+    const candidates = await searchProductCandidates({
+      workspaceId: user.workspaceId,
+      productNameRaw: draft.product_name,
+      limit: 5,
+    });
+
+    if (!candidates.length) {
+      const completedSession = await markSessionCompleted(session._id, {
+        flowType: "product_update",
+        resolved: {
+          ...(session?.resolved || {}),
+          backofficeOperation: draft,
+        },
+      });
+      await closeActiveSessionsForRequester({
+        userId: user._id,
+        requesterPhoneDigits: completedSession.requesterPhoneDigits,
+        excludeSessionId: completedSession._id,
+        state: "EXPIRED",
+      });
+      await replyToSession({
+        session: completedSession,
+        user,
+        message: "Nao encontrei um produto elegivel para atualizar o preco.",
+        dedupeSuffix,
+      });
+      return { ok: true, status: "completed", session: completedSession };
+    }
+
+    if (candidates.length > 1) {
+      const question = buildProductAmbiguityQuestion(candidates, {
+        itemLabel: ` (${draft.product_name})`,
+      });
+      const updatedSession = await updateWhatsAppSession(session._id, {
+        flowType: "product_update",
+        state: "AWAITING_PRODUCT_SELECTION",
+        lastQuestionKey: "product_update_selection",
+        lastQuestionText: question,
+        candidateProducts: candidates,
+        resolved: {
+          ...(session?.resolved || {}),
+          backofficeOperation: draft,
+          selectedBackofficeProduct: null,
+        },
+      });
+      await replyToSession({
+        session: updatedSession,
+        user,
+        message: question,
+        dedupeSuffix,
+      });
+      return {
+        ok: true,
+        status: "awaiting_product_selection",
+        session: updatedSession,
+      };
+    }
+
+    selectedProduct = candidates[0];
+  }
+
+  const question = buildProductPriceUpdateConfirmation(selectedProduct, draft);
+  const updatedSession = await updateWhatsAppSession(session._id, {
+    flowType: "product_update",
+    state: "AWAITING_BACKOFFICE_ACTION_CONFIRMATION",
+    lastQuestionKey: "product_update_confirmation",
+    lastQuestionText: question,
+    confirmationSummaryText: question,
+    candidateProducts: [],
+    resolved: {
+      ...(session?.resolved || {}),
+      backofficeOperation: draft,
+      selectedBackofficeProduct: selectedProduct,
+    },
+  });
+  await replyToSession({
+    session: updatedSession,
+    user,
+    message: question,
+    dedupeSuffix,
+  });
+  return {
+    ok: true,
+    status: "awaiting_backoffice_action_confirmation",
+    session: updatedSession,
+  };
+}
+
+async function initializeBackofficeOperationSession({
+  session,
+  user,
+  text,
+  dedupeSuffix,
+  routingExtraction = null,
+}) {
+  const extraction = await extractWhatsAppBackofficeOperation({ text });
+  const flowType = resolveBackofficeFlowType(extraction.intent);
+
+  const updatedSession = await updateWhatsAppSession(session._id, {
+    flowType,
+    extracted: buildSessionExtracted(session?.extracted, {
+      ...(routingExtraction ? { intentRouting: routingExtraction } : {}),
+      backofficeOperation: extraction,
+    }),
+    resolved: {
+      ...(stripIntentSelectionContext(session?.resolved || {})),
+      source_text: text,
+      backofficeOperation: extraction,
+      selectedBackofficeProduct: null,
+    },
+  });
+
+  if (extraction.intent === "unknown") {
+    const erroredSession = await markSessionError(updatedSession._id, {
+      code: "WHATSAPP_AI_UNKNOWN_BACKOFFICE_OPERATION",
+      message: "Intencao de cadastro e backoffice nao reconhecida.",
+    });
+    await replyToSession({
+      session: erroredSession,
+      user,
+      message: buildErrorMessage(),
+      dedupeSuffix,
+    });
+    return { ok: true, status: "unknown_intent", session: erroredSession };
+  }
+
+  return advanceBackofficeOperationSession({
+    session: updatedSession,
+    user,
+    dedupeSuffix,
+  });
+}
+
 async function advanceSessionAfterResolution({ session, user, dedupeSuffix }) {
   let resolved = {
     ...createEmptyResolved(),
@@ -1605,12 +2390,52 @@ async function advanceSessionAfterResolution({ session, user, dedupeSuffix }) {
   const resolvedItems = normalizeResolvedItems(resolved);
   for (let itemIndex = 0; itemIndex < resolvedItems.length; itemIndex += 1) {
     const item = normalizeResolvedItems(resolved)[itemIndex] || {};
+    const productCode = String(item.productCode || item.product_code || "").trim();
     const query = String(item.product_name_raw || "").trim();
     const lookupQuery = String(item.productLookupQuery || "").trim();
 
-    if (!query) {
+    if (productCode && !item.productId) {
+      const candidate = await resolveProductByCode({
+        workspaceId: user.workspaceId,
+        productCode,
+      });
+
+      if (!candidate) {
+        const question = buildProductCodeNotFoundQuestion(productCode, {
+          itemIndex,
+        });
+        return {
+          ok: true,
+          status: "collecting_fields",
+          session: await askSessionQuestion({
+            session,
+            user,
+            state: "COLLECTING_FIELDS",
+            pendingFields: listMissingMandatoryFields(resolved),
+            lastQuestionKey: `items.${itemIndex}.product_name_raw`,
+            lastQuestionText: question,
+            candidateCustomers: [],
+            candidateProducts: [],
+            dedupeSuffix,
+            resolved: buildSessionResolved(
+              resolved,
+              buildSparseItemPatch(itemIndex, {
+                productLookupQuery: productCode,
+                productLookupMiss: true,
+              }),
+            ),
+          }),
+        };
+      }
+
+      resolved = applyProductSelectionToItem(resolved, itemIndex, candidate, {
+        replaceRawName: true,
+        useCatalogPrice: true,
+      });
       continue;
     }
+
+    if (!query) continue;
 
     if (!item.productId && query && lookupQuery !== query) {
       const candidates = await resolveProductCandidates({
@@ -1725,6 +2550,10 @@ async function handleIntentSelection({ session, user, event, text }) {
         ? parseOfferSalesOperationSelectionReply(text)
         : context?.selectionType === "offer_sales_context_switch"
           ? parseOfferSalesContextSwitchReply(text)
+          : context?.selectionType === "backoffice_operation"
+            ? parseBackofficeOperationSelectionReply(text)
+            : context?.selectionType === "backoffice_context_switch"
+              ? parseBackofficeContextSwitchReply(text)
           : parseIntentSelectionReply(text);
   const pendingIntentText = String(context?.pendingIntentText || text || "").trim();
 
@@ -1941,6 +2770,121 @@ async function handleIntentSelection({ session, user, event, text }) {
     });
   }
 
+  if (selection === "CRIAR_CLIENTE") {
+    const resetSession = await updateWhatsAppSession(session._id, {
+      flowType: "client_create",
+      state: "NEW",
+      pendingFields: [],
+      lastQuestionKey: "",
+      lastQuestionText: "",
+      candidateCustomers: [],
+      candidateProducts: [],
+      candidateBookings: [],
+      candidateOffers: [],
+      confirmationSummaryText: "",
+      resolved: stripIntentSelectionContext(session?.resolved || {}),
+    });
+
+    return initializeBackofficeOperationSession({
+      session: resetSession,
+      user,
+      text: pendingIntentText || text,
+      dedupeSuffix: `${event.messageId}:create-client`,
+      routingExtraction: {
+        intent: "create_client",
+        source_text: pendingIntentText || text,
+      },
+    });
+  }
+
+  if (selection === "CRIAR_PRODUTO") {
+    const resetSession = await updateWhatsAppSession(session._id, {
+      flowType: "product_create",
+      state: "NEW",
+      pendingFields: [],
+      lastQuestionKey: "",
+      lastQuestionText: "",
+      candidateCustomers: [],
+      candidateProducts: [],
+      candidateBookings: [],
+      candidateOffers: [],
+      confirmationSummaryText: "",
+      resolved: stripIntentSelectionContext(session?.resolved || {}),
+    });
+
+    return initializeBackofficeOperationSession({
+      session: resetSession,
+      user,
+      text: pendingIntentText || text,
+      dedupeSuffix: `${event.messageId}:create-product`,
+      routingExtraction: {
+        intent: "create_product",
+        source_text: pendingIntentText || text,
+      },
+    });
+  }
+
+  if (selection === "ATUALIZAR_PRECO") {
+    const resetSession = await updateWhatsAppSession(session._id, {
+      flowType: "product_update",
+      state: "NEW",
+      pendingFields: [],
+      lastQuestionKey: "",
+      lastQuestionText: "",
+      candidateCustomers: [],
+      candidateProducts: [],
+      candidateBookings: [],
+      candidateOffers: [],
+      confirmationSummaryText: "",
+      resolved: stripIntentSelectionContext(session?.resolved || {}),
+    });
+
+    return initializeBackofficeOperationSession({
+      session: resetSession,
+      user,
+      text: pendingIntentText || text,
+      dedupeSuffix: `${event.messageId}:update-product-price`,
+      routingExtraction: {
+        intent: "update_product_price",
+        source_text: pendingIntentText || text,
+      },
+    });
+  }
+
+  if (selection === "CONSULTAR") {
+    const resetSession = await updateWhatsAppSession(session._id, {
+      flowType: "lookup_query",
+      state: "NEW",
+      pendingFields: [],
+      lastQuestionKey: "",
+      lastQuestionText: "",
+      candidateCustomers: [],
+      candidateProducts: [],
+      candidateBookings: [],
+      candidateOffers: [],
+      confirmationSummaryText: "",
+      resolved: stripIntentSelectionContext(session?.resolved || {}),
+    });
+
+    return initializeBackofficeOperationSession({
+      session: resetSession,
+      user,
+      text: pendingIntentText || text,
+      dedupeSuffix: `${event.messageId}:lookup`,
+      routingExtraction:
+        String(context?.pendingIntent || "").trim() &&
+        String(context?.pendingIntent || "").trim() !== "ambiguous_backoffice_operation"
+          ? {
+              intent: String(context?.pendingIntent || "").trim(),
+              source_text: pendingIntentText || text,
+            }
+          : {
+              intent: "unknown",
+              source_text: pendingIntentText || text,
+            },
+    });
+  }
+
   if (selection === "AGENDA") {
     const routedIntent =
       String(context?.pendingIntent || "").trim() || "query_daily_agenda";
@@ -1993,6 +2937,61 @@ async function handleIntentSelection({ session, user, event, text }) {
         intent: "query_daily_agenda",
         source_text: pendingIntentText || text,
       },
+    });
+  }
+
+  if (selection === "BACKOFFICE") {
+    const routedIntent =
+      String(context?.pendingIntent || "").trim() || "ambiguous_backoffice_operation";
+
+    if (
+      [
+        "create_client",
+        "create_product",
+        "update_product_price",
+        "lookup_client_phone",
+        "lookup_product",
+      ].includes(routedIntent)
+    ) {
+      const resetSession = await updateWhatsAppSession(session._id, {
+        flowType:
+          routedIntent === "create_client"
+            ? "client_create"
+            : routedIntent === "create_product"
+              ? "product_create"
+              : routedIntent === "update_product_price"
+                ? "product_update"
+                : "lookup_query",
+        state: "NEW",
+        pendingFields: [],
+        lastQuestionKey: "",
+        lastQuestionText: "",
+        candidateCustomers: [],
+        candidateProducts: [],
+        candidateBookings: [],
+        candidateOffers: [],
+        confirmationSummaryText: "",
+        resolved: stripIntentSelectionContext(session?.resolved || {}),
+      });
+
+      return initializeBackofficeOperationSession({
+        session: resetSession,
+        user,
+        text: pendingIntentText || text,
+        dedupeSuffix: `${event.messageId}:backoffice`,
+        routingExtraction: {
+          intent: routedIntent,
+          source_text: pendingIntentText || text,
+        },
+      });
+    }
+
+    return askBackofficeOperationSelection({
+      session,
+      user,
+      pendingIntentText: pendingIntentText || text,
+      dedupeSuffix: `${event.messageId}:backoffice-operation-selection`,
+      origin: "context_switch",
     });
   }
 
@@ -2070,6 +3069,10 @@ async function handleIntentSelection({ session, user, event, text }) {
           ? buildInvalidOfferSalesSelectionMessage(session?.lastQuestionText)
           : context?.selectionType === "offer_sales_context_switch"
             ? buildInvalidOfferSalesContextSwitchMessage(session?.lastQuestionText)
+            : context?.selectionType === "backoffice_operation"
+              ? buildInvalidBackofficeSelectionMessage(session?.lastQuestionText)
+              : context?.selectionType === "backoffice_context_switch"
+                ? buildInvalidBackofficeContextSwitchMessage(session?.lastQuestionText)
         : buildInvalidIntentSelectionMessage(session?.lastQuestionText),
     dedupeSuffix: `${event.messageId}:invalid-intent-selection`,
   });
@@ -2416,6 +3419,186 @@ async function handleOfferActionConfirmation({
   }
 }
 
+async function handleBackofficeActionConfirmation({
+  session,
+  user,
+  text,
+  event,
+}) {
+  const confirmation = parseConfirmationReply(text);
+
+  if (confirmation === "CANCELAR") {
+    const cancelledSession = await markSessionCancelled(session._id);
+    await closeActiveSessionsForRequester({
+      userId: user._id,
+      requesterPhoneDigits: session.requesterPhoneDigits,
+      excludeSessionId: cancelledSession._id,
+      state: "EXPIRED",
+    });
+    await replyToSession({
+      session: cancelledSession,
+      user,
+      message: buildCancelledMessage(),
+      dedupeSuffix: `${event.messageId}:cancel`,
+    });
+    return { ok: true, status: "cancelled", session: cancelledSession };
+  }
+
+  if (confirmation !== "CONFIRMAR") {
+    await replyToSession({
+      session,
+      user,
+      message: buildInvalidConfirmationMessage(),
+      dedupeSuffix: `${event.messageId}:invalid-confirmation`,
+    });
+    return { ok: true, status: "awaiting_backoffice_action_confirmation", session };
+  }
+
+  const processingSession = await updateWhatsAppSession(session._id, {
+    state: "PROCESSING_CREATE",
+  });
+  const draft = getBackofficeOperationDraft(processingSession);
+  const selectedProduct = getSelectedBackofficeProduct(processingSession);
+
+  try {
+    let completedSession = null;
+    let successMessage = "";
+
+    if (draft.intent === "create_client") {
+      const client = await createClientForWorkspace({
+        workspaceId: user.workspaceId,
+        ownerUserId: user._id || null,
+        fullName: String(draft.client_full_name || "").trim(),
+        phone: normalizeClientPhoneForStorage(draft.client_phone || ""),
+        email: parseEmailFromText(draft.client_email || ""),
+        cpfCnpj: parseCpfCnpjDigits(draft.client_cpf_cnpj || ""),
+      });
+
+      completedSession = await markSessionCompleted(processingSession._id, {
+        resolved: {
+          ...(processingSession.resolved || {}),
+          backofficeResult: {
+            type: "client_create",
+            clientId: client?._id ? String(client._id) : null,
+          },
+        },
+      });
+      successMessage = buildClientCreatedSuccessMessage(client);
+    } else if (draft.intent === "create_product") {
+      const product = await createProductForWorkspace({
+        workspaceId: user.workspaceId,
+        ownerUserId: user._id || null,
+        productId: String(draft.product_code || "").trim(),
+        name: String(draft.product_name || "").trim(),
+        description: String(draft.product_description || "").trim(),
+        priceCents: Number(draft.product_price_cents || 0),
+      });
+
+      completedSession = await markSessionCompleted(processingSession._id, {
+        resolved: {
+          ...(processingSession.resolved || {}),
+          backofficeResult: {
+            type: "product_create",
+            productId: product?._id ? String(product._id) : null,
+            externalProductId: String(product?.productId || "").trim(),
+          },
+        },
+      });
+      successMessage = buildProductCreatedSuccessMessage(product);
+    } else if (draft.intent === "update_product_price") {
+      if (!selectedProduct?.productId) {
+        const err = new Error("Produto selecionado nao encontrado na sessao.");
+        err.status = 404;
+        err.statusCode = 404;
+        err.code = "PRODUCT_NOT_FOUND";
+        throw err;
+      }
+
+      const product = await updateProductPriceForWorkspace({
+        workspaceId: user.workspaceId,
+        productMongoId: selectedProduct.productId,
+        priceCents: Number(draft.product_price_cents || 0),
+      });
+
+      if (!product) {
+        const err = new Error("Produto nao encontrado.");
+        err.status = 404;
+        err.statusCode = 404;
+        err.code = "PRODUCT_NOT_FOUND";
+        throw err;
+      }
+
+      completedSession = await markSessionCompleted(processingSession._id, {
+        resolved: {
+          ...(processingSession.resolved || {}),
+          backofficeResult: {
+            type: "product_price_update",
+            productId: product?._id ? String(product._id) : null,
+          },
+        },
+      });
+      successMessage = buildProductPriceUpdatedSuccessMessage(product);
+    } else {
+      const err = new Error("Operacao de backoffice nao suportada.");
+      err.code = "BACKOFFICE_OPERATION_UNSUPPORTED";
+      throw err;
+    }
+
+    await closeActiveSessionsForRequester({
+      userId: user._id,
+      requesterPhoneDigits: processingSession.requesterPhoneDigits,
+      excludeSessionId: completedSession._id,
+      state: "EXPIRED",
+    });
+    await replyToSession({
+      session: completedSession,
+      user,
+      message: successMessage,
+      dedupeSuffix: `${event.messageId}:backoffice-success`,
+    });
+    return { ok: true, status: "completed", session: completedSession };
+  } catch (error) {
+    const businessConflict =
+      Number(error?.status || error?.statusCode || 0) >= 400 &&
+      Number(error?.status || error?.statusCode || 0) < 500;
+
+    if (businessConflict) {
+      const completedSession = await markSessionCompleted(processingSession._id, {
+        resolved: {
+          ...(processingSession.resolved || {}),
+          backofficeResult: {
+            type: draft.intent,
+            status: "skipped",
+            reason: String(error?.message || "").trim(),
+          },
+        },
+      });
+      await closeActiveSessionsForRequester({
+        userId: user._id,
+        requesterPhoneDigits: processingSession.requesterPhoneDigits,
+        excludeSessionId: completedSession._id,
+        state: "EXPIRED",
+      });
+      await replyToSession({
+        session: completedSession,
+        user,
+        message: String(error?.message || "Nao consegui concluir a operacao."),
+        dedupeSuffix: `${event.messageId}:backoffice-business-conflict`,
+      });
+      return { ok: true, status: "completed", session: completedSession };
+    }
+
+    const erroredSession = await markSessionError(processingSession._id, error);
+    await replyToSession({
+      session: erroredSession,
+      user,
+      message: buildErrorMessage(),
+      dedupeSuffix: `${event.messageId}:backoffice-error`,
+    });
+    return { ok: true, status: "error", session: erroredSession };
+  }
+}
+
 async function handleOpenSession({ session, user, event, text }) {
   const refreshedSession = await appendInboundMessageToSession(session._id, {
     sourceMessageId: event.messageId,
@@ -2442,6 +3625,69 @@ async function handleOpenSession({ session, user, event, text }) {
   }
 
   if (refreshedSession.state === "AWAITING_CUSTOMER_SELECTION") {
+    if (
+      refreshedSession.flowType === "client_create" &&
+      refreshedSession.lastQuestionKey === "client_create_existing_selection"
+    ) {
+      const normalizedReply = normalizeComparableText(text);
+
+      if (["novo", "criar novo", "criar", "continuar"].includes(normalizedReply)) {
+        const nextDraft = mergeBackofficeOperationDraft(
+          getBackofficeOperationDraft(refreshedSession),
+          { allow_create_new: true },
+        );
+        const updatedSession = await updateWhatsAppSession(refreshedSession._id, {
+          candidateCustomers: [],
+          resolved: {
+            ...(refreshedSession.resolved || {}),
+            backofficeOperation: nextDraft,
+          },
+        });
+        return advanceBackofficeOperationSession({
+          session: updatedSession,
+          user,
+          dedupeSuffix,
+        });
+      }
+
+      const selectedExistingClient = pickCandidateByOrdinal(
+        text,
+        refreshedSession.candidateCustomers || [],
+      );
+      if (!selectedExistingClient) {
+        await replyToSession({
+          session: refreshedSession,
+          user,
+          message: buildInvalidSelectionMessage(refreshedSession.lastQuestionText),
+          dedupeSuffix,
+        });
+        return { ok: true, status: "awaiting_customer_selection", session: refreshedSession };
+      }
+
+      const completedSession = await markSessionCompleted(refreshedSession._id, {
+        resolved: {
+          ...(refreshedSession.resolved || {}),
+          backofficeResult: {
+            type: "client_create_existing",
+            clientId: selectedExistingClient.customerId || null,
+          },
+        },
+      });
+      await closeActiveSessionsForRequester({
+        userId: user._id,
+        requesterPhoneDigits: completedSession.requesterPhoneDigits,
+        excludeSessionId: completedSession._id,
+        state: "EXPIRED",
+      });
+      await replyToSession({
+        session: completedSession,
+        user,
+        message: `Ja existe um cliente cadastrado: ${selectedExistingClient.fullName}. Nenhum novo cadastro foi criado.`,
+        dedupeSuffix,
+      });
+      return { ok: true, status: "completed", session: completedSession };
+    }
+
     const selected = pickCandidateByOrdinal(
       text,
       refreshedSession.candidateCustomers || [],
@@ -2454,6 +3700,14 @@ async function handleOpenSession({ session, user, event, text }) {
         dedupeSuffix: `${event.messageId}:offer-sales-context-switch`,
       });
       if (salesContextSwitch) return salesContextSwitch;
+
+      const backofficeContextSwitch = await maybeAskForBackofficeContextSwitch({
+        session: refreshedSession,
+        user,
+        text,
+        dedupeSuffix: `${event.messageId}:backoffice-context-switch`,
+      });
+      if (backofficeContextSwitch) return backofficeContextSwitch;
 
       const intentSelection = await maybeAskForIntentSelection({
         session: refreshedSession,
@@ -2490,6 +3744,38 @@ async function handleOpenSession({ session, user, event, text }) {
   }
 
   if (refreshedSession.state === "AWAITING_PRODUCT_SELECTION") {
+    if (
+      refreshedSession.flowType === "product_update" &&
+      refreshedSession.lastQuestionKey === "product_update_selection"
+    ) {
+      const selectedProduct = pickCandidateByOrdinal(
+        text,
+        refreshedSession.candidateProducts || [],
+      );
+      if (!selectedProduct) {
+        await replyToSession({
+          session: refreshedSession,
+          user,
+          message: buildInvalidSelectionMessage(refreshedSession.lastQuestionText),
+          dedupeSuffix,
+        });
+        return { ok: true, status: "awaiting_product_selection", session: refreshedSession };
+      }
+
+      const updatedSession = await updateWhatsAppSession(refreshedSession._id, {
+        candidateProducts: [],
+        resolved: {
+          ...(refreshedSession.resolved || {}),
+          selectedBackofficeProduct: selectedProduct,
+        },
+      });
+      return advanceBackofficeOperationSession({
+        session: updatedSession,
+        user,
+        dedupeSuffix,
+      });
+    }
+
     const selected = pickCandidateByOrdinal(
       text,
       refreshedSession.candidateProducts || [],
@@ -2502,6 +3788,14 @@ async function handleOpenSession({ session, user, event, text }) {
         dedupeSuffix: `${event.messageId}:offer-sales-context-switch`,
       });
       if (salesContextSwitch) return salesContextSwitch;
+
+      const backofficeContextSwitch = await maybeAskForBackofficeContextSwitch({
+        session: refreshedSession,
+        user,
+        text,
+        dedupeSuffix: `${event.messageId}:backoffice-context-switch`,
+      });
+      if (backofficeContextSwitch) return backofficeContextSwitch;
 
       const intentSelection = await maybeAskForIntentSelection({
         session: refreshedSession,
@@ -2553,6 +3847,14 @@ async function handleOpenSession({ session, user, event, text }) {
         dedupeSuffix: `${event.messageId}:offer-sales-context-switch`,
       });
       if (salesContextSwitch) return salesContextSwitch;
+
+      const backofficeContextSwitch = await maybeAskForBackofficeContextSwitch({
+        session: refreshedSession,
+        user,
+        text,
+        dedupeSuffix: `${event.messageId}:backoffice-context-switch`,
+      });
+      if (backofficeContextSwitch) return backofficeContextSwitch;
 
       const intentSelection = await maybeAskForIntentSelection({
         session: refreshedSession,
@@ -2734,6 +4036,14 @@ async function handleOpenSession({ session, user, event, text }) {
     });
     if (salesContextSwitch) return salesContextSwitch;
 
+    const backofficeContextSwitch = await maybeAskForBackofficeContextSwitch({
+      session: refreshedSession,
+      user,
+      text,
+      dedupeSuffix: `${event.messageId}:backoffice-context-switch`,
+    });
+    if (backofficeContextSwitch) return backofficeContextSwitch;
+
     const intentSelection = await maybeAskForIntentSelection({
       session: refreshedSession,
       user,
@@ -2760,6 +4070,15 @@ async function handleOpenSession({ session, user, event, text }) {
     });
   }
 
+  if (refreshedSession.state === "AWAITING_BACKOFFICE_ACTION_CONFIRMATION") {
+    return handleBackofficeActionConfirmation({
+      session: refreshedSession,
+      user,
+      text,
+      event,
+    });
+  }
+
   if (refreshedSession.state === "AWAITING_BOOKING_CHANGE_CONFIRMATION") {
     return handleBookingChangeConfirmation({
       session: refreshedSession,
@@ -2777,6 +4096,44 @@ async function handleOpenSession({ session, user, event, text }) {
       dedupeSuffix,
     });
     return { ok: true, status: "processing" };
+  }
+
+  if (
+    refreshedSession.state === "COLLECTING_FIELDS" &&
+    ["client_create", "product_create", "product_update", "lookup_query"].includes(
+      String(refreshedSession.flowType || ""),
+    )
+  ) {
+    const field = String(refreshedSession.lastQuestionKey || "").trim();
+    if (!validateBackofficeFieldValue(field, text)) {
+      await replyToSession({
+        session: refreshedSession,
+        user,
+        message: buildBackofficeMissingFieldQuestion(field),
+        dedupeSuffix,
+      });
+      return { ok: true, status: "collecting_fields", session: refreshedSession };
+    }
+
+    const patch = parseDirectReplyValue(field, text);
+    const nextDraft = mergeBackofficeOperationDraft(
+      getBackofficeOperationDraft(refreshedSession),
+      patch,
+    );
+    const updatedSession = await updateWhatsAppSession(refreshedSession._id, {
+      extracted: buildSessionExtracted(refreshedSession.extracted, {
+        backofficeOperation: nextDraft,
+      }),
+      resolved: {
+        ...(refreshedSession.resolved || {}),
+        backofficeOperation: nextDraft,
+      },
+    });
+    return advanceBackofficeOperationSession({
+      session: updatedSession,
+      user,
+      dedupeSuffix,
+    });
   }
 
   const pendingFields = Array.isArray(refreshedSession.pendingFields)
@@ -2799,6 +4156,14 @@ async function handleOpenSession({ session, user, event, text }) {
       dedupeSuffix: `${event.messageId}:offer-sales-context-switch`,
     });
     if (salesContextSwitch) return salesContextSwitch;
+
+    const backofficeContextSwitch = await maybeAskForBackofficeContextSwitch({
+      session: refreshedSession,
+      user,
+      text,
+      dedupeSuffix: `${event.messageId}:backoffice-context-switch`,
+    });
+    if (backofficeContextSwitch) return backofficeContextSwitch;
 
     const intentSelection = await maybeAskForIntentSelection({
       session: refreshedSession,
@@ -3015,6 +4380,18 @@ export async function processInboundWhatsAppEvent(event) {
       });
     }
 
+    if (
+      ["lookup_client_phone", "lookup_product"].includes(routingExtraction.intent)
+    ) {
+      return initializeBackofficeOperationSession({
+        session: sessionAfterRouting,
+        user,
+        text,
+        dedupeSuffix: `${event.messageId}:backoffice-lookup`,
+        routingExtraction,
+      });
+    }
+
     if (routingExtraction.intent === "ambiguous_offer_or_agenda") {
       const intentSelection = await maybeAskForIntentSelection({
         session: sessionAfterRouting,
@@ -3032,6 +4409,15 @@ export async function processInboundWhatsAppEvent(event) {
         user,
         pendingIntentText: text,
         dedupeSuffix: `${event.messageId}:offer-sales-selection`,
+      });
+    }
+
+    if (routingExtraction.intent === "ambiguous_backoffice_operation") {
+      return askBackofficeOperationSelection({
+        session: sessionAfterRouting,
+        user,
+        pendingIntentText: text,
+        dedupeSuffix: `${event.messageId}:backoffice-selection`,
       });
     }
 
@@ -3070,10 +4456,25 @@ export async function processInboundWhatsAppEvent(event) {
       });
     }
 
+    if (
+      ["create_client", "create_product", "update_product_price"].includes(
+        routingExtraction.intent,
+      )
+    ) {
+      return initializeBackofficeOperationSession({
+        session: sessionAfterRouting,
+        user,
+        text,
+        dedupeSuffix: `${event.messageId}:backoffice-operation`,
+        routingExtraction,
+      });
+    }
+
     if (routingExtraction.intent !== "create_offer_send_whatsapp") {
       const erroredSession = await markSessionError(sessionAfterRouting._id, {
         code: "WHATSAPP_AI_UNKNOWN_INTENT",
-        message: "Intencao nao reconhecida para proposta, agenda ou cobranca e vendas.",
+        message:
+          "Intencao nao reconhecida para proposta, agenda, cobranca e vendas ou backoffice.",
       });
 
       await replyToSession({

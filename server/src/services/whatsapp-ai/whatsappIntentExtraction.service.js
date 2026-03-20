@@ -1,5 +1,6 @@
 import {
   buildAgendaDateExtractionPrompt,
+  buildBackofficeOperationPrompt,
   buildBookingOperationPrompt,
   buildIntentRoutingPrompt,
   buildOfferSalesOperationPrompt,
@@ -8,11 +9,13 @@ import {
 } from "./whatsappAi.prompts.js";
 import {
   buildAgendaDateResponseFormat,
+  buildBackofficeOperationResponseFormat,
   buildBookingOperationResponseFormat,
   buildIntentRoutingResponseFormat,
   buildOfferSalesOperationResponseFormat,
   buildExtractionResponseFormat,
   parseAgendaDateExtraction,
+  parseBackofficeOperationExtraction,
   parseBookingOperationExtraction,
   parseIntentRoutingExtraction,
   parseOfferSalesOperationExtraction,
@@ -138,5 +141,13 @@ export async function extractWhatsAppOfferSalesOperation({
     }),
     responseFormat: buildOfferSalesOperationResponseFormat(),
     parseResponse: parseOfferSalesOperationExtraction,
+  });
+}
+
+export async function extractWhatsAppBackofficeOperation({ text }) {
+  return requestStructuredExtraction({
+    ...buildBackofficeOperationPrompt({ text }),
+    responseFormat: buildBackofficeOperationResponseFormat(),
+    parseResponse: parseBackofficeOperationExtraction,
   });
 }

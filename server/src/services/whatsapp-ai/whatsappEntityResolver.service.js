@@ -115,13 +115,16 @@ export function applyProductSelectionToItem(
   resolved = {},
   itemIndex = 0,
   candidate = null,
+  options = {},
 ) {
   if (!candidate) return resolved;
 
   const items = normalizeResolvedItems(resolved);
   const currentItem = items[itemIndex] || null;
   const productNameRaw = String(
-    currentItem?.product_name_raw || candidate.name || "",
+    options?.replaceRawName
+      ? candidate.name || currentItem?.product_name_raw || ""
+      : currentItem?.product_name_raw || candidate.name || "",
   ).trim();
 
   return mergeResolvedDraft(
@@ -133,6 +136,16 @@ export function applyProductSelectionToItem(
       productId: candidate.productId || null,
       productName: String(candidate.name || productNameRaw).trim(),
       product_name_raw: productNameRaw,
+      ...(candidate.externalProductId ? { productCode: candidate.externalProductId } : {}),
+      ...(options?.useCatalogPrice
+        ? {
+            unit_price_cents:
+              Number.isFinite(Number(candidate.priceCents)) &&
+              Number(candidate.priceCents) >= 0
+                ? Number(candidate.priceCents)
+                : null,
+          }
+        : {}),
       productLookupQuery: productNameRaw,
       productLookupMiss: false,
     }),
@@ -199,4 +212,29 @@ export async function resolveProductCandidates({
       .slice(0, limit),
     "productId",
   );
+}
+
+export async function resolveProductByCode({
+  workspaceId,
+  productCode,
+}) {
+  const normalizedProductCode = String(productCode || "").trim();
+  if (!normalizedProductCode) return null;
+
+  const row = await Product.findOne({
+    workspaceId,
+    productId: normalizedProductCode,
+  })
+    .select("_id name productId priceCents")
+    .lean();
+
+  if (!row) return null;
+
+  return {
+    productId: row._id,
+    name: String(row.name || "").trim(),
+    externalProductId: String(row.productId || "").trim(),
+    priceCents: Number(row.priceCents || 0) || 0,
+    score: 100,
+  };
 }

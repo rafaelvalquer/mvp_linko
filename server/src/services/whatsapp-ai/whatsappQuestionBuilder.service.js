@@ -25,8 +25,9 @@ function buildItemLine(item = {}, index = 0) {
   const unitPriceCents = Number(item?.unit_price_cents || 0);
   const totalCents = qty * unitPriceCents;
   const label = String(item?.productName || item?.product_name_raw || `Item ${index + 1}`).trim();
+  const productCode = String(item?.productCode || item?.product_code || "").trim();
 
-  return `${index + 1}. ${label} - Qtd: ${qty} - Valor unitario: ${formatMoney(unitPriceCents)} - Total: ${formatMoney(totalCents)}`;
+  return `${index + 1}. ${label}${productCode ? ` - Codigo: ${productCode}` : ""} - Qtd: ${qty} - Valor unitario: ${formatMoney(unitPriceCents)} - Total: ${formatMoney(totalCents)}`;
 }
 
 function formatAgendaDate(dateISO, timeZone = "America/Sao_Paulo") {
@@ -135,12 +136,32 @@ export function buildOfferSalesOperationDisambiguationQuestion() {
   ].join("\n");
 }
 
+export function buildBackofficeOperationDisambiguationQuestion() {
+  return [
+    "Voce quer cadastrar cliente, cadastrar produto, atualizar preco ou consultar dados?",
+    "",
+    "1. Cadastrar cliente",
+    "2. Cadastrar produto",
+    "3. Atualizar preco",
+    "4. Consultar dados",
+  ].join("\n");
+}
+
 export function buildOfferSalesContextSwitchQuestion() {
   return [
     "Existe uma proposta em andamento. Voce quer continuar a proposta atual ou seguir com cobranca e vendas?",
     "",
     "1. Proposta",
     "2. Cobranca e vendas",
+  ].join("\n");
+}
+
+export function buildBackofficeContextSwitchQuestion() {
+  return [
+    "Existe uma proposta em andamento. Voce quer continuar a proposta atual ou seguir com cadastro e backoffice?",
+    "",
+    "1. Proposta",
+    "2. Cadastro e backoffice",
   ].join("\n");
 }
 
@@ -181,6 +202,16 @@ export function buildProductAmbiguityQuestion(candidates = [], context = {}) {
       : "";
 
   return `Encontrei ${candidates.length} produtos parecidos${suffix}. Responda com o numero:\n${formattedOptions}`;
+}
+
+export function buildProductCodeNotFoundQuestion(productCode = "", context = {}) {
+  const itemIndex =
+    Number.isInteger(context?.itemIndex) && context.itemIndex >= 0
+      ? context.itemIndex
+      : null;
+  const suffix = itemIndex != null ? ` para o item ${itemIndex + 1}` : "";
+
+  return `Nao encontrei produto com o codigo ${String(productCode || "informado").trim()}${suffix}. Informe outro codigo ou o nome do produto.`;
 }
 
 export function buildMissingFieldQuestion(field, resolved = {}) {
@@ -301,6 +332,168 @@ export function buildInvalidOfferSalesContextSwitchMessage(originalQuestion) {
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+export function buildInvalidBackofficeSelectionMessage(originalQuestion) {
+  return [
+    "Nao entendi sua escolha. Responda com CLIENTE, PRODUTO, PRECO, CONSULTAR, 1, 2, 3 ou 4.",
+    "",
+    String(originalQuestion || buildBackofficeOperationDisambiguationQuestion()).trim(),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function buildInvalidBackofficeContextSwitchMessage(originalQuestion) {
+  return [
+    "Nao entendi sua escolha. Responda com PROPOSTA, BACKOFFICE, 1, 2 ou CANCELAR.",
+    "",
+    String(originalQuestion || buildBackofficeContextSwitchQuestion()).trim(),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function buildClientExistingMatchesQuestion(candidates = []) {
+  const options = candidates
+    .map(
+      (candidate, index) =>
+        `${index + 1}. ${candidate.fullName} - ${formatPhoneDisplay(candidate.phoneDigits || candidate.phone)}`,
+    )
+    .join("\n");
+
+  return [
+    `Encontrei ${candidates.length} clientes parecidos.`,
+    "Responda com o numero para usar um cadastro existente ou com NOVO para criar outro.",
+    options,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function buildClientCreateConfirmation(draft = {}) {
+  return [
+    "Confirma a criacao deste cliente?",
+    "",
+    `Nome: ${String(draft?.client_full_name || "").trim()}`,
+    `Telefone: ${formatPhoneDisplay(draft?.client_phone || "")}`,
+    `Email: ${String(draft?.client_email || "").trim()}`,
+    `CPF/CNPJ: ${String(draft?.client_cpf_cnpj || "").trim()}`,
+    "",
+    "Digite CONFIRMAR para continuar ou CANCELAR para desistir.",
+  ].join("\n");
+}
+
+export function buildClientCreatedSuccessMessage(client = {}) {
+  return `Cliente ${String(client?.fullName || "informado").trim()} criado com sucesso.`;
+}
+
+export function buildProductCreateConfirmation(draft = {}) {
+  const productCode = String(draft?.product_code || "").trim();
+  return [
+    "Confirma o cadastro deste produto?",
+    "",
+    `Produto: ${String(draft?.product_name || "").trim()}`,
+    `Codigo: ${productCode || "sera gerado automaticamente"}`,
+    `Preco: ${formatMoney(draft?.product_price_cents)}`,
+    String(draft?.product_description || "").trim()
+      ? `Descricao: ${String(draft.product_description || "").trim()}`
+      : "",
+    "",
+    "Digite CONFIRMAR para continuar ou CANCELAR para desistir.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function buildProductCreatedSuccessMessage(product = {}) {
+  const productCode = String(product?.productId || "").trim();
+  return `Produto ${String(product?.name || "informado").trim()} cadastrado com sucesso${
+    productCode ? ` com o codigo ${productCode}` : ""
+  }.`;
+}
+
+export function buildProductPriceUpdateConfirmation(product = {}, draft = {}) {
+  return [
+    "Confirma a atualizacao deste produto?",
+    "",
+    `Produto: ${String(product?.name || draft?.product_name || "").trim()}`,
+    `Preco atual: ${formatMoney(product?.priceCents)}`,
+    `Novo preco: ${formatMoney(draft?.product_price_cents)}`,
+    "",
+    "Digite CONFIRMAR para continuar ou CANCELAR para desistir.",
+  ].join("\n");
+}
+
+export function buildProductPriceUpdatedSuccessMessage(product = {}) {
+  return `Preco do produto ${String(product?.name || "informado").trim()} atualizado com sucesso.`;
+}
+
+export function buildBackofficeMissingFieldQuestion(field) {
+  if (field === "client_full_name") return "Qual e o nome completo do cliente?";
+  if (field === "client_phone") return "Qual e o telefone do cliente com DDD?";
+  if (field === "client_email") return "Qual e o email do cliente?";
+  if (field === "client_cpf_cnpj") return "Qual e o CPF ou CNPJ do cliente?";
+  if (field === "product_name") return "Qual e o nome do produto?";
+  if (field === "product_code") return "Qual e o codigo do produto?";
+  if (field === "product_price_cents") return "Qual e o preco do produto em reais?";
+  if (field === "product_description") return "Qual e a descricao do produto?";
+  return "Qual informacao esta faltando?";
+}
+
+export function buildClientLookupMessage(clientName = "", lines = []) {
+  const safeLines = Array.isArray(lines) ? lines.filter(Boolean) : [];
+  if (!safeLines.length) {
+    return `Nao encontrei telefone para ${String(clientName || "esse cliente").trim()}.`;
+  }
+
+  return [
+    `Telefone(s) encontrado(s) para ${String(clientName || "o cliente").trim()}:`,
+    "",
+    ...safeLines,
+  ].join("\n");
+}
+
+export function buildProductCodeConflictMessage(productCode = "") {
+  return `Ja existe um produto com esse codigo neste workspace. Informe outro codigo ou use o fluxo de atualizacao de preco.`;
+}
+
+export function buildProductLookupMessage(productName = "", lines = [], options = {}) {
+  const safeLines = Array.isArray(lines) ? lines.filter(Boolean) : [];
+  const lookupMode = String(options?.lookupMode || "").trim();
+  const productCode = String(options?.productCode || "").trim();
+  const firstItem = Array.isArray(options?.items) ? options.items[0] : null;
+
+  if (lookupMode === "by_code") {
+    if (!firstItem) {
+      return `Nao encontrei produto com o codigo ${productCode || "informado"}.`;
+    }
+
+    return [
+      `Produto encontrado para o codigo ${productCode || firstItem?.externalProductId || "informado"}:`,
+      "",
+      `Codigo: ${String(firstItem?.externalProductId || productCode || "").trim()}`,
+      `Nome: ${String(firstItem?.name || "Produto").trim()}`,
+      `Preco: ${formatMoney(firstItem?.priceCents)}`,
+      String(firstItem?.description || "").trim()
+        ? `Descricao: ${String(firstItem.description || "").trim()}`
+        : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  if (!safeLines.length) {
+    return `Nao encontrei produtos com nome parecido com ${String(
+      productName || "essa busca",
+    ).trim()}.`;
+  }
+
+  return [
+    `Produtos encontrados para ${String(productName || "essa busca").trim()}:`,
+    "",
+    ...safeLines,
+  ].join("\n");
 }
 
 export function buildPendingOffersEmptyMessage() {

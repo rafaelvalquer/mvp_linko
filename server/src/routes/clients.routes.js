@@ -5,6 +5,7 @@ import mongoose from "mongoose";
 
 import { ensureAuth, tenantFromUser } from "../middleware/auth.js";
 import { Client } from "../models/Client.js";
+import { createClientForWorkspace } from "../services/clients/createClient.service.js";
 
 const r = Router();
 
@@ -99,20 +100,9 @@ r.post("/clients", ensureAuth, tenantFromUser, async (req, res) => {
       return res.status(400).json({ ok: false, error: "phone required" });
 
     // tenta gerar clientId sem colisão (quase impossível, mas garantimos)
-    let clientId = makeClientId();
-    for (let i = 0; i < 3; i++) {
-      const exists = await Client.findOne({
-        workspaceId: req.tenantId,
-        clientId,
-      }).lean();
-      if (!exists) break;
-      clientId = makeClientId();
-    }
-
-    const doc = await Client.create({
+    const doc = await createClientForWorkspace({
       workspaceId: req.tenantId,
       ownerUserId: req.user._id,
-      clientId,
       fullName,
       email,
       cpfCnpj,

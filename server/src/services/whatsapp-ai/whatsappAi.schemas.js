@@ -15,9 +15,15 @@ export const WHATSAPP_AI_ROUTING_INTENTS = [
   "query_pending_offers",
   "send_offer_payment_reminder",
   "cancel_offer",
+  "create_client",
+  "create_product",
+  "update_product_price",
+  "lookup_client_phone",
+  "lookup_product",
   "ambiguous_booking_operation",
   "ambiguous_offer_or_agenda",
   "ambiguous_offer_sales_operation",
+  "ambiguous_backoffice_operation",
   "unknown",
 ];
 
@@ -42,6 +48,21 @@ export const WHATSAPP_AI_OFFER_TARGET_DAY_KINDS = [
   "unspecified",
 ];
 
+export const WHATSAPP_AI_BACKOFFICE_INTENTS = [
+  "create_client",
+  "create_product",
+  "update_product_price",
+  "lookup_client_phone",
+  "lookup_product",
+  "unknown",
+];
+
+export const WHATSAPP_AI_PRODUCT_LOOKUP_MODES = [
+  "by_name",
+  "by_code",
+  "unspecified",
+];
+
 export const WHATSAPP_AI_REQUIRED_FIELDS = [
   "customer_name_raw",
   "destination_phone_n11",
@@ -50,13 +71,19 @@ export const WHATSAPP_AI_REQUIRED_FIELDS = [
   "items.0.unit_price_cents",
 ];
 
-const ITEM_FIELD_ORDER = ["product_name_raw", "quantity", "unit_price_cents"];
+const ITEM_FIELD_ORDER = [
+  "product_name_raw",
+  "product_code",
+  "quantity",
+  "unit_price_cents",
+];
 
 const EXTRACTION_KEYS = [
   "intent",
   "customer_name_raw",
   "destination_phone_n11",
   "product_name_raw",
+  "product_code",
   "quantity",
   "unit_price_cents",
   "items",
@@ -104,6 +131,17 @@ function normalizeOfferTargetDayKind(value) {
     : "unspecified";
 }
 
+function normalizeProductLookupMode(value) {
+  const mode = String(value || "").trim();
+  return WHATSAPP_AI_PRODUCT_LOOKUP_MODES.includes(mode)
+    ? mode
+    : "unspecified";
+}
+
+function normalizeProductCode(value) {
+  return String(value || "").trim();
+}
+
 function normalizeDateIso(value) {
   const dateIso = String(value || "").trim();
   return /^\d{4}-\d{2}-\d{2}$/.test(dateIso) ? dateIso : "";
@@ -138,6 +176,7 @@ function isPositiveInteger(value) {
 export function createEmptyResolvedItem() {
   return {
     product_name_raw: "",
+    productCode: "",
     quantity: null,
     unit_price_cents: null,
     productId: null,
@@ -150,6 +189,7 @@ export function createEmptyResolvedItem() {
 function hasItemData(item = {}) {
   return [
     item?.product_name_raw,
+    item?.productCode,
     item?.quantity,
     item?.unit_price_cents,
     item?.productId,
@@ -167,6 +207,9 @@ function normalizeItemPatch(item = {}) {
   const next = {
     ...current,
     product_name_raw: String(item.product_name_raw || "").trim(),
+    productCode: normalizeProductCode(
+      item.productCode || item.product_code || "",
+    ),
     quantity: toPositiveInteger(item.quantity),
     unit_price_cents: toPositiveInteger(item.unit_price_cents),
     productId: item.productId || null,
@@ -181,6 +224,7 @@ function normalizeItemPatch(item = {}) {
 function buildLegacyItem(source = {}) {
   const item = normalizeItemPatch({
     product_name_raw: source.product_name_raw,
+    product_code: source.product_code,
     quantity: source.quantity,
     unit_price_cents: source.unit_price_cents,
     productId: source.productId,
@@ -210,6 +254,7 @@ function syncPrimaryItemAliases(target = {}) {
     ...target,
     items,
     product_name_raw: firstItem.product_name_raw,
+    product_code: firstItem.productCode,
     quantity: firstItem.quantity,
     unit_price_cents: firstItem.unit_price_cents,
     productId: firstItem.productId,
@@ -231,11 +276,27 @@ function mergeItemDraft(currentItem = {}, itemPatch = {}) {
   if (nextProductRaw) {
     next.product_name_raw = nextProductRaw;
     if (nextProductRaw !== String(current.product_name_raw || "").trim()) {
+      if (itemPatch.productCode === undefined && itemPatch.product_code === undefined) {
+        next.productCode = "";
+      }
       next.productId = null;
       next.productName = "";
       next.productLookupQuery = "";
       next.productLookupMiss = false;
     }
+  }
+
+  if (itemPatch.productCode !== undefined || itemPatch.product_code !== undefined) {
+    const nextProductCode = normalizeProductCode(
+      itemPatch.productCode ?? itemPatch.product_code,
+    );
+    if (nextProductCode !== String(current.productCode || "").trim()) {
+      next.productId = null;
+      next.productName = "";
+      next.productLookupQuery = "";
+      next.productLookupMiss = false;
+    }
+    next.productCode = nextProductCode;
   }
 
   const nextQuantity = toPositiveInteger(itemPatch.quantity);
@@ -321,6 +382,7 @@ export function buildExtractionResponseFormat() {
           customer_name_raw: { type: "string" },
           destination_phone_n11: { type: "string" },
           product_name_raw: { type: "string" },
+          product_code: { type: "string" },
           quantity: {
             anyOf: [{ type: "integer", minimum: 1 }, { type: "null" }],
           },
@@ -334,6 +396,7 @@ export function buildExtractionResponseFormat() {
               additionalProperties: false,
               properties: {
                 product_name_raw: { type: "string" },
+                product_code: { type: "string" },
                 quantity: {
                   anyOf: [{ type: "integer", minimum: 1 }, { type: "null" }],
                 },
@@ -482,12 +545,61 @@ export function buildOfferSalesOperationResponseFormat() {
   };
 }
 
+export function buildBackofficeOperationResponseFormat() {
+  return {
+    type: "json_schema",
+    json_schema: {
+      name: "whatsapp_backoffice_operation",
+      strict: true,
+      schema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          intent: {
+            type: "string",
+            enum: WHATSAPP_AI_BACKOFFICE_INTENTS,
+          },
+          client_full_name: { type: "string" },
+          client_phone: { type: "string" },
+          client_email: { type: "string" },
+          client_cpf_cnpj: { type: "string" },
+          product_name: { type: "string" },
+          product_code: { type: "string" },
+          product_lookup_mode: {
+            type: "string",
+            enum: WHATSAPP_AI_PRODUCT_LOOKUP_MODES,
+          },
+          product_price_cents: {
+            anyOf: [{ type: "integer", minimum: 1 }, { type: "null" }],
+          },
+          product_description: { type: "string" },
+          source_text: { type: "string" },
+        },
+        required: [
+          "intent",
+          "client_full_name",
+          "client_phone",
+          "client_email",
+          "client_cpf_cnpj",
+          "product_name",
+          "product_code",
+          "product_lookup_mode",
+          "product_price_cents",
+          "product_description",
+          "source_text",
+        ],
+      },
+    },
+  };
+}
+
 export function createEmptyExtraction() {
   return {
     intent: "unknown",
     customer_name_raw: "",
     destination_phone_n11: "",
     product_name_raw: "",
+    product_code: "",
     quantity: null,
     unit_price_cents: null,
     items: [],
@@ -534,6 +646,22 @@ export function createEmptyOfferSalesOperationExtraction() {
   };
 }
 
+export function createEmptyBackofficeOperationExtraction() {
+  return {
+    intent: "unknown",
+    client_full_name: "",
+    client_phone: "",
+    client_email: "",
+    client_cpf_cnpj: "",
+    product_name: "",
+    product_code: "",
+    product_lookup_mode: "unspecified",
+    product_price_cents: null,
+    product_description: "",
+    source_text: "",
+  };
+}
+
 export function createEmptyResolved() {
   return syncPrimaryItemAliases({
     ...createEmptyExtraction(),
@@ -563,9 +691,22 @@ export function parseStructuredExtraction(payload) {
 
   ensureNoExtraKeys(value);
 
+  const rawItems = Array.isArray(value.items)
+    ? value.items.map((item, index) =>
+        index === 0
+          ? {
+              ...(item && typeof item === "object" ? item : {}),
+              product_code:
+                item?.product_code ?? item?.productCode ?? value.product_code ?? "",
+            }
+          : item,
+      )
+    : [];
+
   const items = normalizeResolvedItems({
-    items: Array.isArray(value.items) ? value.items : [],
+    items: rawItems,
     product_name_raw: value.product_name_raw,
+    product_code: value.product_code,
     quantity: value.quantity,
     unit_price_cents: value.unit_price_cents,
   });
@@ -578,10 +719,12 @@ export function parseStructuredExtraction(payload) {
       value.destination_phone_n11 || "",
     ),
     product_name_raw: firstItem.product_name_raw,
+    product_code: firstItem.productCode,
     quantity: firstItem.quantity,
     unit_price_cents: firstItem.unit_price_cents,
     items: items.map((item) => ({
       product_name_raw: item.product_name_raw,
+      product_code: item.productCode,
       quantity: item.quantity,
       unit_price_cents: item.unit_price_cents,
     })),
@@ -747,6 +890,63 @@ export function parseOfferSalesOperationExtraction(payload) {
   };
 }
 
+function normalizeBackofficeIntent(value) {
+  const intent = String(value || "").trim();
+  return WHATSAPP_AI_BACKOFFICE_INTENTS.includes(intent) ? intent : "unknown";
+}
+
+export function parseBackofficeOperationExtraction(payload) {
+  let value = payload;
+
+  if (typeof value === "string") {
+    value = JSON.parse(value);
+  }
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    const err = new Error("A IA retornou um payload de backoffice invalido.");
+    err.code = "WHATSAPP_AI_INVALID_BACKOFFICE_PAYLOAD";
+    throw err;
+  }
+
+  const allowedKeys = [
+    "intent",
+    "client_full_name",
+    "client_phone",
+    "client_email",
+    "client_cpf_cnpj",
+    "product_name",
+    "product_code",
+    "product_lookup_mode",
+    "product_price_cents",
+    "product_description",
+    "source_text",
+  ];
+  const extras = Object.keys(value).filter((key) => !allowedKeys.includes(key));
+  if (extras.length) {
+    const err = new Error(
+      `Campos nao suportados na operacao de backoffice: ${extras.join(", ")}`,
+    );
+    err.code = "WHATSAPP_AI_INVALID_BACKOFFICE_KEYS";
+    throw err;
+  }
+
+  return {
+    intent: normalizeBackofficeIntent(value.intent),
+    client_full_name: String(value.client_full_name || "").trim(),
+    client_phone: String(value.client_phone || "").trim(),
+    client_email: String(value.client_email || "")
+      .trim()
+      .toLowerCase(),
+    client_cpf_cnpj: String(value.client_cpf_cnpj || "").trim(),
+    product_name: String(value.product_name || "").trim(),
+    product_code: normalizeProductCode(value.product_code),
+    product_lookup_mode: normalizeProductLookupMode(value.product_lookup_mode),
+    product_price_cents: toPositiveInteger(value.product_price_cents),
+    product_description: String(value.product_description || "").trim(),
+    source_text: String(value.source_text || "").trim(),
+  };
+}
+
 export function mergeResolvedDraft(baseResolved = {}, patch = {}) {
   const current = syncPrimaryItemAliases({
     ...createEmptyResolved(),
@@ -774,6 +974,8 @@ export function mergeResolvedDraft(baseResolved = {}, patch = {}) {
 
   if (
     patch.product_name_raw !== undefined ||
+    patch.product_code !== undefined ||
+    patch.productCode !== undefined ||
     patch.quantity !== undefined ||
     patch.unit_price_cents !== undefined ||
     patch.productId !== undefined ||
@@ -784,6 +986,7 @@ export function mergeResolvedDraft(baseResolved = {}, patch = {}) {
     next.items = applyItemArrayPatch(next.items, [
       {
         product_name_raw: patch.product_name_raw,
+        productCode: patch.productCode ?? patch.product_code,
         quantity: patch.quantity,
         unit_price_cents: patch.unit_price_cents,
         productId: patch.productId,
@@ -893,6 +1096,37 @@ export function parseMoneyToCents(text) {
   return Math.round(amount * 100);
 }
 
+export function parseEmailFromText(text) {
+  const match = String(text || "")
+    .trim()
+    .match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  return match ? String(match[0] || "").trim().toLowerCase() : "";
+}
+
+export function parseCpfCnpjDigits(text) {
+  const digits = String(text || "").replace(/\D+/g, "");
+  if (digits.length === 11 || digits.length === 14) return digits;
+  return "";
+}
+
+export function parseProductCodeFromText(text) {
+  const trimmed = String(text || "").trim();
+  if (!trimmed) return "";
+
+  const keywordMatch = trimmed.match(
+    /\b(?:codigo(?: do produto)?|id(?: do produto)?|cod)\b[\s:#-]*([A-Za-z0-9._-]+)/i,
+  );
+  if (keywordMatch?.[1]) {
+    return normalizeProductCode(keywordMatch[1]);
+  }
+
+  if (/^\d[\d._-]*$/.test(trimmed)) {
+    return normalizeProductCode(trimmed);
+  }
+
+  return "";
+}
+
 export function parseDirectReplyValue(field, text) {
   const trimmed = String(text || "").trim();
   if (!trimmed) return {};
@@ -902,9 +1136,11 @@ export function parseDirectReplyValue(field, text) {
     if (itemField.field === "product_selection") return {};
 
     if (itemField.field === "product_name_raw") {
+      const productCode = parseProductCodeFromText(trimmed);
       return {
         ...buildSparseItemPatch(itemField.itemIndex, {
           product_name_raw: trimmed,
+          ...(productCode ? { productCode } : {}),
         }),
         source_text: trimmed,
       };
@@ -922,12 +1158,22 @@ export function parseDirectReplyValue(field, text) {
 
     if (itemField.field === "unit_price_cents") {
       const unit_price_cents = parseMoneyToCents(trimmed);
-      return unit_price_cents
-        ? {
-            ...buildSparseItemPatch(itemField.itemIndex, { unit_price_cents }),
-            source_text: trimmed,
-          }
-        : {};
+      const productCode = parseProductCodeFromText(trimmed);
+      const explicitCodeReference = /\b(?:codigo(?: do produto)?|id(?: do produto)?|cod)\b/i.test(
+        trimmed,
+      );
+      if (!unit_price_cents && !productCode) return {};
+
+      return {
+        ...buildSparseItemPatch(itemField.itemIndex, {
+          ...(explicitCodeReference && productCode
+            ? { productCode }
+            : unit_price_cents
+              ? { unit_price_cents }
+              : {}),
+        }),
+        source_text: trimmed,
+      };
     }
   }
 
@@ -936,7 +1182,12 @@ export function parseDirectReplyValue(field, text) {
   }
 
   if (field === "product_name_raw") {
-    return { product_name_raw: trimmed, source_text: trimmed };
+    const product_code = parseProductCodeFromText(trimmed);
+    return {
+      product_name_raw: trimmed,
+      ...(product_code ? { product_code } : {}),
+      source_text: trimmed,
+    };
   }
 
   if (field === "quantity") {
@@ -946,12 +1197,74 @@ export function parseDirectReplyValue(field, text) {
 
   if (field === "unit_price_cents") {
     const unit_price_cents = parseMoneyToCents(trimmed);
-    return unit_price_cents ? { unit_price_cents, source_text: trimmed } : {};
+    const product_code = parseProductCodeFromText(trimmed);
+    const explicitCodeReference = /\b(?:codigo(?: do produto)?|id(?: do produto)?|cod)\b/i.test(
+      trimmed,
+    );
+    if (!unit_price_cents && !product_code) return {};
+
+    return {
+      ...(explicitCodeReference && product_code
+        ? { product_code }
+        : unit_price_cents
+          ? { unit_price_cents }
+          : {}),
+      source_text: trimmed,
+    };
   }
 
   if (field === "destination_phone_n11") {
     const destination_phone_n11 = normalizeDestinationPhoneN11(trimmed);
     return destination_phone_n11 ? { destination_phone_n11, source_text: trimmed } : {};
+  }
+
+  if (field === "client_full_name") {
+    return { client_full_name: trimmed, source_text: trimmed };
+  }
+
+  if (field === "client_phone") {
+    return { client_phone: trimmed, source_text: trimmed };
+  }
+
+  if (field === "client_email") {
+    const client_email = parseEmailFromText(trimmed);
+    return client_email ? { client_email, source_text: trimmed } : {};
+  }
+
+  if (field === "client_cpf_cnpj") {
+    const client_cpf_cnpj = parseCpfCnpjDigits(trimmed);
+    return client_cpf_cnpj ? { client_cpf_cnpj, source_text: trimmed } : {};
+  }
+
+  if (field === "product_name") {
+    return { product_name: trimmed, source_text: trimmed };
+  }
+
+  if (field === "product_code") {
+    const product_code = parseProductCodeFromText(trimmed);
+    return product_code
+      ? {
+          product_code,
+          product_lookup_mode: "by_code",
+          source_text: trimmed,
+        }
+      : {};
+  }
+
+  if (field === "product_price_cents") {
+    const product_price_cents = parseMoneyToCents(trimmed);
+    const product_code = parseProductCodeFromText(trimmed);
+    if (!product_price_cents && !product_code) return {};
+
+    return {
+      ...(product_price_cents ? { product_price_cents } : {}),
+      ...(product_code ? { product_code } : {}),
+      source_text: trimmed,
+    };
+  }
+
+  if (field === "product_description") {
+    return { product_description: trimmed, source_text: trimmed };
   }
 
   return {};
