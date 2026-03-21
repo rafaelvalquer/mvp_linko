@@ -1,8 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
 import { ArrowRight, BellRing, Clock3 } from "lucide-react";
 
-import * as authApi from "../../app/authApi.js";
-import { useAuth } from "../../app/AuthContext.jsx";
 import useThemeToggle from "../../app/useThemeToggle.js";
 import ModalShell from "../appui/ModalShell.jsx";
 import Button from "../appui/Button.jsx";
@@ -40,100 +37,25 @@ function formatChangeText(change) {
   return message ? `${fallback}: ${message}` : fallback;
 }
 
-export default function WhatsNewModalHost() {
-  const { user, loadingMe } = useAuth();
+export default function WhatsNewModalHost({
+  open = false,
+  ackBusy = false,
+  snapshotAt = "",
+  items = [],
+  error = "",
+  onClose,
+  onAcknowledge,
+  onGoToOffers,
+}) {
   const { isDark } = useThemeToggle();
+  const normalizedItems = normalizeItems(items);
 
-  const [open, setOpen] = useState(false);
-  const [ackBusy, setAckBusy] = useState(false);
-  const [snapshotAt, setSnapshotAt] = useState("");
-  const [items, setItems] = useState([]);
-  const [error, setError] = useState("");
-
-  const userId = String(user?._id || "").trim();
-
-  useEffect(() => {
-    if (loadingMe) return;
-
-    if (!userId) {
-      setOpen(false);
-      setSnapshotAt("");
-      setItems([]);
-      setError("");
-      return;
-    }
-
-    let alive = true;
-
-    (async () => {
-      try {
-        const data = await authApi.getWhatsNew();
-        if (!alive) return;
-
-        const nextItems = normalizeItems(data?.items);
-        setSnapshotAt(String(data?.snapshotAt || ""));
-        setItems(nextItems);
-        setError("");
-        setOpen(nextItems.length > 0);
-      } catch (err) {
-        if (!alive) return;
-        console.warn("[whats-new] failed to load", err);
-        setOpen(false);
-        setSnapshotAt("");
-        setItems([]);
-        setError("");
-      }
-    })();
-
-    return () => {
-      alive = false;
-    };
-  }, [loadingMe, userId]);
-
-  const acknowledge = useCallback(
-    async (afterAck) => {
-      if (ackBusy) return;
-
-      try {
-        setAckBusy(true);
-        setError("");
-
-        if (snapshotAt) {
-          await authApi.ackWhatsNew({ seenAt: snapshotAt });
-        }
-
-        setOpen(false);
-        setItems([]);
-        setSnapshotAt("");
-
-        if (typeof afterAck === "function") {
-          afterAck();
-        }
-      } catch (err) {
-        setError(
-          err?.message || "Nao foi possivel confirmar a leitura agora.",
-        );
-      } finally {
-        setAckBusy(false);
-      }
-    },
-    [ackBusy, snapshotAt],
-  );
-
-  const handleGoToOffers = useCallback(() => {
-    acknowledge(() => {
-      if (typeof window === "undefined") return;
-      if (window.location.pathname === "/offers") return;
-      window.location.assign("/offers");
-    });
-  }, [acknowledge]);
-
-  if (!open || !items.length) return null;
+  if (!open || !normalizedItems.length) return null;
 
   return (
     <ModalShell
       open={open}
-      onClose={() => acknowledge()}
+      onClose={() => onClose?.()}
       locked={ackBusy}
       panelClassName="max-w-5xl"
     >
@@ -226,7 +148,7 @@ export default function WhatsNewModalHost() {
           ) : null}
 
           <div className="space-y-4">
-            {items.map((item) => {
+            {normalizedItems.map((item) => {
               const pay = getPaymentLabel(item);
               const latest = item?.latestChange || null;
               const changes = normalizeItems(item?.changes);
@@ -292,8 +214,8 @@ export default function WhatsNewModalHost() {
                     <div className="flex shrink-0 items-center gap-2">
                       <Button
                         variant="secondary"
-                        onClick={handleGoToOffers}
-                        disabled={ackBusy}
+                        onClick={() => onGoToOffers?.()}
+                        disabled={ackBusy || typeof onGoToOffers !== "function"}
                       >
                         Ver propostas
                         <ArrowRight className="h-4 w-4" />
@@ -346,12 +268,15 @@ export default function WhatsNewModalHost() {
         >
           <Button
             variant="secondary"
-            onClick={handleGoToOffers}
-            disabled={ackBusy}
+            onClick={() => onGoToOffers?.()}
+            disabled={ackBusy || typeof onGoToOffers !== "function"}
           >
             Ver propostas
           </Button>
-          <Button onClick={() => acknowledge()} disabled={ackBusy}>
+          <Button
+            onClick={() => onAcknowledge?.()}
+            disabled={ackBusy || typeof onAcknowledge !== "function"}
+          >
             {ackBusy ? "Salvando..." : "Entendi"}
           </Button>
         </div>

@@ -7,9 +7,9 @@ const MAP = {
     "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200",
   PAID: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200",
   EXPIRED:
-    "border-zinc-200 bg-zinc-50 text-zinc-600 dark:border-white/10 dark:bg-white/6 dark:text-slate-300",
+    "border-zinc-200 bg-zinc-50 text-zinc-600 dark:border-slate-400/20 dark:bg-slate-950/60 dark:text-slate-100",
   DRAFT:
-    "border-zinc-200 bg-zinc-50 text-zinc-700 dark:border-white/10 dark:bg-white/6 dark:text-slate-300",
+    "border-zinc-200 bg-zinc-50 text-zinc-700 dark:border-slate-400/20 dark:bg-slate-950/60 dark:text-slate-100",
   HOLD: "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200",
   CONFIRMED:
     "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200",
@@ -50,7 +50,7 @@ export default function Badge({ tone = "PUBLIC", children }) {
 
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${MAP[key] || (isDark ? "border-white/10 bg-white/6 text-slate-300" : "border-zinc-200 bg-zinc-50 text-zinc-700")}`}
+      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${MAP[key] || (isDark ? "border-slate-400/20 bg-slate-950/60 text-slate-100" : "border-zinc-200 bg-zinc-50 text-zinc-700")}`}
     >
       {content}
     </span>

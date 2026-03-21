@@ -656,14 +656,14 @@ export default function SettingsNotifications() {
                   return (
                     <div
                       key={item.key}
-                      className="rounded-2xl border border-slate-200/80 bg-slate-50/80 p-4 dark:border-white/10 dark:bg-white/4"
+                      className="surface-subtle rounded-2xl p-4"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <div className="text-sm font-semibold text-slate-950 dark:text-white">
                             {item.label}
                           </div>
-                          <div className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                          <div className="surface-subtle-copy mt-1 text-xs leading-5">
                             {item.description}
                           </div>
                         </div>
@@ -709,9 +709,9 @@ export default function SettingsNotifications() {
             ].map((item) => (
               <div
                 key={item}
-                className="flex flex-col gap-2 rounded-2xl border border-slate-200/80 bg-slate-50/80 px-4 py-3 dark:border-white/10 dark:bg-white/4 md:flex-row md:items-center md:justify-between"
+                className="surface-subtle flex flex-col gap-2 rounded-2xl px-4 py-3 md:flex-row md:items-center md:justify-between"
               >
-                <div className="text-sm text-slate-700 dark:text-slate-300">
+                <div className="text-sm text-slate-700 dark:text-slate-200">
                   {item}
                 </div>
                 <Badge tone="DRAFT">Gerenciado pelo sistema</Badge>

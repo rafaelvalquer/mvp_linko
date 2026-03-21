@@ -290,7 +290,7 @@ export default function SettingsAccount() {
               </Badge>
             </div>
 
-            <div className="mt-4 rounded-2xl border border-slate-200/80 bg-slate-50/80 px-4 py-3 text-sm font-semibold text-slate-900 dark:border-white/10 dark:bg-white/4 dark:text-white">
+            <div className="surface-subtle mt-4 rounded-2xl px-4 py-3 text-sm font-semibold text-slate-900 dark:text-white">
               {hasPersistedPhone ? persistedPhone : "Nenhum numero cadastrado"}
             </div>
 

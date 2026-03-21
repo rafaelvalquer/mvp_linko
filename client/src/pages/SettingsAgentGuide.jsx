@@ -142,12 +142,12 @@ export default function SettingsAgentGuide() {
                 {AGENT_PREREQUISITES.map((item) => (
                   <div
                     key={item.title}
-                    className="rounded-2xl border border-slate-200/80 bg-slate-50/80 p-4 dark:border-white/10 dark:bg-white/4"
+                    className="surface-subtle rounded-2xl p-4"
                   >
                     <div className="text-sm font-semibold text-slate-900 dark:text-white">
                       {item.title}
                     </div>
-                    <div className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                    <div className="surface-subtle-copy mt-1 text-xs leading-5">
                       {item.description}
                     </div>
                   </div>
@@ -236,7 +236,7 @@ export default function SettingsAgentGuide() {
                   {group.notes.map((note) => (
                     <div
                       key={`${group.id}:${note}`}
-                      className="rounded-2xl border border-slate-200/80 bg-slate-50/80 px-3 py-3 text-sm leading-6 text-slate-600 dark:border-white/10 dark:bg-white/4 dark:text-slate-300"
+                      className="surface-subtle rounded-2xl px-3 py-3 text-sm leading-6 text-slate-600 dark:text-slate-300"
                     >
                       {note}
                     </div>
@@ -268,7 +268,7 @@ export default function SettingsAgentGuide() {
                 ))}
               </div>
 
-              <div className="mt-4 rounded-2xl border border-slate-200/80 bg-slate-50/80 px-4 py-3 text-sm font-medium leading-6 text-slate-900 dark:border-white/10 dark:bg-white/4 dark:text-slate-100">
+              <div className="surface-subtle mt-4 rounded-2xl px-4 py-3 text-sm font-medium leading-6 text-slate-900 dark:text-slate-100">
                 {item.example}
               </div>
 

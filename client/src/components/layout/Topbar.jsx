@@ -59,6 +59,7 @@ export default function Topbar({
   title = "LuminorPay",
   isDark = false,
   setIsDark,
+  contextualAction = null,
 }) {
   const { user, workspace, loadingBilling, subscriptionStatus, signOut } =
     useAuth();
@@ -152,6 +153,8 @@ export default function Topbar({
           <div className="hidden lg:block">
             <StatusBadge status={subscriptionStatus} loading={loadingBilling} />
           </div>
+
+          {contextualAction}
 
           <button
             type="button"

@@ -106,7 +106,7 @@ function BillingInlineNotice({ isDark }) {
   );
 }
 
-export default function Shell({ children }) {
+export default function Shell({ children, topbarAction = null }) {
   const { isDark, setIsDark } = useThemeToggle();
   const [sidebarExpanded, setSidebarExpanded] = useState(readSidebarExpanded);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -160,7 +160,11 @@ export default function Shell({ children }) {
         <div className="absolute bottom-[-220px] left-1/3 h-[30rem] w-[30rem] rounded-full bg-emerald-400/10 blur-3xl" />
       </div>
 
-      <Topbar isDark={isDark} setIsDark={setIsDark} />
+      <Topbar
+        isDark={isDark}
+        setIsDark={setIsDark}
+        contextualAction={topbarAction}
+      />
       <MobileMenuButton
         isDark={isDark}
         onClick={() => setMobileSidebarOpen(true)}

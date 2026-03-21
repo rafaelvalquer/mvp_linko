@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
+  BellRing,
   FileText,
   CheckCircle2,
   CalendarDays,
@@ -13,6 +14,7 @@ import {
 
 import Shell from "../components/layout/Shell.jsx";
 import { api } from "../app/api.js";
+import * as authApi from "../app/authApi.js";
 import { listBookings } from "../app/bookingsApi.js";
 import Card, { CardBody, CardHeader } from "../components/appui/Card.jsx";
 import Button from "../components/appui/Button.jsx";
@@ -139,6 +141,10 @@ const fmtTimeBR = (iso) =>
         new Date(iso),
       )
     : "";
+
+function normalizeWhatsNewItems(items) {
+  return Array.isArray(items) ? items.filter(Boolean) : [];
+}
 
 function startOfDay(d) {
   const x = new Date(d);
@@ -337,11 +343,18 @@ export default function Dashboard() {
 
   const [showToast, setShowToast] = useState(false);
   const [lastUpdate, setLastUpdate] = useState("");
+  const [whatsNewOpen, setWhatsNewOpen] = useState(false);
+  const [whatsNewBusy, setWhatsNewBusy] = useState(false);
+  const [whatsNewLoading, setWhatsNewLoading] = useState(false);
+  const [whatsNewSnapshotAt, setWhatsNewSnapshotAt] = useState("");
+  const [whatsNewItems, setWhatsNewItems] = useState([]);
+  const [whatsNewError, setWhatsNewError] = useState("");
 
   const { signOut, user, workspace, loadingMe, refreshWorkspace } = useAuth();
   const hasRecurringPlan = canUseRecurringPlan(workspace?.plan);
   const needsWhatsAppSetup =
     !loadingMe && !String(user?.whatsappPhone || "").trim();
+  const userId = String(user?._id || "").trim();
 
   const nav = useNavigate();
   const location = useLocation();
@@ -447,6 +460,91 @@ export default function Dashboard() {
       nav("/dashboard", { replace: true, state: null });
     }
   }, [location?.state, nav]);
+
+  useEffect(() => {
+    if (loadingMe) return;
+
+    if (!userId) {
+      setWhatsNewOpen(false);
+      setWhatsNewItems([]);
+      setWhatsNewSnapshotAt("");
+      setWhatsNewError("");
+      setWhatsNewLoading(false);
+      return;
+    }
+
+    let alive = true;
+
+    (async () => {
+      try {
+        setWhatsNewLoading(true);
+        setWhatsNewError("");
+
+        const data = await authApi.getWhatsNew();
+        if (!alive) return;
+
+        setWhatsNewItems(normalizeWhatsNewItems(data?.items));
+        setWhatsNewSnapshotAt(String(data?.snapshotAt || ""));
+        setWhatsNewOpen(false);
+      } catch (err) {
+        if (!alive) return;
+        console.warn("[dashboard] failed to load what's new", err);
+        setWhatsNewItems([]);
+        setWhatsNewSnapshotAt("");
+        setWhatsNewOpen(false);
+        setWhatsNewError(String(err?.message || "").trim());
+      } finally {
+        if (alive) setWhatsNewLoading(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [loadingMe, userId]);
+
+  const acknowledgeWhatsNew = useCallback(
+    async (afterAck) => {
+      if (whatsNewBusy) return;
+
+      try {
+        setWhatsNewBusy(true);
+        setWhatsNewError("");
+
+        if (whatsNewSnapshotAt) {
+          await authApi.ackWhatsNew({ seenAt: whatsNewSnapshotAt });
+        }
+
+        setWhatsNewOpen(false);
+        setWhatsNewItems([]);
+        setWhatsNewSnapshotAt("");
+
+        if (typeof afterAck === "function") {
+          afterAck();
+        }
+      } catch (err) {
+        setWhatsNewError(
+          err?.message || "Nao foi possivel confirmar a leitura agora.",
+        );
+      } finally {
+        setWhatsNewBusy(false);
+      }
+    },
+    [whatsNewBusy, whatsNewSnapshotAt],
+  );
+
+  const openWhatsNew = useCallback(() => {
+    if (whatsNewLoading || !whatsNewItems.length) return;
+    setWhatsNewError("");
+    setWhatsNewOpen(true);
+  }, [whatsNewItems.length, whatsNewLoading]);
+
+  const handleWhatsNewGoToOffers = useCallback(() => {
+    acknowledgeWhatsNew(() => {
+      if (window.location.pathname === "/offers") return;
+      nav("/offers");
+    });
+  }, [acknowledgeWhatsNew, nav]);
 
   async function loadBookings() {
     try {
@@ -665,8 +763,50 @@ export default function Dashboard() {
       .slice(0, 5);
   }, [offers]);
 
+  const whatsNewCount = whatsNewItems.length;
+  const canOpenWhatsNew = whatsNewCount > 0 && !whatsNewLoading;
+
+  const topbarAction = (
+    <button
+      type="button"
+      onClick={openWhatsNew}
+      disabled={!canOpenWhatsNew}
+      title={
+        whatsNewError
+          ? "Nao foi possivel carregar novidades agora."
+          : whatsNewLoading
+            ? "Carregando novidades..."
+            : whatsNewCount > 0
+              ? `${whatsNewCount} novidade${whatsNewCount === 1 ? "" : "s"} pendente${whatsNewCount === 1 ? "" : "s"}`
+              : "Nenhuma novidade pendente"
+      }
+      className={[
+        "relative inline-flex h-10 items-center justify-center gap-2 rounded-2xl border px-3.5 text-xs font-semibold transition",
+        "disabled:cursor-default disabled:opacity-60",
+        isDark
+          ? "border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 disabled:hover:bg-white/5"
+          : "border-slate-200/80 bg-white/85 text-slate-700 shadow-[0_14px_28px_-20px_rgba(15,23,42,0.18)] hover:bg-white disabled:hover:bg-white/85",
+      ].join(" ")}
+    >
+      <BellRing className="h-4 w-4" />
+      <span className="hidden sm:inline">Novidades</span>
+      {whatsNewCount > 0 ? (
+        <span
+          className={[
+            "inline-flex min-w-[20px] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-black leading-none",
+            isDark
+              ? "bg-cyan-400/20 text-cyan-100"
+              : "bg-sky-600 text-white",
+          ].join(" ")}
+        >
+          {whatsNewCount > 99 ? "99+" : whatsNewCount}
+        </span>
+      ) : null}
+    </button>
+  );
+
   return (
-    <Shell>
+    <Shell topbarAction={topbarAction}>
       <div className="mx-auto max-w-7xl space-y-6">
         <div className="relative">
           <div
@@ -1203,7 +1343,16 @@ export default function Dashboard() {
         copiedId={copiedId}
       />
 
-      <WhatsNewModalHost />
+      <WhatsNewModalHost
+        open={whatsNewOpen}
+        ackBusy={whatsNewBusy}
+        snapshotAt={whatsNewSnapshotAt}
+        items={whatsNewItems}
+        error={whatsNewError}
+        onClose={() => acknowledgeWhatsNew()}
+        onAcknowledge={() => acknowledgeWhatsNew()}
+        onGoToOffers={handleWhatsNewGoToOffers}
+      />
     </Shell>
   );
 }
