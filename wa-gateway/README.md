@@ -19,6 +19,7 @@ Edite `.env` e defina pelo menos:
 - `WA_SESSION_PATH` com caminho absoluto estavel
 - `WA_CHROME_PATH` apontando para o Chrome instalado
 - `WA_CLIENT_ID` para fixar o perfil do `LocalAuth`
+- `WA_INBOUND_TYPING_ENABLED=true` para mostrar "digitando" apenas enquanto o agente processa mensagens inbound
 
 ## Executar
 ```bash
@@ -50,3 +51,4 @@ curl -X POST http://localhost:3010/send \
 - Use sempre o mesmo diretorio de execucao do `wa-gateway`.
 - Nao exponha esse servico publicamente.
 - Se houver erro do Puppeteer, confira `WA_CHROME_PATH` e evite limpar ou sincronizar a pasta da sessao.
+- O indicador de digitacao vale apenas para o inbound do agente; envios via `/send` continuam imediatos, sem simular conversa humana.

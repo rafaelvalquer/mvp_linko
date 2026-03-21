@@ -51,6 +51,10 @@ const WA_INBOUND_DEDUPE_TTL_MS = Math.max(
   30000,
   Number(process.env.WA_INBOUND_DEDUPE_TTL_MS || 2 * 60 * 1000) || 2 * 60 * 1000,
 );
+const WA_INBOUND_TYPING_ENABLED =
+  String(process.env.WA_INBOUND_TYPING_ENABLED || "true").toLowerCase() ===
+  "true";
+const WA_INBOUND_TYPING_HEARTBEAT_MS = 20 * 1000;
 
 const HEADLESS =
   String(process.env.WA_PUPPETEER_HEADLESS || "true").toLowerCase() === "true";
@@ -444,6 +448,119 @@ async function forwardInboundEvent(payload) {
   }
 }
 
+function createNoopTypingHandle() {
+  return {
+    active: false,
+    async stop() {},
+  };
+}
+
+async function startInboundTypingHeartbeat({
+  message = null,
+  messageId = "",
+  fromPhoneDigits = "",
+  type = "unknown",
+}) {
+  if (!WA_INBOUND_TYPING_ENABLED || !message) {
+    return createNoopTypingHandle();
+  }
+
+  let chat = null;
+
+  try {
+    chat = await message.getChat();
+  } catch (error) {
+    console.warn(
+      `[inbound] typing chat lookup failed messageId=${messageId} from=${fromPhoneDigits || "unknown"} type=${type} error="${compactForLog(
+        error?.message || String(error),
+        160,
+      )}"`,
+    );
+    return createNoopTypingHandle();
+  }
+
+  if (
+    !chat ||
+    typeof chat.sendStateTyping !== "function" ||
+    typeof chat.clearState !== "function"
+  ) {
+    return createNoopTypingHandle();
+  }
+
+  let stopped = false;
+  let renewTimer = null;
+  let sendInFlight = false;
+
+  const emitTyping = async () => {
+    if (stopped || sendInFlight) return;
+    sendInFlight = true;
+
+    try {
+      await chat.sendStateTyping();
+    } catch (error) {
+      console.warn(
+        `[inbound] typing start failed messageId=${messageId} from=${fromPhoneDigits || "unknown"} type=${type} error="${compactForLog(
+          error?.message || String(error),
+          160,
+        )}"`,
+      );
+    } finally {
+      sendInFlight = false;
+    }
+  };
+
+  await emitTyping();
+
+  renewTimer = setInterval(() => {
+    void emitTyping();
+  }, WA_INBOUND_TYPING_HEARTBEAT_MS);
+
+  return {
+    active: true,
+    async stop() {
+      if (stopped) return;
+      stopped = true;
+
+      if (renewTimer) {
+        clearInterval(renewTimer);
+        renewTimer = null;
+      }
+
+      try {
+        await chat.clearState();
+      } catch (error) {
+        console.warn(
+          `[inbound] typing clear failed messageId=${messageId} from=${fromPhoneDigits || "unknown"} type=${type} error="${compactForLog(
+            error?.message || String(error),
+            160,
+          )}"`,
+        );
+      }
+    },
+  };
+}
+
+async function forwardInboundEventWithTyping({
+  message = null,
+  payload,
+  messageId = "",
+  fromPhoneDigits = "",
+  type = "unknown",
+}) {
+  const typingHandle = await startInboundTypingHeartbeat({
+    message,
+    messageId,
+    fromPhoneDigits,
+    type,
+  });
+
+  try {
+    return await forwardInboundEvent(payload);
+  } finally {
+    await typingHandle.stop();
+  }
+}
+
 function shouldIgnoreInboundMessage(message) {
   const from = String(message?.from || "");
   if (message?.fromMe) return true;
@@ -499,13 +616,19 @@ async function handleInboundMessage(message) {
       const text = String(message?.body || "").trim();
       if (!text) return;
 
-      const result = await forwardInboundEvent({
+      const result = await forwardInboundEventWithTyping({
+        message,
         messageId,
         fromPhoneDigits,
-        pushName,
         type: "text",
-        text,
-        timestamp,
+        payload: {
+          messageId,
+          fromPhoneDigits,
+          pushName,
+          type: "text",
+          text,
+          timestamp,
+        },
       });
 
       if (result.ok) {
@@ -543,14 +666,20 @@ async function handleInboundMessage(message) {
         return;
       }
 
-      const result = await forwardInboundEvent({
+      const result = await forwardInboundEventWithTyping({
+        message,
         messageId,
         fromPhoneDigits,
-        pushName,
         type: "audio",
-        mimeType: media.mimetype,
-        audioBase64: media.data,
-        timestamp,
+        payload: {
+          messageId,
+          fromPhoneDigits,
+          pushName,
+          type: "audio",
+          mimeType: media.mimetype,
+          audioBase64: media.data,
+          timestamp,
+        },
       });
 
       if (result.ok) {
