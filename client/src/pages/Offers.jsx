@@ -6,8 +6,9 @@ import { api } from "../app/api.js";
 
 import Shell from "../components/layout/Shell.jsx";
 import PageHeader from "../components/appui/PageHeader.jsx";
-import Card, { CardBody } from "../components/appui/Card.jsx";
+import Card, { CardBody, CardHeader } from "../components/appui/Card.jsx";
 import Button from "../components/appui/Button.jsx";
+import FilterBar from "../components/appui/FilterBar.jsx";
 import { Input } from "../components/appui/Input.jsx";
 import Badge from "../components/appui/Badge.jsx";
 import Skeleton from "../components/appui/Skeleton.jsx";
@@ -148,6 +149,21 @@ export default function Offers() {
     });
   }, [items, q, filter, originFilter]);
 
+  const worklistSummary = useMemo(() => {
+    return filtered.reduce(
+      (acc, offer) => {
+        const pay = getPaymentLabel(offer);
+        if (pay?.code === "PENDING") acc.pending += 1;
+        if (pay?.code === "WAITING_CONFIRMATION") acc.waiting += 1;
+        if (["PAID", "CONFIRMED"].includes(String(pay?.code || "").toUpperCase())) {
+          acc.paid += 1;
+        }
+        return acc;
+      },
+      { total: filtered.length, pending: 0, waiting: 0, paid: 0 },
+    );
+  }, [filtered]);
+
   const copyLink = useCallback(async (offer) => {
     const token = offer?.publicToken;
     if (!token) return;
@@ -169,71 +185,87 @@ export default function Offers() {
 
   return (
     <Shell>
-      <div className="space-y-6">
+      <div className="mx-auto max-w-[1380px] space-y-5">
         <PageHeader
+          eyebrow="Propostas"
           title="Propostas"
           subtitle="Gerencie propostas avulsas, cobranças recorrentes e confirmações de pagamento."
           actions={
             <Link to="/offers/new">
-              <Button>Nova proposta</Button>
+              <Button size="lg">Nova proposta</Button>
             </Link>
           }
         />
 
-        <Card>
-          <CardBody className="p-5">
-            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-              <div className="flex flex-col gap-2 md:flex-row md:items-center">
-                <select
-                  className={selectClass}
-                  value={filter}
-                  onChange={(e) => setFilter(e.target.value)}
-                >
-                  <option value="ALL">Todos os status</option>
-                  <option value="WAITING_CONFIRMATION">Aguardando confirmação</option>
-                  <option value="PENDING">Aguardando pagamento</option>
-                  <option value="REJECTED">Comprovante recusado</option>
-                  <option value="PAID">Pago (confirmado)</option>
-                  <option value="ACCEPTED">Aceito</option>
-                  <option value="PUBLIC">Público</option>
-                  <option value="EXPIRED">Expirado</option>
-                  <option value="CANCELLED">Cancelado</option>
-                </select>
+        <FilterBar
+          actions={
+            <Button variant="secondary" size="md" onClick={load} disabled={loading}>
+              Atualizar
+            </Button>
+          }
+          summary={
+            <>
+              <Badge tone="DRAFT">{worklistSummary.total} visíveis</Badge>
+              <Badge tone="ACCEPTED">{worklistSummary.pending} pendentes</Badge>
+              <Badge tone="PUBLIC">{worklistSummary.waiting} em análise</Badge>
+              <Badge tone="PAID">{worklistSummary.paid} pagas</Badge>
+            </>
+          }
+        >
+          <div className="flex flex-col gap-2 md:flex-row md:items-center">
+            <select
+              className={selectClass}
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+            >
+              <option value="ALL">Todos os status</option>
+              <option value="WAITING_CONFIRMATION">Aguardando confirmação</option>
+              <option value="PENDING">Aguardando pagamento</option>
+              <option value="REJECTED">Comprovante recusado</option>
+              <option value="PAID">Pago (confirmado)</option>
+              <option value="ACCEPTED">Aceito</option>
+              <option value="PUBLIC">Público</option>
+              <option value="EXPIRED">Expirado</option>
+              <option value="CANCELLED">Cancelado</option>
+            </select>
 
-                <select
-                  className={selectClass}
-                  value={originFilter}
-                  onChange={(e) => setOriginFilter(e.target.value)}
-                >
-                  <option value="ALL">Todas as origens</option>
-                  <option value="MANUAL">Avulsas</option>
-                  <option value="RECURRING">Recorrentes</option>
-                </select>
+            <select
+              className={selectClass}
+              value={originFilter}
+              onChange={(e) => setOriginFilter(e.target.value)}
+            >
+              <option value="ALL">Todas as origens</option>
+              <option value="MANUAL">Avulsas</option>
+              <option value="RECURRING">Recorrentes</option>
+            </select>
 
-                <div className="w-full md:w-80">
-                  <Input
-                    value={q}
-                    onChange={(e) => setQ(e.target.value)}
-                    placeholder="Buscar cliente, proposta ou recorrência..."
-                    className="h-10"
-                  />
-                </div>
-              </div>
-
-              <Button variant="secondary" onClick={load} disabled={loading}>
-                Atualizar
-              </Button>
+            <div className="w-full md:w-[360px]">
+              <Input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Buscar cliente, proposta ou recorrência..."
+                className="h-10"
+              />
             </div>
+          </div>
+        </FilterBar>
 
+        <Card className="overflow-hidden">
+          <CardHeader
+            title="Lista operacional"
+            subtitle="Cliente, valor e status em primeiro plano para agir mais rápido."
+            right={<Badge tone="DRAFT">{items.length} total</Badge>}
+          />
+          <CardBody className="p-0">
             {loading ? (
-              <div className="mt-5 space-y-3">
-                <Skeleton className="h-10 w-full rounded-xl" />
-                <Skeleton className="h-10 w-full rounded-xl" />
+              <div className="space-y-3 p-5">
+                <Skeleton className="h-12 w-full rounded-xl" />
+                <Skeleton className="h-12 w-full rounded-xl" />
               </div>
             ) : error ? (
               <div
                 className={[
-                  "mt-5 rounded-xl border p-4 text-sm",
+                  "m-5 rounded-xl border p-4 text-sm",
                   isDark
                     ? "border-red-400/20 bg-red-500/10 text-red-100"
                     : "border-red-200 bg-red-50 text-red-800",
@@ -242,7 +274,7 @@ export default function Offers() {
                 {error}
               </div>
             ) : filtered.length === 0 ? (
-              <div className="mt-8">
+              <div className="p-8">
                 <EmptyState
                   title="Nenhuma proposta"
                   description="Ajuste filtros ou crie uma nova proposta."
@@ -251,15 +283,15 @@ export default function Offers() {
                 />
               </div>
             ) : (
-              <div className="mt-5 overflow-x-auto">
+              <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
                   <thead className={tableHeadClass}>
                     <tr>
-                      <th className={`border-b py-3 pr-4 ${tableBorderClass}`}>Cliente</th>
-                      <th className={`border-b py-3 pr-4 ${tableBorderClass}`}>Proposta</th>
-                      <th className={`border-b py-3 pr-4 ${tableBorderClass}`}>Valor</th>
-                      <th className={`border-b py-3 pr-4 ${tableBorderClass}`}>Status</th>
-                      <th className={`border-b py-3 text-right ${tableBorderClass}`}>Ações</th>
+                      <th className={`border-b px-5 py-3 pr-4 ${tableBorderClass}`}>Cliente</th>
+                      <th className={`border-b px-5 py-3 pr-4 ${tableBorderClass}`}>Proposta</th>
+                      <th className={`border-b px-5 py-3 pr-4 ${tableBorderClass}`}>Valor</th>
+                      <th className={`border-b px-5 py-3 pr-4 ${tableBorderClass}`}>Status</th>
+                      <th className={`border-b px-5 py-3 text-right ${tableBorderClass}`}>Ações</th>
                     </tr>
                   </thead>
                   <tbody className={isDark ? "divide-y divide-white/10" : "divide-y divide-zinc-100"}>
@@ -277,7 +309,7 @@ export default function Offers() {
 
                       return (
                         <tr key={o._id} className={tableRowClass}>
-                          <td className="py-3 pr-4">
+                          <td className="px-5 py-4 pr-4">
                             <div className={isDark ? "font-semibold text-white" : "font-semibold text-zinc-900"}>
                               {o.customerName || "—"}
                             </div>
@@ -285,7 +317,7 @@ export default function Offers() {
                               {o.customerWhatsApp || "—"}
                             </div>
                           </td>
-                          <td className="py-3 pr-4">
+                          <td className="px-5 py-4 pr-4">
                             <div className={isDark ? "flex flex-wrap items-center gap-2 text-white" : "flex flex-wrap items-center gap-2 text-zinc-900"}>
                               <span>{o.title || "Proposta"}</span>
                               {isRecurring ? (
@@ -310,10 +342,10 @@ export default function Offers() {
                               </Link>
                             ) : null}
                           </td>
-                          <td className={isDark ? "py-3 pr-4 font-semibold tabular-nums text-white" : "py-3 pr-4 font-semibold tabular-nums text-zinc-900"}>
+                          <td className={isDark ? "px-5 py-4 pr-4 font-semibold tabular-nums text-white" : "px-5 py-4 pr-4 font-semibold tabular-nums text-zinc-900"}>
                             {fmtBRLFromCents(getAmountCents(o))}
                           </td>
-                          <td className="py-3 pr-4">
+                          <td className="px-5 py-4 pr-4">
                             <div className="flex items-center gap-2">
                               {isPendingAlert ? (
                                 <span className={isDark ? "inline-flex items-center rounded-full border border-amber-400/20 bg-amber-400/10 px-2.5 py-1 text-[11px] font-bold text-amber-200" : "inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700"}>
@@ -334,7 +366,7 @@ export default function Offers() {
                               ) : null}
                             </div>
                           </td>
-                          <td className="py-3 text-right">
+                          <td className="px-5 py-4 text-right">
                             <div className="flex items-center justify-end gap-2">
                               <Button
                                 variant={copied ? "primary" : "secondary"}

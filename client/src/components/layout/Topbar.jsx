@@ -106,7 +106,7 @@ export default function Topbar({
           : "border-slate-200/80 bg-[rgba(255,255,255,0.82)]",
       ].join(" ")}
     >
-      <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
+      <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-4 px-4 py-2.5 sm:px-5 lg:px-6">
         <div className="flex min-w-0 items-center gap-3 sm:gap-4">
           <Link
             to={user ? "/dashboard" : "/"}
@@ -115,7 +115,7 @@ export default function Topbar({
           >
             <div
               className={[
-                "flex h-11 w-11 items-center justify-center rounded-2xl border bg-[linear-gradient(135deg,#2563eb,#14b8a6)] shadow-[0_18px_40px_-20px_rgba(37,99,235,0.7)]",
+                "flex h-11 w-11 items-center justify-center rounded-2xl border bg-[linear-gradient(135deg,#2563eb,#14b8a6)] shadow-[0_18px_40px_-20px_rgba(37,99,235,0.7)] sm:h-[42px] sm:w-[42px]",
                 isDark ? "border-white/10" : "border-slate-200/80",
               ].join(" ")}
             >
@@ -131,7 +131,7 @@ export default function Topbar({
             <div className="min-w-0">
               <div
                 className={[
-                  "truncate text-base font-black tracking-tight",
+                  "truncate text-[15px] font-black tracking-tight",
                   isDark ? "text-white" : "text-slate-950",
                 ].join(" ")}
               >
@@ -140,6 +140,7 @@ export default function Topbar({
               <div
                 className={[
                   "hidden text-[11px] font-semibold uppercase tracking-[0.18em] sm:block",
+                  "leading-none",
                   isDark ? "text-slate-400" : "text-slate-500",
                 ].join(" ")}
               >
@@ -150,7 +151,7 @@ export default function Topbar({
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3">
-          <div className="hidden lg:block">
+          <div className="hidden xl:block">
             <StatusBadge status={subscriptionStatus} loading={loadingBilling} />
           </div>
 
@@ -206,11 +207,11 @@ export default function Topbar({
               ) : null}
 
               <div
-                className={[
-                  "hidden rounded-2xl border px-4 py-2.5 text-right sm:block",
-                  isDark
-                    ? "border-white/10 bg-white/5"
-                    : "border-slate-200/80 bg-white/78 shadow-[0_14px_28px_-20px_rgba(15,23,42,0.18)]",
+              className={[
+                "hidden rounded-2xl border px-4 py-2 text-right lg:block",
+                isDark
+                  ? "border-white/10 bg-white/5"
+                  : "border-slate-200/80 bg-white/78 shadow-[0_14px_28px_-20px_rgba(15,23,42,0.18)]",
                 ].join(" ")}
               >
                 <div

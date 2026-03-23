@@ -30,7 +30,7 @@ function MobileMenuButton({ isDark, onClick }) {
       onClick={onClick}
       aria-label="Abrir menu"
       className={[
-        "fixed left-4 top-[84px] z-40 inline-flex h-11 w-11 items-center justify-center rounded-2xl border backdrop-blur-xl transition md:hidden",
+        "fixed left-4 top-[76px] z-40 inline-flex h-10 w-10 items-center justify-center rounded-2xl border backdrop-blur-xl transition md:hidden",
         isDark
           ? "border-white/10 bg-[rgba(8,15,30,0.88)] text-slate-100 shadow-[0_18px_40px_-20px_rgba(15,23,42,0.9)] hover:border-cyan-400/30 hover:bg-[rgba(10,18,36,0.96)]"
           : "border-slate-200/80 bg-white/92 text-slate-700 shadow-[0_18px_36px_-22px_rgba(15,23,42,0.25)] hover:border-sky-300 hover:bg-white hover:text-slate-950",
@@ -175,10 +175,10 @@ export default function Shell({ children, topbarAction = null }) {
           className={[
             "hidden md:block md:shrink-0",
             "transition-[width] duration-300 ease-out",
-            sidebarExpanded ? "md:w-[308px]" : "md:w-[112px]",
+            sidebarExpanded ? "md:w-[288px]" : "md:w-[104px]",
           ].join(" ")}
         >
-          <div className="sticky top-[72px] h-[calc(100vh-72px)] overflow-y-auto p-4">
+          <div className="sticky top-[68px] h-[calc(100vh-68px)] overflow-y-auto p-4">
             <Sidebar
               collapsed={!sidebarExpanded}
               onToggle={() => setSidebarExpanded((previous) => !previous)}
@@ -187,13 +187,13 @@ export default function Shell({ children, topbarAction = null }) {
         </aside>
 
         <main className="min-w-0 flex-1 pb-8">
-          <div className="px-4 pb-6 pt-[88px] sm:px-6 lg:px-8">
+          <div className="px-4 pb-6 pt-[80px] sm:px-5 lg:px-6">
             <div
               className={[
-                "min-h-[calc(100vh-112px)] rounded-[34px] border p-4 backdrop-blur-xl transition-colors sm:p-6 lg:p-8",
+                "min-h-[calc(100vh-104px)] rounded-[30px] border p-4 backdrop-blur-xl transition-colors sm:p-5 lg:p-6",
                 isDark
-                  ? "border-white/10 bg-[linear-gradient(180deg,rgba(12,19,34,0.96),rgba(6,12,24,0.92))] shadow-[0_24px_80px_-52px_rgba(15,23,42,0.85)]"
-                  : "border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(241,245,249,0.88))] shadow-[0_24px_80px_-52px_rgba(15,23,42,0.18)]",
+                  ? "border-white/10 bg-[linear-gradient(180deg,rgba(12,19,34,0.94),rgba(6,12,24,0.9))] shadow-[0_22px_72px_-52px_rgba(15,23,42,0.8)]"
+                  : "border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(243,246,250,0.9))] shadow-[0_22px_72px_-56px_rgba(15,23,42,0.16)]",
               ].join(" ")}
             >
               <div className="space-y-6">

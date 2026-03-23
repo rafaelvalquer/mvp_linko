@@ -262,7 +262,7 @@ function MetricCard({ icon: Icon, title, value, subtitle, status = "healthy" }) 
 
   return (
     <Card className="overflow-hidden">
-      <CardBody className="space-y-4">
+      <CardBody className="space-y-3.5">
         <div className="flex items-start justify-between gap-4">
           <div
             className={`flex h-12 w-12 items-center justify-center rounded-2xl ${isDark ? "bg-white/10 text-white" : "bg-white text-slate-800 shadow-[0_16px_30px_-22px_rgba(15,23,42,0.24)]"}`}
@@ -278,7 +278,7 @@ function MetricCard({ icon: Icon, title, value, subtitle, status = "healthy" }) 
             {title}
           </div>
           <div
-            className={`mt-2 text-3xl font-black tracking-[-0.04em] ${isDark ? "text-white" : "text-slate-950"}`}
+            className={`mt-2 text-[1.85rem] font-black tracking-[-0.04em] ${isDark ? "text-white" : "text-slate-950"}`}
           >
             {value}
           </div>
@@ -310,7 +310,7 @@ function SelectField({ value, onChange, children }) {
 }
 
 function FilterRow({ children }) {
-  return <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">{children}</div>;
+  return <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-4">{children}</div>;
 }
 
 function InlineError({ message }) {
@@ -749,12 +749,13 @@ export default function Management() {
 
   return (
     <Shell>
-      <div className="mx-auto max-w-7xl space-y-10">
+      <div className="mx-auto max-w-[1500px] space-y-8">
         <PageHeader
+          eyebrow="Master"
           title="Gerenciamento Master"
           subtitle="Monitoria global do backend, banco, clientes, workspaces, fila do WhatsApp e logs operacionais."
           actions={
-            <Button onClick={() => setRefreshKey((current) => current + 1)}>
+            <Button size="lg" onClick={() => setRefreshKey((current) => current + 1)}>
               <RefreshCw className="h-4 w-4" />
               Atualizar tudo
             </Button>

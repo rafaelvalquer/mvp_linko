@@ -8,6 +8,7 @@ import PageHeader from "../components/appui/PageHeader.jsx";
 import Card, { CardBody, CardHeader } from "../components/appui/Card.jsx";
 import Button from "../components/appui/Button.jsx";
 import { Input, Textarea } from "../components/appui/Input.jsx";
+import SummaryAside from "../components/appui/SummaryAside.jsx";
 import { useAuth } from "../app/AuthContext.jsx";
 import { listClients } from "../app/clientsApi.js";
 import { listProducts } from "../app/productsApi.js";
@@ -17,7 +18,7 @@ import {
   getDefaultOfferNotificationFlags,
 } from "../utils/notificationSettings.js";
 
-import { MessageCircle } from "lucide-react";
+import { AlertTriangle, MessageCircle } from "lucide-react";
 
 function parseMoneyToCents(raw) {
   const s0 = String(raw ?? "").trim();
@@ -364,6 +365,113 @@ function buildOfferCalc(form) {
   };
 }
 
+function buildValidationAlertMessage(issues) {
+  const uniqueIssues = Array.from(
+    new Set(
+      (Array.isArray(issues) ? issues : []).filter(
+        (issue) => typeof issue === "string" && issue.trim(),
+      ),
+    ),
+  );
+
+  if (!uniqueIssues.length) return "";
+
+  return [
+    "Antes de gerar o link, preencha ou corrija os campos abaixo:",
+    ...uniqueIssues.map((issue) => `- ${issue}`),
+  ].join("\n");
+}
+
+function collectOfferValidationIssues(form, calc, creationMode) {
+  const issues = [];
+
+  if (!String(form.customerName || "").trim()) {
+    issues.push("Nome do cliente");
+  }
+
+  if (form.depositEnabled) {
+    const pct = clampInt(form.depositPct, 0, 100);
+    if (!(pct >= 0 && pct <= 100)) {
+      issues.push("Sinal (%)");
+    }
+  }
+
+  if (form.offerType === "service") {
+    if (!String(form.title || "").trim()) {
+      issues.push("Titulo do servico");
+    }
+    if (!Number.isFinite(calc.serviceBaseCents) || calc.serviceBaseCents <= 0) {
+      issues.push("Valor do servico");
+    }
+    if (!Number.isFinite(calc.totalCents) || calc.totalCents <= 0) {
+      issues.push("Total do orcamento");
+    }
+
+    if (form.durationEnabled) {
+      const duration = clampInt(form.durationMin, 1);
+      if (!Number.isFinite(duration) || duration <= 0) {
+        issues.push("Duracao estimada");
+      }
+    }
+  } else {
+    const items = Array.isArray(form.items) ? form.items : [];
+
+    if (items.length < 1) {
+      issues.push("Pelo menos 1 item");
+    }
+
+    for (let i = 0; i < calc.lines.length; i += 1) {
+      const line = calc.lines[i];
+      if (!String(line.description || "").trim()) {
+        issues.push(`Item ${i + 1}: descricao`);
+      }
+      if (!(line.qty >= 1)) {
+        issues.push(`Item ${i + 1}: quantidade`);
+      }
+      if (!Number.isFinite(line.unitPriceCents) || line.unitPriceCents <= 0) {
+        issues.push(`Item ${i + 1}: valor unitario`);
+      }
+    }
+
+    if (!Number.isFinite(calc.totalCents) || calc.totalCents <= 0) {
+      issues.push("Total do orcamento");
+    }
+  }
+
+  if (creationMode === "recurring") {
+    if (!String(form.recurringName || "").trim()) {
+      issues.push("Nome interno da recorrencia");
+    }
+    if (
+      !Number.isFinite(Number(form.recurringIntervalDays)) ||
+      Number(form.recurringIntervalDays) < 1
+    ) {
+      issues.push("Intervalo da recorrencia (dias)");
+    }
+    if (!String(form.recurringStartDate || "").trim()) {
+      issues.push("Data de inicio da recorrencia");
+    }
+    if (!String(form.recurringTimeOfDay || "").trim()) {
+      issues.push("Horario da execucao");
+    }
+    if (
+      form.recurringEndMode === "until_date" &&
+      !String(form.recurringEndsAt || "").trim()
+    ) {
+      issues.push("Data final da recorrencia");
+    }
+    if (
+      form.recurringEndMode === "until_count" &&
+      (!Number.isFinite(Number(form.recurringMaxOccurrences)) ||
+        Number(form.recurringMaxOccurrences) < 1)
+    ) {
+      issues.push("Quantidade maxima de cobrancas");
+    }
+  }
+
+  return issues;
+}
+
 function commitNumericDrafts(form) {
   let nextForm = form;
 
@@ -372,7 +480,10 @@ function commitNumericDrafts(form) {
     const nextValue = commitIntegerInput(form[inputKey], form[field], config);
     const nextInput = String(nextValue);
 
-    if (nextValue !== form[field] || nextInput !== String(form[inputKey] ?? "")) {
+    if (
+      nextValue !== form[field] ||
+      nextInput !== String(form[inputKey] ?? "")
+    ) {
       if (nextForm === form) nextForm = { ...form };
       nextForm[field] = nextValue;
       nextForm[inputKey] = nextInput;
@@ -414,7 +525,9 @@ export default function NewOffer() {
   const { user, perms } = useAuth();
   const [searchParams] = useSearchParams();
   const initialRecurringMode =
-    String(searchParams.get("mode") || "").trim().toLowerCase() === "recurring";
+    String(searchParams.get("mode") || "")
+      .trim()
+      .toLowerCase() === "recurring";
   const plan = String(
     perms?.plan || user?.plan || user?.workspace?.plan || "start",
   ).toLowerCase();
@@ -498,6 +611,7 @@ export default function NewOffer() {
 
   const [result, setResult] = useState(null);
   const [err, setErr] = useState("");
+  const [validationIssues, setValidationIssues] = useState([]);
   const [busy, setBusy] = useState(false);
 
   // Premium: auto-preencher cliente/produto a partir de cadastros
@@ -538,7 +652,9 @@ export default function NewOffer() {
     const nextMode =
       canUseRecurringFeatures && initialRecurringMode ? "recurring" : "single";
     setForm((prev) =>
-      prev.creationMode === nextMode ? prev : { ...prev, creationMode: nextMode },
+      prev.creationMode === nextMode
+        ? prev
+        : { ...prev, creationMode: nextMode },
     );
   }, [canUseRecurringFeatures, initialRecurringMode]);
 
@@ -554,20 +670,21 @@ export default function NewOffer() {
           settings: data?.settings?.notifications || {},
           capabilities: data?.capabilities?.notifications || {},
         };
-        const defaultFlags = getDefaultOfferNotificationFlags(notificationContext);
+        const defaultFlags =
+          getDefaultOfferNotificationFlags(notificationContext);
         const defaultRecurringAutoSend =
           canSendWhatsAppRecurringAutoSend(notificationContext);
 
         setForm((prev) => ({
           ...prev,
-          notifyWhatsAppOnPaid:
-            notificationPreferenceTouchedRef.current.notifyWhatsAppOnPaid
-              ? prev.notifyWhatsAppOnPaid
-              : defaultFlags.notifyWhatsAppOnPaid,
-          recurringAutoSendToCustomer:
-            notificationPreferenceTouchedRef.current.recurringAutoSendToCustomer
-              ? prev.recurringAutoSendToCustomer
-              : defaultRecurringAutoSend,
+          notifyWhatsAppOnPaid: notificationPreferenceTouchedRef.current
+            .notifyWhatsAppOnPaid
+            ? prev.notifyWhatsAppOnPaid
+            : defaultFlags.notifyWhatsAppOnPaid,
+          recurringAutoSendToCustomer: notificationPreferenceTouchedRef.current
+            .recurringAutoSendToCustomer
+            ? prev.recurringAutoSendToCustomer
+            : defaultRecurringAutoSend,
         }));
       } catch {}
     })();
@@ -885,6 +1002,7 @@ export default function NewOffer() {
   async function onSubmit(e) {
     e.preventDefault();
     setErr("");
+    setValidationIssues([]);
     setResult(null);
     setBusy(true);
 
@@ -894,6 +1012,21 @@ export default function NewOffer() {
 
       if (activeForm !== form) {
         setForm(activeForm);
+      }
+
+      const creationMode = canUseRecurringFeatures
+        ? activeForm.creationMode
+        : "single";
+
+      const validationIssues = collectOfferValidationIssues(
+        activeForm,
+        activeCalc,
+        creationMode,
+      );
+
+      if (validationIssues.length) {
+        setValidationIssues(validationIssues);
+        return;
       }
 
       // base validations
@@ -946,10 +1079,6 @@ export default function NewOffer() {
           throw new Error("Total do orçamento inválido.");
       }
 
-      const creationMode = canUseRecurringFeatures
-        ? activeForm.creationMode
-        : "single";
-
       if (creationMode === "recurring") {
         if (!String(activeForm.recurringName || "").trim()) {
           throw new Error("Informe um nome interno para a recorrência.");
@@ -958,7 +1087,9 @@ export default function NewOffer() {
           !Number.isFinite(Number(activeForm.recurringIntervalDays)) ||
           Number(activeForm.recurringIntervalDays) < 1
         ) {
-          throw new Error("Informe um intervalo válido em dias para a recorrência.");
+          throw new Error(
+            "Informe um intervalo válido em dias para a recorrência.",
+          );
         }
         if (!String(activeForm.recurringStartDate || "").trim()) {
           throw new Error("Informe a data de início da recorrência.");
@@ -1041,8 +1172,12 @@ export default function NewOffer() {
 
         // optional computed
         subtotalCents: activeCalc.baseCents,
-        discountCents: activeForm.discountEnabled ? activeCalc.discountCents : null,
-        freightCents: activeForm.freightEnabled ? activeCalc.freightCents : null,
+        discountCents: activeForm.discountEnabled
+          ? activeCalc.discountCents
+          : null,
+        freightCents: activeForm.freightEnabled
+          ? activeCalc.freightCents
+          : null,
         totalCents: activeCalc.totalCents,
 
         // ✅ condições (com flags + valores)
@@ -1067,7 +1202,9 @@ export default function NewOffer() {
           : null,
 
         discountEnabled: !!activeForm.discountEnabled,
-        discountType: activeForm.discountEnabled ? activeForm.discountType : null,
+        discountType: activeForm.discountEnabled
+          ? activeForm.discountType
+          : null,
         discountValue: activeForm.discountEnabled
           ? String(activeForm.discountValue || "")
           : null,
@@ -1146,6 +1283,7 @@ export default function NewOffer() {
         setResult({ ...res, kind: "single" });
       }
     } catch (e2) {
+      setValidationIssues([]);
       setErr(e2.message || "Erro");
     } finally {
       setBusy(false);
@@ -1170,15 +1308,82 @@ export default function NewOffer() {
       })
     : "";
 
+  const primaryActionLabel = busy
+    ? isRecurring
+      ? "Criando recorrencia..."
+      : "Gerando..."
+    : isRecurring
+      ? "Criar recorrencia"
+      : "Gerar link";
+
+  function renderValidationAlert() {
+    if (!validationIssues.length) return null;
+
+    return (
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100">
+        <div className="flex items-start gap-3">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-300" />
+          <div className="min-w-0">
+            <div className="text-sm font-semibold">
+              Antes de gerar o link, revise os campos abaixo
+            </div>
+            <ul className="mt-2 space-y-1 text-sm leading-5">
+              {validationIssues.map((issue) => (
+                <li key={issue}>- {issue}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function renderProposalActions({ className = "", embedded = false } = {}) {
+    return (
+      <div
+        className={[
+          embedded ? "space-y-3" : "surface-panel space-y-3 px-4 py-4",
+          className,
+        ].join(" ")}
+      >
+        {renderValidationAlert()}
+
+        {err ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
+            {err}
+          </div>
+        ) : null}
+
+        <div className="grid gap-2">
+          <Button
+            variant="secondary"
+            type="button"
+            onClick={() =>
+              setForm((p) => ({
+                ...p,
+                description: "",
+                conditionsNotes: "",
+              }))
+            }
+          >
+            Limpar textos
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <Shell>
-      <div className="space-y-4">
+      <div className="mx-auto max-w-[1380px] space-y-5">
         <PageHeader
+          eyebrow="Nova venda"
           title="Nova proposta"
           subtitle="Crie o orçamento e gere um link único para o cliente aceitar e pagar."
           actions={
             <Button
               variant="secondary"
+              size="md"
               type="button"
               onClick={() => history.back()}
             >
@@ -1187,1360 +1392,1638 @@ export default function NewOffer() {
           }
         />
 
-        <form onSubmit={onSubmit} className="space-y-4">
-          {canUseRecurringFeatures ? (
-            <Card>
-              <CardHeader
-                title="Tipo de criação"
-                subtitle="Escolha se deseja gerar uma proposta avulsa ou configurar uma cobrança recorrente."
-              />
-              <CardBody className="space-y-4">
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setForm((prev) => ({ ...prev, creationMode: "single" }))
-                    }
-                    className={`rounded-2xl border p-4 text-left transition-colors ${
-                      form.creationMode === "single"
-                        ? "border-emerald-300 bg-emerald-50"
-                        : "border-zinc-200 bg-white hover:bg-zinc-50"
-                    }`}
-                  >
-                    <div className="text-sm font-semibold text-zinc-900">
-                      Proposta avulsa
-                    </div>
-                    <div className="mt-1 text-xs text-zinc-500">
-                      Mantém o fluxo atual da plataforma e gera uma única proposta.
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setForm((prev) => ({ ...prev, creationMode: "recurring" }))
-                    }
-                    className={`rounded-2xl border p-4 text-left transition-colors ${
-                      form.creationMode === "recurring"
-                        ? "border-emerald-300 bg-emerald-50"
-                        : "border-zinc-200 bg-white hover:bg-zinc-50"
-                    }`}
-                  >
-                    <div className="text-sm font-semibold text-zinc-900">
-                      Cobrança recorrente
-                    </div>
-                    <div className="mt-1 text-xs text-zinc-500">
-                      Cria uma automação que gera novas propostas ao longo do tempo.
-                    </div>
-                  </button>
-                </div>
-              </CardBody>
-            </Card>
-          ) : null}
-
-          {/* Cliente */}
-          <Card>
-            <CardHeader
-              title="Cliente"
-              subtitle="Dados básicos para identificação e confirmação."
-            />
-            <CardBody
-              className={[
-                "grid grid-cols-1 gap-3",
-                isPremium ? "sm:grid-cols-3" : "sm:grid-cols-2",
-              ].join(" ")}
-            >
-              <div>
-                <label className="text-xs font-semibold text-zinc-600">
-                  Nome
-                </label>
-                <Input
-                  value={form.customerName}
-                  onChange={(e) =>
-                    setForm({ ...form, customerName: e.target.value })
-                  }
-                  placeholder="Ex.: João Silva"
-                />
-              </div>
-
-              {isPremium ? (
-                <div className="relative">
-                  <label className="text-xs font-semibold text-zinc-600">
-                    CPF/CNPJ (Premium)
-                  </label>
-                  <Input
-                    value={formatCpfCnpj(customerDoc)}
-                    onChange={(e) => {
-                      const digits = onlyDigits(e.target.value).slice(0, 14);
-                      setCustomerDoc(digits);
-                      setClientOpen(true);
-                      setForm((prev) => ({ ...prev, customerDoc: digits }));
-                    }}
-                    onFocus={() => setClientOpen(true)}
-                    onBlur={() => {
-                      setDocTouched(true);
-                      setTimeout(() => setClientOpen(false), 120);
-                    }}
-                    placeholder="CPF: XXX.XXX.XXX-XX ou CNPJ: XX.XX.XXX/0001-00"
-                    inputMode="numeric"
+        <form onSubmit={onSubmit} className="space-y-5">
+          <div className="grid gap-6 lg:grid-cols-12 lg:items-start">
+            <div className="space-y-4 lg:col-span-8 2xl:col-span-9">
+              {canUseRecurringFeatures ? (
+                <Card>
+                  <CardHeader
+                    title="Tipo de criação"
+                    subtitle="Escolha se deseja gerar uma proposta avulsa ou configurar uma cobrança recorrente."
                   />
+                  <CardBody className="space-y-4">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setForm((prev) => ({
+                            ...prev,
+                            creationMode: "single",
+                          }))
+                        }
+                        className={`rounded-2xl border p-4 text-left transition-colors ${
+                          form.creationMode === "single"
+                            ? "border-emerald-300 bg-emerald-50"
+                            : "border-zinc-200 bg-white hover:bg-zinc-50"
+                        }`}
+                      >
+                        <div className="text-sm font-semibold text-zinc-900">
+                          Proposta avulsa
+                        </div>
+                        <div className="mt-1 text-xs text-zinc-500">
+                          Mantém o fluxo atual da plataforma e gera uma única
+                          proposta.
+                        </div>
+                      </button>
 
-                  {docError ? (
-                    <div className="mt-1 text-xs text-red-600">{docError}</div>
-                  ) : null}
-
-                  {clientOpen ? (
-                    <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-lg">
-                      <div className="px-3 py-2 text-xs text-zinc-500 border-b border-zinc-100 flex items-center justify-between">
-                        <span>Clientes encontrados</span>
-                        {clientLoading ? (
-                          <span className="animate-pulse">Buscando...</span>
-                        ) : null}
-                      </div>
-                      <div className="max-h-56 overflow-auto">
-                        {(clientHits || []).length ? (
-                          (clientHits || []).slice(0, 20).map((c) => {
-                            const doc =
-                              c?.cpfCnpj ||
-                              c?.cpf_cnpj ||
-                              c?.doc ||
-                              c?.document ||
-                              "";
-                            const phone =
-                              c?.phone ||
-                              c?.whatsapp ||
-                              c?.customerWhatsApp ||
-                              "";
-                            const name =
-                              c?.name || c?.fullName || c?.customerName || "";
-                            const key =
-                              c?._id || c?.id || `${name}-${doc}-${phone}`;
-                            return (
-                              <button
-                                key={key}
-                                type="button"
-                                onMouseDown={(e) => e.preventDefault()}
-                                onClick={() => {
-                                  const id =
-                                    String(c?._id || c?.id || "") || null;
-                                  const doc =
-                                    c?.cpfCnpjDigits ||
-                                    c?.cpfCnpj ||
-                                    c?.cpf_cnpj ||
-                                    c?.doc ||
-                                    c?.document ||
-                                    "";
-                                  const phone =
-                                    c?.phone ||
-                                    c?.whatsapp ||
-                                    c?.customerWhatsApp ||
-                                    "";
-                                  const name =
-                                    c?.name ||
-                                    c?.fullName ||
-                                    c?.customerName ||
-                                    "";
-                                  const email = c?.email || "";
-
-                                  setForm((prev) => ({
-                                    ...prev,
-                                    customerId: id,
-                                    customerName: name || prev.customerName,
-                                    customerWhatsApp:
-                                      phone || prev.customerWhatsApp,
-                                    customerEmail: String(
-                                      email || prev.customerEmail || "",
-                                    ).trim(),
-                                    customerDoc: onlyDigits(
-                                      doc ||
-                                        customerDoc ||
-                                        prev.customerDoc ||
-                                        "",
-                                    ),
-                                  }));
-
-                                  setCustomerDoc(
-                                    onlyDigits(doc || customerDoc || ""),
-                                  );
-                                  setClientOpen(false);
-                                }}
-                                className="w-full px-3 py-2 text-left hover:bg-zinc-50"
-                              >
-                                <div className="text-sm font-medium text-zinc-900 truncate">
-                                  {name || "—"}
-                                </div>
-                                <div className="text-xs text-zinc-500 flex gap-2">
-                                  <span className="font-mono">
-                                    {doc || "sem doc"}
-                                  </span>
-                                  {phone ? (
-                                    <span className="truncate">{phone}</span>
-                                  ) : null}
-                                </div>
-                              </button>
-                            );
-                          })
-                        ) : (
-                          <div className="px-3 py-3 text-sm text-zinc-500">
-                            {clientLoading
-                              ? "Buscando clientes..."
-                              : "Nenhum cliente encontrado."}
-                          </div>
-                        )}
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setForm((prev) => ({
+                            ...prev,
+                            creationMode: "recurring",
+                          }))
+                        }
+                        className={`rounded-2xl border p-4 text-left transition-colors ${
+                          form.creationMode === "recurring"
+                            ? "border-emerald-300 bg-emerald-50"
+                            : "border-zinc-200 bg-white hover:bg-zinc-50"
+                        }`}
+                      >
+                        <div className="text-sm font-semibold text-zinc-900">
+                          Cobrança recorrente
+                        </div>
+                        <div className="mt-1 text-xs text-zinc-500">
+                          Cria uma automação que gera novas propostas ao longo
+                          do tempo.
+                        </div>
+                      </button>
                     </div>
-                  ) : null}
-
-                  <div className="mt-1 text-[11px] text-zinc-500">
-                    Ao digitar um CPF/CNPJ cadastrado, o nome e WhatsApp serão
-                    preenchidos.
-                  </div>
-                </div>
+                  </CardBody>
+                </Card>
               ) : null}
 
-              <div>
-                <label className="text-xs font-semibold text-zinc-600">
-                  WhatsApp (opcional)
-                </label>
-                <Input
-                  value={formatBRPhone(form.customerWhatsApp)}
-                  onChange={(e) => {
-                    const digits = onlyDigits(e.target.value).slice(0, 11);
-                    setForm({ ...form, customerWhatsApp: digits });
-                  }}
-                  onBlur={() => setPhoneTouched(true)}
-                  placeholder="11 99999-9999"
-                  inputMode="numeric"
-                  autoComplete="tel"
+              {/* Cliente */}
+              <Card>
+                <CardHeader
+                  title="Cliente"
+                  subtitle="Dados básicos para identificação e confirmação."
                 />
-
-                {phoneError ? (
-                  <div className="mt-1 text-xs text-red-600">{phoneError}</div>
-                ) : null}
-              </div>
-
-              <div className="mt-3 rounded-xl border bg-zinc-50 p-3">
-                <label className="flex items-start gap-3">
-                  <input
-                    type="checkbox"
-                    className="mt-1 h-4 w-4 accent-emerald-600"
-                    checked={!!form.notifyWhatsAppOnPaid}
-                    onChange={(e) => {
-                      notificationPreferenceTouchedRef.current.notifyWhatsAppOnPaid =
-                        true;
-                      setForm({
-                        ...form,
-                        notifyWhatsAppOnPaid: e.target.checked,
-                      });
-                    }}
-                  />
+                <CardBody
+                  className={[
+                    "grid grid-cols-1 gap-3",
+                    isPremium ? "sm:grid-cols-3" : "sm:grid-cols-2",
+                  ].join(" ")}
+                >
                   <div>
-                    <div className="text-sm font-semibold text-zinc-900">
-                      Enviar confirmação de pagamento por WhatsApp
+                    <label className="text-xs font-semibold text-zinc-600">
+                      Nome
+                    </label>
+                    <Input
+                      value={form.customerName}
+                      onChange={(e) =>
+                        setForm({ ...form, customerName: e.target.value })
+                      }
+                      placeholder="Ex.: João Silva"
+                    />
+                  </div>
+
+                  {isPremium ? (
+                    <div className="relative">
+                      <label className="text-xs font-semibold text-zinc-600">
+                        CPF/CNPJ (Premium)
+                      </label>
+                      <Input
+                        value={formatCpfCnpj(customerDoc)}
+                        onChange={(e) => {
+                          const digits = onlyDigits(e.target.value).slice(
+                            0,
+                            14,
+                          );
+                          setCustomerDoc(digits);
+                          setClientOpen(true);
+                          setForm((prev) => ({ ...prev, customerDoc: digits }));
+                        }}
+                        onFocus={() => setClientOpen(true)}
+                        onBlur={() => {
+                          setDocTouched(true);
+                          setTimeout(() => setClientOpen(false), 120);
+                        }}
+                        placeholder="CPF: XXX.XXX.XXX-XX ou CNPJ: XX.XX.XXX/0001-00"
+                        inputMode="numeric"
+                      />
+
+                      {docError ? (
+                        <div className="mt-1 text-xs text-red-600">
+                          {docError}
+                        </div>
+                      ) : null}
+
+                      {clientOpen ? (
+                        <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-lg">
+                          <div className="px-3 py-2 text-xs text-zinc-500 border-b border-zinc-100 flex items-center justify-between">
+                            <span>Clientes encontrados</span>
+                            {clientLoading ? (
+                              <span className="animate-pulse">Buscando...</span>
+                            ) : null}
+                          </div>
+                          <div className="max-h-56 overflow-auto">
+                            {(clientHits || []).length ? (
+                              (clientHits || []).slice(0, 20).map((c) => {
+                                const doc =
+                                  c?.cpfCnpj ||
+                                  c?.cpf_cnpj ||
+                                  c?.doc ||
+                                  c?.document ||
+                                  "";
+                                const phone =
+                                  c?.phone ||
+                                  c?.whatsapp ||
+                                  c?.customerWhatsApp ||
+                                  "";
+                                const name =
+                                  c?.name ||
+                                  c?.fullName ||
+                                  c?.customerName ||
+                                  "";
+                                const key =
+                                  c?._id || c?.id || `${name}-${doc}-${phone}`;
+                                return (
+                                  <button
+                                    key={key}
+                                    type="button"
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={() => {
+                                      const id =
+                                        String(c?._id || c?.id || "") || null;
+                                      const doc =
+                                        c?.cpfCnpjDigits ||
+                                        c?.cpfCnpj ||
+                                        c?.cpf_cnpj ||
+                                        c?.doc ||
+                                        c?.document ||
+                                        "";
+                                      const phone =
+                                        c?.phone ||
+                                        c?.whatsapp ||
+                                        c?.customerWhatsApp ||
+                                        "";
+                                      const name =
+                                        c?.name ||
+                                        c?.fullName ||
+                                        c?.customerName ||
+                                        "";
+                                      const email = c?.email || "";
+
+                                      setForm((prev) => ({
+                                        ...prev,
+                                        customerId: id,
+                                        customerName: name || prev.customerName,
+                                        customerWhatsApp:
+                                          phone || prev.customerWhatsApp,
+                                        customerEmail: String(
+                                          email || prev.customerEmail || "",
+                                        ).trim(),
+                                        customerDoc: onlyDigits(
+                                          doc ||
+                                            customerDoc ||
+                                            prev.customerDoc ||
+                                            "",
+                                        ),
+                                      }));
+
+                                      setCustomerDoc(
+                                        onlyDigits(doc || customerDoc || ""),
+                                      );
+                                      setClientOpen(false);
+                                    }}
+                                    className="w-full px-3 py-2 text-left hover:bg-zinc-50"
+                                  >
+                                    <div className="text-sm font-medium text-zinc-900 truncate">
+                                      {name || "—"}
+                                    </div>
+                                    <div className="text-xs text-zinc-500 flex gap-2">
+                                      <span className="font-mono">
+                                        {doc || "sem doc"}
+                                      </span>
+                                      {phone ? (
+                                        <span className="truncate">
+                                          {phone}
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                  </button>
+                                );
+                              })
+                            ) : (
+                              <div className="px-3 py-3 text-sm text-zinc-500">
+                                {clientLoading
+                                  ? "Buscando clientes..."
+                                  : "Nenhum cliente encontrado."}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      <div className="mt-1 text-[11px] text-zinc-500">
+                        Ao digitar um CPF/CNPJ cadastrado, o nome e WhatsApp
+                        serão preenchidos.
+                      </div>
                     </div>
-                    <div className="text-xs text-zinc-600">
-                      Quando o Pix for confirmado, enviaremos uma mensagem para
-                      o cliente.
-                    </div>
-                    {form.notifyWhatsAppOnPaid &&
-                    !onlyDigits(form.customerWhatsApp) ? (
-                      <div className="mt-1 text-xs text-amber-700">
-                        Para enviar WhatsApp, preencha o WhatsApp do cliente na
-                        proposta.
+                  ) : null}
+
+                  <div>
+                    <label className="text-xs font-semibold text-zinc-600">
+                      WhatsApp (opcional)
+                    </label>
+                    <Input
+                      value={formatBRPhone(form.customerWhatsApp)}
+                      onChange={(e) => {
+                        const digits = onlyDigits(e.target.value).slice(0, 11);
+                        setForm({ ...form, customerWhatsApp: digits });
+                      }}
+                      onBlur={() => setPhoneTouched(true)}
+                      placeholder="11 99999-9999"
+                      inputMode="numeric"
+                      autoComplete="tel"
+                    />
+
+                    {phoneError ? (
+                      <div className="mt-1 text-xs text-red-600">
+                        {phoneError}
                       </div>
                     ) : null}
                   </div>
-                </label>
-              </div>
-            </CardBody>
-          </Card>
 
-          {/* Tipo de orçamento */}
-          <Card>
-            <CardHeader
-              title="Tipo de orçamento"
-              subtitle="Escolha o layout: serviço simples ou itens de produto."
-            />
-            <CardBody>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-6">
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="radio"
-                    name="offerType"
-                    checked={form.offerType === "service"}
-                    onChange={() => setOfferType("service")}
-                  />
-                  <span className="font-semibold text-zinc-800">Serviço</span>
-                </label>
-
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="radio"
-                    name="offerType"
-                    checked={form.offerType === "product"}
-                    onChange={() => setOfferType("product")}
-                  />
-                  <span className="font-semibold text-zinc-800">Produto</span>
-                </label>
-              </div>
-            </CardBody>
-          </Card>
-
-          {/* Serviço (somente service) */}
-          {!isProduct ? (
-            <Card>
-              <CardHeader
-                title="Serviço"
-                subtitle="O que será feito e observações."
-              />
-              <CardBody className="space-y-3">
-                <div>
-                  <label className="text-xs font-semibold text-zinc-600">
-                    Título
-                  </label>
-                  <Input
-                    value={form.title}
-                    onChange={(e) =>
-                      setForm({ ...form, title: e.target.value })
-                    }
-                    placeholder="Título do serviço"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-zinc-600">
-                    Descrição (opcional)
-                  </label>
-                  <Textarea
-                    className="min-h-[100px]"
-                    value={form.description}
-                    onChange={(e) =>
-                      setForm({ ...form, description: e.target.value })
-                    }
-                    placeholder="Detalhes, itens/opções, condições específicas…"
-                  />
-                </div>
-              </CardBody>
-            </Card>
-          ) : null}
-
-          {/* Produtos/Itens (somente product) */}
-          {isProduct ? (
-            <Card>
-              <CardHeader
-                title="Produtos/Itens"
-                subtitle="Adicione itens com quantidade e valor unitário."
-              />
-              <CardBody className="space-y-3">
-                {/* antes era: <div className="overflow-auto rounded-xl border"> */}
-                <div className="rounded-xl border">
-                  {/* permite scroll horizontal sem cortar o dropdown na vertical */}
-                  <div className="overflow-x-auto overflow-y-visible">
-                    {/* dá “respiro” extra para o dropdown */}
-                    <div className="min-w-[820px] overflow-visible pb-10">
-                      <div className="grid grid-cols-12 gap-2 border-b bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-600">
-                        <div className="col-span-6">Descrição</div>
-                        <div className="col-span-2">Qtd</div>
-                        <div className="col-span-2">Vlr unit.</div>
-                        <div className="col-span-2">Total</div>
+                  <div className="mt-3 rounded-xl border bg-zinc-50 p-3">
+                    <label className="flex items-start gap-3">
+                      <input
+                        type="checkbox"
+                        className="mt-1 h-4 w-4 accent-emerald-600"
+                        checked={!!form.notifyWhatsAppOnPaid}
+                        onChange={(e) => {
+                          notificationPreferenceTouchedRef.current.notifyWhatsAppOnPaid = true;
+                          setForm({
+                            ...form,
+                            notifyWhatsAppOnPaid: e.target.checked,
+                          });
+                        }}
+                      />
+                      <div>
+                        <div className="text-sm font-semibold text-zinc-900">
+                          Enviar confirmação de pagamento por WhatsApp
+                        </div>
+                        <div className="text-xs text-zinc-600">
+                          Quando o Pix for confirmado, enviaremos uma mensagem
+                          para o cliente.
+                        </div>
+                        {form.notifyWhatsAppOnPaid &&
+                        !onlyDigits(form.customerWhatsApp) ? (
+                          <div className="mt-1 text-xs text-amber-700">
+                            Para enviar WhatsApp, preencha o WhatsApp do cliente
+                            na proposta.
+                          </div>
+                        ) : null}
                       </div>
+                    </label>
+                  </div>
+                </CardBody>
+              </Card>
 
-                      <div className="divide-y">
-                        {(form.items || []).map((it, idx) => {
-                          const line = calc.lines[idx];
-                          const lineTotal = Number.isFinite(
-                            line?.lineTotalCents,
-                          )
-                            ? formatBRL(line.lineTotalCents)
-                            : "—";
+              {/* Tipo de orçamento */}
+              <Card>
+                <CardHeader
+                  title="Tipo de orçamento"
+                  subtitle="Escolha o layout: serviço simples ou itens de produto."
+                />
+                <CardBody>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-6">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        name="offerType"
+                        checked={form.offerType === "service"}
+                        onChange={() => setOfferType("service")}
+                      />
+                      <span className="font-semibold text-zinc-800">
+                        Serviço
+                      </span>
+                    </label>
 
-                          return (
-                            <div
-                              key={idx}
-                              className="grid grid-cols-12 gap-2 px-3 py-2"
-                            >
-                              {isPremium ? (
-                                <div className="col-span-12 sm:col-span-2 relative">
-                                  <Input
-                                    value={it.productId || ""}
-                                    onChange={(e) =>
-                                      updateItem(idx, {
-                                        productId: e.target.value,
-                                      })
-                                    }
-                                    onFocus={() => {
-                                      setActiveProd({ idx, mode: "id" });
-                                      setProdOpen(true);
-                                    }}
-                                    onBlur={() =>
-                                      setTimeout(() => setProdOpen(false), 120)
-                                    }
-                                    placeholder="ID"
-                                  />
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        name="offerType"
+                        checked={form.offerType === "product"}
+                        onChange={() => setOfferType("product")}
+                      />
+                      <span className="font-semibold text-zinc-800">
+                        Produto
+                      </span>
+                    </label>
+                  </div>
+                </CardBody>
+              </Card>
 
-                                  {prodOpen &&
-                                  activeProd?.idx === idx &&
-                                  activeProd?.mode === "id" ? (
-                                    <div className="absolute z-[80] mt-1 w-[520px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl">
-                                      <div className="px-3 py-2 text-xs text-zinc-500 border-b border-zinc-100 flex items-center justify-between">
-                                        <span>Produtos</span>
-                                        {prodLoading ? (
-                                          <span className="animate-pulse">
-                                            Buscando...
-                                          </span>
-                                        ) : null}
-                                      </div>
-                                      <div className="max-h-80 overflow-auto">
-                                        {(prodHits || []).length ? (
-                                          (prodHits || [])
-                                            .slice(0, 20)
-                                            .map((p) => {
-                                              const pid =
-                                                p?.productId || p?.id || "";
-                                              const name =
-                                                p?.name ||
-                                                p?.title ||
-                                                p?.description ||
-                                                "—";
-                                              const key =
-                                                p?._id ||
-                                                p?.id ||
-                                                `${pid}-${name}`;
-                                              return (
-                                                <button
-                                                  key={key}
-                                                  type="button"
-                                                  onMouseDown={(e) =>
-                                                    e.preventDefault()
-                                                  }
-                                                  onClick={() =>
-                                                    pickProductForLine(idx, p)
-                                                  }
-                                                  className="w-full px-3 py-2 text-left hover:bg-zinc-50"
-                                                >
-                                                  <div className="text-sm font-semibold text-zinc-900 whitespace-normal break-words">
-                                                    {pid ? (
-                                                      <span className="font-mono mr-2 text-zinc-600">
-                                                        {pid}
-                                                      </span>
-                                                    ) : null}
-                                                    {name}
-                                                  </div>
-                                                  <div className="text-xs text-zinc-500">
-                                                    {formatBRL(
-                                                      Number(p?.priceCents) ||
-                                                        0,
-                                                    )}
-                                                  </div>
-                                                </button>
-                                              );
-                                            })
-                                        ) : (
-                                          <div className="px-3 py-3 text-sm text-zinc-500">
-                                            {prodLoading
-                                              ? "Buscando produtos..."
-                                              : "Nenhum produto encontrado."}
+              {/* Serviço (somente service) */}
+              {!isProduct ? (
+                <Card>
+                  <CardHeader
+                    title="Serviço"
+                    subtitle="O que será feito e observações."
+                  />
+                  <CardBody className="space-y-3">
+                    <div>
+                      <label className="text-xs font-semibold text-zinc-600">
+                        Título
+                      </label>
+                      <Input
+                        value={form.title}
+                        onChange={(e) =>
+                          setForm({ ...form, title: e.target.value })
+                        }
+                        placeholder="Título do serviço"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-zinc-600">
+                        Descrição (opcional)
+                      </label>
+                      <Textarea
+                        className="min-h-[100px]"
+                        value={form.description}
+                        onChange={(e) =>
+                          setForm({ ...form, description: e.target.value })
+                        }
+                        placeholder="Detalhes, itens/opções, condições específicas…"
+                      />
+                    </div>
+                  </CardBody>
+                </Card>
+              ) : null}
+
+              {/* Produtos/Itens (somente product) */}
+              {isProduct ? (
+                <Card>
+                  <CardHeader
+                    title="Produtos/Itens"
+                    subtitle="Adicione itens com quantidade e valor unitário."
+                  />
+                  <CardBody className="space-y-3">
+                    {/* antes era: <div className="overflow-auto rounded-xl border"> */}
+                    <div className="rounded-xl border">
+                      {/* permite scroll horizontal sem cortar o dropdown na vertical */}
+                      <div className="overflow-x-auto overflow-y-visible">
+                        {/* dá “respiro” extra para o dropdown */}
+                        <div className="min-w-[820px] overflow-visible pb-10">
+                          <div className="grid grid-cols-12 gap-2 border-b bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-600">
+                            <div className="col-span-6">Descrição</div>
+                            <div className="col-span-2">Qtd</div>
+                            <div className="col-span-2">Vlr unit.</div>
+                            <div className="col-span-2">Total</div>
+                          </div>
+
+                          <div className="divide-y">
+                            {(form.items || []).map((it, idx) => {
+                              const line = calc.lines[idx];
+                              const lineTotal = Number.isFinite(
+                                line?.lineTotalCents,
+                              )
+                                ? formatBRL(line.lineTotalCents)
+                                : "—";
+
+                              return (
+                                <div
+                                  key={idx}
+                                  className="grid grid-cols-12 gap-2 px-3 py-2"
+                                >
+                                  {isPremium ? (
+                                    <div className="col-span-12 sm:col-span-2 relative">
+                                      <Input
+                                        value={it.productId || ""}
+                                        onChange={(e) =>
+                                          updateItem(idx, {
+                                            productId: e.target.value,
+                                          })
+                                        }
+                                        onFocus={() => {
+                                          setActiveProd({ idx, mode: "id" });
+                                          setProdOpen(true);
+                                        }}
+                                        onBlur={() =>
+                                          setTimeout(
+                                            () => setProdOpen(false),
+                                            120,
+                                          )
+                                        }
+                                        placeholder="ID"
+                                      />
+
+                                      {prodOpen &&
+                                      activeProd?.idx === idx &&
+                                      activeProd?.mode === "id" ? (
+                                        <div className="absolute z-[80] mt-1 w-[520px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl">
+                                          <div className="px-3 py-2 text-xs text-zinc-500 border-b border-zinc-100 flex items-center justify-between">
+                                            <span>Produtos</span>
+                                            {prodLoading ? (
+                                              <span className="animate-pulse">
+                                                Buscando...
+                                              </span>
+                                            ) : null}
                                           </div>
-                                        )}
-                                      </div>
+                                          <div className="max-h-80 overflow-auto">
+                                            {(prodHits || []).length ? (
+                                              (prodHits || [])
+                                                .slice(0, 20)
+                                                .map((p) => {
+                                                  const pid =
+                                                    p?.productId || p?.id || "";
+                                                  const name =
+                                                    p?.name ||
+                                                    p?.title ||
+                                                    p?.description ||
+                                                    "—";
+                                                  const key =
+                                                    p?._id ||
+                                                    p?.id ||
+                                                    `${pid}-${name}`;
+                                                  return (
+                                                    <button
+                                                      key={key}
+                                                      type="button"
+                                                      onMouseDown={(e) =>
+                                                        e.preventDefault()
+                                                      }
+                                                      onClick={() =>
+                                                        pickProductForLine(
+                                                          idx,
+                                                          p,
+                                                        )
+                                                      }
+                                                      className="w-full px-3 py-2 text-left hover:bg-zinc-50"
+                                                    >
+                                                      <div className="text-sm font-semibold text-zinc-900 whitespace-normal break-words">
+                                                        {pid ? (
+                                                          <span className="font-mono mr-2 text-zinc-600">
+                                                            {pid}
+                                                          </span>
+                                                        ) : null}
+                                                        {name}
+                                                      </div>
+                                                      <div className="text-xs text-zinc-500">
+                                                        {formatBRL(
+                                                          Number(
+                                                            p?.priceCents,
+                                                          ) || 0,
+                                                        )}
+                                                      </div>
+                                                    </button>
+                                                  );
+                                                })
+                                            ) : (
+                                              <div className="px-3 py-3 text-sm text-zinc-500">
+                                                {prodLoading
+                                                  ? "Buscando produtos..."
+                                                  : "Nenhum produto encontrado."}
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      ) : null}
                                     </div>
                                   ) : null}
+
+                                  <div
+                                    className={[
+                                      "col-span-12 relative",
+                                      isPremium
+                                        ? "sm:col-span-4"
+                                        : "sm:col-span-6",
+                                    ].join(" ")}
+                                  >
+                                    <Input
+                                      value={it.description}
+                                      onChange={(e) =>
+                                        updateItem(idx, {
+                                          description: e.target.value,
+                                        })
+                                      }
+                                      onFocus={() => {
+                                        if (isPremium) {
+                                          setActiveProd({ idx, mode: "name" });
+                                          setProdOpen(true);
+                                        }
+                                      }}
+                                      onBlur={() =>
+                                        setTimeout(
+                                          () => setProdOpen(false),
+                                          120,
+                                        )
+                                      }
+                                      placeholder="Ex.: Parafuso inox 10mm"
+                                    />
+
+                                    {isPremium &&
+                                    prodOpen &&
+                                    activeProd?.idx === idx &&
+                                    activeProd?.mode === "name" ? (
+                                      <div className="absolute z-[80] mt-1 w-full min-w-[520px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl">
+                                        <div className="px-3 py-2 text-xs text-zinc-500 border-b border-zinc-100 flex items-center justify-between">
+                                          <span>Produtos</span>
+                                          {prodLoading ? (
+                                            <span className="animate-pulse">
+                                              Buscando...
+                                            </span>
+                                          ) : null}
+                                        </div>
+                                        <div className="max-h-80 overflow-auto">
+                                          {(prodHits || []).length ? (
+                                            (prodHits || [])
+                                              .slice(0, 20)
+                                              .map((p) => {
+                                                const pid =
+                                                  p?.productId || p?.id || "";
+                                                const name =
+                                                  p?.name ||
+                                                  p?.title ||
+                                                  p?.description ||
+                                                  "—";
+                                                const key =
+                                                  p?._id ||
+                                                  p?.id ||
+                                                  `${pid}-${name}`;
+                                                return (
+                                                  <button
+                                                    key={key}
+                                                    type="button"
+                                                    onMouseDown={(e) =>
+                                                      e.preventDefault()
+                                                    }
+                                                    onClick={() =>
+                                                      pickProductForLine(idx, p)
+                                                    }
+                                                    className="w-full px-3 py-2 text-left hover:bg-zinc-50"
+                                                  >
+                                                    <div className="text-sm font-semibold text-zinc-900 whitespace-normal break-words">
+                                                      {name}
+                                                    </div>
+
+                                                    <div className="text-xs text-zinc-500 flex gap-2">
+                                                      {pid ? (
+                                                        <span className="font-mono">
+                                                          {pid}
+                                                        </span>
+                                                      ) : null}
+                                                      <span>
+                                                        {formatBRL(
+                                                          Number(
+                                                            p?.priceCents,
+                                                          ) || 0,
+                                                        )}
+                                                      </span>
+                                                    </div>
+                                                  </button>
+                                                );
+                                              })
+                                          ) : (
+                                            <div className="px-3 py-3 text-sm text-zinc-500">
+                                              {prodLoading
+                                                ? "Buscando produtos..."
+                                                : "Nenhum produto encontrado."}
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    ) : null}
+                                  </div>
+
+                                  <div className="col-span-2">
+                                    <Input
+                                      type="number"
+                                      min={1}
+                                      inputMode="numeric"
+                                      value={it.qtyInput ?? String(it.qty ?? 1)}
+                                      onFocus={(e) =>
+                                        handleItemQtyFocus(idx, e)
+                                      }
+                                      onChange={(e) =>
+                                        handleItemQtyChange(idx, e.target.value)
+                                      }
+                                      onBlur={() => handleItemQtyBlur(idx)}
+                                    />
+                                  </div>
+                                  <div className="col-span-2">
+                                    <Input
+                                      value={it.unitPrice}
+                                      onChange={(e) =>
+                                        updateItem(idx, {
+                                          unitPrice: e.target.value,
+                                        })
+                                      }
+                                      placeholder="10,50"
+                                    />
+                                  </div>
+                                  <div className="col-span-2 flex items-center justify-between gap-2">
+                                    <div className="text-sm font-semibold text-zinc-900">
+                                      {lineTotal}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className="rounded-lg px-2 py-1 text-xs font-semibold text-zinc-600 hover:bg-zinc-100"
+                                      onClick={() => removeItem(idx)}
+                                      aria-label={`Remover item ${idx + 1}`}
+                                      title="Remover"
+                                    >
+                                      Remover
+                                    </button>
+                                  </div>
                                 </div>
+                              );
+                            })}
+                            <div
+                              aria-hidden="true"
+                              className="grid grid-cols-12 gap-2 px-3 py-3 pointer-events-none"
+                            >
+                              {isPremium ? (
+                                <div className="col-span-12 sm:col-span-2 h-10" />
                               ) : null}
 
                               <div
                                 className={[
-                                  "col-span-12 relative",
+                                  "col-span-12 h-10",
                                   isPremium ? "sm:col-span-4" : "sm:col-span-6",
                                 ].join(" ")}
-                              >
-                                <Input
-                                  value={it.description}
-                                  onChange={(e) =>
-                                    updateItem(idx, {
-                                      description: e.target.value,
-                                    })
-                                  }
-                                  onFocus={() => {
-                                    if (isPremium) {
-                                      setActiveProd({ idx, mode: "name" });
-                                      setProdOpen(true);
-                                    }
-                                  }}
-                                  onBlur={() =>
-                                    setTimeout(() => setProdOpen(false), 120)
-                                  }
-                                  placeholder="Ex.: Parafuso inox 10mm"
-                                />
-
-                                {isPremium &&
-                                prodOpen &&
-                                activeProd?.idx === idx &&
-                                activeProd?.mode === "name" ? (
-                                  <div className="absolute z-[80] mt-1 w-full min-w-[520px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl">
-                                    <div className="px-3 py-2 text-xs text-zinc-500 border-b border-zinc-100 flex items-center justify-between">
-                                      <span>Produtos</span>
-                                      {prodLoading ? (
-                                        <span className="animate-pulse">
-                                          Buscando...
-                                        </span>
-                                      ) : null}
-                                    </div>
-                                    <div className="max-h-80 overflow-auto">
-                                      {(prodHits || []).length ? (
-                                        (prodHits || [])
-                                          .slice(0, 20)
-                                          .map((p) => {
-                                            const pid =
-                                              p?.productId || p?.id || "";
-                                            const name =
-                                              p?.name ||
-                                              p?.title ||
-                                              p?.description ||
-                                              "—";
-                                            const key =
-                                              p?._id ||
-                                              p?.id ||
-                                              `${pid}-${name}`;
-                                            return (
-                                              <button
-                                                key={key}
-                                                type="button"
-                                                onMouseDown={(e) =>
-                                                  e.preventDefault()
-                                                }
-                                                onClick={() =>
-                                                  pickProductForLine(idx, p)
-                                                }
-                                                className="w-full px-3 py-2 text-left hover:bg-zinc-50"
-                                              >
-                                                <div className="text-sm font-semibold text-zinc-900 whitespace-normal break-words">
-                                                  {name}
-                                                </div>
-
-                                                <div className="text-xs text-zinc-500 flex gap-2">
-                                                  {pid ? (
-                                                    <span className="font-mono">
-                                                      {pid}
-                                                    </span>
-                                                  ) : null}
-                                                  <span>
-                                                    {formatBRL(
-                                                      Number(p?.priceCents) ||
-                                                        0,
-                                                    )}
-                                                  </span>
-                                                </div>
-                                              </button>
-                                            );
-                                          })
-                                      ) : (
-                                        <div className="px-3 py-3 text-sm text-zinc-500">
-                                          {prodLoading
-                                            ? "Buscando produtos..."
-                                            : "Nenhum produto encontrado."}
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                ) : null}
-                              </div>
-
-                              <div className="col-span-2">
-                                <Input
-                                  type="number"
-                                  min={1}
-                                  inputMode="numeric"
-                                  value={it.qtyInput ?? String(it.qty ?? 1)}
-                                  onFocus={(e) => handleItemQtyFocus(idx, e)}
-                                  onChange={(e) =>
-                                    handleItemQtyChange(idx, e.target.value)
-                                  }
-                                  onBlur={() => handleItemQtyBlur(idx)}
-                                />
-                              </div>
-                              <div className="col-span-2">
-                                <Input
-                                  value={it.unitPrice}
-                                  onChange={(e) =>
-                                    updateItem(idx, {
-                                      unitPrice: e.target.value,
-                                    })
-                                  }
-                                  placeholder="10,50"
-                                />
-                              </div>
-                              <div className="col-span-2 flex items-center justify-between gap-2">
-                                <div className="text-sm font-semibold text-zinc-900">
-                                  {lineTotal}
-                                </div>
-                                <button
-                                  type="button"
-                                  className="rounded-lg px-2 py-1 text-xs font-semibold text-zinc-600 hover:bg-zinc-100"
-                                  onClick={() => removeItem(idx)}
-                                  aria-label={`Remover item ${idx + 1}`}
-                                  title="Remover"
-                                >
-                                  Remover
-                                </button>
-                              </div>
+                              />
+                              <div className="col-span-2 h-10" />
+                              <div className="col-span-2 h-10" />
+                              <div className="col-span-2 h-10" />
                             </div>
-                          );
-                        })}
-                        <div
-                          aria-hidden="true"
-                          className="grid grid-cols-12 gap-2 px-3 py-3 pointer-events-none"
-                        >
-                          {isPremium ? (
-                            <div className="col-span-12 sm:col-span-2 h-10" />
-                          ) : null}
-
-                          <div
-                            className={[
-                              "col-span-12 h-10",
-                              isPremium ? "sm:col-span-4" : "sm:col-span-6",
-                            ].join(" ")}
-                          />
-                          <div className="col-span-2 h-10" />
-                          <div className="col-span-2 h-10" />
-                          <div className="col-span-2 h-10" />
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                </div>
 
-                <div>
-                  <Button type="button" variant="secondary" onClick={addItem}>
-                    + Adicionar item
-                  </Button>
-                </div>
+                    <div>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={addItem}
+                      >
+                        + Adicionar item
+                      </Button>
+                    </div>
 
-                <div
-                  className="grid grid-cols-1 gap-2 rounded-xl border border-zinc-200 bg-white p-3 text-sm
+                    <div
+                      className="grid grid-cols-1 gap-2 rounded-xl border border-zinc-200 bg-white p-3 text-sm
   sm:grid-cols-3 dark:border-zinc-800 dark:bg-zinc-900"
-                >
-                  <div className="rounded-lg bg-zinc-50 p-2 dark:bg-zinc-800/60">
-                    <div className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
-                      Subtotal
-                    </div>
-                    <div className="mt-1 font-semibold text-zinc-900 dark:text-zinc-50">
-                      {formatBRL(calc.subtotalItemsCents)}
-                    </div>
-                  </div>
+                    >
+                      <div className="rounded-lg bg-zinc-50 p-2 dark:bg-zinc-800/60">
+                        <div className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                          Subtotal
+                        </div>
+                        <div className="mt-1 font-semibold text-zinc-900 dark:text-zinc-50">
+                          {formatBRL(calc.subtotalItemsCents)}
+                        </div>
+                      </div>
 
-                  <div className="rounded-lg bg-zinc-50 p-2 dark:bg-zinc-800/60">
-                    <div className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
-                      Desconto
-                    </div>
-                    <div className="mt-1 font-semibold text-zinc-900 dark:text-zinc-50">
-                      {form.discountEnabled
-                        ? `-${formatBRL(calc.discountCents)}`
-                        : "—"}
-                    </div>
-                  </div>
+                      <div className="rounded-lg bg-zinc-50 p-2 dark:bg-zinc-800/60">
+                        <div className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                          Desconto
+                        </div>
+                        <div className="mt-1 font-semibold text-zinc-900 dark:text-zinc-50">
+                          {form.discountEnabled
+                            ? `-${formatBRL(calc.discountCents)}`
+                            : "—"}
+                        </div>
+                      </div>
 
-                  <div className="rounded-lg bg-zinc-50 p-2 dark:bg-zinc-800/60">
-                    <div className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
-                      Total
+                      <div className="rounded-lg bg-zinc-50 p-2 dark:bg-zinc-800/60">
+                        <div className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                          Total
+                        </div>
+                        <div className="mt-1 font-semibold text-zinc-900 dark:text-zinc-50">
+                          {formatBRL(calc.totalCents)}
+                        </div>
+                      </div>
                     </div>
-                    <div className="mt-1 font-semibold text-zinc-900 dark:text-zinc-50">
-                      {formatBRL(calc.totalCents)}
-                    </div>
-                  </div>
-                </div>
-              </CardBody>
-            </Card>
-          ) : null}
+                  </CardBody>
+                </Card>
+              ) : null}
 
-          {/* Condições (opcional) */}
-          <Card>
-            <CardHeader
-              title="Condições (opcional)"
-              subtitle="Habilite apenas as seções que deseja incluir no orçamento."
-            />
-            <CardBody className="space-y-3">
-              {/* ✅ duração estimada (somente service) */}
-              {!isProduct ? (
-                <>
+              {/* Condições (opcional) */}
+              <Card>
+                <CardHeader
+                  title="Condições (opcional)"
+                  subtitle="Habilite apenas as seções que deseja incluir no orçamento."
+                />
+                <CardBody className="space-y-3">
+                  {/* ✅ duração estimada (somente service) */}
+                  {!isProduct ? (
+                    <>
+                      <div className="flex items-start justify-between gap-3 rounded-xl border p-3">
+                        <div>
+                          <div className="text-sm font-semibold text-zinc-900">
+                            Duração estimada
+                          </div>
+                          <div className="text-xs text-zinc-500">
+                            Ex.: 60 min. Só aparece no link do cliente se
+                            habilitar.
+                          </div>
+                        </div>
+                        <label className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={!!form.durationEnabled}
+                            onChange={(e) =>
+                              setForm({
+                                ...form,
+                                durationEnabled: e.target.checked,
+                              })
+                            }
+                          />
+                          <span className="text-zinc-700">Habilitar</span>
+                        </label>
+                      </div>
+
+                      {form.durationEnabled ? (
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                          <div className="sm:col-span-1">
+                            <label className="text-xs font-semibold text-zinc-600">
+                              Duração estimada (min)
+                            </label>
+                            <Input
+                              type="number"
+                              min={1}
+                              inputMode="numeric"
+                              value={form.durationMinInput}
+                              onFocus={(e) =>
+                                handleStandaloneIntegerFocus("durationMin", e)
+                              }
+                              onChange={(e) =>
+                                handleStandaloneIntegerChange(
+                                  "durationMin",
+                                  e.target.value,
+                                )
+                              }
+                              onBlur={() =>
+                                handleStandaloneIntegerBlur("durationMin")
+                              }
+                            />
+                          </div>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : null}
+
+                  {/* validade */}
                   <div className="flex items-start justify-between gap-3 rounded-xl border p-3">
                     <div>
                       <div className="text-sm font-semibold text-zinc-900">
-                        Duração estimada
+                        Validade da proposta
                       </div>
                       <div className="text-xs text-zinc-500">
-                        Ex.: 60 min. Só aparece no link do cliente se habilitar.
+                        Ex.: válida por 7 dias.
                       </div>
                     </div>
                     <label className="flex items-center gap-2 text-sm">
                       <input
                         type="checkbox"
-                        checked={!!form.durationEnabled}
+                        checked={form.validityEnabled}
                         onChange={(e) =>
                           setForm({
                             ...form,
-                            durationEnabled: e.target.checked,
+                            validityEnabled: e.target.checked,
                           })
                         }
                       />
                       <span className="text-zinc-700">Habilitar</span>
                     </label>
                   </div>
-
-                  {form.durationEnabled ? (
+                  {form.validityEnabled ? (
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                       <div className="sm:col-span-1">
                         <label className="text-xs font-semibold text-zinc-600">
-                          Duração estimada (min)
+                          Validade (dias)
                         </label>
                         <Input
                           type="number"
                           min={1}
                           inputMode="numeric"
-                          value={form.durationMinInput}
+                          value={form.validityDaysInput}
                           onFocus={(e) =>
-                            handleStandaloneIntegerFocus("durationMin", e)
+                            handleStandaloneIntegerFocus("validityDays", e)
                           }
                           onChange={(e) =>
                             handleStandaloneIntegerChange(
-                              "durationMin",
+                              "validityDays",
                               e.target.value,
                             )
                           }
-                          onBlur={() => handleStandaloneIntegerBlur("durationMin")}
+                          onBlur={() =>
+                            handleStandaloneIntegerBlur("validityDays")
+                          }
                         />
                       </div>
                     </div>
                   ) : null}
-                </>
-              ) : null}
 
-              {/* validade */}
-              <div className="flex items-start justify-between gap-3 rounded-xl border p-3">
-                <div>
-                  <div className="text-sm font-semibold text-zinc-900">
-                    Validade da proposta
-                  </div>
-                  <div className="text-xs text-zinc-500">
-                    Ex.: válida por 7 dias.
-                  </div>
-                </div>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={form.validityEnabled}
-                    onChange={(e) =>
-                      setForm({ ...form, validityEnabled: e.target.checked })
-                    }
-                  />
-                  <span className="text-zinc-700">Habilitar</span>
-                </label>
-              </div>
-              {form.validityEnabled ? (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div className="sm:col-span-1">
-                    <label className="text-xs font-semibold text-zinc-600">
-                      Validade (dias)
-                    </label>
-                    <Input
-                      type="number"
-                      min={1}
-                      inputMode="numeric"
-                      value={form.validityDaysInput}
-                      onFocus={(e) =>
-                        handleStandaloneIntegerFocus("validityDays", e)
-                      }
-                      onChange={(e) =>
-                        handleStandaloneIntegerChange(
-                          "validityDays",
-                          e.target.value,
-                        )
-                      }
-                      onBlur={() => handleStandaloneIntegerBlur("validityDays")}
-                    />
-                  </div>
-                </div>
-              ) : null}
-
-              {/* prazo */}
-              <div className="flex items-start justify-between gap-3 rounded-xl border p-3">
-                <div>
-                  <div className="text-sm font-semibold text-zinc-900">
-                    Prazo de entrega
-                  </div>
-                  <div className="text-xs text-zinc-500">
-                    Ex.: 3 dias úteis após pagamento.
-                  </div>
-                </div>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={form.deliveryEnabled}
-                    onChange={(e) =>
-                      setForm({ ...form, deliveryEnabled: e.target.checked })
-                    }
-                  />
-                  <span className="text-zinc-700">Habilitar</span>
-                </label>
-              </div>
-              {form.deliveryEnabled ? (
-                <div>
-                  <label className="text-xs font-semibold text-zinc-600">
-                    Prazo
-                  </label>
-                  <Input
-                    value={form.deliveryText}
-                    onChange={(e) =>
-                      setForm({ ...form, deliveryText: e.target.value })
-                    }
-                    placeholder="Ex.: Entrega em até 3 dias úteis"
-                  />
-                </div>
-              ) : null}
-
-              {/* garantia */}
-              <div className="flex items-start justify-between gap-3 rounded-xl border p-3">
-                <div>
-                  <div className="text-sm font-semibold text-zinc-900">
-                    Garantia
-                  </div>
-                  <div className="text-xs text-zinc-500">
-                    Ex.: 90 dias para defeitos de fabricação.
-                  </div>
-                </div>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={form.warrantyEnabled}
-                    onChange={(e) =>
-                      setForm({ ...form, warrantyEnabled: e.target.checked })
-                    }
-                  />
-                  <span className="text-zinc-700">Habilitar</span>
-                </label>
-              </div>
-              {form.warrantyEnabled ? (
-                <div>
-                  <label className="text-xs font-semibold text-zinc-600">
-                    Garantia
-                  </label>
-                  <Input
-                    value={form.warrantyText}
-                    onChange={(e) =>
-                      setForm({ ...form, warrantyText: e.target.value })
-                    }
-                    placeholder="Ex.: Garantia de 90 dias"
-                  />
-                </div>
-              ) : null}
-
-              {/* observações */}
-              <div className="flex items-start justify-between gap-3 rounded-xl border p-3">
-                <div>
-                  <div className="text-sm font-semibold text-zinc-900">
-                    Observações/condições
-                  </div>
-                  <div className="text-xs text-zinc-500">
-                    Ex.: política de cancelamento, tolerância etc.
-                  </div>
-                </div>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={form.notesEnabled}
-                    onChange={(e) =>
-                      setForm({ ...form, notesEnabled: e.target.checked })
-                    }
-                  />
-                  <span className="text-zinc-700">Habilitar</span>
-                </label>
-              </div>
-              {form.notesEnabled ? (
-                <div>
-                  <label className="text-xs font-semibold text-zinc-600">
-                    Texto
-                  </label>
-                  <Textarea
-                    className="min-h-[100px]"
-                    value={form.conditionsNotes}
-                    onChange={(e) =>
-                      setForm({ ...form, conditionsNotes: e.target.value })
-                    }
-                    placeholder="Digite as condições adicionais…"
-                  />
-                </div>
-              ) : null}
-
-              {/* desconto */}
-              <div className="flex items-start justify-between gap-3 rounded-xl border p-3">
-                <div>
-                  <div className="text-sm font-semibold text-zinc-900">
-                    Desconto
-                  </div>
-                  <div className="text-xs text-zinc-500">
-                    Aplicado no total base.
-                  </div>
-                </div>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={form.discountEnabled}
-                    onChange={(e) =>
-                      setForm({ ...form, discountEnabled: e.target.checked })
-                    }
-                  />
-                  <span className="text-zinc-700">Habilitar</span>
-                </label>
-              </div>
-              {form.discountEnabled ? (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div>
-                    <label className="text-xs font-semibold text-zinc-600">
-                      Tipo
-                    </label>
-                    <select
-                      className="w-full rounded-xl border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                      value={form.discountType}
-                      onChange={(e) =>
-                        setForm({ ...form, discountType: e.target.value })
-                      }
-                    >
-                      <option value="fixed">Valor fixo (R$)</option>
-                      <option value="pct">Percentual (%)</option>
-                    </select>
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="text-xs font-semibold text-zinc-600">
-                      {form.discountType === "pct"
-                        ? "Percentual"
-                        : "Valor do desconto"}
-                    </label>
-                    <Input
-                      value={form.discountValue}
-                      onChange={(e) =>
-                        setForm({ ...form, discountValue: e.target.value })
-                      }
-                      placeholder={form.discountType === "pct" ? "10" : "20,00"}
-                    />
-                  </div>
-                </div>
-              ) : null}
-
-              {/* frete */}
-              <div className="flex items-start justify-between gap-3 rounded-xl border p-3">
-                <div>
-                  <div className="text-sm font-semibold text-zinc-900">
-                    Frete
-                  </div>
-                  <div className="text-xs text-zinc-500">
-                    Adicionado ao total final.
-                  </div>
-                </div>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={form.freightEnabled}
-                    onChange={(e) =>
-                      setForm({ ...form, freightEnabled: e.target.checked })
-                    }
-                  />
-                  <span className="text-zinc-700">Habilitar</span>
-                </label>
-              </div>
-              {form.freightEnabled ? (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div className="sm:col-span-1">
-                    <label className="text-xs font-semibold text-zinc-600">
-                      Valor do frete
-                    </label>
-                    <Input
-                      value={form.freightValue}
-                      onChange={(e) =>
-                        setForm({ ...form, freightValue: e.target.value })
-                      }
-                      placeholder="15,00"
-                    />
-                  </div>
-                </div>
-              ) : null}
-            </CardBody>
-          </Card>
-
-          {isRecurring ? (
-            <Card>
-              <CardHeader
-                title="Configuração da recorrência"
-                subtitle="Defina quando a cobrança será gerada e como a automação deve se comportar."
-              />
-              <CardBody className="space-y-4">
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div>
-                    <label className="text-xs font-semibold text-zinc-600">
-                      Nome interno da recorrência
-                    </label>
-                    <Input
-                      value={form.recurringName}
-                      onChange={(e) =>
-                        setForm({ ...form, recurringName: e.target.value })
-                      }
-                      placeholder="Ex.: Mensalidade João • Manutenção"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-semibold text-zinc-600">
-                      Repetir a cada (dias)
-                    </label>
-                    <Input
-                      type="number"
-                      min={1}
-                      inputMode="numeric"
-                      value={form.recurringIntervalDaysInput}
-                      onFocus={(e) =>
-                        handleStandaloneIntegerFocus("recurringIntervalDays", e)
-                      }
-                      onChange={(e) =>
-                        handleStandaloneIntegerChange(
-                          "recurringIntervalDays",
-                          e.target.value,
-                        )
-                      }
-                      onBlur={() =>
-                        handleStandaloneIntegerBlur("recurringIntervalDays")
-                      }
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div>
-                    <label className="text-xs font-semibold text-zinc-600">
-                      Data de início
-                    </label>
-                    <Input
-                      type="date"
-                      value={form.recurringStartDate}
-                      onChange={(e) =>
-                        setForm({ ...form, recurringStartDate: e.target.value })
-                      }
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-semibold text-zinc-600">
-                      Horário da execução
-                    </label>
-                    <Input
-                      type="time"
-                      value={form.recurringTimeOfDay}
-                      onChange={(e) =>
-                        setForm({ ...form, recurringTimeOfDay: e.target.value })
-                      }
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-semibold text-zinc-600">
-                      Status inicial
-                    </label>
-                    <select
-                      className="w-full rounded-xl border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                      value={form.recurringInitialStatus}
-                      onChange={(e) =>
-                        setForm({ ...form, recurringInitialStatus: e.target.value })
-                      }
-                    >
-                      <option value="active">Ativa</option>
-                      <option value="draft">Rascunho</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div>
-                    <label className="text-xs font-semibold text-zinc-600">
-                      Término
-                    </label>
-                    <select
-                      className="w-full rounded-xl border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                      value={form.recurringEndMode}
-                      onChange={(e) =>
-                        setForm({ ...form, recurringEndMode: e.target.value })
-                      }
-                    >
-                      <option value="never">Sem término</option>
-                      <option value="until_date">Até data</option>
-                      <option value="until_count">Até X cobranças</option>
-                    </select>
-                  </div>
-
-                  {form.recurringEndMode === "until_date" ? (
-                    <div>
-                      <label className="text-xs font-semibold text-zinc-600">
-                        Encerrar em
-                      </label>
-                      <Input
-                        type="date"
-                        value={form.recurringEndsAt}
-                        onChange={(e) =>
-                          setForm({ ...form, recurringEndsAt: e.target.value })
-                        }
-                      />
-                    </div>
-                  ) : form.recurringEndMode === "until_count" ? (
-                    <div>
-                      <label className="text-xs font-semibold text-zinc-600">
-                        Máximo de cobranças
-                      </label>
-                      <Input
-                        type="number"
-                        min={1}
-                        inputMode="numeric"
-                        value={form.recurringMaxOccurrencesInput}
-                        onFocus={(e) =>
-                          handleStandaloneIntegerFocus(
-                            "recurringMaxOccurrences",
-                            e,
-                          )
-                        }
-                        onChange={(e) =>
-                          handleStandaloneIntegerChange(
-                            "recurringMaxOccurrences",
-                            e.target.value,
-                          )
-                        }
-                        onBlur={() =>
-                          handleStandaloneIntegerBlur("recurringMaxOccurrences")
-                        }
-                      />
-                    </div>
-                  ) : (
-                    <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50 p-3 text-xs text-zinc-500 sm:col-span-2">
-                      A recorrência continuará ativa até você pausar ou encerrar manualmente.
-                    </div>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <label className="flex items-start gap-3 rounded-xl border bg-zinc-50 p-3">
-                    <input
-                      type="checkbox"
-                      className="mt-1 h-4 w-4 accent-emerald-600"
-                      checked={!!form.recurringGenerateFirstNow}
-                      onChange={(e) =>
-                        setForm({
-                          ...form,
-                          recurringGenerateFirstNow: e.target.checked,
-                        })
-                      }
-                    />
+                  {/* prazo */}
+                  <div className="flex items-start justify-between gap-3 rounded-xl border p-3">
                     <div>
                       <div className="text-sm font-semibold text-zinc-900">
-                        Gerar primeira cobrança imediatamente
+                        Prazo de entrega
                       </div>
-                      <div className="text-xs text-zinc-600">
-                        Se marcado, a primeira proposta recorrente já será criada ao salvar.
-                      </div>
-                    </div>
-                  </label>
-
-                  <label className="flex items-start gap-3 rounded-xl border bg-zinc-50 p-3">
-                    <input
-                      type="checkbox"
-                      className="mt-1 h-4 w-4 accent-emerald-600"
-                      checked={!!form.recurringAutoSendToCustomer}
-                      onChange={(e) => {
-                        notificationPreferenceTouchedRef.current.recurringAutoSendToCustomer =
-                          true;
-                        setForm({
-                          ...form,
-                          recurringAutoSendToCustomer: e.target.checked,
-                        });
-                      }}
-                    />
-                    <div>
-                      <div className="text-sm font-semibold text-zinc-900">
-                        Enviar automaticamente ao cliente
-                      </div>
-                      <div className="text-xs text-zinc-600">
-                        Quando a cobrança for gerada, o sistema tentará enviar o link pelo WhatsApp usando o fluxo já existente.
+                      <div className="text-xs text-zinc-500">
+                        Ex.: 3 dias úteis após pagamento.
                       </div>
                     </div>
-                  </label>
-                </div>
-              </CardBody>
-            </Card>
-          ) : null}
-
-          {/* Pagamento */}
-          <Card>
-            <CardHeader
-              title="Pagamento"
-              subtitle="Valor e sinal (se aplicável)."
-            />
-            <CardBody className="grid grid-cols-1 gap-4 sm:grid-cols-12">
-              {/* Coluna: Valor */}
-              <div className="sm:col-span-6">
-                <div className="h-full rounded-2xl border bg-white p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-xs font-semibold text-zinc-600">
-                        {isProduct ? "Total do orçamento" : "Valor"}
-                      </div>
-                      <div className="mt-1 text-xs text-zinc-500">
-                        {isProduct
-                          ? "Calculado automaticamente pelos itens."
-                          : "Digite o valor do serviço."}
-                      </div>
-                    </div>
-
-                    {/* Badge do total (sempre visível) */}
-                    <div className="rounded-full border bg-zinc-50 px-3 py-1 text-xs font-semibold text-zinc-700">
-                      {formatBRL(calc.totalCents)}
-                    </div>
-                  </div>
-
-                  <div className="mt-3">
-                    {isProduct ? (
-                      <Input
-                        value={formatBRL(calc.totalCents)}
-                        readOnly
-                        disabled
-                      />
-                    ) : (
-                      <Input
-                        value={form.amount}
-                        onChange={(e) =>
-                          setForm({ ...form, amount: e.target.value })
-                        }
-                        placeholder="150,00"
-                      />
-                    )}
-                  </div>
-
-                  {!isProduct ? (
-                    <div className="mt-2 text-xs text-zinc-500">
-                      Total:{" "}
-                      <span className="font-semibold text-zinc-900">
-                        {formatBRL(calc.totalCents)}
-                      </span>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-
-              {/* Coluna: Sinal */}
-              <div className="sm:col-span-6">
-                <div className="h-full rounded-2xl border bg-white p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-xs font-semibold text-zinc-600">
-                        Cobrar sinal?
-                      </div>
-                      <div className="mt-0.5 text-xs text-zinc-500">
-                        Se ativado, cobra uma porcentagem agora e o restante
-                        depois.
-                      </div>
-                    </div>
-
-                    {/* Toggle moderno */}
-                    <label className="relative inline-flex cursor-pointer items-center">
+                    <label className="flex items-center gap-2 text-sm">
                       <input
                         type="checkbox"
-                        className="peer sr-only"
-                        checked={!!form.depositEnabled}
+                        checked={form.deliveryEnabled}
                         onChange={(e) =>
-                          setForm({ ...form, depositEnabled: e.target.checked })
+                          setForm({
+                            ...form,
+                            deliveryEnabled: e.target.checked,
+                          })
                         }
-                        aria-label="Cobrar sinal"
                       />
-                      <div className="h-6 w-11 rounded-full bg-zinc-200 ring-1 ring-zinc-300 transition peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-emerald-500 peer-checked:bg-emerald-600">
-                        <div className="h-5 w-5 translate-x-0.5 translate-y-0.5 rounded-full bg-white shadow-sm transition peer-checked:translate-x-5" />
-                      </div>
+                      <span className="text-zinc-700">Habilitar</span>
                     </label>
                   </div>
+                  {form.deliveryEnabled ? (
+                    <div>
+                      <label className="text-xs font-semibold text-zinc-600">
+                        Prazo
+                      </label>
+                      <Input
+                        value={form.deliveryText}
+                        onChange={(e) =>
+                          setForm({ ...form, deliveryText: e.target.value })
+                        }
+                        placeholder="Ex.: Entrega em até 3 dias úteis"
+                      />
+                    </div>
+                  ) : null}
 
-                  {form.depositEnabled ? (
-                    <>
-                      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3 sm:items-end">
-                        <div className="sm:col-span-1">
+                  {/* garantia */}
+                  <div className="flex items-start justify-between gap-3 rounded-xl border p-3">
+                    <div>
+                      <div className="text-sm font-semibold text-zinc-900">
+                        Garantia
+                      </div>
+                      <div className="text-xs text-zinc-500">
+                        Ex.: 90 dias para defeitos de fabricação.
+                      </div>
+                    </div>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={form.warrantyEnabled}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            warrantyEnabled: e.target.checked,
+                          })
+                        }
+                      />
+                      <span className="text-zinc-700">Habilitar</span>
+                    </label>
+                  </div>
+                  {form.warrantyEnabled ? (
+                    <div>
+                      <label className="text-xs font-semibold text-zinc-600">
+                        Garantia
+                      </label>
+                      <Input
+                        value={form.warrantyText}
+                        onChange={(e) =>
+                          setForm({ ...form, warrantyText: e.target.value })
+                        }
+                        placeholder="Ex.: Garantia de 90 dias"
+                      />
+                    </div>
+                  ) : null}
+
+                  {/* observações */}
+                  <div className="flex items-start justify-between gap-3 rounded-xl border p-3">
+                    <div>
+                      <div className="text-sm font-semibold text-zinc-900">
+                        Observações/condições
+                      </div>
+                      <div className="text-xs text-zinc-500">
+                        Ex.: política de cancelamento, tolerância etc.
+                      </div>
+                    </div>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={form.notesEnabled}
+                        onChange={(e) =>
+                          setForm({ ...form, notesEnabled: e.target.checked })
+                        }
+                      />
+                      <span className="text-zinc-700">Habilitar</span>
+                    </label>
+                  </div>
+                  {form.notesEnabled ? (
+                    <div>
+                      <label className="text-xs font-semibold text-zinc-600">
+                        Texto
+                      </label>
+                      <Textarea
+                        className="min-h-[100px]"
+                        value={form.conditionsNotes}
+                        onChange={(e) =>
+                          setForm({ ...form, conditionsNotes: e.target.value })
+                        }
+                        placeholder="Digite as condições adicionais…"
+                      />
+                    </div>
+                  ) : null}
+
+                  {/* desconto */}
+                  <div className="flex items-start justify-between gap-3 rounded-xl border p-3">
+                    <div>
+                      <div className="text-sm font-semibold text-zinc-900">
+                        Desconto
+                      </div>
+                      <div className="text-xs text-zinc-500">
+                        Aplicado no total base.
+                      </div>
+                    </div>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={form.discountEnabled}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            discountEnabled: e.target.checked,
+                          })
+                        }
+                      />
+                      <span className="text-zinc-700">Habilitar</span>
+                    </label>
+                  </div>
+                  {form.discountEnabled ? (
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <div>
+                        <label className="text-xs font-semibold text-zinc-600">
+                          Tipo
+                        </label>
+                        <select
+                          className="w-full rounded-xl border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          value={form.discountType}
+                          onChange={(e) =>
+                            setForm({ ...form, discountType: e.target.value })
+                          }
+                        >
+                          <option value="fixed">Valor fixo (R$)</option>
+                          <option value="pct">Percentual (%)</option>
+                        </select>
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="text-xs font-semibold text-zinc-600">
+                          {form.discountType === "pct"
+                            ? "Percentual"
+                            : "Valor do desconto"}
+                        </label>
+                        <Input
+                          value={form.discountValue}
+                          onChange={(e) =>
+                            setForm({ ...form, discountValue: e.target.value })
+                          }
+                          placeholder={
+                            form.discountType === "pct" ? "10" : "20,00"
+                          }
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {/* frete */}
+                  <div className="flex items-start justify-between gap-3 rounded-xl border p-3">
+                    <div>
+                      <div className="text-sm font-semibold text-zinc-900">
+                        Frete
+                      </div>
+                      <div className="text-xs text-zinc-500">
+                        Adicionado ao total final.
+                      </div>
+                    </div>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={form.freightEnabled}
+                        onChange={(e) =>
+                          setForm({ ...form, freightEnabled: e.target.checked })
+                        }
+                      />
+                      <span className="text-zinc-700">Habilitar</span>
+                    </label>
+                  </div>
+                  {form.freightEnabled ? (
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <div className="sm:col-span-1">
+                        <label className="text-xs font-semibold text-zinc-600">
+                          Valor do frete
+                        </label>
+                        <Input
+                          value={form.freightValue}
+                          onChange={(e) =>
+                            setForm({ ...form, freightValue: e.target.value })
+                          }
+                          placeholder="15,00"
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+                </CardBody>
+              </Card>
+
+              {isRecurring ? (
+                <Card>
+                  <CardHeader
+                    title="Configuração da recorrência"
+                    subtitle="Defina quando a cobrança será gerada e como a automação deve se comportar."
+                  />
+                  <CardBody className="space-y-4">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="text-xs font-semibold text-zinc-600">
+                          Nome interno da recorrência
+                        </label>
+                        <Input
+                          value={form.recurringName}
+                          onChange={(e) =>
+                            setForm({ ...form, recurringName: e.target.value })
+                          }
+                          placeholder="Ex.: Mensalidade João • Manutenção"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-semibold text-zinc-600">
+                          Repetir a cada (dias)
+                        </label>
+                        <Input
+                          type="number"
+                          min={1}
+                          inputMode="numeric"
+                          value={form.recurringIntervalDaysInput}
+                          onFocus={(e) =>
+                            handleStandaloneIntegerFocus(
+                              "recurringIntervalDays",
+                              e,
+                            )
+                          }
+                          onChange={(e) =>
+                            handleStandaloneIntegerChange(
+                              "recurringIntervalDays",
+                              e.target.value,
+                            )
+                          }
+                          onBlur={() =>
+                            handleStandaloneIntegerBlur("recurringIntervalDays")
+                          }
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <div>
+                        <label className="text-xs font-semibold text-zinc-600">
+                          Data de início
+                        </label>
+                        <Input
+                          type="date"
+                          value={form.recurringStartDate}
+                          onChange={(e) =>
+                            setForm({
+                              ...form,
+                              recurringStartDate: e.target.value,
+                            })
+                          }
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-semibold text-zinc-600">
+                          Horário da execução
+                        </label>
+                        <Input
+                          type="time"
+                          value={form.recurringTimeOfDay}
+                          onChange={(e) =>
+                            setForm({
+                              ...form,
+                              recurringTimeOfDay: e.target.value,
+                            })
+                          }
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-semibold text-zinc-600">
+                          Status inicial
+                        </label>
+                        <select
+                          className="w-full rounded-xl border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          value={form.recurringInitialStatus}
+                          onChange={(e) =>
+                            setForm({
+                              ...form,
+                              recurringInitialStatus: e.target.value,
+                            })
+                          }
+                        >
+                          <option value="active">Ativa</option>
+                          <option value="draft">Rascunho</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <div>
+                        <label className="text-xs font-semibold text-zinc-600">
+                          Término
+                        </label>
+                        <select
+                          className="w-full rounded-xl border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          value={form.recurringEndMode}
+                          onChange={(e) =>
+                            setForm({
+                              ...form,
+                              recurringEndMode: e.target.value,
+                            })
+                          }
+                        >
+                          <option value="never">Sem término</option>
+                          <option value="until_date">Até data</option>
+                          <option value="until_count">Até X cobranças</option>
+                        </select>
+                      </div>
+
+                      {form.recurringEndMode === "until_date" ? (
+                        <div>
                           <label className="text-xs font-semibold text-zinc-600">
-                            Sinal (%)
+                            Encerrar em
+                          </label>
+                          <Input
+                            type="date"
+                            value={form.recurringEndsAt}
+                            onChange={(e) =>
+                              setForm({
+                                ...form,
+                                recurringEndsAt: e.target.value,
+                              })
+                            }
+                          />
+                        </div>
+                      ) : form.recurringEndMode === "until_count" ? (
+                        <div>
+                          <label className="text-xs font-semibold text-zinc-600">
+                            Máximo de cobranças
                           </label>
                           <Input
                             type="number"
-                            min={0}
-                            max={100}
+                            min={1}
                             inputMode="numeric"
-                            value={form.depositPctInput}
+                            value={form.recurringMaxOccurrencesInput}
                             onFocus={(e) =>
-                              handleStandaloneIntegerFocus("depositPct", e)
+                              handleStandaloneIntegerFocus(
+                                "recurringMaxOccurrences",
+                                e,
+                              )
                             }
                             onChange={(e) =>
                               handleStandaloneIntegerChange(
-                                "depositPct",
+                                "recurringMaxOccurrences",
                                 e.target.value,
                               )
                             }
-                            onBlur={() => handleStandaloneIntegerBlur("depositPct")}
+                            onBlur={() =>
+                              handleStandaloneIntegerBlur(
+                                "recurringMaxOccurrences",
+                              )
+                            }
                           />
                         </div>
+                      ) : (
+                        <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50 p-3 text-xs text-zinc-500 sm:col-span-2">
+                          A recorrência continuará ativa até você pausar ou
+                          encerrar manualmente.
+                        </div>
+                      )}
+                    </div>
 
-                        <div className="sm:col-span-2">
-                          <div className="rounded-xl border bg-zinc-50 p-3">
-                            <div className="flex flex-wrap items-center gap-2 text-xs">
-                              <span className="rounded-full border bg-white px-2 py-1 text-zinc-700">
-                                Sinal:{" "}
-                                <span className="font-semibold text-zinc-900">
-                                  {formatBRL(calc.depositCents)}
-                                </span>
-                              </span>
-                              <span className="rounded-full border bg-white px-2 py-1 text-zinc-700">
-                                Restante:{" "}
-                                <span className="font-semibold text-zinc-900">
-                                  {formatBRL(calc.remainingCents)}
-                                </span>
-                              </span>
-                            </div>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <label className="flex items-start gap-3 rounded-xl border bg-zinc-50 p-3">
+                        <input
+                          type="checkbox"
+                          className="mt-1 h-4 w-4 accent-emerald-600"
+                          checked={!!form.recurringGenerateFirstNow}
+                          onChange={(e) =>
+                            setForm({
+                              ...form,
+                              recurringGenerateFirstNow: e.target.checked,
+                            })
+                          }
+                        />
+                        <div>
+                          <div className="text-sm font-semibold text-zinc-900">
+                            Gerar primeira cobrança imediatamente
+                          </div>
+                          <div className="text-xs text-zinc-600">
+                            Se marcado, a primeira proposta recorrente já será
+                            criada ao salvar.
                           </div>
                         </div>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="mt-4 rounded-xl border bg-zinc-50 p-3 text-xs text-zinc-600">
-                      Sinal desativado. Total à vista:{" "}
-                      <span className="font-semibold text-zinc-900">
-                        {formatBRL(calc.totalCents)}
-                      </span>
+                      </label>
+
+                      <label className="flex items-start gap-3 rounded-xl border bg-zinc-50 p-3">
+                        <input
+                          type="checkbox"
+                          className="mt-1 h-4 w-4 accent-emerald-600"
+                          checked={!!form.recurringAutoSendToCustomer}
+                          onChange={(e) => {
+                            notificationPreferenceTouchedRef.current.recurringAutoSendToCustomer = true;
+                            setForm({
+                              ...form,
+                              recurringAutoSendToCustomer: e.target.checked,
+                            });
+                          }}
+                        />
+                        <div>
+                          <div className="text-sm font-semibold text-zinc-900">
+                            Enviar automaticamente ao cliente
+                          </div>
+                          <div className="text-xs text-zinc-600">
+                            Quando a cobrança for gerada, o sistema tentará
+                            enviar o link pelo WhatsApp usando o fluxo já
+                            existente.
+                          </div>
+                        </div>
+                      </label>
                     </div>
-                  )}
+                  </CardBody>
+                </Card>
+              ) : null}
+
+              {/* Pagamento */}
+              <Card>
+                <CardHeader
+                  title="Pagamento"
+                  subtitle="Valor e sinal (se aplicável)."
+                />
+                <CardBody className="grid grid-cols-1 gap-4 sm:grid-cols-12">
+                  {/* Coluna: Valor */}
+                  <div className="sm:col-span-6">
+                    <div className="h-full rounded-2xl border bg-white p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-xs font-semibold text-zinc-600">
+                            {isProduct ? "Total do orçamento" : "Valor"}
+                          </div>
+                          <div className="mt-1 text-xs text-zinc-500">
+                            {isProduct
+                              ? "Calculado automaticamente pelos itens."
+                              : "Digite o valor do serviço."}
+                          </div>
+                        </div>
+
+                        {/* Badge do total (sempre visível) */}
+                        <div className="rounded-full border bg-zinc-50 px-3 py-1 text-xs font-semibold text-zinc-700">
+                          {formatBRL(calc.totalCents)}
+                        </div>
+                      </div>
+
+                      <div className="mt-3">
+                        {isProduct ? (
+                          <Input
+                            value={formatBRL(calc.totalCents)}
+                            readOnly
+                            disabled
+                          />
+                        ) : (
+                          <Input
+                            value={form.amount}
+                            onChange={(e) =>
+                              setForm({ ...form, amount: e.target.value })
+                            }
+                            placeholder="150,00"
+                          />
+                        )}
+                      </div>
+
+                      {!isProduct ? (
+                        <div className="mt-2 text-xs text-zinc-500">
+                          Total:{" "}
+                          <span className="font-semibold text-zinc-900">
+                            {formatBRL(calc.totalCents)}
+                          </span>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {/* Coluna: Sinal */}
+                  <div className="sm:col-span-6">
+                    <div className="h-full rounded-2xl border bg-white p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-xs font-semibold text-zinc-600">
+                            Cobrar sinal?
+                          </div>
+                          <div className="mt-0.5 text-xs text-zinc-500">
+                            Se ativado, cobra uma porcentagem agora e o restante
+                            depois.
+                          </div>
+                        </div>
+
+                        {/* Toggle moderno */}
+                        <label className="relative inline-flex cursor-pointer items-center">
+                          <input
+                            type="checkbox"
+                            className="peer sr-only"
+                            checked={!!form.depositEnabled}
+                            onChange={(e) =>
+                              setForm({
+                                ...form,
+                                depositEnabled: e.target.checked,
+                              })
+                            }
+                            aria-label="Cobrar sinal"
+                          />
+                          <div className="h-6 w-11 rounded-full bg-zinc-200 ring-1 ring-zinc-300 transition peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-emerald-500 peer-checked:bg-emerald-600">
+                            <div className="h-5 w-5 translate-x-0.5 translate-y-0.5 rounded-full bg-white shadow-sm transition peer-checked:translate-x-5" />
+                          </div>
+                        </label>
+                      </div>
+
+                      {form.depositEnabled ? (
+                        <>
+                          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3 sm:items-end">
+                            <div className="sm:col-span-1">
+                              <label className="text-xs font-semibold text-zinc-600">
+                                Sinal (%)
+                              </label>
+                              <Input
+                                type="number"
+                                min={0}
+                                max={100}
+                                inputMode="numeric"
+                                value={form.depositPctInput}
+                                onFocus={(e) =>
+                                  handleStandaloneIntegerFocus("depositPct", e)
+                                }
+                                onChange={(e) =>
+                                  handleStandaloneIntegerChange(
+                                    "depositPct",
+                                    e.target.value,
+                                  )
+                                }
+                                onBlur={() =>
+                                  handleStandaloneIntegerBlur("depositPct")
+                                }
+                              />
+                            </div>
+
+                            <div className="sm:col-span-2">
+                              <div className="rounded-xl border bg-zinc-50 p-3">
+                                <div className="flex flex-wrap items-center gap-2 text-xs">
+                                  <span className="rounded-full border bg-white px-2 py-1 text-zinc-700">
+                                    Sinal:{" "}
+                                    <span className="font-semibold text-zinc-900">
+                                      {formatBRL(calc.depositCents)}
+                                    </span>
+                                  </span>
+                                  <span className="rounded-full border bg-white px-2 py-1 text-zinc-700">
+                                    Restante:{" "}
+                                    <span className="font-semibold text-zinc-900">
+                                      {formatBRL(calc.remainingCents)}
+                                    </span>
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="mt-4 rounded-xl border bg-zinc-50 p-3 text-xs text-zinc-600">
+                          Sinal desativado. Total à vista:{" "}
+                          <span className="font-semibold text-zinc-900">
+                            {formatBRL(calc.totalCents)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </CardBody>
+              </Card>
+
+              <div className="hidden space-y-3 lg:block lg:pt-1">
+                {renderValidationAlert()}
+
+                {err ? (
+                  <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
+                    {err}
+                  </div>
+                ) : null}
+
+                <div className="flex justify-end gap-3">
+                  <Button
+                    variant="secondary"
+                    type="button"
+                    onClick={() =>
+                      setForm((p) => ({
+                        ...p,
+                        description: "",
+                        conditionsNotes: "",
+                      }))
+                    }
+                  >
+                    Limpar textos
+                  </Button>
+                  <Button
+                    type="submit"
+                    size="lg"
+                    disabled={busy}
+                    className="min-w-[200px] rounded-2xl px-6"
+                  >
+                    {primaryActionLabel}
+                  </Button>
                 </div>
               </div>
-            </CardBody>
-          </Card>
-
-          {err ? (
-            <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-              {err}
             </div>
-          ) : null}
 
-          <div className="flex items-center justify-end gap-2">
-            <Button
-              variant="secondary"
-              type="button"
-              onClick={() =>
-                setForm((p) => ({
-                  ...p,
-                  description: "",
-                  conditionsNotes: "",
-                }))
-              }
-            >
-              Limpar textos
-            </Button>
-            <Button type="submit" disabled={busy}>
-              {busy ? (isRecurring ? "Criando recorrência..." : "Gerando…") : isRecurring ? "Criar recorrência" : "Gerar link"}
-            </Button>
+            <div className="space-y-4 col-span-12 h-fit self-start sticky top-4 2xl:col-span-3">
+              <SummaryAside
+                title={
+                  isRecurring ? "Resumo da recorrencia" : "Resumo da proposta"
+                }
+                subtitle="Acompanhe o valor final, validade e forma de envio sem rolar a página inteira."
+                className=""
+                footer={
+                  <div className="hidden">
+                    {err ? (
+                      <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
+                        {err}
+                      </div>
+                    ) : null}
+
+                    <div className="hidden grid gap-2">
+                      <Button
+                        variant="secondary"
+                        type="button"
+                        onClick={() =>
+                          setForm((p) => ({
+                            ...p,
+                            description: "",
+                            conditionsNotes: "",
+                          }))
+                        }
+                      >
+                        Limpar textos
+                      </Button>
+                      <Button
+                        type="submit"
+                        size="lg"
+                        disabled={busy}
+                        className="hidden"
+                      >
+                        {busy
+                          ? isRecurring
+                            ? "Criando recorrência..."
+                            : "Gerando..."
+                          : isRecurring
+                            ? "Criar recorrência"
+                            : "Gerar link"}
+                      </Button>
+                    </div>
+                  </div>
+                }
+              >
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                  <div className="surface-quiet px-4 py-3">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                      Modo
+                    </div>
+                    <div className="mt-1 text-sm font-semibold text-slate-950 dark:text-white">
+                      {isRecurring ? "Cobrança recorrente" : "Proposta avulsa"}
+                    </div>
+                  </div>
+
+                  <div className="surface-quiet px-4 py-3">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                      Cliente
+                    </div>
+                    <div className="mt-1 text-sm font-semibold text-slate-950 dark:text-white">
+                      {form.customerName?.trim() ||
+                        "Aguardando nome do cliente"}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      {form.customerWhatsApp
+                        ? formatBRPhone(form.customerWhatsApp)
+                        : "Sem WhatsApp informado"}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid gap-2">
+                  <div className="surface-quiet flex items-center justify-between gap-3 px-4 py-3">
+                    <div>
+                      <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                        Total
+                      </div>
+                      <div className="mt-1 text-lg font-black text-slate-950 dark:text-white">
+                        {formatBRL(calc.totalCents)}
+                      </div>
+                    </div>
+                    <div className="text-right text-xs text-slate-500 dark:text-slate-400">
+                      {isProduct
+                        ? `${form.items?.length || 0} item(ns)`
+                        : "Servico avulso"}
+                    </div>
+                  </div>
+
+                  <div className="surface-quiet grid gap-3 px-4 py-3 sm:grid-cols-2 lg:grid-cols-1">
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                      <span className="text-slate-500 dark:text-slate-400">
+                        Desconto
+                      </span>
+                      <span className="font-semibold text-slate-950 dark:text-white">
+                        {form.discountEnabled
+                          ? `-${formatBRL(calc.discountCents)}`
+                          : "Nao aplicado"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                      <span className="text-slate-500 dark:text-slate-400">
+                        Frete
+                      </span>
+                      <span className="font-semibold text-slate-950 dark:text-white">
+                        {form.freightEnabled
+                          ? formatBRL(calc.freightCents)
+                          : "Nao aplicado"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                      <span className="text-slate-500 dark:text-slate-400">
+                        Sinal
+                      </span>
+                      <span className="font-semibold text-slate-950 dark:text-white">
+                        {form.depositEnabled
+                          ? `${form.depositPct}% • ${formatBRL(calc.depositCents)}`
+                          : "Nao cobrar"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                      <span className="text-slate-500 dark:text-slate-400">
+                        Restante
+                      </span>
+                      <span className="font-semibold text-slate-950 dark:text-white">
+                        {form.depositEnabled
+                          ? formatBRL(calc.remainingCents)
+                          : formatBRL(calc.totalCents)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="surface-quiet px-4 py-3">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                      Condicoes
+                    </div>
+                    <div className="mt-2 space-y-2 text-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-500 dark:text-slate-400">
+                          Validade
+                        </span>
+                        <span className="font-semibold text-slate-950 dark:text-white">
+                          {form.validityEnabled
+                            ? `${form.validityDays} dia(s)`
+                            : "Sem prazo informado"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-500 dark:text-slate-400">
+                          Notificacao WA
+                        </span>
+                        <span className="font-semibold text-slate-950 dark:text-white">
+                          {form.notifyWhatsAppOnPaid ? "Ativa" : "Desativada"}
+                        </span>
+                      </div>
+                      {isRecurring ? (
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-slate-500 dark:text-slate-400">
+                            Envio automatico
+                          </span>
+                          <span className="font-semibold text-slate-950 dark:text-white">
+                            {form.recurringAutoSendToCustomer
+                              ? "Ativo"
+                              : "Manual"}
+                          </span>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              </SummaryAside>
+
+              {renderProposalActions({ className: "lg:hidden" })}
+            </div>
           </div>
 
           {result ? (
@@ -2570,7 +3053,8 @@ export default function NewOffer() {
                             {createdRecurring?.name || form.recurringName}
                           </div>
                           <div className="mt-1 text-xs text-zinc-500">
-                            A cada {clampInt(form.recurringIntervalDays, 1)} dias
+                            A cada {clampInt(form.recurringIntervalDays, 1)}{" "}
+                            dias
                           </div>
                         </div>
 
@@ -2580,7 +3064,9 @@ export default function NewOffer() {
                           </div>
                           <div className="mt-1 font-semibold text-zinc-900 break-all">
                             {createdRecurring?.recurrence?.nextRunAt
-                              ? new Date(createdRecurring.recurrence.nextRunAt).toLocaleString("pt-BR", {
+                              ? new Date(
+                                  createdRecurring.recurrence.nextRunAt,
+                                ).toLocaleString("pt-BR", {
                                   timeZone: "America/Sao_Paulo",
                                 })
                               : "Sem próxima execução definida"}
@@ -2594,7 +3080,8 @@ export default function NewOffer() {
                             Primeira proposta gerada
                           </div>
                           <div className="mt-1 font-mono text-sm text-zinc-900 break-all">
-                            {window.location.origin}/p/{createdOffer.publicToken}
+                            {window.location.origin}/p/
+                            {createdOffer.publicToken}
                           </div>
                         </div>
                       ) : null}
@@ -2630,7 +3117,9 @@ export default function NewOffer() {
                           type="button"
                           onClick={async () => {
                             try {
-                              await navigator.clipboard.writeText(offerPublicUrl);
+                              await navigator.clipboard.writeText(
+                                offerPublicUrl,
+                              );
                               alert("Link copiado!");
                             } catch {}
                           }}

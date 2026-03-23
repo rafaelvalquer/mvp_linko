@@ -8,6 +8,7 @@ import Badge from "../components/appui/Badge.jsx";
 import Button from "../components/appui/Button.jsx";
 import Card, { CardBody, CardHeader } from "../components/appui/Card.jsx";
 import EmptyState from "../components/appui/EmptyState.jsx";
+import FilterBar from "../components/appui/FilterBar.jsx";
 import { Input } from "../components/appui/Input.jsx";
 import PageHeader from "../components/appui/PageHeader.jsx";
 import Skeleton from "../components/appui/Skeleton.jsx";
@@ -413,86 +414,80 @@ export default function Calendar() {
 
   return (
     <Shell>
-      <div className="space-y-4">
+      <div className="mx-auto max-w-[1380px] space-y-5">
         <PageHeader
+          eyebrow="Agenda"
           title="Agenda"
           subtitle="Acompanhe reservas e confirmacoes do workspace em lista e timeline diaria."
+          actions={
+            <Button
+              variant="secondary"
+              size="md"
+              type="button"
+              title="Configurar agenda"
+              onClick={() => nav("/settings/agenda")}
+            >
+              Configuracoes
+            </Button>
+          }
+        />
+
+        <FilterBar
           actions={
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 variant="secondary"
+                size="sm"
                 onClick={() => setDay(getTodayDateKey(agendaTimeZone))}
               >
                 Hoje
               </Button>
               <Button
                 variant="secondary"
+                size="sm"
                 onClick={() => setDay(shiftDateKey(day, -1))}
               >
                 Dia anterior
               </Button>
               <Button
                 variant="secondary"
+                size="sm"
                 onClick={() => setDay(shiftDateKey(day, 1))}
               >
                 Proximo dia
               </Button>
               <Button
                 variant="secondary"
+                size="sm"
                 onClick={() =>
                   setDay(shiftDateKey(getTodayDateKey(agendaTimeZone), 1))
                 }
               >
                 Amanha
               </Button>
-
-              <Button
-                variant="ghost"
-                type="button"
-                className="group"
-                title="Configurar agenda"
-                onClick={() => nav("/settings/agenda")}
-              >
-                <span className="inline-flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-600 transition-colors group-hover:border-emerald-200 group-hover:text-emerald-600">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="18"
-                      height="18"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M12.22 2h-0.44a2 2 0 0 0-2 2v0.18a2 2 0 0 1-1 1.73l-0.43 0.25a2 2 0 0 1-2 0l-0.15-0.08a2 2 0 0 0-2.73 0.73l-0.22 0.38a2 2 0 0 0 0.73 2.73l0.15 0.1a2 2 0 0 1 1 1.72v0.51a2 2 0 0 1-1 1.74l-0.15 0.09a2 2 0 0 0-0.73 2.73l0.22 0.38a2 2 0 0 0 2.73 0.73l0.15-0.08a2 2 0 0 1 2 0l0.43 0.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h0.44a2 2 0 0 0 2-2v-0.18a2 2 0 0 1 1-1.73l0.43-0.25a2 2 0 0 1 2 0l0.15 0.08a2 2 0 0 0 2.73-0.73l0.22-0.39a2 2 0 0 0-0.73-2.73l-0.15-0.08a2 2 0 0 1-1-1.74v-0.5a2 2 0 0 1 1-1.74l0.15-0.09a2 2 0 0 0 0.73-2.73l-0.22-0.38a2 2 0 0 0-2.73-0.73l-0.15 0.08a2 2 0 0 1-2 0l-0.43-0.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-                      <circle cx="12" cy="12" r="3" />
-                    </svg>
-                  </div>
-                  <span className="hidden font-medium text-zinc-700 sm:inline">
-                    Configuracoes
-                  </span>
-                </span>
-              </Button>
             </div>
           }
-        />
-
-        <Card>
-          <CardHeader
-            title={title}
-            subtitle={`Total filtrado: ${summary.total} | Confirmados: ${summary.confirmed} | HOLD: ${summary.hold}`}
-            right={
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="w-44">
-                  <Input
-                    type="date"
-                    value={day}
-                    onChange={(event) => setDay(event.target.value)}
-                  />
-                </div>
+          summary={
+            <>
+              <Badge tone="DRAFT">{title}</Badge>
+              <Badge tone="PUBLIC">{summary.total} no filtro</Badge>
+              <Badge tone="CONFIRMED">{summary.confirmed} confirmados</Badge>
+              <Badge tone="HOLD">{summary.hold} reservas</Badge>
+            </>
+          }
+        >
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex flex-col gap-2 md:flex-row md:items-center">
+              <div className="w-full md:w-44">
+                <Input
+                  type="date"
+                  value={day}
+                  onChange={(event) => setDay(event.target.value)}
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
                 <Button
+                  size="sm"
                   variant={rangeMode === "day" ? "secondary" : "ghost"}
                   type="button"
                   onClick={() => setRangeMode("day")}
@@ -500,6 +495,7 @@ export default function Calendar() {
                   Dia
                 </Button>
                 <Button
+                  size="sm"
                   variant={rangeMode === "week" ? "secondary" : "ghost"}
                   type="button"
                   onClick={() => setRangeMode("week")}
@@ -507,31 +503,32 @@ export default function Calendar() {
                   7 dias
                 </Button>
               </div>
-            }
-          />
+            </div>
 
-          <CardBody className="space-y-3">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex flex-wrap gap-2">
                 <Button
+                  size="sm"
                   variant={statusTab === "all" ? "secondary" : "ghost"}
                   onClick={() => setStatusTab("all")}
                 >
                   Todos
                 </Button>
                 <Button
+                  size="sm"
                   variant={statusTab === "confirmed" ? "secondary" : "ghost"}
                   onClick={() => setStatusTab("confirmed")}
                 >
                   Confirmados
                 </Button>
                 <Button
+                  size="sm"
                   variant={statusTab === "hold" ? "secondary" : "ghost"}
                   onClick={() => setStatusTab("hold")}
                 >
                   Reservas
                 </Button>
-                <Button variant="secondary" onClick={load} disabled={busy}>
+                <Button size="sm" variant="secondary" onClick={load} disabled={busy}>
                   Atualizar
                 </Button>
               </div>
@@ -544,8 +541,8 @@ export default function Calendar() {
                 />
               </div>
             </div>
-          </CardBody>
-        </Card>
+          </div>
+        </FilterBar>
 
         {rangeMode === "day" ? (
           <>

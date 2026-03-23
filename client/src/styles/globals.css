@@ -74,6 +74,43 @@ html {
 }
 
 @layer components {
+  .surface-panel {
+    @apply rounded-[26px] border;
+    border-color: rgb(226 232 240 / 0.8);
+    background-color: rgb(255 255 255 / 0.95);
+    box-shadow: 0 20px 52px -42px rgba(15, 23, 42, 0.16);
+  }
+
+  .dark .surface-panel {
+    border-color: rgb(255 255 255 / 0.08);
+    background:
+      linear-gradient(180deg, rgba(15, 23, 42, 0.84), rgba(8, 15, 30, 0.76));
+    box-shadow: 0 22px 52px -40px rgba(15, 23, 42, 0.7);
+  }
+
+  .surface-secondary {
+    @apply rounded-[24px] border;
+    border-color: rgb(226 232 240 / 0.8);
+    background-color: rgb(248 250 252 / 0.92);
+  }
+
+  .dark .surface-secondary {
+    border-color: rgb(255 255 255 / 0.08);
+    background:
+      linear-gradient(180deg, rgba(30, 41, 59, 0.62), rgba(15, 23, 42, 0.54));
+  }
+
+  .surface-quiet {
+    @apply rounded-2xl border;
+    border-color: rgb(226 232 240 / 0.8);
+    background-color: rgb(255 255 255 / 0.88);
+  }
+
+  .dark .surface-quiet {
+    border-color: rgb(255 255 255 / 0.08);
+    background-color: rgb(255 255 255 / 0.04);
+  }
+
   .surface-subtle {
     @apply border border-slate-200/80 bg-slate-50/80;
   }

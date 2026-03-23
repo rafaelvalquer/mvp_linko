@@ -21,6 +21,7 @@ import Button from "../components/appui/Button.jsx";
 import Skeleton from "../components/appui/Skeleton.jsx";
 import Badge from "../components/appui/Badge.jsx";
 import EmptyState from "../components/appui/EmptyState.jsx";
+import PageHeader from "../components/appui/PageHeader.jsx";
 import { useAuth } from "../app/AuthContext.jsx";
 import useThemeToggle from "../app/useThemeToggle.js";
 import AnalyticsSection from "../components/dashboard/AnalyticsSection.jsx";
@@ -807,108 +808,108 @@ export default function Dashboard() {
 
   return (
     <Shell topbarAction={topbarAction}>
-      <div className="mx-auto max-w-7xl space-y-6">
-        <div className="relative">
-          <div
-            className={[
-              "absolute inset-0 rounded-[34px] blur-2xl",
-              isDark
-                ? "bg-[linear-gradient(135deg,rgba(34,211,238,0.08),rgba(59,130,246,0.12),rgba(15,23,42,0.02))]"
-                : "bg-[linear-gradient(135deg,rgba(37,99,235,0.12),rgba(20,184,166,0.08),rgba(255,255,255,0.12))]",
-            ].join(" ")}
-          />
+      <div className="mx-auto max-w-[1380px] space-y-5">
+        <PageHeader
+          eyebrow="Operacao"
+          title="Dashboard"
+          subtitle="Acompanhe pagamentos, agenda e andamento das propostas com uma leitura mais clara da operacao."
+          actions={
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={load}
+                disabled={loading}
+              >
+                <span className={`${loading ? "animate-spin" : ""}`}>
+                  <Icons.Refresh />
+                </span>
+                {loading ? "Atualizando..." : "Atualizar"}
+              </Button>
 
-          <div
-            className={[
-              "relative overflow-hidden rounded-[34px] border p-6 backdrop-blur-xl sm:p-8",
-              isDark
-                ? "border-white/10 bg-[linear-gradient(135deg,rgba(15,23,42,0.94),rgba(10,18,36,0.86))] shadow-[0_26px_80px_-48px_rgba(15,23,42,0.8)]"
-                : "border-slate-200/80 bg-[linear-gradient(135deg,rgba(255,255,255,0.98),rgba(238,245,252,0.9))] shadow-[0_26px_80px_-48px_rgba(15,23,42,0.45)]",
-            ].join(" ")}
-          >
+              <Button size="md" variant="secondary" onClick={() => openPixModal()}>
+                <WalletIcon className="h-[18px] w-[18px]" />
+                Conta Pix
+              </Button>
+
+              <Button size="lg" onClick={handleCreateOffer}>
+                <Icons.Plus />
+                Nova proposta
+              </Button>
+            </div>
+          }
+        />
+
+        <div className="grid gap-3 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)]">
+          <div className="surface-secondary px-4 py-4 sm:px-5">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone="PUBLIC">
+                {loading ? "Sincronizando..." : `Atualizado: ${lastUpdate || "--"}`}
+              </Badge>
+              <Badge tone={kpis.pixConfigured ? "PAID" : "ACCEPTED"}>
+                {kpis.pixConfigured ? "Conta Pix pronta" : "Conta Pix pendente"}
+              </Badge>
+              <Badge tone={needsWhatsAppSetup ? "ACCEPTED" : "PAID"}>
+                {needsWhatsAppSetup ? "WhatsApp precisa de configuracao" : "WhatsApp pronto"}
+              </Badge>
+            </div>
             <div
-              className={[
-                "pointer-events-none absolute right-0 top-0 h-40 w-40 rounded-full blur-3xl",
-                isDark ? "bg-cyan-400/12" : "bg-cyan-400/10",
-              ].join(" ")}
-            />
-            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-              <div className="min-w-0 space-y-3">
-                <div className="flex flex-wrap items-center gap-3">
-                  <h1 className="bg-[linear-gradient(135deg,#2563eb,#14b8a6)] bg-clip-text text-3xl font-black tracking-tight text-transparent sm:text-4xl">
-                    Dashboard
-                  </h1>
+              className={`mt-3 text-sm leading-6 ${
+                isDark ? "text-slate-300" : "text-slate-600"
+              }`}
+            >
+              Priorize pagamentos pendentes, comprovantes em análise e os próximos
+              compromissos do dia sem perder o contexto da operação.
+            </div>
+          </div>
 
-                  {lastUpdate && (
-                    <div
-                      className={[
-                        "inline-flex items-center gap-2 rounded-full border px-3 py-1.5",
-                        isDark
-                          ? "border-cyan-400/20 bg-white/10"
-                          : "border-cyan-200/80 bg-white/80 shadow-[0_16px_30px_-24px_rgba(37,99,235,0.45)]",
-                      ].join(" ")}
-                    >
-                      <span className="relative inline-flex h-2 w-2 rounded-full bg-cyan-500" />
-                      <span
-                        className={[
-                          "text-xs font-bold",
-                          isDark ? "text-cyan-100" : "text-sky-800",
-                        ].join(" ")}
-                      >
-                        {loading
-                          ? "Sincronizando..."
-                          : `Atualizado: ${lastUpdate}`}
-                      </span>
-                    </div>
-                  )}
+          <div className="surface-secondary px-4 py-4 sm:px-5">
+            <div
+              className={`text-[11px] font-bold uppercase tracking-[0.18em] ${
+                isDark ? "text-slate-400" : "text-slate-500"
+              }`}
+            >
+              Leitura rapida
+            </div>
+            <div className="mt-2 flex items-end justify-between gap-3">
+              <div>
+                <div className={`text-2xl font-black ${isDark ? "text-white" : "text-slate-950"}`}>
+                  {kpis.pendingNow}
                 </div>
-
-                <p
-                  className={[
-                    "max-w-2xl text-sm leading-6",
-                    isDark ? "text-slate-300" : "text-slate-600",
-                  ].join(" ")}
-                >
-                  Acompanhe pagamentos, agenda e andamento das propostas com uma
-                  leitura mais clara da operacao.
-                </p>
-              </div>
-
-              <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center lg:w-auto">
-                <div className="flex w-full flex-col items-stretch gap-2 sm:flex-row sm:items-center lg:w-auto">
-                  <Button
-                    variant="secondary"
-                    onClick={load}
-                    disabled={loading}
-                    className={isDark
-                      ? "h-11 gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 text-slate-100 transition-all active:scale-95 hover:bg-white/10"
-                      : "h-11 gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-slate-700 shadow-[0_18px_32px_-24px_rgba(15,23,42,0.35)] transition-all active:scale-95 hover:border-slate-300 hover:bg-slate-50"}
-                  >
-                    <span className={`${loading ? "animate-spin" : ""}`}>
-                      <Icons.Refresh />
-                    </span>
-                    <span className="font-semibold">
-                      {loading ? "Atualizando..." : "Atualizar"}
-                    </span>
-                  </Button>
-
-                  <Button
-                    onClick={() => openPixModal()}
-                    className="h-11 gap-2 rounded-2xl bg-[linear-gradient(135deg,#0f172a,#1e293b)] px-4 text-white shadow-[0_18px_36px_-22px_rgba(15,23,42,0.7)] transition-all active:scale-95 hover:brightness-110"
-                  >
-                    <WalletIcon className="h-5 w-5" />
-                    <span className="font-semibold">Conta Pix</span>
-                  </Button>
-
-                  <Button
-                    onClick={handleCreateOffer}
-                    className="h-11 items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#2563eb,#14b8a6)] px-6 font-bold text-white shadow-[0_20px_40px_-24px_rgba(37,99,235,0.75)] ring-1 ring-cyan-400/20 transition-all active:scale-95 hover:brightness-110"
-                  >
-                    <Icons.Plus />
-                    Nova proposta
-                  </Button>
+                <div className={isDark ? "text-xs text-slate-400" : "text-xs text-slate-500"}>
+                  propostas aguardando pagamento
                 </div>
               </div>
+              <div className="text-right">
+                <div className={`text-lg font-bold ${isDark ? "text-white" : "text-slate-950"}`}>
+                  {kpis.waitingConfirmation}
+                </div>
+                <div className={isDark ? "text-xs text-slate-400" : "text-xs text-slate-500"}>
+                  comprovantes em análise
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="surface-secondary px-4 py-4 sm:px-5">
+            <div
+              className={`text-[11px] font-bold uppercase tracking-[0.18em] ${
+                isDark ? "text-slate-400" : "text-slate-500"
+              }`}
+            >
+              Proximo passo
+            </div>
+            <div className={`mt-2 text-sm font-semibold ${isDark ? "text-white" : "text-slate-950"}`}>
+              {bookingsBusy
+                ? "Lendo agenda..."
+                : kpis.appointments > 0
+                  ? `${kpis.appointments} agendamento(s) nos proximos 7 dias`
+                  : "Sem agendamentos próximos"}
+            </div>
+            <div className={isDark ? "mt-1 text-xs text-slate-400" : "mt-1 text-xs text-slate-500"}>
+              {hasRecurringPlan
+                ? `${kpis.recurringAtRiskCount} recorrencia(s) em risco no momento.`
+                : "Acompanhe proposta, Pix e agenda no mesmo fluxo."}
             </div>
           </div>
         </div>
