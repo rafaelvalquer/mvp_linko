@@ -21,6 +21,10 @@ export function getAdminServices() {
   return api("/admin/services");
 }
 
+export function getAdminWhatsAppGatewayMonitor(params = {}) {
+  return api(`/admin/whatsapp/gateway/monitor${toQueryString(params)}`);
+}
+
 export function listAdminWorkspaces(params = {}) {
   return api(`/admin/workspaces${toQueryString(params)}`);
 }

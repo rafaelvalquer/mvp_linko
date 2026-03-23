@@ -3,7 +3,7 @@ import process from "node:process";
 import mongoose from "mongoose";
 
 import { listRuntimeStatuses } from "./runtimeStatus.js";
-import { getWhatsAppGatewayStatus } from "./waGateway.js";
+import { getWhatsAppGatewayStatus, hasWhatsAppGatewayConfig } from "./waGateway.js";
 
 const PROCESS_STARTED_AT = new Date();
 
@@ -82,11 +82,7 @@ async function getMongoStatus() {
 }
 
 async function getWhatsAppGatewayServiceStatus() {
-  const hasConfig =
-    String(process.env.WA_GATEWAY_URL || "").trim() &&
-    String(process.env.WA_GATEWAY_API_KEY || "").trim();
-
-  if (!hasConfig) {
+  if (!hasWhatsAppGatewayConfig("admin")) {
     return buildServiceItem({
       id: "wa-gateway",
       status: "warning",
@@ -103,20 +99,36 @@ async function getWhatsAppGatewayServiceStatus() {
     const gateway = await getWhatsAppGatewayStatus();
     const state = String(gateway?.state || "UNKNOWN").toUpperCase();
     const raw = gateway?.raw || {};
-    const status = gateway?.ready === true ? "healthy" : "warning";
+    const status =
+      gateway?.ready === true && raw?.forwardDegraded !== true
+        ? "healthy"
+        : state === "DISCONNECTED" ||
+            state === "AUTH_FAILURE" ||
+            state === "CHROME_MISSING"
+          ? "down"
+          : "warning";
 
     return buildServiceItem({
       id: "wa-gateway",
       status,
       summary:
-        gateway?.ready === true
+        gateway?.ready === true && raw?.forwardDegraded !== true
           ? "Gateway do WhatsApp conectado e pronto."
+          : raw?.forwardDegraded === true
+            ? "Gateway do WhatsApp conectado, mas com forward interno degradado."
           : `Gateway do WhatsApp acessivel, mas em estado ${state.toLowerCase()}.`,
       updatedAt: new Date(),
       details: {
         configured: true,
         state,
         ready: gateway?.ready === true,
+        waSessionState: raw?.waSessionState || null,
+        forwardDegraded: raw?.forwardDegraded === true,
+        lastForwardError: raw?.lastForwardError || null,
+        lastForwardErrorAt:
+          safeIso(raw?.lastForwardErrorAt) || raw?.lastForwardErrorAt || null,
+        lastForwardOkAt:
+          safeIso(raw?.lastForwardOkAt) || raw?.lastForwardOkAt || null,
         phone: raw?.phone || null,
         lastSeen: safeIso(raw?.lastSeen) || raw?.lastSeen || null,
         hasLatestQr: raw?.hasLatestQr === true,
@@ -124,6 +136,14 @@ async function getWhatsAppGatewayServiceStatus() {
         lastError: raw?.lastError || null,
         lastErrorAt: safeIso(raw?.lastErrorAt) || raw?.lastErrorAt || null,
         isInitializing: raw?.isInitializing === true,
+        uptimeMs: Number(raw?.uptimeMs || 0) || null,
+        lastAckAt: safeIso(raw?.lastAckAt) || raw?.lastAckAt || null,
+        watchdog: {
+          enabled: raw?.watchdogEnabled === true,
+          intervalMs: Number(raw?.watchdogIntervalMs || 0) || null,
+          lastAt: safeIso(raw?.lastWatchdogAt) || raw?.lastWatchdogAt || null,
+          lastError: raw?.lastWatchdogError || null,
+        },
       },
     });
   } catch (error) {

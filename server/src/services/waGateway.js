@@ -7,16 +7,32 @@ function boolEnv(name, defVal = false) {
   return v === "1" || v === "true" || v === "yes" || v === "on";
 }
 
+function getGatewayApiKey(scope = "admin") {
+  if (scope === "send") {
+    return String(
+      process.env.WA_GATEWAY_SEND_API_KEY || process.env.WA_GATEWAY_API_KEY || "",
+    ).trim();
+  }
+
+  return String(
+    process.env.WA_GATEWAY_ADMIN_API_KEY || process.env.WA_GATEWAY_API_KEY || "",
+  ).trim();
+}
+
+export function hasWhatsAppGatewayConfig(scope = "admin") {
+  if (!String(process.env.WA_GATEWAY_URL || "").trim()) return false;
+  return Boolean(getGatewayApiKey(scope));
+}
+
 export function isWhatsAppNotificationsEnabled() {
   if (!boolEnv("WHATSAPP_NOTIFICATIONS_ENABLED", false)) return false;
-  if (!process.env.WA_GATEWAY_URL) return false;
-  if (!process.env.WA_GATEWAY_API_KEY) return false;
+  if (!hasWhatsAppGatewayConfig("send")) return false;
   return true;
 }
 
-function gatewayBaseConfig() {
+function gatewayBaseConfig(scope = "admin") {
   const baseUrl = String(process.env.WA_GATEWAY_URL || "").replace(/\/+$/g, "");
-  const apiKey = String(process.env.WA_GATEWAY_API_KEY || "").trim();
+  const apiKey = getGatewayApiKey(scope);
 
   if (!baseUrl) {
     const err = new Error("WA_GATEWAY_URL ausente");
@@ -24,8 +40,15 @@ function gatewayBaseConfig() {
     throw err;
   }
   if (!apiKey) {
-    const err = new Error("WA_GATEWAY_API_KEY ausente");
-    err.code = "WA_GATEWAY_API_KEY_MISSING";
+    const err = new Error(
+      scope === "send"
+        ? "WA_GATEWAY_SEND_API_KEY ausente (ou WA_GATEWAY_API_KEY legacy ausente)"
+        : "WA_GATEWAY_ADMIN_API_KEY ausente (ou WA_GATEWAY_API_KEY legacy ausente)",
+    );
+    err.code =
+      scope === "send"
+        ? "WA_GATEWAY_SEND_API_KEY_MISSING"
+        : "WA_GATEWAY_ADMIN_API_KEY_MISSING";
     throw err;
   }
 
@@ -64,8 +87,11 @@ function isNetworkLikeError(err) {
   );
 }
 
-async function requestGatewayJson(path, { method = "GET", body = null } = {}) {
-  const { baseUrl, apiKey } = gatewayBaseConfig();
+async function requestGatewayJson(
+  path,
+  { method = "GET", body = null, scope = "admin" } = {},
+) {
+  const { baseUrl, apiKey } = gatewayBaseConfig(scope);
   const url = `${baseUrl}${path}`;
 
   const timeoutMs = Number(process.env.WA_GATEWAY_TIMEOUT_MS || 4000);
@@ -169,7 +195,10 @@ export function isRetryableWhatsAppError(err) {
 }
 
 export async function getWhatsAppGatewayStatus() {
-  const data = await requestGatewayJson("/status", { method: "GET" });
+  const data = await requestGatewayJson("/status", {
+    method: "GET",
+    scope: "admin",
+  });
   return {
     ok: true,
     state: String(data?.state || "").trim().toUpperCase(),
@@ -178,10 +207,95 @@ export async function getWhatsAppGatewayStatus() {
   };
 }
 
+export async function getWhatsAppGatewayRecentEvents({ limit = 100 } = {}) {
+  const normalizedLimit = Math.max(1, Math.min(Number(limit) || 100, 200));
+  const data = await requestGatewayJson(`/events/recent?limit=${normalizedLimit}`, {
+    method: "GET",
+    scope: "admin",
+  });
+
+  return {
+    ok: true,
+    limit: normalizedLimit,
+    events: Array.isArray(data?.events) ? data.events : [],
+    raw: data,
+  };
+}
+
+function serializeGatewayError(error) {
+  return {
+    message: String(error?.message || "Gateway unavailable"),
+    code: String(error?.code || error?.name || "WA_GATEWAY_UNAVAILABLE"),
+    status: Number(error?.status || 0) || null,
+    details: error?.details || null,
+  };
+}
+
+export async function getWhatsAppGatewayMonitorSnapshot({ eventsLimit = 100 } = {}) {
+  const generatedAt = new Date().toISOString();
+  const configured = hasWhatsAppGatewayConfig("admin");
+
+  if (!configured) {
+    return {
+      generatedAt,
+      gatewayAvailability: {
+        configured: false,
+        available: false,
+        status: "not_configured",
+      },
+      gatewayStatus: null,
+      recentEvents: [],
+      error: {
+        message:
+          "WA gateway nao configurado para leitura administrativa no backend.",
+        code: "WA_GATEWAY_NOT_CONFIGURED",
+        status: null,
+        details: null,
+      },
+    };
+  }
+
+  try {
+    const [gatewayStatus, recentEvents] = await Promise.all([
+      getWhatsAppGatewayStatus(),
+      getWhatsAppGatewayRecentEvents({ limit: eventsLimit }),
+    ]);
+
+    return {
+      generatedAt,
+      gatewayAvailability: {
+        configured: true,
+        available: true,
+        status: "available",
+      },
+      gatewayStatus: {
+        state: gatewayStatus.state,
+        ready: gatewayStatus.ready,
+        ...gatewayStatus.raw,
+      },
+      recentEvents: recentEvents.events,
+      error: null,
+    };
+  } catch (error) {
+    return {
+      generatedAt,
+      gatewayAvailability: {
+        configured: true,
+        available: false,
+        status: "unavailable",
+      },
+      gatewayStatus: null,
+      recentEvents: [],
+      error: serializeGatewayError(error),
+    };
+  }
+}
+
 export async function sendWhatsAppNow({ to, message }) {
   const data = await requestGatewayJson("/send", {
     method: "POST",
     body: { to, message },
+    scope: "send",
   });
 
   return {

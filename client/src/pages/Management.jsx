@@ -20,9 +20,11 @@ import Skeleton from "../components/appui/Skeleton.jsx";
 import ModalShell from "../components/appui/ModalShell.jsx";
 import { Input } from "../components/appui/Input.jsx";
 import TenantDiagnosticsPanel from "../components/admin/TenantDiagnosticsPanel.jsx";
+import WhatsAppGatewayMonitorPanel from "../components/admin/WhatsAppGatewayMonitorPanel.jsx";
 import {
   getAdminOverview,
   getAdminServices,
+  getAdminWhatsAppGatewayMonitor,
   getAdminTenantDiagnostics,
   listAdminClients,
   listAdminUsers,
@@ -424,6 +426,7 @@ export default function Management() {
   const [diagnosticWorkspaceId, setDiagnosticWorkspaceId] = useState("");
   const [diagnosticTab, setDiagnosticTab] = useState("overview");
   const [diagnosticFlash, setDiagnosticFlash] = useState("");
+  const [whatsAppTab, setWhatsAppTab] = useState("gateway");
 
   const [workspaceParams, setWorkspaceParams] = useState({
     page: 1,
@@ -458,6 +461,10 @@ export default function Management() {
 
   const overviewLoader = useCallback(() => getAdminOverview(), []);
   const servicesLoader = useCallback(() => getAdminServices(), []);
+  const gatewayMonitorLoader = useCallback(
+    () => getAdminWhatsAppGatewayMonitor({ eventsLimit: 100 }),
+    [],
+  );
   const workspaceOptionsLoader = useCallback(
     () => listAdminWorkspaces({ page: 1, limit: 100 }),
     [],
@@ -491,6 +498,11 @@ export default function Management() {
   const servicesState = useAsyncData(servicesLoader, [servicesLoader, refreshKey], {
     items: [],
   });
+  const gatewayMonitorState = useAsyncData(
+    gatewayMonitorLoader,
+    [gatewayMonitorLoader, refreshKey],
+    null,
+  );
   const workspaceOptionsState = useAsyncData(
     workspaceOptionsLoader,
     [workspaceOptionsLoader, refreshKey],
@@ -542,6 +554,7 @@ export default function Management() {
       ? tenantDiagnosticsState.data?.diagnostics || null
       : null;
   const services = servicesState.data?.items || [];
+  const gatewayMonitor = gatewayMonitorState.data?.monitor || null;
   const workspaces = workspacesState.data?.items || [];
   const users = usersState.data?.items || [];
   const clients = clientsState.data?.items || [];
@@ -611,6 +624,7 @@ export default function Management() {
   }
 
   function applyOutboxWorkspaceFilter(workspaceId) {
+    setWhatsAppTab("outbox");
     setOutboxParams((current) => ({
       ...current,
       page: 1,
@@ -620,6 +634,7 @@ export default function Management() {
   }
 
   function applyMessageLogWorkspaceFilter(workspaceId) {
+    setWhatsAppTab("logs");
     setMessageLogParams((current) => ({
       ...current,
       page: 1,
@@ -1164,46 +1179,75 @@ export default function Management() {
             id="whatsapp"
             eyebrow="WhatsApp"
             title="Fila, logs e diagnostico"
-            description="Monitore os itens enfileirados, erros do gateway e historico de envio sem sair do painel."
+            description="Use as abas para alternar entre troubleshooting do gateway, fila de envio e historico de mensagens."
           />
 
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <MetricCard
-              icon={MessageSquareText}
-              title="Queued"
-              value={fmtNumber(outboxCounts.queued || 0)}
-              subtitle="Mensagens aguardando processamento."
-              status="queued"
-            />
-            <MetricCard
-              icon={AlertTriangle}
-              title="Failed"
-              value={fmtNumber(outboxCounts.failed || 0)}
-              subtitle="Itens com falha definitiva na fila."
-              status={Number(outboxCounts.failed || 0) > 0 ? "warning" : "healthy"}
-            />
-            <MetricCard
-              icon={Activity}
-              title="Logs sent"
-              value={fmtNumber(messageLogCounts.SENT || 0)}
-              subtitle="Registros de envio concluido."
-              status="healthy"
-            />
-            <MetricCard
-              icon={AlertTriangle}
-              title="Logs failed"
-              value={fmtNumber(messageLogCounts.FAILED || 0)}
-              subtitle="Registros com erro de envio."
-              status={Number(messageLogCounts.FAILED || 0) > 0 ? "warning" : "healthy"}
-            />
-          </div>
-
           <Card>
-            <CardHeader
-              title="WhatsApp Outbox"
-              subtitle="Fila de mensagens do gateway, com tentativas, bloqueios e erro final."
-            />
-            <CardBody className="space-y-4">
+            <CardBody className="space-y-5">
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { key: "gateway", label: "Gateway" },
+                  { key: "outbox", label: "Outbox" },
+                  { key: "logs", label: "Message Logs" },
+                ].map((tab) => {
+                  const active = whatsAppTab === tab.key;
+                  return (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      onClick={() => setWhatsAppTab(tab.key)}
+                      className={`rounded-full border px-3.5 py-2 text-xs font-bold uppercase tracking-[0.16em] transition ${
+                        active
+                          ? isDark
+                            ? "border-cyan-300/30 bg-cyan-400/15 text-cyan-100"
+                            : "border-cyan-200 bg-cyan-50 text-cyan-700"
+                          : isDark
+                            ? "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
+                            : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {whatsAppTab === "gateway" ? (
+                <WhatsAppGatewayMonitorPanel
+                  monitorState={gatewayMonitorState}
+                  monitor={gatewayMonitor}
+                  onRefresh={() => setRefreshKey((current) => current + 1)}
+                  onOpenDetail={(title, summary, payload) =>
+                    openDetail(title, summary, payload)
+                  }
+                />
+              ) : null}
+
+              {whatsAppTab === "outbox" ? (
+                <div className="space-y-5">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <MetricCard
+                      icon={MessageSquareText}
+                      title="Queued"
+                      value={fmtNumber(outboxCounts.queued || 0)}
+                      subtitle="Mensagens aguardando processamento."
+                      status="queued"
+                    />
+                    <MetricCard
+                      icon={AlertTriangle}
+                      title="Failed"
+                      value={fmtNumber(outboxCounts.failed || 0)}
+                      subtitle="Itens com falha definitiva na fila."
+                      status={Number(outboxCounts.failed || 0) > 0 ? "warning" : "healthy"}
+                    />
+                  </div>
+
+                  <Card>
+                    <CardHeader
+                      title="WhatsApp Outbox"
+                      subtitle="Fila de mensagens do gateway, com tentativas, bloqueios e erro final."
+                    />
+                    <CardBody className="space-y-4">
               <FilterRow>
                 <Input
                   value={outboxParams.search}
@@ -1349,15 +1393,36 @@ export default function Management() {
                   setOutboxParams((current) => ({ ...current, page }))
                 }
               />
-            </CardBody>
-          </Card>
+                    </CardBody>
+                  </Card>
+                </div>
+              ) : null}
 
-          <Card>
-            <CardHeader
-              title="Message Logs"
-              subtitle="Historico das mensagens disparadas, com preview curto na grid e mensagem completa no detalhe."
-            />
-            <CardBody className="space-y-4">
+              {whatsAppTab === "logs" ? (
+                <div className="space-y-5">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <MetricCard
+                      icon={Activity}
+                      title="Logs sent"
+                      value={fmtNumber(messageLogCounts.SENT || 0)}
+                      subtitle="Registros de envio concluido."
+                      status="healthy"
+                    />
+                    <MetricCard
+                      icon={AlertTriangle}
+                      title="Logs failed"
+                      value={fmtNumber(messageLogCounts.FAILED || 0)}
+                      subtitle="Registros com erro de envio."
+                      status={Number(messageLogCounts.FAILED || 0) > 0 ? "warning" : "healthy"}
+                    />
+                  </div>
+
+                  <Card>
+                    <CardHeader
+                      title="Message Logs"
+                      subtitle="Historico das mensagens disparadas, com preview curto na grid e mensagem completa no detalhe."
+                    />
+                    <CardBody className="space-y-4">
               <FilterRow>
                 <Input
                   value={messageLogParams.search}
@@ -1485,12 +1550,16 @@ export default function Management() {
                 </div>
               )}
 
-              <PaginationBar
-                pagination={messageLogsState.data?.pagination}
-                onPageChange={(page) =>
-                  setMessageLogParams((current) => ({ ...current, page }))
-                }
-              />
+                      <PaginationBar
+                        pagination={messageLogsState.data?.pagination}
+                        onPageChange={(page) =>
+                          setMessageLogParams((current) => ({ ...current, page }))
+                        }
+                      />
+                    </CardBody>
+                  </Card>
+                </div>
+              ) : null}
             </CardBody>
           </Card>
         </section>

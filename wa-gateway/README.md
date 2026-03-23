@@ -1,10 +1,17 @@
-# wa-gateway (MVP)
+# wa-gateway
 
-Microservico local (sem Docker) para envio de notificacoes via WhatsApp usando `whatsapp-web.js`.
+Microservico privado para transporte do WhatsApp via `whatsapp-web.js`.
+
+O `server` continua sendo o dono da regra de negocio. O `wa-gateway` cuida de:
+- sessao do WhatsApp
+- QR e reconexao
+- envio de mensagens
+- inbound forward para o `server`
+- telemetria, eventos recentes e metricas basicas
 
 ## Requisitos
 - Node.js LTS
-- Google Chrome instalado no Windows
+- Google Chrome instalado
 
 ## Instalacao
 ```bash
@@ -13,42 +20,97 @@ npm i
 copy .env.example .env
 ```
 
-Edite `.env` e defina pelo menos:
-- `WA_API_KEY` para proteger `/status` e `/send`
-- `WA_PORT` (default `3010`)
-- `WA_SESSION_PATH` com caminho absoluto estavel
-- `WA_CHROME_PATH` apontando para o Chrome instalado
-- `WA_CLIENT_ID` para fixar o perfil do `LocalAuth`
-- `WA_INBOUND_TYPING_ENABLED=true` para mostrar "digitando" apenas enquanto o agente processa mensagens inbound
+## Variaveis principais
+- `WA_ADMIN_API_KEY`: protege `/status`, `/metrics`, `/events/recent` e `/restart`
+- `WA_SEND_API_KEY`: protege `/send`
+- `WA_API_KEY`: fallback legacy para os dois casos acima
+- `WA_SESSION_PATH`: pasta persistente do `LocalAuth`
+- `WA_CHROME_PATH`: caminho do Chrome
+- `SERVER_INTERNAL_WEBHOOK_URL`: base do `server`
+- `SERVER_INTERNAL_WEBHOOK_KEY`: chave do webhook interno
+- `WA_INBOUND_TYPING_ENABLED=true`: mostra "digitando" no inbound do agente
+- `WA_SENSITIVE_IP_ALLOWLIST=loopback`: restringe acessos administrativos por IP
+- `WA_QR_PUBLIC=false`: recomendado em producao
 
 ## Executar
 ```bash
 npm start
 ```
 
-Ao iniciar:
-- O QR Code aparece no console.
-- Escaneie no WhatsApp em **Dispositivos conectados**.
-- Apos conectar, voce vera `WhatsApp READY: <numero>`.
-
-## Testar status
+## Scripts uteis
 ```bash
-curl -H "x-api-key: change-me" http://localhost:3010/status
+npm run lint
+npm test
+npm run smoke
 ```
 
-## Enviar mensagem
+`npm run smoke` usa:
+- `WA_SMOKE_BASE_URL` opcional, default `http://127.0.0.1:3010`
+- `WA_SMOKE_ADMIN_KEY` opcional, com fallback para `WA_ADMIN_API_KEY` ou `WA_API_KEY`
+
+## Endpoints
+- `GET /health`
+- `GET /status`
+- `GET /metrics`
+- `GET /events/recent`
+- `GET /qr`
+- `POST /restart`
+- `POST /send`
+
+## /send
+Exemplo basico:
 ```bash
-curl -X POST http://localhost:3010/send \
-  -H "content-type: application/json" \
-  -H "x-api-key: change-me" \
-  -d '{ "to":"11999999999", "message":"Pagamento confirmado" }'
+curl -X POST http://localhost:3010/send ^
+  -H "content-type: application/json" ^
+  -H "x-api-key: change-me" ^
+  -d "{ \"to\":\"11999999999\", \"message\":\"Pagamento confirmado\" }"
 ```
+
+Tambem aceita midia opcional:
+- `mediaBase64`
+- `mediaMimeType`
+- `mediaFileName`
+
+## Observabilidade
+- `/status` expoe:
+  - estado atual
+  - `waSessionState`
+  - reconexao
+  - latencia de forward inbound
+  - watchdog
+  - dedupe em memoria
+  - telemetria agregada
+- `/events/recent` retorna o buffer curto de eventos estruturados
+- `/metrics` retorna metricas simples em formato texto
+
+## Runbooks
+### QR nao aparece
+- confira `/status`
+- valide `chromePathResolved` e `chromePathExists`
+- se o estado ficar `CHROME_MISSING`, ajuste `WA_CHROME_PATH`
+- se estiver em producao, cheque se `/qr` esta privado e se o IP esta liberado
+
+### READY mas nao envia
+- confira se `/send` esta usando `WA_SEND_API_KEY`
+- valide `waReady=true` em `/status`
+- veja `/events/recent` para `send_failed` ou `message_ack`
+
+### LID unresolved
+- verifique `/events/recent` para `inbound_lid_lookup_failed`
+- confira se o contato esta acessivel no WhatsApp pareado
+- se o numero nao resolver, o inbound sera descartado antes do forward
+
+### timeout no inbound
+- confira `forwardDegraded` e `lastForwardError` em `/status`
+- veja a latencia de `wa_inbound_forward_duration`
+- valide `SERVER_INTERNAL_WEBHOOK_URL`, chave interna e disponibilidade do `server`
+
+### sessao corrompida
+- use `POST /restart`
+- se necessario, limpe a pasta `WA_SESSION_PATH` e refaca o pareamento
+- mantenha a sessao fora do repositorio e fora de pastas sincronizadas
 
 ## Observacoes
-- A sessao e persistida em `WA_SESSION_PATH` via `LocalAuth`.
-- No Windows, prefira um diretorio fora do repositorio, por exemplo `C:\LuminorPay\wa-session`.
-- Apos mudar o `WA_SESSION_PATH`, faca um novo pareamento lendo o QR uma unica vez.
-- Use sempre o mesmo diretorio de execucao do `wa-gateway`.
-- Nao exponha esse servico publicamente.
-- Se houver erro do Puppeteer, confira `WA_CHROME_PATH` e evite limpar ou sincronizar a pasta da sessao.
-- O indicador de digitacao vale apenas para o inbound do agente; envios via `/send` continuam imediatos, sem simular conversa humana.
+- Em producao, prefira `WA_QR_PUBLIC=false`.
+- O gateway continua privado; nao exponha publicamente sem proxy/TLS e restricoes.
+- O indicador de digitacao vale apenas para o inbound do agente.

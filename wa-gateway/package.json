@@ -6,7 +6,10 @@
   "main": "index.js",
   "scripts": {
     "dev": "nodemon index.js",
-    "start": "node index.js"
+    "start": "node index.js",
+    "test": "node ./test/run-tests.mjs",
+    "lint": "node ./scripts/check-syntax.mjs",
+    "smoke": "node ./scripts/smoke.mjs"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

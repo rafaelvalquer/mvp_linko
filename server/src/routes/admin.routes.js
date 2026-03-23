@@ -14,6 +14,7 @@ import { WhatsAppCommandSession } from "../models/WhatsAppCommandSession.js";
 import OfferReminderLog from "../models/OfferReminderLog.js";
 import { getSystemHealthSnapshot, getSystemServicesStatus } from "../services/systemStatus.service.js";
 import { resolveWorkspaceNotificationContext } from "../services/notificationSettings.js";
+import { getWhatsAppGatewayMonitorSnapshot } from "../services/waGateway.js";
 import { isMasterAdminEmail } from "../utils/masterAdmin.js";
 
 const r = Router();
@@ -431,6 +432,23 @@ r.get(
   asyncHandler(async (_req, res) => {
     const items = await getSystemServicesStatus();
     res.json({ ok: true, items });
+  }),
+);
+
+r.get(
+  "/admin/whatsapp/gateway/monitor",
+  asyncHandler(async (req, res) => {
+    const eventsLimit = clampInt(req.query.eventsLimit, 100, {
+      min: 1,
+      max: 200,
+    });
+
+    const monitor = await getWhatsAppGatewayMonitorSnapshot({ eventsLimit });
+
+    res.json({
+      ok: true,
+      monitor,
+    });
   }),
 );
 

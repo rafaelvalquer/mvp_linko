@@ -7,75 +7,65 @@ import whatsappPkg from "whatsapp-web.js";
 import QRCode from "qrcode";
 import fs from "fs";
 import path from "path";
+import {
+  loadGatewayConfig,
+  resolveChromePath as resolveChromePathFromConfig,
+  validateGatewayConfig,
+} from "./src/config.js";
+import {
+  getClientIp,
+  isIpAllowed,
+  maskKey as maskApiKeyFromModule,
+  matchesApiKey,
+} from "./src/security.js";
+import {
+  isLidUserId as isLidUserIdFromModule,
+  normalizeInboundPhoneDigits as normalizeInboundPhoneDigitsFromModule,
+  normalizeToBR as normalizeToBRFromModule,
+} from "./src/phone.js";
+import { createTelemetry } from "./src/telemetry.js";
+import { startTypingHeartbeat } from "./src/typing.js";
 
 dotenv.config();
 
 const qrcode = qrcodePkg?.default ?? qrcodePkg;
-const { Client, LocalAuth } = whatsappPkg?.default ?? whatsappPkg;
+const { Client, LocalAuth, MessageMedia } = whatsappPkg?.default ?? whatsappPkg;
+const PACKAGE_VERSION = process.env.npm_package_version || "0.1.0";
+const gatewayConfig = loadGatewayConfig();
+const bootValidation = validateGatewayConfig(gatewayConfig);
+const telemetry = createTelemetry({
+  recentEventsLimit: gatewayConfig.telemetry.recentEventsLimit,
+});
+const startedAtMs = Date.now();
 
-const PORT = Number(process.env.PORT || process.env.WA_PORT || 3010);
-const DEFAULT_WINDOWS_SESSION_PATH = "C:\\LuminorPay\\wa-session";
-const DEFAULT_WINDOWS_CHROME_PATH =
-  "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+const PORT = gatewayConfig.port;
+const API_KEY = gatewayConfig.auth.adminApiKey;
+const SESSION_PATH_CONFIGURED = gatewayConfig.sessionPathConfigured;
+const SESSION_PATH = gatewayConfig.sessionPath;
+const CLIENT_ID = gatewayConfig.clientId;
+const RECONNECT_BASE_MS = gatewayConfig.reconnect.baseMs;
+const RECONNECT_MAX_MS = gatewayConfig.reconnect.maxMs;
+const WA_INBOUND_FORWARD_ENABLED = gatewayConfig.inbound.forwardEnabled;
+const SERVER_INTERNAL_WEBHOOK_URL = gatewayConfig.inbound.webhookUrl;
+const SERVER_INTERNAL_WEBHOOK_KEY = gatewayConfig.inbound.webhookKey;
+const WA_INBOUND_FORWARD_TIMEOUT_MS = gatewayConfig.inbound.timeoutMs;
+const WA_INBOUND_DEDUPE_TTL_MS = gatewayConfig.inbound.dedupeTtlMs;
+const WA_INBOUND_TYPING_ENABLED = gatewayConfig.inbound.typingEnabled;
+const WA_INBOUND_TYPING_HEARTBEAT_MS =
+  gatewayConfig.inbound.typingHeartbeatMs;
 
-const API_KEY = process.env.WA_API_KEY || "";
-const SESSION_PATH_CONFIGURED =
-  process.env.WA_SESSION_PATH ||
-  (process.platform === "win32" ? DEFAULT_WINDOWS_SESSION_PATH : "./wa-session");
-const SESSION_PATH = path.resolve(SESSION_PATH_CONFIGURED);
-const CLIENT_ID =
-  String(process.env.WA_CLIENT_ID || "luminorpay-windows").trim() ||
-  "luminorpay-windows";
-const RECONNECT_BASE_MS = Math.max(
-  1000,
-  Number(process.env.WA_RECONNECT_BASE_MS || 5000) || 5000,
-);
-const RECONNECT_MAX_MS = Math.max(
-  RECONNECT_BASE_MS,
-  Number(process.env.WA_RECONNECT_MAX_MS || 60000) || 60000,
-);
-const WA_INBOUND_FORWARD_ENABLED =
-  String(process.env.WA_INBOUND_FORWARD_ENABLED || "true").toLowerCase() ===
-  "true";
-const SERVER_INTERNAL_WEBHOOK_URL = String(
-  process.env.SERVER_INTERNAL_WEBHOOK_URL || "",
-).replace(/\/+$/g, "");
-const SERVER_INTERNAL_WEBHOOK_KEY = String(
-  process.env.SERVER_INTERNAL_WEBHOOK_KEY || "",
-).trim();
-const WA_INBOUND_FORWARD_TIMEOUT_MS = Math.max(
-  5000,
-  Number(process.env.WA_INBOUND_FORWARD_TIMEOUT_MS || 30000) || 30000,
-);
-const WA_INBOUND_DEDUPE_TTL_MS = Math.max(
-  30000,
-  Number(process.env.WA_INBOUND_DEDUPE_TTL_MS || 2 * 60 * 1000) || 2 * 60 * 1000,
-);
-const WA_INBOUND_TYPING_ENABLED =
-  String(process.env.WA_INBOUND_TYPING_ENABLED || "true").toLowerCase() ===
-  "true";
-const WA_INBOUND_TYPING_HEARTBEAT_MS = 20 * 1000;
+const HEADLESS = gatewayConfig.headless;
 
-const HEADLESS =
-  String(process.env.WA_PUPPETEER_HEADLESS || "true").toLowerCase() === "true";
+const QR_PUBLIC = gatewayConfig.auth.qrPublic;
 
-const QR_PUBLIC =
-  String(process.env.WA_QR_PUBLIC || "true").toLowerCase() === "true";
-
-const QR_KEY = process.env.WA_QR_KEY || "";
+const QR_KEY = gatewayConfig.auth.qrKey;
 
 // Prioridade:
 // 1) WA_CHROME_PATH
 // 2) CHROME_BIN
 // 3) PUPPETEER_EXECUTABLE_PATH
 // 4) fallback padrão Linux container
-const CHROME_PATH =
-  process.env.WA_CHROME_PATH ||
-  process.env.CHROME_BIN ||
-  process.env.PUPPETEER_EXECUTABLE_PATH ||
-  (process.platform === "win32"
-    ? DEFAULT_WINDOWS_CHROME_PATH
-    : "/usr/bin/google-chrome");
+const CHROME_PATH = gatewayConfig.chromePathConfigured;
 
 let state = "INIT"; // INIT | STARTING | QR | READY | DISCONNECTED
 let phone = null;
@@ -95,11 +85,29 @@ let nextReconnectAt = null;
 let reconnectDelayMs = null;
 let reconnectTimer = null;
 let clientGeneration = 0;
+let waReady = false;
+let readyAt = null;
+let waSessionState = "INIT";
+let forwardDegraded = false;
+let lastForwardError = null;
+let lastForwardErrorAt = null;
+let lastForwardOkAt = null;
+let watchdogTimer = null;
+let lastWatchdogAt = null;
+let lastWatchdogError = null;
+let lastAckAt = null;
 
 let waClient = null;
 let isInitializing = false;
 const recentInboundMessageIds = new Map();
 const inflightInboundMessageIds = new Set();
+const recentSendByChatId = new Map();
+
+if (!bootValidation.ok && Array.isArray(bootValidation.errors) && bootValidation.errors.length) {
+  state = String(bootValidation.errors[0]?.code || "MISCONFIGURED").toUpperCase();
+  lastError = bootValidation.errors[0]?.message || "Configuracao invalida.";
+  lastErrorAt = new Date().toISOString();
+}
 
 function nowISO() {
   return new Date().toISOString();
@@ -130,6 +138,7 @@ function hasRecentInboundMessage(messageId) {
 function markRecentInboundMessage(messageId) {
   if (!messageId) return;
   recentInboundMessageIds.set(messageId, nowMs());
+  syncTelemetryGauges();
 }
 
 function clearReconnectSchedule() {
@@ -139,11 +148,13 @@ function clearReconnectSchedule() {
   }
   nextReconnectAt = null;
   reconnectDelayMs = null;
+  syncTelemetryGauges();
 }
 
 function resetReconnectState() {
   clearReconnectSchedule();
   reconnectAttempts = 0;
+  syncTelemetryGauges();
 }
 
 function setLastError(where, err) {
@@ -152,14 +163,55 @@ function setLastError(where, err) {
   touch();
   console.error(`[wa] ERROR ${lastErrorAt} ${lastError}`);
   if (err?.stack) console.error(err.stack);
+  logEvent("error", "runtime_error", {
+    message: compactForLog(err?.message || String(err), 160),
+    where,
+  });
 }
 
-function markDisconnected(reason) {
-  state = "DISCONNECTED";
+function markDisconnected(reason, nextState = "DISCONNECTED") {
+  state = nextState;
   lastDisconnectAt = nowISO();
   lastDisconnectReason = String(reason?.message || reason || "unknown");
   disconnectCount += 1;
+  waReady = false;
+  readyAt = null;
+  waSessionState = nextState;
+  clearWatchdog();
   touch();
+  syncTelemetryGauges();
+}
+
+function logEvent(level, event, details = {}) {
+  return telemetry.log(level, event, {
+    state,
+    waSessionState,
+    ready: waReady,
+    phone,
+    forwardDegraded,
+    ...details,
+  });
+}
+
+function syncTelemetryGauges() {
+  telemetry.setGauge("wa_runtime_ready", waReady ? 1 : 0);
+  telemetry.setGauge("wa_runtime_forward_degraded", forwardDegraded ? 1 : 0);
+  telemetry.setGauge(
+    "wa_runtime_inflight_inbound",
+    inflightInboundMessageIds.size,
+  );
+  telemetry.setGauge(
+    "wa_runtime_recent_inbound_dedupe",
+    recentInboundMessageIds.size,
+  );
+  telemetry.setGauge("wa_runtime_reconnect_attempts", reconnectAttempts);
+  telemetry.setGauge("wa_runtime_reconnect_count", reconnectCount);
+  telemetry.setGauge("wa_runtime_disconnect_count", disconnectCount);
+  telemetry.setGauge("wa_runtime_watchdog_active", watchdogTimer ? 1 : 0);
+  telemetry.setGauge(
+    "wa_runtime_boot_validation_ok",
+    bootValidation.ok ? 1 : 0,
+  );
 }
 
 function compactForLog(text, max = 280) {
@@ -169,14 +221,11 @@ function compactForLog(text, max = 280) {
     .trim();
 
   if (s.length <= max) return s;
-  return `${s.slice(0, max)}…(+${s.length - max} chars)`;
+  return `${s.slice(0, max)}...(+${s.length - max} chars)`;
 }
 
 function maskApiKey(value) {
-  const v = String(value || "");
-  if (!v) return "(not set)";
-  if (v.length <= 6) return "***";
-  return `${v.slice(0, 3)}***${v.slice(-3)}`;
+  return maskApiKeyFromModule(value);
 }
 
 function ensureDir(dirPath) {
@@ -189,39 +238,29 @@ function ensureDir(dirPath) {
 
 function fileExists(filePath) {
   try {
-    return fs.existsSync(filePath);
+    return Boolean(filePath) && fs.existsSync(filePath);
   } catch {
     return false;
   }
 }
 
 function resolveChromePath() {
-  const candidates = [
-    process.env.WA_CHROME_PATH,
-    process.env.CHROME_BIN,
-    process.env.PUPPETEER_EXECUTABLE_PATH,
-    process.platform === "win32" ? DEFAULT_WINDOWS_CHROME_PATH : null,
-    "/usr/bin/google-chrome",
-    "/usr/bin/google-chrome-stable",
-    "/usr/bin/chromium",
-    "/usr/bin/chromium-browser",
-  ].filter(Boolean);
+  return resolveChromePathFromConfig();
+}
 
-  for (const candidate of candidates) {
-    if (fileExists(candidate)) return candidate;
-  }
-
-  return (
-    process.env.WA_CHROME_PATH ||
-    process.env.CHROME_BIN ||
-    process.env.PUPPETEER_EXECUTABLE_PATH ||
-    (process.platform === "win32"
-      ? DEFAULT_WINDOWS_CHROME_PATH
-      : "/usr/bin/google-chrome")
-  );
+function clearWatchdog() {
+  if (!watchdogTimer) return;
+  clearInterval(watchdogTimer);
+  watchdogTimer = null;
+  syncTelemetryGauges();
 }
 
 function scheduleReconnect(reason = "unknown") {
+  if (!bootValidation.ok) {
+    logEvent("warn", "reconnect_skipped_boot_validation", { reason });
+    return;
+  }
+
   clearReconnectSchedule();
   reconnectAttempts += 1;
   reconnectDelayMs = Math.min(
@@ -242,71 +281,141 @@ function scheduleReconnect(reason = "unknown") {
     nextReconnectAt = null;
     reconnectDelayMs = null;
     reconnectCount += 1;
+    syncTelemetryGauges();
     initWhatsApp();
   }, reconnectDelayMs);
+  syncTelemetryGauges();
+}
+
+async function checkClientHealth() {
+  if (!waClient || isInitializing) return;
+
+  try {
+    const browserConnected =
+      typeof waClient?.pupBrowser?.isConnected === "function"
+        ? waClient.pupBrowser.isConnected()
+        : true;
+    const pageClosed =
+      typeof waClient?.pupPage?.isClosed === "function"
+        ? waClient.pupPage.isClosed()
+        : false;
+
+    if (typeof waClient.getState === "function") {
+      waSessionState = String(
+        (await waClient.getState()) || waSessionState || "UNKNOWN",
+      );
+    }
+
+    lastWatchdogAt = nowISO();
+    lastWatchdogError = null;
+    telemetry.incrementCounter("wa_watchdog_success_total");
+    syncTelemetryGauges();
+
+    if (pageClosed || browserConnected === false) {
+      throw new Error(
+        `browser unhealthy (browserConnected=${browserConnected}, pageClosed=${pageClosed})`,
+      );
+    }
+  } catch (error) {
+    lastWatchdogAt = nowISO();
+    lastWatchdogError = error?.message || String(error);
+    telemetry.incrementCounter("wa_watchdog_failure_total");
+    setLastError("watchdog", error);
+    markDisconnected(error);
+    await destroyClientSafe();
+    scheduleReconnect("watchdog");
+  }
+}
+
+function handleFatalProcessError(where, error) {
+  setLastError(where, error);
+  markDisconnected(error);
+  void destroyClientSafe();
+  scheduleReconnect(where);
 }
 
 process.on("unhandledRejection", (reason) => {
-  setLastError("unhandledRejection", reason);
-  markDisconnected(reason);
-  scheduleReconnect("unhandledRejection");
+  handleFatalProcessError("unhandledRejection", reason);
 });
 
 process.on("uncaughtException", (err) => {
-  setLastError("uncaughtException", err);
-  markDisconnected(err);
-  scheduleReconnect("uncaughtException");
+  handleFatalProcessError("uncaughtException", err);
 });
 
-function requireApiKey(req, res, next) {
+function respondError(res, statusCode, errorCode, details = null) {
+  return res.status(statusCode).json({
+    ok: false,
+    error: errorCode,
+    ...(gatewayConfig.isProduction || !details ? {} : { details }),
+  });
+}
+
+function requireAdminAccess(req, res, next) {
+  const ip = getClientIp(req);
   const key = req.header("x-api-key");
-  if (!API_KEY) {
-    return res.status(500).json({ ok: false, error: "WA_API_KEY_NOT_SET" });
+
+  if (!matchesApiKey(key, gatewayConfig.auth.adminApiKey)) {
+    telemetry.incrementCounter("wa_auth_admin_denied_total");
+    logEvent("warn", "admin_access_denied", {
+      ip,
+      reason: "BAD_API_KEY",
+      route: req.path,
+    });
+    return respondError(res, 401, "UNAUTHORIZED");
   }
-  if (key !== API_KEY) {
-    return res.status(401).json({ ok: false, error: "UNAUTHORIZED" });
+
+  if (!isIpAllowed(ip, gatewayConfig.auth.sensitiveIpAllowlist)) {
+    telemetry.incrementCounter("wa_auth_ip_denied_total");
+    logEvent("warn", "admin_access_denied", {
+      ip,
+      reason: "IP_NOT_ALLOWED",
+      route: req.path,
+    });
+    return respondError(res, 403, "IP_NOT_ALLOWED");
   }
-  next();
+
+  return next();
+}
+
+function requireSendAccess(req, res, next) {
+  const key = req.header("x-api-key");
+  if (!matchesApiKey(key, gatewayConfig.auth.sendApiKey)) {
+    telemetry.incrementCounter("wa_auth_send_denied_total");
+    logEvent("warn", "send_access_denied", {
+      ip: getClientIp(req),
+      route: req.path,
+    });
+    return respondError(res, 401, "UNAUTHORIZED");
+  }
+
+  return next();
 }
 
 function allowQrAccess(req) {
-  if (QR_PUBLIC) return true;
+  if (gatewayConfig.auth.qrPublic) return true;
+  if (
+    !isIpAllowed(getClientIp(req), gatewayConfig.auth.sensitiveIpAllowlist)
+  ) {
+    return false;
+  }
 
   const key = String(req.query.key || req.header("x-api-key") || "");
-  const expected = QR_KEY || API_KEY;
+  const expected = gatewayConfig.auth.qrKey || gatewayConfig.auth.adminApiKey;
   if (!expected) return false;
 
-  return key === expected;
+  return matchesApiKey(key, expected);
 }
 
 function normalizeToBR(toRaw) {
-  const digits = String(toRaw || "").replace(/\D/g, "");
-  if (!digits) return null;
-
-  if (digits.length === 10 || digits.length === 11) return `55${digits}`;
-  if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13))
-    return digits;
-
-  return null;
+  return normalizeToBRFromModule(toRaw);
 }
 
 function normalizeInboundPhoneDigits(raw) {
-  const digits = String(raw || "").replace(/\D/g, "");
-  if (!digits) return "";
-
-  if (digits.length === 10 || digits.length === 11) {
-    return `55${digits}`;
-  }
-
-  if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13)) {
-    return digits;
-  }
-
-  return "";
+  return normalizeInboundPhoneDigitsFromModule(raw);
 }
 
 function isLidUserId(raw) {
-  return /@lid$/i.test(String(raw || "").trim());
+  return isLidUserIdFromModule(raw);
 }
 
 async function resolvePhoneDigitsFromLid(userId) {
@@ -398,12 +507,26 @@ async function resolvePushName(message) {
 }
 
 async function forwardInboundEvent(payload) {
+  const startedAt = nowMs();
+  telemetry.incrementCounter("wa_inbound_forward_attempt_total");
+
   if (!WA_INBOUND_FORWARD_ENABLED) {
-    return { ok: true, status: "DISABLED" };
+    forwardDegraded = false;
+    lastForwardError = null;
+    lastForwardErrorAt = null;
+    lastForwardOkAt = nowISO();
+    syncTelemetryGauges();
+    return { ok: true, status: "DISABLED", durationMs: 0 };
   }
 
   if (!SERVER_INTERNAL_WEBHOOK_URL || !SERVER_INTERNAL_WEBHOOK_KEY) {
-    return { ok: false, status: "MISCONFIGURED" };
+    forwardDegraded = true;
+    lastForwardError = "FORWARD_MISCONFIGURED";
+    lastForwardErrorAt = nowISO();
+    state = waReady ? "FORWARD_DEGRADED" : state;
+    telemetry.incrementCounter("wa_inbound_forward_failure_total");
+    syncTelemetryGauges();
+    return { ok: false, status: "MISCONFIGURED", error: "FORWARD_MISCONFIGURED" };
   }
 
   const ctrl = new AbortController();
@@ -424,24 +547,50 @@ async function forwardInboundEvent(payload) {
     );
 
     const data = await response.json().catch(() => null);
+    const durationMs = nowMs() - startedAt;
+    telemetry.observeTiming("wa_inbound_forward_duration", durationMs);
 
     if (!response.ok || data?.ok === false) {
+      forwardDegraded = true;
+      lastForwardError = data?.error || data?.status || `HTTP_${response.status}`;
+      lastForwardErrorAt = nowISO();
+      state = waReady ? "FORWARD_DEGRADED" : state;
+      telemetry.incrementCounter("wa_inbound_forward_failure_total");
+      syncTelemetryGauges();
       return {
         ok: false,
         status: `HTTP_${response.status}`,
         error: data?.error || data?.status || "FORWARD_FAILED",
+        durationMs,
       };
     }
 
+    forwardDegraded = false;
+    lastForwardError = null;
+    lastForwardErrorAt = null;
+    lastForwardOkAt = nowISO();
+    state = waReady ? "READY" : state;
+    telemetry.incrementCounter("wa_inbound_forward_success_total");
+    syncTelemetryGauges();
     return {
       ok: true,
       status: String(data?.status || "FORWARDED"),
+      durationMs,
     };
   } catch (error) {
+    const durationMs = nowMs() - startedAt;
+    telemetry.observeTiming("wa_inbound_forward_duration", durationMs);
+    telemetry.incrementCounter("wa_inbound_forward_failure_total");
+    forwardDegraded = true;
+    lastForwardError = error?.message || String(error);
+    lastForwardErrorAt = nowISO();
+    state = waReady ? "FORWARD_DEGRADED" : state;
+    syncTelemetryGauges();
     return {
       ok: false,
       status: error?.name === "AbortError" ? "TIMEOUT" : "NETWORK_ERROR",
       error: error?.message || String(error),
+      durationMs,
     };
   } finally {
     clearTimeout(timer);
@@ -461,83 +610,16 @@ async function startInboundTypingHeartbeat({
   fromPhoneDigits = "",
   type = "unknown",
 }) {
-  if (!WA_INBOUND_TYPING_ENABLED || !message) {
-    return createNoopTypingHandle();
-  }
-
-  let chat = null;
-
-  try {
-    chat = await message.getChat();
-  } catch (error) {
-    console.warn(
-      `[inbound] typing chat lookup failed messageId=${messageId} from=${fromPhoneDigits || "unknown"} type=${type} error="${compactForLog(
-        error?.message || String(error),
-        160,
-      )}"`,
-    );
-    return createNoopTypingHandle();
-  }
-
-  if (
-    !chat ||
-    typeof chat.sendStateTyping !== "function" ||
-    typeof chat.clearState !== "function"
-  ) {
-    return createNoopTypingHandle();
-  }
-
-  let stopped = false;
-  let renewTimer = null;
-  let sendInFlight = false;
-
-  const emitTyping = async () => {
-    if (stopped || sendInFlight) return;
-    sendInFlight = true;
-
-    try {
-      await chat.sendStateTyping();
-    } catch (error) {
-      console.warn(
-        `[inbound] typing start failed messageId=${messageId} from=${fromPhoneDigits || "unknown"} type=${type} error="${compactForLog(
-          error?.message || String(error),
-          160,
-        )}"`,
-      );
-    } finally {
-      sendInFlight = false;
-    }
-  };
-
-  await emitTyping();
-
-  renewTimer = setInterval(() => {
-    void emitTyping();
-  }, WA_INBOUND_TYPING_HEARTBEAT_MS);
-
-  return {
-    active: true,
-    async stop() {
-      if (stopped) return;
-      stopped = true;
-
-      if (renewTimer) {
-        clearInterval(renewTimer);
-        renewTimer = null;
-      }
-
-      try {
-        await chat.clearState();
-      } catch (error) {
-        console.warn(
-          `[inbound] typing clear failed messageId=${messageId} from=${fromPhoneDigits || "unknown"} type=${type} error="${compactForLog(
-            error?.message || String(error),
-            160,
-          )}"`,
-        );
-      }
-    },
-  };
+  return startTypingHeartbeat({
+    enabled: WA_INBOUND_TYPING_ENABLED,
+    heartbeatMs: WA_INBOUND_TYPING_HEARTBEAT_MS,
+    message,
+    messageId,
+    fromPhoneDigits,
+    type,
+    compactForLog,
+    logWarn: (line) => console.warn(line),
+  });
 }
 
 async function forwardInboundEventWithTyping({
@@ -573,21 +655,25 @@ function shouldIgnoreInboundMessage(message) {
 
 async function handleInboundMessage(message) {
   if (shouldIgnoreInboundMessage(message)) return;
+  telemetry.incrementCounter("wa_inbound_received_total");
 
   const messageId =
     message?.id?._serialized || message?.id?.id || `msg-${Date.now()}`;
   if (inflightInboundMessageIds.has(messageId) || hasRecentInboundMessage(messageId)) {
+    telemetry.incrementCounter("wa_inbound_duplicate_total");
     console.log(`[inbound] skipped duplicate messageId=${messageId}`);
     return;
   }
 
   inflightInboundMessageIds.add(messageId);
+  syncTelemetryGauges();
 
   try {
     const rawFrom = String(message?.from || "").trim();
     const fromPhoneDigits = await resolveInboundPhoneDigits(message);
 
     if (!fromPhoneDigits) {
+      telemetry.incrementCounter("wa_inbound_unresolved_phone_total");
       console.warn(
         `[inbound] skipped without phone messageId=${messageId} from="${compactForLog(
           rawFrom,
@@ -632,11 +718,13 @@ async function handleInboundMessage(message) {
       });
 
       if (result.ok) {
+        telemetry.incrementCounter("wa_inbound_text_forwarded_total");
         markRecentInboundMessage(messageId);
         console.log(
           `[inbound] forwarded text ok messageId=${messageId} from=${fromPhoneDigits} status=${result.status}`,
         );
       } else {
+        telemetry.incrementCounter("wa_inbound_text_failed_total");
         console.warn(
           `[inbound] forwarded text fail messageId=${messageId} from=${fromPhoneDigits} status=${result.status} error="${compactForLog(
             result.error,
@@ -653,6 +741,7 @@ async function handleInboundMessage(message) {
       (messageType === "ptt" || messageType === "audio")
     ) {
       const media = await message.downloadMedia().catch((error) => {
+        telemetry.incrementCounter("wa_inbound_audio_download_failed_total");
         console.warn(
           `[inbound] audio download failed messageId=${messageId} error="${compactForLog(
             error?.message || String(error),
@@ -663,6 +752,7 @@ async function handleInboundMessage(message) {
       });
 
       if (!media?.data || !media?.mimetype) {
+        telemetry.incrementCounter("wa_inbound_audio_missing_media_total");
         return;
       }
 
@@ -683,11 +773,13 @@ async function handleInboundMessage(message) {
       });
 
       if (result.ok) {
+        telemetry.incrementCounter("wa_inbound_audio_forwarded_total");
         markRecentInboundMessage(messageId);
         console.log(
           `[inbound] forwarded audio ok messageId=${messageId} from=${fromPhoneDigits} status=${result.status}`,
         );
       } else {
+        telemetry.incrementCounter("wa_inbound_audio_failed_total");
         console.warn(
           `[inbound] forwarded audio fail messageId=${messageId} from=${fromPhoneDigits} status=${result.status} error="${compactForLog(
             result.error,
@@ -698,11 +790,12 @@ async function handleInboundMessage(message) {
     }
   } finally {
     inflightInboundMessageIds.delete(messageId);
+    syncTelemetryGauges();
   }
 }
 
 const app = express();
-app.use(express.json({ limit: "200kb" }));
+app.use(express.json({ limit: "10mb" }));
 
 app.get("/health", (req, res) => {
   res.setHeader("Cache-Control", "no-store");
@@ -714,12 +807,14 @@ app.get("/health", (req, res) => {
   });
 });
 
-app.get("/status", requireApiKey, (req, res) => {
+app.get("/status", requireAdminAccess, (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   res.json({
     ok: true,
     state,
     ready: state === "READY",
+    waReady,
+    waSessionState,
     phone,
     lastSeen,
     hasLatestQr: !!latestQr,
@@ -733,9 +828,12 @@ app.get("/status", requireApiKey, (req, res) => {
     cwd: process.cwd(),
     chromePathConfigured: CHROME_PATH,
     chromePathResolved: resolveChromePath(),
+    chromePathExists: gatewayConfig.chromePathExists,
     sessionPathConfigured: SESSION_PATH_CONFIGURED,
     sessionPath: SESSION_PATH,
     sessionPathIsAbsolute: path.isAbsolute(SESSION_PATH_CONFIGURED),
+    version: PACKAGE_VERSION,
+    uptimeMs: nowMs() - startedAtMs,
     reconnectAttempts,
     reconnectCount,
     disconnectCount,
@@ -743,7 +841,54 @@ app.get("/status", requireApiKey, (req, res) => {
     reconnectMaxMs: RECONNECT_MAX_MS,
     reconnectDelayMs,
     nextReconnectAt,
+    forwardDegraded,
+    lastForwardError,
+    lastForwardErrorAt,
+    lastForwardOkAt,
+    typingEnabled: WA_INBOUND_TYPING_ENABLED,
+    typingHeartbeatMs: WA_INBOUND_TYPING_HEARTBEAT_MS,
+    dedupeTtlMs: WA_INBOUND_DEDUPE_TTL_MS,
+    recentInboundMessageCount: recentInboundMessageIds.size,
+    inflightInboundCount: inflightInboundMessageIds.size,
+    sendChatThrottleMs: gatewayConfig.outbound.chatThrottleMs,
+    sendMediaEnabled: gatewayConfig.outbound.allowMedia,
+    recentSendThrottleCount: recentSendByChatId.size,
+    watchdogEnabled: gatewayConfig.watchdog.enabled,
+    watchdogIntervalMs: gatewayConfig.watchdog.intervalMs,
+    lastWatchdogAt,
+    lastWatchdogError,
+    lastAckAt,
+    bootValidation,
+    sensitiveIpAllowlistCount: gatewayConfig.auth.sensitiveIpAllowlist.length,
+    adminApiKeyMasked: maskApiKey(gatewayConfig.auth.adminApiKey),
+    sendApiKeyMasked: maskApiKey(gatewayConfig.auth.sendApiKey),
+    qrPublic: gatewayConfig.auth.qrPublic,
+    telemetry: telemetry.getSnapshot(),
   });
+});
+
+app.get("/events/recent", requireAdminAccess, (req, res) => {
+  const limit = Math.max(1, Math.min(Number(req.query.limit) || 50, 200));
+  res.setHeader("Cache-Control", "no-store");
+  res.json({
+    ok: true,
+    limit,
+    events: telemetry.getRecentEvents(limit),
+  });
+});
+
+app.get("/metrics", requireAdminAccess, (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
+  res.send(
+    telemetry.renderPrometheusMetrics({
+      wa_uptime_ms: nowMs() - startedAtMs,
+      wa_forward_degraded: forwardDegraded ? 1 : 0,
+      wa_ready: waReady ? 1 : 0,
+      wa_recent_inbound_dedupe: recentInboundMessageIds.size,
+      wa_inflight_inbound: inflightInboundMessageIds.size,
+    }),
+  );
 });
 
 app.get("/qr", async (req, res) => {
@@ -868,23 +1013,21 @@ app.get("/qr", async (req, res) => {
 </html>`);
 });
 
-app.post("/restart", requireApiKey, async (req, res) => {
+app.post("/restart", requireAdminAccess, async (req, res) => {
   try {
-    console.log(`[wa] manual restart requested at=${nowISO()}`);
+    logEvent("warn", "manual_restart_requested", { at: nowISO() });
     await destroyClientSafe();
-    initWhatsApp();
+    await initWhatsApp();
     return res.json({ ok: true, state, at: nowISO() });
   } catch (err) {
     setLastError("restart", err);
-    return res.status(500).json({
-      ok: false,
-      error: "RESTART_FAILED",
-      details: err?.message || String(err),
-    });
+    return respondError(res, 500, "RESTART_FAILED", err?.message || String(err));
   }
 });
 
 async function destroyClientSafe() {
+  clearWatchdog();
+
   try {
     if (waClient) {
       const current = waClient;
@@ -894,12 +1037,65 @@ async function destroyClientSafe() {
     }
   } catch (err) {
     console.error(`[wa] destroy warning: ${err?.message || err}`);
+  } finally {
+    syncTelemetryGauges();
   }
+}
+
+function ackCodeToState(ack) {
+  const numeric = Number(ack);
+  switch (numeric) {
+    case -1:
+      return "ERROR";
+    case 0:
+      return "PENDING";
+    case 1:
+      return "SERVER";
+    case 2:
+      return "DEVICE";
+    case 3:
+      return "READ";
+    case 4:
+      return "PLAYED";
+    default:
+      return `ACK_${numeric}`;
+  }
+}
+
+function clearSendThrottleEntries() {
+  if (!gatewayConfig.outbound.chatThrottleMs) return;
+  const cutoff = nowMs() - gatewayConfig.outbound.chatThrottleMs;
+  for (const [chatId, sentAt] of recentSendByChatId.entries()) {
+    if (sentAt < cutoff) {
+      recentSendByChatId.delete(chatId);
+    }
+  }
+}
+
+function isChatThrottled(chatId) {
+  clearSendThrottleEntries();
+  if (!gatewayConfig.outbound.chatThrottleMs) return false;
+  const lastSentAt = recentSendByChatId.get(chatId);
+  if (!lastSentAt) return false;
+  return nowMs() - lastSentAt < gatewayConfig.outbound.chatThrottleMs;
+}
+
+function markChatSend(chatId) {
+  if (!chatId) return;
+  recentSendByChatId.set(chatId, nowMs());
 }
 
 async function initWhatsApp() {
   if (isInitializing) {
-    console.log(`[wa] init skipped because another init is already running`);
+    logEvent("info", "init_skipped_already_running");
+    return;
+  }
+
+  if (!bootValidation.ok) {
+    logEvent("error", "boot_validation_failed", {
+      errors: bootValidation.errors,
+      warnings: bootValidation.warnings,
+    });
     return;
   }
 
@@ -908,19 +1104,31 @@ async function initWhatsApp() {
   touch();
   clearReconnectSchedule();
   ensureDir(SESSION_PATH);
+  syncTelemetryGauges();
 
   const resolvedChromePath = resolveChromePath();
   const generation = ++clientGeneration;
 
-  console.log(
-    `[wa] init at=${nowISO()} headless=${HEADLESS} sessionPath=${SESSION_PATH}`,
-  );
-  console.log(
-    `[wa] env apiKey=${maskApiKey(API_KEY)} qrPublic=${QR_PUBLIC} clientId=${CLIENT_ID} chromeConfigured=${CHROME_PATH} chromeResolved=${resolvedChromePath}`,
-  );
-  console.log(
-    `[wa] chromeExists=${fileExists(resolvedChromePath)} port=${PORT}`,
-  );
+  logEvent("info", "init_started", {
+    adminApiKey: maskApiKey(API_KEY),
+    chromeConfigured: CHROME_PATH,
+    chromeResolved: resolvedChromePath,
+    clientId: CLIENT_ID,
+    port: PORT,
+    qrPublic: QR_PUBLIC,
+    sendApiKey: maskApiKey(gatewayConfig.auth.sendApiKey),
+    sessionPath: SESSION_PATH,
+    typingEnabled: WA_INBOUND_TYPING_ENABLED,
+    version: PACKAGE_VERSION,
+  });
+
+  if (!fileExists(resolvedChromePath)) {
+    const error = new Error(`Chrome not found at ${resolvedChromePath}`);
+    setLastError("initWhatsApp", error);
+    markDisconnected(error, "CHROME_MISSING");
+    isInitializing = false;
+    return;
+  }
 
   try {
     await destroyClientSafe();
@@ -949,23 +1157,28 @@ async function initWhatsApp() {
     waClient.on("qr", (qr) => {
       if (generation !== clientGeneration) return;
       state = "QR";
+      waSessionState = "QR";
+      waReady = false;
+      readyAt = null;
       touch();
-
       latestQr = qr;
       latestQrAt = nowISO();
+      telemetry.incrementCounter("wa_qr_generated_total");
+      syncTelemetryGauges();
 
       console.log("\n================ WHATSAPP QR (RAW) ================\n");
       console.log(qr);
-
       console.log("\n================ WHATSAPP QR (ASCII) ==============\n");
       qrcode.generate(qr, { small: true }, (out) => console.log(out));
-
-      console.log(`\n[wa] QR generated at=${latestQrAt} | open /qr to scan\n`);
+      logEvent("info", "qr_generated", { qrAt: latestQrAt });
     });
 
     waClient.on("ready", () => {
       if (generation !== clientGeneration) return;
-      state = "READY";
+      state = forwardDegraded ? "FORWARD_DEGRADED" : "READY";
+      waReady = true;
+      waSessionState = "READY";
+      readyAt = nowISO();
       touch();
       resetReconnectState();
 
@@ -973,91 +1186,130 @@ async function initWhatsApp() {
         waClient?.info?.wid?.user || waClient?.info?.me?.user || null;
 
       phone = widUser ? `${widUser}`.replace(/\D/g, "") : widUser;
-
       latestQr = null;
       latestQrAt = null;
       lastError = null;
       lastErrorAt = null;
       lastDisconnectReason = null;
       lastDisconnectAt = null;
+      lastWatchdogAt = nowISO();
+      lastWatchdogError = null;
+      telemetry.incrementCounter("wa_ready_total");
 
-      console.log(`[wa] READY at=${nowISO()} phone=${phone || widUser || "?"}`);
+      if (gatewayConfig.watchdog.enabled && !watchdogTimer) {
+        watchdogTimer = setInterval(() => {
+          void checkClientHealth();
+        }, gatewayConfig.watchdog.intervalMs);
+      }
+
+      syncTelemetryGauges();
+      logEvent("info", "ready", { phone: phone || widUser || null });
     });
 
     waClient.on("authenticated", () => {
       if (generation !== clientGeneration) return;
+      waSessionState = "AUTHENTICATED";
       touch();
-      console.log(`[wa] AUTHENTICATED at=${nowISO()}`);
+      telemetry.incrementCounter("wa_authenticated_total");
+      logEvent("info", "authenticated");
     });
 
     waClient.on("loading_screen", (percent, message) => {
       if (generation !== clientGeneration) return;
       touch();
-      console.log(
-        `[wa] LOADING at=${nowISO()} percent=${percent} message="${compactForLog(
-          message,
-          120,
-        )}"`,
-      );
+      logEvent("info", "loading_screen", {
+        message: compactForLog(message, 120),
+        percent,
+      });
     });
 
     waClient.on("change_state", (nextState) => {
       if (generation !== clientGeneration) return;
+      waSessionState = String(nextState || waSessionState || "UNKNOWN");
       touch();
-      console.log(`[wa] CHANGE_STATE at=${nowISO()} nextState=${nextState}`);
+      telemetry.incrementCounter("wa_change_state_total");
+      syncTelemetryGauges();
+      logEvent("info", "change_state", { nextState: waSessionState });
     });
 
-    waClient.on("auth_failure", (msg) => {
+    waClient.on("auth_failure", async (msg) => {
       if (generation !== clientGeneration) return;
-      markDisconnected(msg);
+      telemetry.incrementCounter("wa_auth_failure_total");
       setLastError("auth_failure", msg);
+      markDisconnected(msg, "AUTH_FAILURE");
+      await destroyClientSafe();
       scheduleReconnect("auth_failure");
     });
 
-    waClient.on("disconnected", (reason) => {
+    waClient.on("disconnected", async (reason) => {
       if (generation !== clientGeneration) return;
-      markDisconnected(reason);
+      telemetry.incrementCounter("wa_disconnected_total");
       setLastError("disconnected", reason);
+      markDisconnected(reason);
+      await destroyClientSafe();
       scheduleReconnect("disconnected");
+    });
+
+    waClient.on("message_ack", (message, ack) => {
+      if (generation !== clientGeneration) return;
+      const ackState = ackCodeToState(ack);
+      lastAckAt = nowISO();
+      telemetry.incrementCounter("wa_message_ack_total");
+      telemetry.incrementCounter(
+        `wa_message_ack_${ackState.toLowerCase()}_total`,
+      );
+      logEvent("info", "message_ack", {
+        ack,
+        ackState,
+        chatId: message?.from || message?.to || null,
+        providerMessageId: message?.id?._serialized || message?.id?.id || null,
+      });
     });
 
     waClient.on("message", (message) => {
       if (generation !== clientGeneration) return;
       touch();
       Promise.resolve(handleInboundMessage(message)).catch((error) => {
-        console.warn(
-          `[inbound] unhandled failure at=${nowISO()} error="${compactForLog(
-            error?.message || String(error),
-            160,
-          )}"`,
-        );
+        telemetry.incrementCounter("wa_inbound_unhandled_failure_total");
+        logEvent("error", "inbound_unhandled_failure", {
+          message: compactForLog(error?.message || String(error), 160),
+        });
       });
     });
 
     await waClient.initialize();
   } catch (e) {
-    markDisconnected(e);
     setLastError("initWhatsApp", e);
+    markDisconnected(
+      e,
+      /chrome|executable/i.test(String(e?.message || ""))
+        ? "CHROME_MISSING"
+        : "DISCONNECTED",
+    );
+    await destroyClientSafe();
     scheduleReconnect("initWhatsApp");
   } finally {
     isInitializing = false;
+    syncTelemetryGauges();
   }
 }
 
-app.post("/send", requireApiKey, async (req, res) => {
-  try {
-    const { to, message } = req.body || {};
+app.post("/send", requireSendAccess, async (req, res) => {
+  const startedAt = nowMs();
 
-    if (!to || !message) {
-      return res.status(400).json({ ok: false, error: "INVALID_BODY" });
+  try {
+    const { to, message, mediaBase64, mediaMimeType, mediaFileName } = req.body || {};
+
+    if (!to || (!message && !mediaBase64)) {
+      return respondError(res, 400, "INVALID_BODY");
     }
 
     const toNorm = normalizeToBR(to);
     if (!toNorm) {
-      return res.status(400).json({ ok: false, error: "INVALID_TO" });
+      return respondError(res, 400, "INVALID_TO");
     }
 
-    if (state !== "READY" || !waClient) {
+    if (!waReady || !waClient) {
       return res.status(503).json({
         ok: false,
         error: "WHATSAPP_NOT_READY",
@@ -1067,39 +1319,76 @@ app.post("/send", requireApiKey, async (req, res) => {
       });
     }
 
-    const msg = String(message);
     const chatId = `${toNorm}@c.us`;
+    if (isChatThrottled(chatId)) {
+      telemetry.incrementCounter("wa_outbound_throttled_total");
+      return respondError(
+        res,
+        429,
+        "CHAT_THROTTLED",
+        `Chat throttled for ${gatewayConfig.outbound.chatThrottleMs}ms.`,
+      );
+    }
 
-    console.log(
-      `[send] at=${nowISO()} from=${phone || "?"} to=${toNorm} chatId=${chatId} chars=${msg.length} message="${compactForLog(
-        msg,
-        320,
-      )}"`,
-    );
+    const msg = String(message || "");
+    const hasMedia = Boolean(mediaBase64 && mediaMimeType);
+    if (hasMedia && !gatewayConfig.outbound.allowMedia) {
+      return respondError(res, 403, "MEDIA_DISABLED");
+    }
 
-    const result = await waClient.sendMessage(chatId, msg);
+    logEvent("info", "send_attempt", {
+      chatId,
+      chars: msg.length,
+      hasMedia,
+      to: toNorm,
+    });
+
+    let result = null;
+    if (hasMedia) {
+      const media = new MessageMedia(
+        String(mediaMimeType),
+        String(mediaBase64),
+        String(mediaFileName || "attachment"),
+      );
+      result = await waClient.sendMessage(chatId, media, msg ? { caption: msg } : {});
+    } else {
+      result = await waClient.sendMessage(chatId, msg);
+    }
+
     const providerMessageId = result?.id?._serialized || result?.id?.id || null;
+    const durationMs = nowMs() - startedAt;
 
-    console.log(
-      `[send] OK at=${nowISO()} to=${toNorm} providerMessageId=${
-        providerMessageId || "?"
-      }`,
-    );
-
+    markChatSend(chatId);
+    telemetry.incrementCounter("wa_outbound_success_total");
+    telemetry.observeTiming("wa_outbound_send_duration", durationMs);
     touch();
+    syncTelemetryGauges();
+    logEvent("info", "send_success", {
+      chatId,
+      durationMs,
+      providerMessageId,
+      to: toNorm,
+    });
 
     return res.json({ ok: true, providerMessageId });
   } catch (err) {
+    const durationMs = nowMs() - startedAt;
+    telemetry.incrementCounter("wa_outbound_failure_total");
+    telemetry.observeTiming("wa_outbound_send_duration", durationMs);
     setLastError("send", err);
-    return res.status(500).json({
-      ok: false,
-      error: "SEND_FAILED",
-      details: err?.message || String(err),
+    logEvent("error", "send_failed", {
+      durationMs,
+      message: compactForLog(err?.message || String(err), 160),
     });
+    return respondError(res, 500, "SEND_FAILED", err?.message || String(err));
   }
 });
 
+for (const warning of bootValidation.warnings || []) {
+  logEvent("warn", "boot_validation_warning", warning);
+}
+
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`[wa-gateway] listening on 0.0.0.0:${PORT}`);
+  logEvent("info", "gateway_listening", { port: PORT, version: PACKAGE_VERSION });
   initWhatsApp();
 });

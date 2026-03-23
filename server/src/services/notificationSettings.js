@@ -1,6 +1,7 @@
 import { AppSettings } from "../models/AppSettings.js";
 import { Workspace } from "../models/Workspace.js";
 import { getPlanFeatureMatrix, normalizePlan } from "../utils/planFeatures.js";
+import { hasWhatsAppGatewayConfig } from "./waGateway.js";
 
 // Keep this notification helper in sync with client/src/utils/notificationSettings.js.
 
@@ -612,8 +613,10 @@ function getWhatsAppEnvironmentCapability() {
     reasons.push("WHATSAPP_NOTIFICATIONS_ENABLED desativado");
   }
   if (!hasText(process.env.WA_GATEWAY_URL)) reasons.push("WA_GATEWAY_URL ausente");
-  if (!hasText(process.env.WA_GATEWAY_API_KEY)) {
-    reasons.push("WA_GATEWAY_API_KEY ausente");
+  if (!hasWhatsAppGatewayConfig("send")) {
+    reasons.push(
+      "WA_GATEWAY_SEND_API_KEY ausente (ou WA_GATEWAY_API_KEY legacy ausente)",
+    );
   }
 
   return {
