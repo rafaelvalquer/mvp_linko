@@ -183,6 +183,50 @@ function InfoRow({ label, value, mono = false }) {
   );
 }
 
+function NextStepCard({ icon: Icon, title, description, actionLabel, onClick, disabled = false, tone = "slate" }) {
+  const { isDark } = useThemeToggle();
+  const tones = isDark
+    ? {
+        slate: "border-white/10 bg-white/[0.04]",
+        emerald: "border-emerald-400/20 bg-emerald-400/10",
+        blue: "border-sky-400/20 bg-sky-400/10",
+      }
+    : {
+        slate: "border-slate-200/80 bg-white/90",
+        emerald: "border-emerald-200 bg-emerald-50",
+        blue: "border-sky-200 bg-sky-50",
+      };
+
+  return (
+    <div className={cls("rounded-[26px] border p-4", tones[tone] || tones.slate)}>
+      <div className="flex items-start gap-3">
+        <div
+          className={cls(
+            "flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl",
+            isDark ? "bg-white/10 text-white" : "bg-white text-slate-700",
+          )}
+        >
+          <Icon className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold">{title}</div>
+          <div className={cls("mt-1 text-sm leading-6", isDark ? "text-slate-300" : "text-slate-600")}>
+            {description}
+          </div>
+          {actionLabel ? (
+            <div className="mt-4">
+              <Button onClick={onClick} disabled={disabled} className="w-full">
+                {actionLabel}
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function PublicOfferDone() {
   const { token } = useParams();
   const nav = useNavigate();
@@ -435,6 +479,37 @@ export default function PublicOfferDone() {
                 }
                 tone="blue"
               />
+            </div>
+
+            <div className="grid gap-3 lg:grid-cols-2">
+              <NextStepCard
+                icon={ReceiptText}
+                title="Guarde este resumo"
+                description="Esta pagina mostra o valor pago, os identificadores Pix e os dados finais da proposta."
+                tone="slate"
+              />
+              {isServiceOffer && (booking.id || bookingId) ? (
+                <NextStepCard
+                  icon={CalendarClock}
+                  title="Gerencie sua reserva se precisar"
+                  description={
+                    selfService?.reason && !selfService?.eligible
+                      ? selfService.reason
+                      : "Se precisar, voce pode reagendar ou cancelar usando este mesmo link de autoatendimento."
+                  }
+                  actionLabel="Gerenciar horario"
+                  onClick={() => nav(manageHref)}
+                  disabled={!manageHref}
+                  tone="blue"
+                />
+              ) : (
+                <NextStepCard
+                  icon={ShieldCheck}
+                  title="Tudo concluido com seguranca"
+                  description="O pagamento ja foi confirmado. Agora voce pode fechar a pagina ou guardar este link para consulta."
+                  tone="emerald"
+                />
+              )}
             </div>
           </div>
         </section>

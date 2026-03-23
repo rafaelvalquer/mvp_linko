@@ -3,6 +3,7 @@ import express from "express";
 import mongoose from "mongoose";
 import { Offer } from "../models/Offer.js";
 import { Client } from "../models/Client.js";
+import { User } from "../models/User.js";
 import * as BookingModule from "../models/Booking.js";
 import { AppSettings } from "../models/AppSettings.js";
 import {
@@ -275,6 +276,41 @@ function sanitizeOfferPublic(offer) {
   return rest;
 }
 
+async function resolvePublicSellerWhatsApp(offerRaw) {
+  const explicit = String(
+    offerRaw?.sellerWhatsApp ||
+      offerRaw?.providerWhatsApp ||
+      offerRaw?.vendorWhatsApp ||
+      offerRaw?.ownerWhatsApp ||
+      "",
+  ).trim();
+  if (explicit) return explicit;
+
+  if (!offerRaw?.ownerUserId) return "";
+
+  const owner = await User.findById(offerRaw.ownerUserId)
+    .select("whatsappPhone")
+    .lean()
+    .catch(() => null);
+
+  return String(owner?.whatsappPhone || "").trim();
+}
+
+async function resolvePublicOfferUser(offerRaw) {
+  if (!offerRaw?.ownerUserId) {
+    return { whatsappPhone: "" };
+  }
+
+  const owner = await User.findById(offerRaw.ownerUserId)
+    .select("whatsappPhone")
+    .lean()
+    .catch(() => null);
+
+  return {
+    whatsappPhone: String(owner?.whatsappPhone || "").trim(),
+  };
+}
+
 function toDateOrNull(v) {
   if (!v) return null;
   const d = new Date(v);
@@ -372,19 +408,21 @@ router.get("/p/:token", async (req, res, next) => {
             .lean()
             .catch(() => null));
       }
-    }
+      }
 
-    const flow = computePublicFlow({ offerRaw, booking });
+      const flow = computePublicFlow({ offerRaw, booking });
+      const publicUser = await resolvePublicOfferUser(offerRaw);
 
-    noStore(res);
-    return res.json({
-      ok: true,
-      offer: sanitizeOfferPublic({
-        ...offerRaw,
-        offerType: offerRaw?.offerType || inferOfferType(offerRaw),
-      }),
-      booking: booking ? toPublicBooking(booking) : null,
-      flow: {
+      noStore(res);
+      return res.json({
+        ok: true,
+        offer: sanitizeOfferPublic({
+          ...offerRaw,
+          offerType: offerRaw?.offerType || inferOfferType(offerRaw),
+          user: publicUser,
+        }),
+        booking: booking ? toPublicBooking(booking) : null,
+        flow: {
         step: flow.step,
         reason: flow.reason,
         bookingId: flow.bookingId,
@@ -458,25 +496,27 @@ router.get("/p/:token/summary", async (req, res, next) => {
     const paidAt =
       offerRaw?.paidAt || booking?.payment?.paidAt || booking?.paidAt || null;
 
-    const selfService =
-      offerType === "service" && booking
-        ? await buildPublicBookingSelfServiceState({
-            offerRaw,
-            booking,
-            now,
-          })
-        : null;
+      const selfService =
+        offerType === "service" && booking
+          ? await buildPublicBookingSelfServiceState({
+              offerRaw,
+              booking,
+              now,
+            })
+          : null;
+      const publicUser = await resolvePublicOfferUser(offerRaw);
 
-    const summary = {
-      locked: offerLocked || booking?.status === "CONFIRMED",
-      paidAt,
-      offer: sanitizeOfferPublic({
-        ...offerRaw,
-        offerType,
-        customerName: offerRaw?.customerName || offerRaw?.customer?.name || "",
-      }),
-      booking: booking ? toPublicBooking(booking) : null,
-      selfService: selfService
+      const summary = {
+        locked: offerLocked || booking?.status === "CONFIRMED",
+        paidAt,
+        offer: sanitizeOfferPublic({
+          ...offerRaw,
+          offerType,
+          customerName: offerRaw?.customerName || offerRaw?.customer?.name || "",
+          user: publicUser,
+        }),
+        booking: booking ? toPublicBooking(booking) : null,
+        selfService: selfService
         ? {
             ...selfService,
           }

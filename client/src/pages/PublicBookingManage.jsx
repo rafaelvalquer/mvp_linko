@@ -225,6 +225,28 @@ function SummaryRow({ label, value }) {
   );
 }
 
+function JourneyCue({ title, description, tone = "blue" }) {
+  const { isDark } = useThemeToggle();
+  const tones = isDark
+    ? {
+        blue: "border-sky-400/20 bg-sky-400/10 text-sky-100",
+        amber: "border-amber-400/20 bg-amber-400/10 text-amber-100",
+        emerald: "border-emerald-400/20 bg-emerald-400/10 text-emerald-100",
+      }
+    : {
+        blue: "border-sky-200 bg-sky-50 text-sky-700",
+        amber: "border-amber-200 bg-amber-50 text-amber-700",
+        emerald: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      };
+
+  return (
+    <div className={cls("rounded-[26px] border px-4 py-4", tones[tone] || tones.blue)}>
+      <div className="text-sm font-semibold">{title}</div>
+      <div className="mt-1 text-sm leading-6 opacity-90">{description}</div>
+    </div>
+  );
+}
+
 export default function PublicBookingManage() {
   const { token } = useParams();
   const navigate = useNavigate();
@@ -400,7 +422,7 @@ export default function PublicBookingManage() {
   }
 
   const pageBg = cls(
-    "min-h-screen px-4 py-6 sm:px-6 lg:px-8",
+    "min-h-screen px-4 py-6 pb-28 sm:px-6 sm:pb-32 lg:px-8 lg:pb-8",
     isDark
       ? "bg-[radial-gradient(circle_at_top,rgba(14,165,233,0.16),transparent_38%),linear-gradient(180deg,#020617,#0f172a_52%,#020617)] text-white"
       : "bg-[radial-gradient(circle_at_top,rgba(14,165,233,0.12),transparent_38%),linear-gradient(180deg,#f8fafc,#eef2ff_48%,#f8fafc)] text-slate-950",
@@ -423,6 +445,14 @@ export default function PublicBookingManage() {
     selfService?.reason && !selfService?.eligible
       ? selfService.reason
       : `Voce pode ajustar o agendamento ate ${selfService.minimumNoticeLabel || "24 horas"} antes do horario.`;
+  const mobileActionLabel =
+    activeTab === "cancel" ? "Cancelar agendamento" : "Confirmar reagendamento";
+  const mobileActionDisabled =
+    submitting ||
+    !canManage ||
+    (activeTab === "reschedule"
+      ? !selectedSlot || selfService.canReschedule !== true
+      : selfService.canCancel !== true);
 
   if (loading) {
     return (
@@ -520,6 +550,28 @@ export default function PublicBookingManage() {
               <MetricCard label="Horario atual" value={bookingSummary || "Nao informado"} hint="Reserva vinculada a este link" tone="blue" />
               <MetricCard label="Prazo limite" value={selfService.minimumNoticeLabel || "24 horas"} hint="Janela minima para alterar" tone="amber" />
             </div>
+
+            <JourneyCue
+              tone={!canManage ? "amber" : activeTab === "cancel" ? "amber" : successMsg ? "emerald" : "blue"}
+              title={
+                !canManage
+                  ? "Este link esta em modo de consulta"
+                  : activeTab === "cancel"
+                    ? "Voce esta na etapa de cancelamento"
+                    : successMsg
+                      ? "Alteracao concluida"
+                      : "Escolha a acao e confirme no fim da pagina"
+              }
+              description={
+                !canManage
+                  ? selfService.reason || "Seu agendamento nao pode mais ser alterado por este link."
+                  : activeTab === "cancel"
+                    ? "Se cancelar, apenas a reserva sera removida. A proposta e o pagamento permanecem preservados."
+                    : selectedSummary
+                      ? `Novo horario selecionado: ${selectedSummary}. Revise e confirme para concluir.`
+                      : "Primeiro escolha uma nova data e horario disponivel. Se preferir, voce tambem pode cancelar a reserva."
+              }
+            />
           </div>
         </section>
 
@@ -805,6 +857,46 @@ export default function PublicBookingManage() {
           </SurfaceCard>
         </div>
       </div>
+
+      {canManage ? (
+        <div className="fixed inset-x-4 bottom-4 z-30 lg:hidden">
+          <div
+            className={cls(
+              "rounded-[28px] border px-4 py-4 shadow-[0_30px_60px_-32px_rgba(15,23,42,0.55)] backdrop-blur",
+              isDark
+                ? "border-white/10 bg-slate-950/88"
+                : "border-slate-200/80 bg-white/92",
+            )}
+          >
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <div className={cls("text-[11px] font-semibold uppercase tracking-[0.18em]", isDark ? "text-slate-400" : "text-slate-500")}>
+                  {activeTab === "cancel" ? "Cancelar" : "Reagendar"}
+                </div>
+                <div className="mt-1 truncate text-sm font-semibold">
+                  {activeTab === "cancel"
+                    ? "Confirme se deseja cancelar este horario"
+                    : selectedSummary || "Escolha um novo horario para continuar"}
+                </div>
+              </div>
+
+              <Button
+                type="button"
+                variant={activeTab === "cancel" ? "danger" : "primary"}
+                className="h-11 shrink-0 rounded-2xl px-4 text-sm font-semibold"
+                disabled={mobileActionDisabled}
+                onClick={activeTab === "cancel" ? handleCancel : handleReschedule}
+              >
+                {submitting
+                  ? activeTab === "cancel"
+                    ? "Cancelando..."
+                    : "Confirmando..."
+                  : mobileActionLabel}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

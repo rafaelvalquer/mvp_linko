@@ -193,6 +193,44 @@ function SectionCard({
   );
 }
 
+function JourneyStat({ label, value, hint, tone = "zinc" }) {
+  const { isDark } = useThemeToggle();
+  const tones = isDark
+    ? {
+        emerald: "border-emerald-400/20 bg-emerald-400/10",
+        blue: "border-sky-400/20 bg-sky-400/10",
+        amber: "border-amber-400/20 bg-amber-400/10",
+        zinc: "border-white/10 bg-white/[0.05]",
+      }
+    : {
+        emerald: "border-emerald-200 bg-white/90",
+        blue: "border-sky-200 bg-white/90",
+        amber: "border-amber-200 bg-white/90",
+        zinc: "border-white/80 bg-white/85",
+      };
+
+  return (
+    <div className={cls("rounded-[24px] border p-4", tones[tone] || tones.zinc)}>
+      <div
+        className={cls(
+          "text-[11px] font-bold uppercase tracking-[0.18em]",
+          isDark ? "text-slate-400" : "text-slate-500",
+        )}
+      >
+        {label}
+      </div>
+      <div className={cls("mt-2 text-base font-black tracking-[-0.03em]", isDark ? "text-white" : "text-slate-950")}>
+        {value}
+      </div>
+      {hint ? (
+        <div className={cls("mt-2 text-xs leading-5", isDark ? "text-slate-300" : "text-slate-600")}>
+          {hint}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function NextSteps({ offerType, depositEnabled }) {
   const reduce = useReducedMotion();
 
@@ -596,14 +634,7 @@ export default function PublicOffer() {
     const issuedAt = o.createdAt || o.issuedAt || "";
     const status = o.status || "";
 
-    const contactWhatsApp = pickFirst(o, [
-      "customerWhatsApp",
-      "sellerWhatsApp",
-      "providerWhatsApp",
-      "vendorWhatsApp",
-      "whatsApp",
-      "whatsapp",
-    ]);
+    const contactWhatsApp = pickFirst(o?.user || {}, ["whatsappPhone"]);
     const contactEmail = pickFirst(o, [
       "sellerEmail",
       "providerEmail",
@@ -900,7 +931,7 @@ export default function PublicOffer() {
         )}
       </div>
 
-      <div className="mx-auto grid max-w-5xl gap-6 px-4 py-6">
+      <div className="mx-auto grid max-w-5xl gap-6 px-4 py-6 pb-28 sm:pb-32 md:pb-6">
         {/* Resumo (primeira dobra) */}
         <div
           className={cls(
@@ -1042,6 +1073,27 @@ export default function PublicOffer() {
               </ul>
             </div>
           ) : null}
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-3">
+            <JourneyStat
+              label="Proximo passo"
+              value={view.offerType === "product" ? "Aceitar e pagar" : "Aceitar e agendar"}
+              hint={view.offerType === "product" ? "Voce segue direto para o Pix." : "Voce escolhe um horario antes do Pix."}
+              tone="blue"
+            />
+            <JourneyStat
+              label="Validade"
+              value={view.headerMeta.validityText || "Sem prazo informado"}
+              hint="Confira o prazo antes de concluir."
+              tone="amber"
+            />
+            <JourneyStat
+              label="Seguranca"
+              value="Link oficial"
+              hint="Pagamento protegido dentro do fluxo da proposta."
+              tone="emerald"
+            />
+          </div>
         </div>
 
         {/* Detalhamento */}
@@ -1529,6 +1581,36 @@ export default function PublicOffer() {
               <ArrowRight className="h-4 w-4" />
             </Button>
           </div>
+        </div>
+      </div>
+
+      <div
+        className={cls(
+          "fixed inset-x-0 bottom-0 z-40 border-t px-4 py-3 md:hidden",
+          isDark
+            ? "border-white/10 bg-[rgba(2,6,23,0.94)] backdrop-blur-xl"
+            : "border-slate-200/80 bg-white/95 backdrop-blur-xl",
+        )}
+      >
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className={cls("text-[11px] font-bold uppercase tracking-[0.18em]", isDark ? "text-slate-400" : "text-slate-500")}>
+              Total desta proposta
+            </div>
+            <div className={cls("text-base font-black tracking-[-0.03em]", isDark ? "text-white" : "text-slate-950")}>
+              {fmtBRL(view.totalCents)}
+            </div>
+          </div>
+
+          <Button
+            type="button"
+            onClick={onCta}
+            disabled={!ctaEnabled || busy}
+            className="shrink-0 rounded-2xl px-4"
+          >
+            {busy ? "Processando..." : view.ctaLabel}
+            <ArrowRight className="h-4 w-4" />
+          </Button>
         </div>
       </div>
     </div>

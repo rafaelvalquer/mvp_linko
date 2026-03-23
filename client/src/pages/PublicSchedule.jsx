@@ -171,6 +171,71 @@ function SurfaceCard({ className = "", children }) {
   );
 }
 
+function ScheduleSteps({ current = 1 }) {
+  const { isDark } = useThemeToggle();
+  const steps = [
+    { id: 1, title: "Escolha a data", hint: "Veja os dias disponiveis" },
+    { id: 2, title: "Reserve o horario", hint: "Confirme o melhor horario" },
+    { id: 3, title: "Siga para o pagamento", hint: "Finalize a proposta" },
+  ];
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-3">
+      {steps.map((step) => {
+        const active = current === step.id;
+        const done = current > step.id;
+
+        return (
+          <div
+            key={step.id}
+            className={cls(
+              "rounded-[24px] border px-4 py-4",
+              active
+                ? isDark
+                  ? "border-sky-300/30 bg-sky-400/10"
+                  : "border-sky-200 bg-white/90"
+                : done
+                  ? isDark
+                    ? "border-emerald-300/20 bg-emerald-400/10"
+                    : "border-emerald-200 bg-white/90"
+                  : isDark
+                    ? "border-white/10 bg-white/[0.04]"
+                    : "border-white/80 bg-white/85",
+            )}
+          >
+            <div className="flex items-start gap-3">
+              <div
+                className={cls(
+                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-black",
+                  active
+                    ? isDark
+                      ? "bg-sky-300/20 text-sky-100"
+                      : "bg-sky-100 text-sky-700"
+                    : done
+                      ? isDark
+                        ? "bg-emerald-300/20 text-emerald-100"
+                        : "bg-emerald-100 text-emerald-700"
+                      : isDark
+                        ? "bg-white/10 text-slate-300"
+                        : "bg-slate-100 text-slate-600",
+                )}
+              >
+                {step.id}
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold">{step.title}</div>
+                <div className={cls("mt-1 text-xs leading-5", isDark ? "text-slate-300" : "text-slate-600")}>
+                  {step.hint}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function PublicSchedule() {
   const { token } = useParams();
   const navigate = useNavigate();
@@ -361,7 +426,7 @@ export default function PublicSchedule() {
       : { label: "Agendamento", tone: "amber", summary: "Escolha uma data, reserve um horario e siga para o pagamento." };
 
   const pageBg = cls(
-    "min-h-screen px-4 py-6 sm:px-6 lg:px-8",
+    "min-h-screen px-4 py-6 pb-28 sm:px-6 sm:pb-32 lg:px-8 lg:pb-8",
     isDark
       ? "bg-[radial-gradient(circle_at_top,rgba(14,165,233,0.16),transparent_38%),linear-gradient(180deg,#020617,#0f172a_52%,#020617)] text-white"
       : "bg-[radial-gradient(circle_at_top,rgba(14,165,233,0.12),transparent_38%),linear-gradient(180deg,#f8fafc,#eef2ff_48%,#f8fafc)] text-slate-950",
@@ -436,6 +501,9 @@ export default function PublicSchedule() {
   const actionLabel = booking ? "Ir para pagamento" : "Reservar horario";
   const actionDisabled =
     busy || loadingSlots || (!booking && (!selected || getSlotUi(selected).disabled));
+  const mobileActionSummary = booking
+    ? bookingTimeLabel
+    : selectedTimeLabel || "Escolha um horario para continuar";
 
   return (
     <div className={pageBg}>
@@ -498,6 +566,8 @@ export default function PublicSchedule() {
                 <Pill tone="slate" label={bookingTimeLabel || selectedTimeLabel} />
               ) : null}
             </div>
+
+            <ScheduleSteps current={booking ? 3 : selected ? 2 : 1} />
           </div>
         </section>
 
@@ -775,6 +845,39 @@ export default function PublicSchedule() {
               </div>
             </div>
           </SurfaceCard>
+        </div>
+      </div>
+
+      <div className="fixed inset-x-4 bottom-4 z-30 lg:hidden">
+        <div
+          className={cls(
+            "rounded-[28px] border px-4 py-4 shadow-[0_30px_60px_-32px_rgba(15,23,42,0.55)] backdrop-blur",
+            isDark
+              ? "border-white/10 bg-slate-950/88"
+              : "border-slate-200/80 bg-white/92",
+          )}
+        >
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <div className={cls("text-[11px] font-semibold uppercase tracking-[0.18em]", isDark ? "text-slate-400" : "text-slate-500")}>
+                {booking ? "Proximo passo" : "Horario"}
+              </div>
+              <div className="mt-1 truncate text-sm font-semibold">{mobileActionSummary}</div>
+              <div className={cls("mt-1 text-xs", isDark ? "text-slate-400" : "text-slate-500")}>
+                {booking
+                  ? "Seu horario ja foi reservado. Agora finalize o pagamento."
+                  : "Reserve o horario escolhido para seguir para o pagamento."}
+              </div>
+            </div>
+
+            <Button
+              className="h-11 shrink-0 rounded-2xl px-4 text-sm font-semibold"
+              onClick={booking ? onGoPay : confirmBooking}
+              disabled={actionDisabled}
+            >
+              {busy ? "Confirmando..." : actionLabel}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

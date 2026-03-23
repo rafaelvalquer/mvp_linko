@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Ban, Building2, FileText, Wallet } from "lucide-react";
+import { Ban, Building2, CircleAlert, FileText, ShieldCheck, Wallet } from "lucide-react";
 import { api } from "../app/api.js";
 import useThemeToggle from "../app/useThemeToggle.js";
 import Button from "../components/appui/Button.jsx";
@@ -176,9 +176,26 @@ export default function PublicOfferCancelled() {
         <SurfaceCard>
           <div
             className={cls(
-              "text-[11px] font-bold uppercase tracking-[0.18em]",
-              isDark ? "text-slate-400" : "text-slate-500",
+              "rounded-[26px] border px-4 py-4 text-sm leading-6",
+              isDark
+                ? "border-amber-400/20 bg-amber-400/10 text-amber-100"
+                : "border-amber-200 bg-amber-50 text-amber-700",
             )}
+          >
+            <div className="flex items-start gap-3">
+              <CircleAlert className="mt-0.5 h-5 w-5 shrink-0" />
+              <div>
+                <div className="font-semibold">O que isso significa agora</div>
+                <div className="mt-1">
+                  Este link nao aceita mais pagamento nem conclusao. Se voce ainda quiser seguir com a compra,
+                  o proximo passo e pedir um novo link ao emissor.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div
+            className={cls("mt-6 text-[11px] font-bold uppercase tracking-[0.18em]", isDark ? "text-slate-400" : "text-slate-500")}
           >
             Resumo
           </div>
@@ -215,6 +232,11 @@ export default function PublicOfferCancelled() {
                 icon={Wallet}
                 label="Valor"
                 value={Number.isFinite(totalCents) ? fmtBRL(totalCents) : ""}
+              />
+              <InfoRow
+                icon={ShieldCheck}
+                label="Proximo passo"
+                value={sellerName ? `Fale com ${sellerName} para receber um novo link.` : "Solicite um novo link ao emissor."}
               />
             </div>
           )}

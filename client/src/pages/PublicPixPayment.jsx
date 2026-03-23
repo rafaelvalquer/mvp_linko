@@ -545,6 +545,59 @@ function StatusPill({ tone = "amber", label }) {
   );
 }
 
+function PaymentSteps({ current = "pay" }) {
+  const { isDark } = useThemeToggle();
+  const steps = [
+    { key: "copy", title: "1. Copie o Pix", hint: "QR Code ou copia e cola" },
+    { key: "pay", title: "2. Pague o valor", hint: "Confirme o valor exato" },
+    { key: "upload", title: "3. Envie o comprovante", hint: "Finalize por esta tela" },
+  ];
+
+  const activeIndex =
+    current === "copy" ? 0 : current === "pay" ? 1 : current === "done" ? 2 : 2;
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-3">
+      {steps.map((step, index) => {
+        const active = index <= activeIndex;
+        return (
+          <div
+            key={step.key}
+            className={cls(
+              "rounded-[24px] border p-4",
+              active
+                ? isDark
+                  ? "border-cyan-300/30 bg-cyan-400/10"
+                  : "border-cyan-200 bg-white/92"
+                : isDark
+                  ? "border-white/10 bg-white/[0.04]"
+                  : "border-white/80 bg-white/78",
+            )}
+          >
+            <div
+              className={cls(
+                "text-[11px] font-bold uppercase tracking-[0.18em]",
+                active
+                  ? isDark
+                    ? "text-cyan-100"
+                    : "text-cyan-700"
+                  : isDark
+                    ? "text-slate-400"
+                    : "text-slate-500",
+              )}
+            >
+              {step.title}
+            </div>
+            <div className={cls("mt-2 text-sm leading-6", isDark ? "text-slate-200" : "text-slate-700")}>
+              {step.hint}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function CopyRow({ label, value, hint = "" }) {
   const { isDark } = useThemeToggle();
   const [copied, setCopied] = useState(false);
@@ -647,6 +700,7 @@ export default function PublicPixPayment() {
   const [uploadErr, setUploadErr] = useState("");
   const [uploadInfo, setUploadInfo] = useState("");
   const [prepareStage, setPrepareStage] = useState("idle");
+  const [lastStatusRefreshAt, setLastStatusRefreshAt] = useState(null);
   const fileSelectionRef = useRef(0);
 
   async function refreshStatus() {
@@ -656,6 +710,7 @@ export default function PublicPixPayment() {
       .toUpperCase();
 
     setStatus(st);
+    setLastStatusRefreshAt(new Date().toISOString());
 
     if (st === "CONFIRMED" || st === "PAID") {
       nav(doneUrl, { replace: true });
@@ -677,6 +732,7 @@ export default function PublicPixPayment() {
 
         setDetails(d);
         setStatus(String(d?.paymentStatus || "PENDING").toUpperCase());
+        setLastStatusRefreshAt(new Date().toISOString());
 
         await refreshStatus();
       } catch (e) {
@@ -820,6 +876,12 @@ export default function PublicPixPayment() {
   const statusMeta = STATUS_META[status] || STATUS_META.PENDING;
   const isPreparingFile =
     prepareStage === "materializing" || prepareStage === "optimizing";
+  const currentPaymentStep =
+    status === "WAITING_CONFIRMATION" || status === "CONFIRMED" || status === "PAID"
+      ? "done"
+      : file
+        ? "upload"
+        : "pay";
   const selectedFileLabel = file
     ? `${file.name} (${formatFileSize(file.size)})`
     : selectedFileMeta
@@ -1041,6 +1103,8 @@ export default function PublicPixPayment() {
                   </div>
                 </div>
 
+                <PaymentSteps current={currentPaymentStep} />
+
                 <div
                   className={cls(
                     "rounded-[26px] border p-4 sm:p-5",
@@ -1145,6 +1209,7 @@ export default function PublicPixPayment() {
                     )}
                   >
                     Confira sempre se o valor e o recebedor correspondem aos dados desta tela.
+                    {lastStatusRefreshAt ? ` Atualizado as ${new Date(lastStatusRefreshAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}.` : ""}
                   </div>
                 </div>
 
@@ -1303,6 +1368,38 @@ export default function PublicPixPayment() {
                     placeholder="Mensagem opcional para o vendedor"
                     className="h-12"
                   />
+
+                  {selectedFileMeta ? (
+                    <div
+                      className={cls(
+                        "rounded-[22px] border px-4 py-3 text-sm",
+                        isDark
+                          ? "border-white/10 bg-white/[0.04] text-slate-200"
+                          : "border-slate-200/80 bg-white/90 text-slate-700",
+                      )}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <div className="font-semibold">
+                            {selectedFileMeta.name || "Comprovante selecionado"}
+                          </div>
+                          <div className={cls("mt-1 text-xs", isDark ? "text-slate-400" : "text-slate-500")}>
+                            {formatFileSize(selectedFileMeta.size)} • {String(selectedFileMeta.type || "").toUpperCase() || "ARQUIVO"}
+                          </div>
+                        </div>
+                        <StatusPill
+                          tone={isPreparingFile ? "blue" : "amber"}
+                          label={
+                            isPreparingFile
+                              ? "Preparando"
+                              : status === "REJECTED"
+                                ? "Pronto para reenviar"
+                                : "Pronto para envio"
+                          }
+                        />
+                      </div>
+                    </div>
+                  ) : null}
 
                   {uploadErr ? (
                     <div
