@@ -104,6 +104,9 @@ export default function DayTimeline({
   agendaSettings,
   timezone,
   onSelect,
+  minHeight = MIN_TIMELINE_HEIGHT,
+  hourColumnWidth = 64,
+  compact = false,
 }) {
   const { isDark } = useThemeToggle();
   const timeZone = useMemo(
@@ -122,12 +125,17 @@ export default function DayTimeline({
   );
 
   const totalMinutes = Math.max(visibleRange.endMin - visibleRange.startMin, 60);
+  const effectiveMinHeight = Math.max(
+    240,
+    Number.isFinite(Number(minHeight)) ? Number(minHeight) : MIN_TIMELINE_HEIGHT,
+  );
+  const basePixelsPerMinute = compact ? 1.2 : BASE_PIXELS_PER_MINUTE;
   const pixelsPerMinute = Math.max(
-    BASE_PIXELS_PER_MINUTE,
-    MIN_TIMELINE_HEIGHT / totalMinutes,
+    basePixelsPerMinute,
+    effectiveMinHeight / totalMinutes,
   );
   const timelineHeight = Math.max(
-    MIN_TIMELINE_HEIGHT,
+    effectiveMinHeight,
     Math.round(totalMinutes * pixelsPerMinute),
   );
 
@@ -193,7 +201,10 @@ export default function DayTimeline({
           : "border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.96))]"
       }`}
     >
-      <div className="grid grid-cols-[64px_minmax(0,1fr)]">
+      <div
+        className="grid"
+        style={{ gridTemplateColumns: `${hourColumnWidth}px minmax(0,1fr)` }}
+      >
         <div
           className={`relative border-r ${
             isDark
@@ -275,7 +286,7 @@ export default function DayTimeline({
             ) : null}
 
             {positionedEvents.map((event) => {
-              const compact = event.height < 86;
+              const isEventCompact = compact || event.height < 86;
               const customer = event.item?.customerName || "Cliente";
               const service = event.item?.offer?.title || "Servico";
               const holdInfo =
@@ -287,7 +298,9 @@ export default function DayTimeline({
                 <button
                   key={event.id}
                   type="button"
-                  className={`absolute z-20 overflow-hidden rounded-2xl border px-2.5 py-2 text-left shadow-[0_12px_28px_-22px_rgba(15,23,42,0.65)] transition-transform hover:z-30 hover:-translate-y-0.5 focus:z-30 focus:outline-none focus:ring-2 focus:ring-cyan-400 ${getEventTone(
+                  className={`absolute z-20 overflow-hidden rounded-2xl border text-left shadow-[0_12px_28px_-22px_rgba(15,23,42,0.65)] transition-transform hover:z-30 hover:-translate-y-0.5 focus:z-30 focus:outline-none focus:ring-2 focus:ring-cyan-400 ${
+                    compact ? "px-2 py-1.5" : "px-2.5 py-2"
+                  } ${getEventTone(
                     event.status,
                     isDark,
                   )}`}
@@ -305,7 +318,7 @@ export default function DayTimeline({
                       {formatTime(event.item?.startAt, timeZone)} -{" "}
                       {formatTime(event.item?.endAt, timeZone)}
                     </div>
-                    {!compact ? (
+                    {!isEventCompact ? (
                       <div className="text-[9px] font-bold uppercase tracking-[0.16em] opacity-70">
                         {event.status === "CONFIRMED" ? "Confirmado" : "Hold"}
                       </div>
@@ -316,13 +329,13 @@ export default function DayTimeline({
                     {customer}
                   </div>
 
-                  {!compact ? (
+                  {!isEventCompact ? (
                     <div className="mt-1 line-clamp-2 text-[11px] leading-4 opacity-85">
                       {service}
                     </div>
                   ) : null}
 
-                  {!compact && holdInfo ? (
+                  {!isEventCompact && holdInfo ? (
                     <div className="mt-1 truncate text-[10px] font-semibold text-amber-900 dark:text-amber-200">
                       {holdInfo.label}
                     </div>
