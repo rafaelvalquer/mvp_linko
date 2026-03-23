@@ -55,12 +55,17 @@ import {
   getPlanFeatureMatrix,
 } from "../src/utils/planFeatures.js";
 import { applyProductSelectionToItem } from "../src/services/whatsapp-ai/whatsappEntityResolver.service.js";
+import {
+  buildDeliveryAckPatch,
+  deliveryAckCodeToState,
+  normalizeDeliveryState,
+} from "../src/services/whatsappDelivery.service.js";
 
 process.env.MONGODB_URI = process.env.MONGODB_URI || "mongodb://localhost:27017/test";
 const { buildUserPayload, validateRegisterPayload } = await import(
   "../src/routes/auth.routes.js"
 );
-const { validateInboundPayload } = await import(
+const { validateInboundPayload, validateMessageAckPayload } = await import(
   "../src/routes/whatsapp-ai.routes.js"
 );
 
@@ -1042,6 +1047,97 @@ await check("validateInboundPayload rejects invalid bodies", () => {
       }),
     /audioBase64/i,
   );
+});
+
+await check("validateMessageAckPayload accepts internal ack payload", () => {
+  const payload = validateMessageAckPayload({
+    providerMessageId: "wamid.123",
+    ack: 3,
+    ackState: "read",
+    at: "2026-03-23T12:00:00.000Z",
+    chatId: "5511999999999@c.us",
+    raw: { from: "5511999999999@c.us" },
+  });
+
+  assert.equal(payload.providerMessageId, "wamid.123");
+  assert.equal(payload.ack, 3);
+  assert.equal(payload.ackState, "READ");
+  assert.equal(payload.chatId, "5511999999999@c.us");
+});
+
+await check("validateMessageAckPayload rejects invalid ack body", () => {
+  assert.throws(
+    () =>
+      validateMessageAckPayload({
+        providerMessageId: "",
+        ack: 1,
+        ackState: "SERVER",
+        at: "2026-03-23T12:00:00.000Z",
+      }),
+    /providerMessageId obrigatorio/i,
+  );
+
+  assert.throws(
+    () =>
+      validateMessageAckPayload({
+        providerMessageId: "wamid.123",
+        ack: "abc",
+        ackState: "SERVER",
+        at: "2026-03-23T12:00:00.000Z",
+      }),
+    /ack invalido/i,
+  );
+});
+
+await check("deliveryAckCodeToState maps WhatsApp ack codes", () => {
+  assert.equal(deliveryAckCodeToState(-1), "ERROR");
+  assert.equal(deliveryAckCodeToState(0), "PENDING");
+  assert.equal(deliveryAckCodeToState(1), "SERVER");
+  assert.equal(deliveryAckCodeToState(2), "DEVICE");
+  assert.equal(deliveryAckCodeToState(3), "READ");
+  assert.equal(deliveryAckCodeToState(4), "PLAYED");
+  assert.equal(deliveryAckCodeToState(9), null);
+  assert.equal(normalizeDeliveryState("read"), "READ");
+});
+
+await check("buildDeliveryAckPatch advances delivery milestones", () => {
+  const patch = buildDeliveryAckPatch(
+    {
+      deliveryState: "SERVER",
+      deliveredAt: null,
+      readAt: null,
+      playedAt: null,
+    },
+    {
+      ack: 3,
+      ackState: "READ",
+      at: "2026-03-23T12:30:00.000Z",
+    },
+  );
+
+  assert.equal(patch.deliveryState, "READ");
+  assert.equal(patch.deliveryLastAckCode, 3);
+  assert.ok(patch.deliveryLastAckAt instanceof Date);
+  assert.ok(patch.deliveredAt instanceof Date);
+  assert.ok(patch.readAt instanceof Date);
+  assert.equal(patch.playedAt, undefined);
+});
+
+await check("buildDeliveryAckPatch ignores regressions", () => {
+  const patch = buildDeliveryAckPatch(
+    {
+      deliveryState: "READ",
+      deliveredAt: new Date("2026-03-23T12:20:00.000Z"),
+      readAt: new Date("2026-03-23T12:21:00.000Z"),
+    },
+    {
+      ack: 2,
+      ackState: "DEVICE",
+      at: "2026-03-23T12:19:00.000Z",
+    },
+  );
+
+  assert.equal(patch, null);
 });
 
 if (failures > 0) {

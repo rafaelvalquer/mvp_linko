@@ -72,6 +72,28 @@ function buildErrorPayload(err, fallbackDetails = null) {
   };
 }
 
+function buildPendingDeliveryPatch(sentAt = new Date()) {
+  return {
+    deliveryState: "PENDING",
+    deliveryLastAckCode: 0,
+    deliveryLastAckAt: sentAt,
+    deliveredAt: null,
+    readAt: null,
+    playedAt: null,
+  };
+}
+
+function buildClearedDeliveryPatch() {
+  return {
+    deliveryState: null,
+    deliveryLastAckCode: null,
+    deliveryLastAckAt: null,
+    deliveredAt: null,
+    readAt: null,
+    playedAt: null,
+  };
+}
+
 function computeNextAttemptAt(attempts) {
   const idx = Math.max(
     0,
@@ -214,6 +236,7 @@ export async function markSourceAsSent(outbox, extra = {}) {
           status: "SENT",
           providerMessageId,
           sentAt,
+          ...buildPendingDeliveryPatch(sentAt),
           error: null,
         },
       },
@@ -230,6 +253,7 @@ export async function markSourceAsSent(outbox, extra = {}) {
           status: "sent",
           providerMessageId,
           sentAt,
+          ...buildPendingDeliveryPatch(sentAt),
           error: null,
         },
       },
@@ -288,6 +312,7 @@ export async function markSourceAsFailed(outbox, extra = {}) {
           status: "FAILED",
           providerMessageId: null,
           sentAt: null,
+          ...buildClearedDeliveryPatch(),
           error,
         },
       },
@@ -304,6 +329,7 @@ export async function markSourceAsFailed(outbox, extra = {}) {
           status: "failed",
           providerMessageId: null,
           sentAt: null,
+          ...buildClearedDeliveryPatch(),
           error,
         },
       },
@@ -416,6 +442,7 @@ export async function processSingleOutboxMessage({
           status: "sent",
           providerMessageId,
           sentAt,
+          ...buildPendingDeliveryPatch(sentAt),
           lastError: null,
           lockedAt: null,
           lockId: null,
@@ -449,6 +476,7 @@ export async function processSingleOutboxMessage({
             status: "queued",
             nextAttemptAt,
             lastError,
+            ...buildClearedDeliveryPatch(),
             lockedAt: null,
             lockId: null,
           },
@@ -472,6 +500,7 @@ export async function processSingleOutboxMessage({
           status: "failed",
           nextAttemptAt: null,
           lastError,
+          ...buildClearedDeliveryPatch(),
           lockedAt: null,
           lockId: null,
         },

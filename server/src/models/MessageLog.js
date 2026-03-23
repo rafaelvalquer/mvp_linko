@@ -46,6 +46,17 @@ const MessageLogSchema = new mongoose.Schema(
     },
 
     providerMessageId: { type: String, default: null },
+    deliveryState: {
+      type: String,
+      enum: ["ERROR", "PENDING", "SERVER", "DEVICE", "READ", "PLAYED"],
+      default: null,
+      index: true,
+    },
+    deliveryLastAckCode: { type: Number, default: null },
+    deliveryLastAckAt: { type: Date, default: null },
+    deliveredAt: { type: Date, default: null },
+    readAt: { type: Date, default: null },
+    playedAt: { type: Date, default: null },
     error: { type: ErrorSchema, default: null },
     sentAt: { type: Date, default: null },
   },
@@ -54,6 +65,12 @@ const MessageLogSchema = new mongoose.Schema(
 
 // Índices recomendados
 MessageLogSchema.index({ workspaceId: 1, createdAt: -1 });
+MessageLogSchema.index(
+  { providerMessageId: 1 },
+  {
+    partialFilterExpression: { providerMessageId: { $type: "string" } },
+  },
+);
 
 // ✅ Idempotência por evento (1 mensagem por offer por evento)
 MessageLogSchema.index({ offerId: 1, eventType: 1 }, { unique: true });

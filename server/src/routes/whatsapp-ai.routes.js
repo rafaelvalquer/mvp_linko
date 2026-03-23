@@ -3,6 +3,7 @@ import { Router } from "express";
 import { env } from "../config/env.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { processInboundWhatsAppEvent } from "../services/whatsapp-ai/whatsappCommandProcessor.service.js";
+import { processWhatsAppMessageAck } from "../services/whatsappDelivery.service.js";
 
 const r = Router();
 
@@ -78,6 +79,49 @@ function validateInboundPayload(body = {}) {
 
 export { validateInboundPayload };
 
+function validateMessageAckPayload(body = {}) {
+  const ack = Number(body.ack);
+  const ackState = String(body.ackState || "")
+    .trim()
+    .toUpperCase();
+  const timestamp = body.at ? new Date(body.at) : null;
+
+  if (!isNonEmpty(body.providerMessageId)) {
+    const err = new Error("providerMessageId obrigatorio.");
+    err.status = 400;
+    throw err;
+  }
+
+  if (!Number.isFinite(ack)) {
+    const err = new Error("ack invalido.");
+    err.status = 400;
+    throw err;
+  }
+
+  if (!ackState) {
+    const err = new Error("ackState obrigatorio.");
+    err.status = 400;
+    throw err;
+  }
+
+  if (!timestamp || Number.isNaN(timestamp.getTime())) {
+    const err = new Error("at invalido.");
+    err.status = 400;
+    throw err;
+  }
+
+  return {
+    providerMessageId: String(body.providerMessageId || "").trim(),
+    ack,
+    ackState,
+    at: timestamp.toISOString(),
+    chatId: String(body.chatId || "").trim() || null,
+    raw: body.raw && typeof body.raw === "object" ? body.raw : null,
+  };
+}
+
+export { validateMessageAckPayload };
+
 r.use(assertInternalKey);
 
 r.post(
@@ -89,6 +133,21 @@ r.post(
       ok: result?.ok !== false,
       status: result?.status || "processed",
       ...(result?.error ? { error: result.error } : {}),
+    });
+  }),
+);
+
+r.post(
+  "/events/message-ack",
+  asyncHandler(async (req, res) => {
+    const payload = validateMessageAckPayload(req.body || {});
+    const result = await processWhatsAppMessageAck(payload);
+    return res.json({
+      ok: true,
+      status: result.updated > 0 ? "updated" : "ignored",
+      matched: result.matched,
+      updated: result.updated,
+      ignored: result.ignored,
     });
   }),
 );

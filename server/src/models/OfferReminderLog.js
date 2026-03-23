@@ -54,6 +54,17 @@ const OfferReminderLogSchema = new mongoose.Schema(
     message: { type: String, default: "" },
     provider: { type: String, default: "whatsapp-web.js" },
     providerMessageId: { type: String, default: null },
+    deliveryState: {
+      type: String,
+      enum: ["ERROR", "PENDING", "SERVER", "DEVICE", "READ", "PLAYED"],
+      default: null,
+      index: true,
+    },
+    deliveryLastAckCode: { type: Number, default: null },
+    deliveryLastAckAt: { type: Date, default: null },
+    deliveredAt: { type: Date, default: null },
+    readAt: { type: Date, default: null },
+    playedAt: { type: Date, default: null },
 
     sentAt: { type: Date, default: null, index: true },
     error: { type: ReminderErrorSchema, default: null },
@@ -65,6 +76,12 @@ const OfferReminderLogSchema = new mongoose.Schema(
 );
 
 OfferReminderLogSchema.index({ workspaceId: 1, offerId: 1, createdAt: -1 });
+OfferReminderLogSchema.index(
+  { providerMessageId: 1 },
+  {
+    partialFilterExpression: { providerMessageId: { $type: "string" } },
+  },
+);
 OfferReminderLogSchema.index(
   { offerId: 1, triggerKey: 1 },
   {

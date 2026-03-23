@@ -103,6 +103,25 @@ function fmtRelativeLike(value) {
   return diffDays >= 0 ? `em ${diffDays} dias` : `${Math.abs(diffDays)} dias atras`;
 }
 
+function pickDeliveryMoment(value = {}) {
+  return (
+    value?.playedAt ||
+    value?.readAt ||
+    value?.deliveredAt ||
+    value?.deliveryLastAckAt ||
+    null
+  );
+}
+
+function deliveryLabel(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toUpperCase();
+  if (!normalized) return "Aguardando confirmacao";
+  if (normalized === "PENDING") return "Aguardando confirmacao";
+  return statusLabel(normalized);
+}
+
 function statusLabel(value) {
   const raw = String(value || "").trim();
   if (!raw) return "Desconhecido";
@@ -127,6 +146,11 @@ function statusLabel(value) {
     OWNER: "Owner",
     MEMBER: "Member",
     DISABLED: "Disabled",
+    SERVER: "Enviado ao WhatsApp",
+    DEVICE: "Entregue ao aparelho",
+    READ: "Lido",
+    PLAYED: "Reproduzido",
+    ERROR: "Erro de entrega",
   };
 
   return labels[normalized] || raw;
@@ -185,6 +209,21 @@ function StatusBadge({ status, children }) {
     processing: isDark
       ? "border-indigo-400/20 bg-indigo-400/10 text-indigo-200"
       : "border-indigo-200 bg-indigo-50 text-indigo-700",
+    server: isDark
+      ? "border-sky-400/20 bg-sky-400/10 text-sky-200"
+      : "border-sky-200 bg-sky-50 text-sky-700",
+    device: isDark
+      ? "border-cyan-400/20 bg-cyan-400/10 text-cyan-200"
+      : "border-cyan-200 bg-cyan-50 text-cyan-700",
+    read: isDark
+      ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-200"
+      : "border-emerald-200 bg-emerald-50 text-emerald-700",
+    played: isDark
+      ? "border-fuchsia-400/20 bg-fuchsia-400/10 text-fuchsia-200"
+      : "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700",
+    error: isDark
+      ? "border-red-400/20 bg-red-400/10 text-red-200"
+      : "border-red-200 bg-red-50 text-red-700",
     failed: isDark
       ? "border-red-400/20 bg-red-400/10 text-red-200"
       : "border-red-200 bg-red-50 text-red-700",
@@ -331,6 +370,32 @@ function PaginationBar({ pagination, onPageChange }) {
   );
 }
 
+function DeliveryStateCell({ item }) {
+  const { isDark } = useThemeToggle();
+  const label = item?.deliveryState
+    ? deliveryLabel(item.deliveryState)
+    : item?.providerMessageId
+      ? "Aguardando confirmacao"
+      : "--";
+  const status = item?.deliveryState || (item?.providerMessageId ? "pending" : "");
+  const deliveryMoment = pickDeliveryMoment(item);
+
+  return (
+    <div>
+      {status ? (
+        <StatusBadge status={status}>{label}</StatusBadge>
+      ) : (
+        <div className={isDark ? "text-xs text-slate-400" : "text-xs text-slate-500"}>
+          --
+        </div>
+      )}
+      <div className={isDark ? "mt-1 text-xs text-slate-400" : "mt-1 text-xs text-slate-500"}>
+        {deliveryMoment ? fmtDateTime(deliveryMoment) : item?.providerMessageId || "--"}
+      </div>
+    </div>
+  );
+}
+
 function scrollToSection(id) {
   if (typeof document === "undefined") return;
   document.getElementById(id)?.scrollIntoView({
@@ -351,6 +416,8 @@ async function copyTextToClipboard(value) {
 
 function DetailModal({ detail, onClose }) {
   const { isDark } = useThemeToggle();
+  const payload = detail?.meta?.payload || detail?.meta || {};
+  const deliveryMoment = pickDeliveryMoment(payload);
 
   return (
     <ModalShell open={!!detail} onClose={onClose} panelClassName="max-w-4xl">
@@ -386,6 +453,43 @@ function DetailModal({ detail, onClose }) {
             </div>
           ) : null}
 
+          {payload?.providerMessageId || payload?.deliveryState ? (
+            <div className="grid gap-3 md:grid-cols-2">
+              <div
+                className={`rounded-2xl border px-4 py-3 ${isDark ? "border-white/10 bg-white/5 text-slate-200" : "border-slate-200 bg-slate-50 text-slate-700"}`}
+              >
+                <div
+                  className={`text-[11px] font-bold uppercase tracking-[0.18em] ${isDark ? "text-slate-400" : "text-slate-500"}`}
+                >
+                  Entrega
+                </div>
+                <div className="mt-2">
+                  <StatusBadge status={payload?.deliveryState || "pending"}>
+                    {deliveryLabel(payload?.deliveryState)}
+                  </StatusBadge>
+                </div>
+                <div className={`mt-2 text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                  Ultima confirmacao: {fmtDateTime(deliveryMoment)}
+                </div>
+              </div>
+              <div
+                className={`rounded-2xl border px-4 py-3 ${isDark ? "border-white/10 bg-white/5 text-slate-200" : "border-slate-200 bg-slate-50 text-slate-700"}`}
+              >
+                <div
+                  className={`text-[11px] font-bold uppercase tracking-[0.18em] ${isDark ? "text-slate-400" : "text-slate-500"}`}
+                >
+                  Provider message id
+                </div>
+                <div className="mt-2 break-all text-sm">
+                  {payload?.providerMessageId || "--"}
+                </div>
+                <div className={`mt-2 text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                  Entregue: {fmtDateTime(payload?.deliveredAt)} • Lido: {fmtDateTime(payload?.readAt)}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           {detail?.meta?.message ? (
             <div>
               <div
@@ -410,7 +514,7 @@ function DetailModal({ detail, onClose }) {
             <pre
               className={`overflow-x-auto rounded-2xl border px-4 py-3 text-xs leading-6 ${isDark ? "border-white/10 bg-[rgba(8,15,30,0.85)] text-slate-100" : "border-slate-200 bg-white text-slate-800"}`}
             >
-              {JSON.stringify(detail?.meta?.payload || detail?.meta || {}, null, 2)}
+              {JSON.stringify(payload, null, 2)}
             </pre>
           </div>
         </div>
@@ -1325,6 +1429,7 @@ export default function Management() {
                         <th className="pb-3 font-semibold">Destino</th>
                         <th className="pb-3 font-semibold">Workspace</th>
                         <th className="pb-3 font-semibold">Status</th>
+                        <th className="pb-3 font-semibold">Entrega</th>
                         <th className="pb-3 font-semibold">Tentativas</th>
                         <th className="pb-3 font-semibold">Proxima tentativa</th>
                         <th className="pb-3 font-semibold">Mensagem</th>
@@ -1348,6 +1453,9 @@ export default function Management() {
                           </td>
                           <td className="py-3">
                             <StatusBadge status={item.status} />
+                          </td>
+                          <td className="py-3">
+                            <DeliveryStateCell item={item} />
                           </td>
                           <td className="py-3">
                             {fmtNumber(item.attempts || 0)} / {fmtNumber(item.maxAttempts || 0)}
@@ -1496,6 +1604,7 @@ export default function Management() {
                         <th className="pb-3 font-semibold">Destino</th>
                         <th className="pb-3 font-semibold">Workspace</th>
                         <th className="pb-3 font-semibold">Status</th>
+                        <th className="pb-3 font-semibold">Entrega</th>
                         <th className="pb-3 font-semibold">Mensagem</th>
                         <th className="pb-3 font-semibold">Enviado em</th>
                         <th className="pb-3 font-semibold text-right">Acoes</th>
@@ -1519,6 +1628,9 @@ export default function Management() {
                           </td>
                           <td className="py-3">
                             <StatusBadge status={item.status} />
+                          </td>
+                          <td className="py-3">
+                            <DeliveryStateCell item={item} />
                           </td>
                           <td className="py-3">
                             <div className="max-w-[320px]">{item.messagePreview || "--"}</div>

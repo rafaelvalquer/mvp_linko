@@ -33,6 +33,17 @@ const WhatsAppOutboxSchema = new mongoose.Schema(
     lockedAt: { type: Date, default: null },
     lockId: { type: String, default: null },
     providerMessageId: { type: String, default: null },
+    deliveryState: {
+      type: String,
+      enum: ["ERROR", "PENDING", "SERVER", "DEVICE", "READ", "PLAYED"],
+      default: null,
+      index: true,
+    },
+    deliveryLastAckCode: { type: Number, default: null },
+    deliveryLastAckAt: { type: Date, default: null },
+    deliveredAt: { type: Date, default: null },
+    readAt: { type: Date, default: null },
+    playedAt: { type: Date, default: null },
     lastError: { type: WhatsAppOutboxErrorSchema, default: null },
     sentAt: { type: Date, default: null },
     dedupeKey: { type: String, default: null },
@@ -50,6 +61,12 @@ const WhatsAppOutboxSchema = new mongoose.Schema(
 WhatsAppOutboxSchema.index({ status: 1, nextAttemptAt: 1, createdAt: 1 });
 WhatsAppOutboxSchema.index({ lockedAt: 1 });
 WhatsAppOutboxSchema.index({ sourceType: 1, sourceId: 1, createdAt: -1 });
+WhatsAppOutboxSchema.index(
+  { providerMessageId: 1 },
+  {
+    partialFilterExpression: { providerMessageId: { $type: "string" } },
+  },
+);
 WhatsAppOutboxSchema.index(
   { dedupeKey: 1 },
   {

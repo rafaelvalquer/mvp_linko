@@ -224,6 +224,15 @@ function serializeOutboxEntry(item) {
     status: item.status,
     sourceType: item.sourceType || "",
     providerMessageId: item.providerMessageId || "",
+    deliveryState: item.deliveryState || "",
+    deliveryLastAckCode:
+      item.deliveryLastAckCode == null
+        ? null
+        : Number(item.deliveryLastAckCode),
+    deliveryLastAckAt: item.deliveryLastAckAt || null,
+    deliveredAt: item.deliveredAt || null,
+    readAt: item.readAt || null,
+    playedAt: item.playedAt || null,
     messagePreview: buildMessagePreview(item.message),
     createdAt: item.createdAt || null,
     updatedAt: item.updatedAt || null,
@@ -245,6 +254,15 @@ function serializeMessageLogEntry(item) {
     status: item.status || "",
     provider: item.provider || "",
     providerMessageId: item.providerMessageId || "",
+    deliveryState: item.deliveryState || "",
+    deliveryLastAckCode:
+      item.deliveryLastAckCode == null
+        ? null
+        : Number(item.deliveryLastAckCode),
+    deliveryLastAckAt: item.deliveryLastAckAt || null,
+    deliveredAt: item.deliveredAt || null,
+    readAt: item.readAt || null,
+    playedAt: item.playedAt || null,
     messagePreview: buildMessagePreview(item.message),
     createdAt: item.createdAt || null,
     updatedAt: item.updatedAt || null,
@@ -687,7 +705,7 @@ r.get(
         .skip(skip)
         .limit(limit)
         .select(
-          "_id workspaceId to message status attempts maxAttempts nextAttemptAt lockedAt providerMessageId lastError meta sourceType sourceId createdAt updatedAt",
+          "_id workspaceId to message status attempts maxAttempts nextAttemptAt lockedAt providerMessageId deliveryState deliveryLastAckCode deliveryLastAckAt deliveredAt readAt playedAt lastError meta sourceType sourceId createdAt updatedAt sentAt",
         )
         .lean(),
     ]);
@@ -740,7 +758,7 @@ r.get(
         .skip(skip)
         .limit(limit)
         .select(
-          "_id workspaceId offerId bookingId eventType channel provider to message status providerMessageId error sentAt createdAt updatedAt",
+          "_id workspaceId offerId bookingId eventType channel provider to message status providerMessageId deliveryState deliveryLastAckCode deliveryLastAckAt deliveredAt readAt playedAt error sentAt createdAt updatedAt",
         )
         .lean(),
     ]);
@@ -924,7 +942,7 @@ r.get(
         .sort({ updatedAt: -1 })
         .limit(5)
         .select(
-          "_id to message status sourceType providerMessageId attempts maxAttempts nextAttemptAt lastError meta createdAt updatedAt sentAt",
+          "_id to message status sourceType providerMessageId deliveryState deliveryLastAckCode deliveryLastAckAt deliveredAt readAt playedAt attempts maxAttempts nextAttemptAt lastError meta createdAt updatedAt sentAt",
         )
         .lean(),
       WhatsAppOutbox.find({
@@ -934,7 +952,7 @@ r.get(
         .sort({ sentAt: -1, updatedAt: -1 })
         .limit(5)
         .select(
-          "_id to message status sourceType providerMessageId attempts maxAttempts nextAttemptAt lastError meta createdAt updatedAt sentAt",
+          "_id to message status sourceType providerMessageId deliveryState deliveryLastAckCode deliveryLastAckAt deliveredAt readAt playedAt attempts maxAttempts nextAttemptAt lastError meta createdAt updatedAt sentAt",
         )
         .lean(),
       MessageLog.aggregate([
@@ -953,7 +971,7 @@ r.get(
         .sort({ updatedAt: -1 })
         .limit(5)
         .select(
-          "_id eventType provider to message status providerMessageId error sentAt createdAt updatedAt",
+          "_id eventType provider to message status providerMessageId deliveryState deliveryLastAckCode deliveryLastAckAt deliveredAt readAt playedAt error sentAt createdAt updatedAt",
         )
         .lean(),
       MessageLog.find({
@@ -963,7 +981,7 @@ r.get(
         .sort({ sentAt: -1, createdAt: -1 })
         .limit(5)
         .select(
-          "_id eventType provider to message status providerMessageId error sentAt createdAt updatedAt",
+          "_id eventType provider to message status providerMessageId deliveryState deliveryLastAckCode deliveryLastAckAt deliveredAt readAt playedAt error sentAt createdAt updatedAt",
         )
         .lean(),
       OfferReminderLog.find({
@@ -974,7 +992,7 @@ r.get(
         .sort({ updatedAt: -1 })
         .limit(5)
         .select(
-          "_id kind status to message provider providerMessageId error meta sentAt createdAt updatedAt",
+          "_id kind status to message provider providerMessageId deliveryState deliveryLastAckCode deliveryLastAckAt deliveredAt readAt playedAt error meta sentAt createdAt updatedAt",
         )
         .lean(),
       Offer.findOne({ workspaceId }).sort({ updatedAt: -1 }).select("updatedAt").lean(),

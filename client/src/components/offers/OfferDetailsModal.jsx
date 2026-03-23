@@ -91,6 +91,29 @@ function humanReminderStatus(status) {
   return { label: "Processando", tone: "PUBLIC" };
 }
 
+function humanReminderDeliveryState(state) {
+  const s = String(state || "")
+    .trim()
+    .toUpperCase();
+  if (s === "SERVER") return { label: "Enviado ao WhatsApp", tone: "PUBLIC" };
+  if (s === "DEVICE") return { label: "Entregue ao aparelho", tone: "ACCEPTED" };
+  if (s === "READ") return { label: "Lido pelo cliente", tone: "CONFIRMED" };
+  if (s === "PLAYED") return { label: "Reproduzido", tone: "CONFIRMED" };
+  if (s === "ERROR") return { label: "Erro de entrega", tone: "CANCELLED" };
+  if (s === "PENDING") return { label: "Aguardando confirmacao", tone: "DRAFT" };
+  return null;
+}
+
+function pickReminderDeliveryAt(item) {
+  return (
+    item?.playedAt ||
+    item?.readAt ||
+    item?.deliveredAt ||
+    item?.deliveryLastAckAt ||
+    null
+  );
+}
+
 function fmtReminderDate(iso) {
   if (!iso) return "—";
   try {
@@ -1345,6 +1368,11 @@ export default function OfferDetailsModal({
                         <div className="space-y-3">
                           {remindersHistory.map((item) => {
                             const st = humanReminderStatus(item?.status);
+                            const delivery = humanReminderDeliveryState(
+                              item?.deliveryState ||
+                                (item?.providerMessageId ? "PENDING" : ""),
+                            );
+                            const deliveryAt = pickReminderDeliveryAt(item);
                             return (
                               <div
                                 key={item?._id}
@@ -1364,8 +1392,24 @@ export default function OfferDetailsModal({
                                       ).toUpperCase()}
                                     </div>
                                   </div>
-                                  <Badge tone={st.tone}>{st.label}</Badge>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Badge tone={st.tone}>{st.label}</Badge>
+                                    {delivery ? (
+                                      <Badge tone={delivery.tone}>
+                                        {delivery.label}
+                                      </Badge>
+                                    ) : null}
+                                  </div>
                                 </div>
+
+                                {delivery ? (
+                                  <div className="mt-2 text-xs text-zinc-500">
+                                    Ultima confirmacao: {fmtReminderDate(deliveryAt)}
+                                    {item?.providerMessageId
+                                      ? ` | ID: ${item.providerMessageId}`
+                                      : ""}
+                                  </div>
+                                ) : null}
 
                                 {item?.message ? (
                                   <div className="mt-3 whitespace-pre-line rounded-lg border border-zinc-200 bg-white p-3 text-xs text-zinc-600">

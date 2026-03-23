@@ -597,6 +597,71 @@ async function forwardInboundEvent(payload) {
   }
 }
 
+async function forwardMessageAckEvent(payload) {
+  const startedAt = nowMs();
+  telemetry.incrementCounter("wa_message_ack_forward_attempt_total");
+
+  if (!WA_INBOUND_FORWARD_ENABLED) {
+    return { ok: true, status: "DISABLED", durationMs: 0 };
+  }
+
+  if (!SERVER_INTERNAL_WEBHOOK_URL || !SERVER_INTERNAL_WEBHOOK_KEY) {
+    telemetry.incrementCounter("wa_message_ack_forward_failure_total");
+    return { ok: false, status: "MISCONFIGURED", error: "FORWARD_MISCONFIGURED" };
+  }
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), WA_INBOUND_FORWARD_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(
+      `${SERVER_INTERNAL_WEBHOOK_URL}/api/internal/whatsapp/events/message-ack`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-internal-key": SERVER_INTERNAL_WEBHOOK_KEY,
+        },
+        body: JSON.stringify(payload),
+        signal: ctrl.signal,
+      },
+    );
+
+    const data = await response.json().catch(() => null);
+    const durationMs = nowMs() - startedAt;
+    telemetry.observeTiming("wa_message_ack_forward_duration", durationMs);
+
+    if (!response.ok || data?.ok === false) {
+      telemetry.incrementCounter("wa_message_ack_forward_failure_total");
+      return {
+        ok: false,
+        status: `HTTP_${response.status}`,
+        error: data?.error || data?.status || "ACK_FORWARD_FAILED",
+        durationMs,
+      };
+    }
+
+    telemetry.incrementCounter("wa_message_ack_forward_success_total");
+    return {
+      ok: true,
+      status: String(data?.status || "FORWARDED"),
+      durationMs,
+    };
+  } catch (error) {
+    const durationMs = nowMs() - startedAt;
+    telemetry.observeTiming("wa_message_ack_forward_duration", durationMs);
+    telemetry.incrementCounter("wa_message_ack_forward_failure_total");
+    return {
+      ok: false,
+      status: error?.name === "AbortError" ? "TIMEOUT" : "NETWORK_ERROR",
+      error: error?.message || String(error),
+      durationMs,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function createNoopTypingHandle() {
   return {
     active: false,
@@ -1253,6 +1318,9 @@ async function initWhatsApp() {
     waClient.on("message_ack", (message, ack) => {
       if (generation !== clientGeneration) return;
       const ackState = ackCodeToState(ack);
+      const providerMessageId =
+        message?.id?._serialized || message?.id?.id || null;
+      const chatId = message?.from || message?.to || null;
       lastAckAt = nowISO();
       telemetry.incrementCounter("wa_message_ack_total");
       telemetry.incrementCounter(
@@ -1261,8 +1329,35 @@ async function initWhatsApp() {
       logEvent("info", "message_ack", {
         ack,
         ackState,
-        chatId: message?.from || message?.to || null,
-        providerMessageId: message?.id?._serialized || message?.id?.id || null,
+        chatId,
+        providerMessageId,
+      });
+
+      if (!providerMessageId) return;
+
+      void forwardMessageAckEvent({
+        providerMessageId,
+        ack: Number(ack),
+        ackState,
+        at: nowISO(),
+        chatId,
+        raw: {
+          from: message?.from || null,
+          to: message?.to || null,
+          fromMe: message?.fromMe === true,
+          hasMedia: message?.hasMedia === true,
+          type: message?.type || null,
+        },
+      }).then((result) => {
+        if (result?.ok) return;
+        logEvent("warn", "message_ack_forward_failed", {
+          ack,
+          ackState,
+          chatId,
+          providerMessageId,
+          status: result?.status || "ACK_FORWARD_FAILED",
+          error: compactForLog(result?.error || "ACK_FORWARD_FAILED", 160),
+        });
       });
     });
 
