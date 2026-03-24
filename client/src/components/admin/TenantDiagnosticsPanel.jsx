@@ -137,6 +137,7 @@ export default function TenantDiagnosticsPanel({
   diagnosticFlash,
   onSelectWorkspace,
   onCopy,
+  refreshing = false,
   onRefresh,
   onOpenUsers,
   onOpenClients,
@@ -221,9 +222,9 @@ export default function TenantDiagnosticsPanel({
         subtitle="Somente leitura, com acoes leves para abrir usuarios, clientes, outbox e logs no workspace certo."
         right={
           diagnosticWorkspaceId ? (
-            <Button variant="secondary" onClick={onRefresh}>
-              <RefreshCw className="h-4 w-4" />
-              Atualizar diagnostico
+            <Button variant="secondary" onClick={onRefresh} disabled={refreshing}>
+              <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+              {refreshing ? "Atualizando diagnostico..." : "Atualizar diagnostico"}
             </Button>
           ) : null
         }

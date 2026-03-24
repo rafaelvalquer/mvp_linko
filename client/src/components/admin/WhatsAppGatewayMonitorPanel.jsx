@@ -190,6 +190,7 @@ function buildEventSummary(item) {
 export default function WhatsAppGatewayMonitorPanel({
   monitorState,
   monitor,
+  refreshing = false,
   onRefresh,
   onOpenDetail,
 }) {
@@ -299,9 +300,9 @@ export default function WhatsAppGatewayMonitorPanel({
           title="Gateway do WhatsApp"
           subtitle="Monitoramento global do transporte, sessao e eventos recentes do wa-gateway."
           right={
-            <Button variant="secondary" onClick={onRefresh}>
-              <RefreshCw className="h-4 w-4" />
-              Atualizar gateway
+            <Button variant="secondary" onClick={onRefresh} disabled={refreshing}>
+              <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+              {refreshing ? "Atualizando gateway..." : "Atualizar gateway"}
             </Button>
           }
         />

@@ -160,7 +160,7 @@ const PLANS = [
     description:
       "Mais recursos para quem vende toda semana e quer ganhar velocidade sem perder o controle do atendimento.",
     audience: "MEI e pequenos negocios em crescimento",
-    ctaLabel: "Escalar operacao",
+    ctaLabel: "Escalar operação",
     ctaTo: "/register",
     benefits: [
       "Tudo do Start",
@@ -177,41 +177,86 @@ const PLANS = [
     name: "Business",
     subtitle: "Equipe",
     price: "R$ 279,90",
-    badge: "Mais governança",
+    badge: "Equipe com controle",
     description:
-      "Pensado para pequenas empresas com equipe, mais volume de vendas e necessidade de padronizar a operacao.",
-    audience: "Pequenas empresas e times comerciais",
+      "Para operacoes com equipe que precisam separar carteiras, controlar acessos e acompanhar o workspace inteiro sem perder organizacao.",
+    audience:
+      "Pequenas empresas, times comerciais e operacao com mais de um usuario",
     ctaLabel: "Ativar time",
     ctaTo: "/register",
     benefits: [
       "Tudo do Pro",
-      "Multiusuario com permissoes",
-      "Relatorios mais completos",
-      "Visao consolidada da operacao",
-      "Lembretes de pagamento por WhatsApp",
-      "Historico de interacoes",
-      "Suporte prioritario",
+      "Dono do workspace com controle da conta e da equipe",
+      "Multiusuario no mesmo workspace",
+      "Perfis Manager, Sales e Operations",
+      "Permissoes por modulo e pagina",
+      "Visao Minha carteira e Equipe",
+      "Dashboard, agenda e relatorios por usuario",
     ],
   },
   {
     name: "Enterprise",
     subtitle: "Sob medida",
     price: "Sob consulta",
-    badge: "Projeto customizado",
+    badge: "Consultivo e sob medida",
     description:
-      "Para operacoes com regras proprias, maior volume e necessidade de integracoes e processos personalizados.",
-    audience: "Empresas com alta complexidade",
+      "Para empresas que querem a mesma base de equipe e governanca do Business com implantacao consultiva, adaptacao operacional e contratacao sob medida.",
+    audience:
+      "Empresas com time maior, coordenacao entre usuarios e implantacao acompanhada",
     ctaLabel: "Solicitar demonstracao",
     ctaTo: "/register",
     benefits: [
-      "Implantacao personalizada",
-      "Integracoes e automacoes",
-      "Regras avancadas de operacao",
-      "SLA dedicado",
-      "Arquitetura para maior volume",
-      "Fluxos avançados de cobranca e WhatsApp",
-      "Condicoes comerciais sob consulta",
+      "Tudo do Business",
+      "Mesma base multiusuario e visao consolidada",
+      "Implantacao consultiva",
+      "Adaptacao do fluxo para operacoes maiores",
+      "Rollout acompanhado com o time",
+      "Contratacao e condicoes sob medida",
+      "Condições comerciais sob consulta",
     ],
+  },
+];
+
+const TEAM_GOVERNANCE_PANELS = [
+  {
+    eyebrow: "Para o dono do workspace",
+    icon: ShieldCheck,
+    title: "Controle a conta, a equipe e a operacao em um so lugar",
+    description:
+      "O owner centraliza assinatura, cria usuarios, ajusta acessos e acompanha o workspace inteiro sem misturar carteiras.",
+    bullets: [
+      "Controla assinatura, equipe e configuracoes criticas do workspace",
+      "Enxerga Minha carteira e Equipe em dashboard, propostas, agenda e relatorios",
+      "Filtra por usuario nominal e acompanha desempenho individual com visao consolidada",
+    ],
+  },
+  {
+    eyebrow: "Para a equipe",
+    icon: Sparkles,
+    title:
+      "Cada usuario trabalha na propria carteira, com mais clareza no dia a dia",
+    description:
+      "Os membros operam com foco no que e deles, enquanto o workspace continua organizado para quem coordena a operacao.",
+    bullets: [
+      "Perfis Manager, Sales e Operations com permissoes por modulo e pagina",
+      "Propostas, agenda e relatorios proprios para cada usuario",
+      "WhatsApp pessoal para agente e avisos operacionais da propria carteira",
+    ],
+  },
+];
+
+const TEAM_GOVERNANCE_HIGHLIGHTS = [
+  {
+    title: "Business",
+    text: "Multiusuario, permissoes e visao consolidada para crescer com mais organizacao.",
+  },
+  {
+    title: "Enterprise",
+    text: "Mesma base operacional com implantacao consultiva e contratacao sob medida.",
+  },
+  {
+    title: "Sem carteiras misturadas",
+    text: "Cada usuario enxerga sua operacao e o dono acompanha o todo com mais clareza.",
   },
 ];
 
@@ -533,7 +578,7 @@ export default function Home() {
                       ui.focusRing,
                     )}
                   >
-                    Comecar a vender
+                    Começar a vender
                     <ArrowRight className="h-4 w-4" />
                   </Link>
 
@@ -909,7 +954,8 @@ export default function Home() {
               >
                 Escolha o plano que faz sentido para o momento da sua operacao.
                 Todos ajudam voce a vender com mais organizacao, cobrar no Pix e
-                acompanhar o que foi fechado.
+                acompanhar o que foi fechado. Business e Enterprise adicionam a
+                camada de equipe, permissoes e visao consolidada do workspace.
               </p>
             </div>
 
@@ -1009,6 +1055,113 @@ export default function Home() {
                 </AnimatedSection>
               ))}
             </div>
+          </div>
+        </section>
+
+        <section className="pb-20 sm:pb-24">
+          <div className={ui.container}>
+            <AnimatedSection
+              className={cx(
+                "overflow-hidden rounded-[36px] p-8 sm:p-10 lg:p-12",
+                ui.glass,
+              )}
+            >
+              <div className="mx-auto max-w-3xl text-center">
+                <div className="text-sm font-bold uppercase tracking-[0.28em] text-[rgb(var(--accent))]">
+                  Equipe e governanca
+                </div>
+                <h2 className="mt-4 text-3xl font-black tracking-[-0.04em] sm:text-4xl lg:text-5xl">
+                  Estrutura para operar com equipe sem perder controle
+                </h2>
+                <p
+                  className={cx(
+                    "mt-5 text-base leading-relaxed sm:text-lg",
+                    ui.mutedText,
+                  )}
+                >
+                  Nos planos Business e Enterprise, o workspace passa a ter dono
+                  da conta, usuarios com perfis definidos e visao separada entre
+                  carteira individual e operacao da equipe.
+                </p>
+              </div>
+
+              <div className="mt-12 grid gap-5 lg:grid-cols-2">
+                {TEAM_GOVERNANCE_PANELS.map((panel, index) => {
+                  const Icon = panel.icon;
+
+                  return (
+                    <AnimatedSection
+                      key={panel.title}
+                      delay={index * 0.06}
+                      className={cx(
+                        "rounded-[30px] border p-6 sm:p-7",
+                        "border-[rgb(var(--border)/0.75)] bg-[rgb(var(--surface)/0.72)]",
+                      )}
+                    >
+                      <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
+                        <div className="inline-flex h-16 w-16 items-center justify-center rounded-[22px] bg-[linear-gradient(135deg,rgb(var(--accent-2)/0.16),rgb(var(--accent)/0.16))] text-[rgb(var(--accent))]">
+                          <Icon className="h-7 w-7" />
+                        </div>
+
+                        <div className="flex-1">
+                          <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--muted-2))]">
+                            {panel.eyebrow}
+                          </div>
+                          <h3 className="mt-3 text-2xl font-black tracking-[-0.03em]">
+                            {panel.title}
+                          </h3>
+                          <p
+                            className={cx(
+                              "mt-3 text-sm leading-relaxed sm:text-base",
+                              ui.mutedText,
+                            )}
+                          >
+                            {panel.description}
+                          </p>
+
+                          <ul className="mt-6 space-y-3">
+                            {panel.bullets.map((bullet) => (
+                              <li
+                                key={bullet}
+                                className="flex items-start gap-3 text-sm text-[rgb(var(--muted))]"
+                              >
+                                <span className="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-[rgb(var(--accent)/0.14)] text-[rgb(var(--accent))]">
+                                  <Check className="h-3.5 w-3.5" />
+                                </span>
+                                <span>{bullet}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    </AnimatedSection>
+                  );
+                })}
+              </div>
+
+              <div className="mt-10 grid gap-4 lg:grid-cols-3">
+                {TEAM_GOVERNANCE_HIGHLIGHTS.map((item, index) => (
+                  <AnimatedSection
+                    key={item.title}
+                    delay={index * 0.04}
+                    className={cx(
+                      "rounded-[26px] border p-5",
+                      "border-[rgb(var(--border)/0.75)] bg-[linear-gradient(135deg,rgb(var(--accent-2)/0.08),rgb(var(--surface)/0.74),rgb(var(--accent)/0.08))]",
+                    )}
+                  >
+                    <div className="text-lg font-bold">{item.title}</div>
+                    <p
+                      className={cx(
+                        "mt-2 text-sm leading-relaxed",
+                        ui.mutedText,
+                      )}
+                    >
+                      {item.text}
+                    </p>
+                  </AnimatedSection>
+                ))}
+              </div>
+            </AnimatedSection>
           </div>
         </section>
 

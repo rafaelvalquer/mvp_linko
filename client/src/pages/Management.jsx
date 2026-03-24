@@ -72,6 +72,40 @@ function useAsyncData(loader, deps, initialData = null) {
   return state;
 }
 
+function useManualRefreshFeedback(loading) {
+  const [state, setState] = useState({
+    active: false,
+    started: false,
+  });
+
+  useEffect(() => {
+    if (!state.active) return;
+
+    if (!state.started) {
+      if (loading) {
+        setState((current) =>
+          current.active && !current.started
+            ? { active: true, started: true }
+            : current,
+        );
+      }
+      return;
+    }
+
+    if (!loading) {
+      setState((current) =>
+        current.active ? { active: false, started: false } : current,
+      );
+    }
+  }, [loading, state.active, state.started]);
+
+  const begin = useCallback(() => {
+    setState({ active: true, started: false });
+  }, []);
+
+  return [state.active, begin];
+}
+
 function fmtNumber(value) {
   return new Intl.NumberFormat("pt-BR").format(Number(value || 0));
 }
@@ -667,12 +701,44 @@ export default function Management() {
 
   const outboxCounts = overview?.whatsapp?.outboxStatusCounts || {};
   const messageLogCounts = overview?.whatsapp?.messageLogStatusCounts || {};
+  const globalRefreshLoading =
+    overviewState.loading ||
+    servicesState.loading ||
+    gatewayMonitorState.loading ||
+    workspaceOptionsState.loading ||
+    workspacesState.loading ||
+    tenantDiagnosticsState.loading ||
+    usersState.loading ||
+    clientsState.loading ||
+    outboxState.loading ||
+    messageLogsState.loading;
+  const [manualRefreshingAll, beginManualRefreshingAll] =
+    useManualRefreshFeedback(globalRefreshLoading);
+  const [manualRefreshingDiagnostics, beginManualRefreshingDiagnostics] =
+    useManualRefreshFeedback(tenantDiagnosticsState.loading);
+  const [manualRefreshingGateway, beginManualRefreshingGateway] =
+    useManualRefreshFeedback(gatewayMonitorState.loading);
 
   useEffect(() => {
     if (!diagnosticFlash) return undefined;
     const timeoutId = window.setTimeout(() => setDiagnosticFlash(""), 2400);
     return () => window.clearTimeout(timeoutId);
   }, [diagnosticFlash]);
+
+  const handleRefreshAll = useCallback(() => {
+    beginManualRefreshingAll();
+    setRefreshKey((current) => current + 1);
+  }, [beginManualRefreshingAll]);
+
+  const handleRefreshDiagnostics = useCallback(() => {
+    beginManualRefreshingDiagnostics();
+    setRefreshKey((current) => current + 1);
+  }, [beginManualRefreshingDiagnostics]);
+
+  const handleRefreshGateway = useCallback(() => {
+    beginManualRefreshingGateway();
+    setRefreshKey((current) => current + 1);
+  }, [beginManualRefreshingGateway]);
 
   function openDetail(title, summary, payload, extra = {}) {
     setDetail({
@@ -755,9 +821,11 @@ export default function Management() {
           title="Gerenciamento Master"
           subtitle="Monitoria global do backend, banco, clientes, workspaces, fila do WhatsApp e logs operacionais."
           actions={
-            <Button size="lg" onClick={() => setRefreshKey((current) => current + 1)}>
-              <RefreshCw className="h-4 w-4" />
-              Atualizar tudo
+            <Button size="lg" onClick={handleRefreshAll} disabled={manualRefreshingAll}>
+              <RefreshCw
+                className={`h-4 w-4 ${manualRefreshingAll ? "animate-spin" : ""}`}
+              />
+              {manualRefreshingAll ? "Atualizando tudo..." : "Atualizar tudo"}
             </Button>
           }
         />
@@ -963,7 +1031,8 @@ export default function Management() {
               setDiagnosticTab("overview");
             }}
             onCopy={handleCopy}
-            onRefresh={() => setRefreshKey((current) => current + 1)}
+            refreshing={manualRefreshingDiagnostics}
+            onRefresh={handleRefreshDiagnostics}
             onOpenUsers={applyUserWorkspaceFilter}
             onOpenClients={applyClientWorkspaceFilter}
             onOpenOutbox={applyOutboxWorkspaceFilter}
@@ -1321,7 +1390,8 @@ export default function Management() {
                 <WhatsAppGatewayMonitorPanel
                   monitorState={gatewayMonitorState}
                   monitor={gatewayMonitor}
-                  onRefresh={() => setRefreshKey((current) => current + 1)}
+                  refreshing={manualRefreshingGateway}
+                  onRefresh={handleRefreshGateway}
                   onOpenDetail={(title, summary, payload) =>
                     openDetail(title, summary, payload)
                   }
