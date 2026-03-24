@@ -26,10 +26,19 @@ const UserSchema = new mongoose.Schema(
       enum: ["owner", "member"],
       default: "owner",
     },
+    profile: {
+      type: String,
+      enum: ["owner", "manager", "sales", "operations"],
+      default: "owner",
+    },
     status: {
       type: String,
       enum: ["active", "disabled"],
       default: "active",
+    },
+    permissions: {
+      type: mongoose.Schema.Types.Mixed,
+      default: () => ({}),
     },
     whatsNewLastSeenAt: {
       type: Date,

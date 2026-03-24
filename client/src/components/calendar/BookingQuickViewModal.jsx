@@ -85,6 +85,12 @@ export default function BookingQuickViewModal({
               label="WhatsApp"
               value={item?.customerWhatsApp || "-"}
             />
+            {item?.responsibleUser?.name ? (
+              <DetailBlock
+                label="Responsavel"
+                value={item.responsibleUser.name}
+              />
+            ) : null}
             <DetailBlock label="Servico" value={item?.offer?.title || "-"} />
             <DetailBlock
               label="Periodo"

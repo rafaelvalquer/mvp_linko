@@ -11,6 +11,7 @@ import {
 import { canUseRecurringPlan } from "../../utils/planFeatures.js";
 import useThemeToggle from "../../app/useThemeToggle.js";
 import brandLogo from "../../assets/brand.png";
+import { hasWorkspaceModuleAccess } from "../../utils/workspacePermissions.js";
 
 const Icons = {
   Menu: ({ className = "" }) => (
@@ -476,6 +477,7 @@ export default function Sidebar({
       navigate: nav,
       openPixModal,
       targetPath: "/offers/new",
+      canManagePixAccount,
     });
 
     if (allowed) {
@@ -493,6 +495,7 @@ export default function Sidebar({
       navigate: nav,
       openPixModal,
       targetPath: "/offers/new?mode=recurring",
+      canManagePixAccount,
     });
 
     if (allowed) {
@@ -503,6 +506,15 @@ export default function Sidebar({
   const canUseRecurringFeatures = canUseRecurringPlan(
     perms?.plan || workspace?.plan || "start",
   );
+  const canManagePixAccount = perms?.canManagePixAccount === true;
+  const canAccessDashboard = hasWorkspaceModuleAccess(perms, "dashboard");
+  const canAccessOffers = hasWorkspaceModuleAccess(perms, "offers");
+  const canCreateOffers = hasWorkspaceModuleAccess(perms, "newOffer");
+  const canAccessCalendar = hasWorkspaceModuleAccess(perms, "calendar");
+  const canAccessReports = hasWorkspaceModuleAccess(perms, "reports");
+  const canAccessProducts = hasWorkspaceModuleAccess(perms, "products");
+  const canAccessClients = hasWorkspaceModuleAccess(perms, "clients");
+  const canAccessSettings = hasWorkspaceModuleAccess(perms, "settings");
   const planLabel = String(perms.plan || "free").toUpperCase();
 
   return (
@@ -631,15 +643,17 @@ export default function Sidebar({
         )}
 
         <nav className="flex-1 space-y-1.5 pr-1">
-          <SidebarItem
-            to="/dashboard"
-            icon={Icons.Dashboard}
-            collapsed={collapsed}
-            isDark={isDark}
-            onNavigate={onNavigate}
-          >
-            Dashboard
-          </SidebarItem>
+          {canAccessDashboard ? (
+            <SidebarItem
+              to="/dashboard"
+              icon={Icons.Dashboard}
+              collapsed={collapsed}
+              isDark={isDark}
+              onNavigate={onNavigate}
+            >
+              Dashboard
+            </SidebarItem>
+          ) : null}
 
           {user?.isMasterAdmin ? (
             <SidebarItem
@@ -653,7 +667,7 @@ export default function Sidebar({
             </SidebarItem>
           ) : null}
 
-          <div className="pt-1">
+          {canAccessOffers ? <div className="pt-1">
             <SidebarParentButton
               icon={Icons.Offers}
               label="Propostas"
@@ -685,18 +699,20 @@ export default function Sidebar({
                   Todas as propostas
                 </SidebarItem>
 
-                <SidebarActionItem
-                  collapsed={collapsed}
-                  indent
-                  isDark={isDark}
-                  active={
-                    loc.pathname === "/offers/new" &&
-                    (!loc.search.includes("mode=recurring") || !canUseRecurringFeatures)
-                  }
-                  onClick={handleCreateOffer}
-                >
-                  Nova proposta
-                </SidebarActionItem>
+                {canCreateOffers ? (
+                  <SidebarActionItem
+                    collapsed={collapsed}
+                    indent
+                    isDark={isDark}
+                    active={
+                      loc.pathname === "/offers/new" &&
+                      (!loc.search.includes("mode=recurring") || !canUseRecurringFeatures)
+                    }
+                    onClick={handleCreateOffer}
+                  >
+                    Nova proposta
+                  </SidebarActionItem>
+                ) : null}
 
                 {canUseRecurringFeatures ? (
                   <SidebarItem
@@ -711,19 +727,21 @@ export default function Sidebar({
                 ) : null}
               </div>
             </div>
-          </div>
+          </div> : null}
 
-          <SidebarItem
-            to="/calendar"
-            icon={Icons.Calendar}
-            collapsed={collapsed}
-            isDark={isDark}
-            onNavigate={onNavigate}
-          >
-            Agenda
-          </SidebarItem>
+          {canAccessCalendar ? (
+            <SidebarItem
+              to="/calendar"
+              icon={Icons.Calendar}
+              collapsed={collapsed}
+              isDark={isDark}
+              onNavigate={onNavigate}
+            >
+              Agenda
+            </SidebarItem>
+          ) : null}
 
-          <div className="pt-1">
+          {canAccessReports ? <div className="pt-1">
             <SidebarParentButton
               icon={Icons.Reports}
               label="Relatórios"
@@ -768,9 +786,9 @@ export default function Sidebar({
                 ) : null}
               </div>
             </div>
-          </div>
+          </div> : null}
 
-          {perms.store ? (
+          {perms.store && (canAccessProducts || canAccessClients) ? (
             <div className="pt-1">
               <SidebarParentButton
                 icon={Icons.Store}
@@ -790,30 +808,34 @@ export default function Sidebar({
                 }`}
               >
                 <div className="space-y-1">
-                  <SidebarItem
-                    to="/store/products"
-                    collapsed={collapsed}
-                    indent
-                    isDark={isDark}
-                    onNavigate={onNavigate}
-                  >
-                    Produtos
-                  </SidebarItem>
-                  <SidebarItem
-                    to="/store/customers"
-                    collapsed={collapsed}
-                    indent
-                    isDark={isDark}
-                    onNavigate={onNavigate}
-                  >
-                    Clientes
-                  </SidebarItem>
+                  {canAccessProducts ? (
+                    <SidebarItem
+                      to="/store/products"
+                      collapsed={collapsed}
+                      indent
+                      isDark={isDark}
+                      onNavigate={onNavigate}
+                    >
+                      Produtos
+                    </SidebarItem>
+                  ) : null}
+                  {canAccessClients ? (
+                    <SidebarItem
+                      to="/store/customers"
+                      collapsed={collapsed}
+                      indent
+                      isDark={isDark}
+                      onNavigate={onNavigate}
+                    >
+                      Clientes
+                    </SidebarItem>
+                  ) : null}
                 </div>
               </div>
             </div>
           ) : null}
 
-          <div className="pt-1">
+          {canAccessSettings ? <div className="pt-1">
             <SidebarItem
               to="/settings"
               icon={Icons.Settings}
@@ -823,7 +845,7 @@ export default function Sidebar({
           >
               Configurações
             </SidebarItem>
-          </div>
+          </div> : null}
 
           <div className="pt-1">
             <SidebarItem
@@ -902,6 +924,7 @@ export default function Sidebar({
         onSaved={handlePixSaved}
         contextTitle={pixModalState.title}
         contextDescription={pixModalState.description}
+        canManagePixAccount={canManagePixAccount}
       />
     </>
   );

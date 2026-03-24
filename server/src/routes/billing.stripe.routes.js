@@ -13,8 +13,13 @@ import {
   planForPriceId,
   priceIdForPlan,
 } from "../services/stripeClient.js";
+import { assertWorkspaceOwner } from "../utils/workspaceAccess.js";
 
 const r = Router();
+
+function assertOwnerBillingAccess(req) {
+  assertWorkspaceOwner(req.user, req.user?.workspaceOwnerUserId);
+}
 
 function normalizePlan(v) {
   const p = String(v || "")
@@ -42,6 +47,7 @@ r.post(
   "/billing/stripe/checkout-session",
   ensureAuth,
   asyncHandler(async (req, res) => {
+    assertOwnerBillingAccess(req);
     const workspaceId = req.user?.workspaceId;
     if (!workspaceId) throw httpError(400, "workspaceId ausente no usuário.");
 
@@ -125,6 +131,7 @@ r.get(
   "/billing/stripe/confirm",
   ensureAuth,
   asyncHandler(async (req, res) => {
+    assertOwnerBillingAccess(req);
     const workspaceId = String(req.user?.workspaceId || "");
     const sessionId = String(req.query?.session_id || "").trim();
 
@@ -242,6 +249,7 @@ r.get(
   "/billing/stripe/status",
   ensureAuth,
   asyncHandler(async (req, res) => {
+    assertOwnerBillingAccess(req);
     const workspaceId = req.user?.workspaceId;
     if (!workspaceId) throw httpError(400, "workspaceId ausente no usuário.");
 
@@ -284,6 +292,7 @@ r.post(
   "/billing/stripe/portal",
   ensureAuth,
   asyncHandler(async (req, res) => {
+    assertOwnerBillingAccess(req);
     const workspaceId = req.user?.workspaceId;
     if (!workspaceId) throw httpError(400, "workspaceId ausente no usuário.");
 

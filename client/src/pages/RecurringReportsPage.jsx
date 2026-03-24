@@ -13,6 +13,8 @@ import {
   Cell,
 } from "recharts";
 import Shell from "../components/layout/Shell.jsx";
+import { listWorkspaceUsers } from "../app/authApi.js";
+import { useAuth } from "../app/AuthContext.jsx";
 import PageHeader from "../components/appui/PageHeader.jsx";
 import Card, { CardBody, CardHeader } from "../components/appui/Card.jsx";
 import EmptyState from "../components/appui/EmptyState.jsx";
@@ -90,6 +92,10 @@ function MetricCard({ title, subtitle, value, loading }) {
 }
 
 export default function RecurringReportsPage() {
+  const { perms, user } = useAuth();
+  const isOwnerTeamView =
+    perms?.isWorkspaceOwner === true && perms?.isWorkspaceTeamPlan === true;
+  const ownerId = String(user?._id || "").trim();
   const now = useMemo(() => new Date(), []);
   const [mounted, setMounted] = useState(false);
   const [preset, setPreset] = useState("30d");
@@ -100,9 +106,39 @@ export default function RecurringReportsPage() {
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState("");
+  const [scopeTab, setScopeTab] = useState("mine");
+  const [teamOwnerFilter, setTeamOwnerFilter] = useState("all");
+  const [workspaceUsers, setWorkspaceUsers] = useState([]);
+  const [teamUsersBusy, setTeamUsersBusy] = useState(false);
   const [data, setData] = useState(null);
 
   useEffect(() => setMounted(true), []);
+
+  const effectiveScopeTab = isOwnerTeamView ? scopeTab : "mine";
+  const appliedScope =
+    isOwnerTeamView && effectiveScopeTab === "workspace" ? "workspace" : "mine";
+  const selectedOwnerUserId =
+    appliedScope !== "workspace"
+      ? ""
+      : teamOwnerFilter === "me"
+        ? ownerId
+        : teamOwnerFilter !== "all"
+          ? teamOwnerFilter
+          : "";
+
+  const selectedTeamMemberName = useMemo(() => {
+    if (teamOwnerFilter === "all") return "Toda a equipe";
+    if (teamOwnerFilter === "me") return "Somente eu";
+    return (
+      workspaceUsers.find((item) => String(item?._id || "") === teamOwnerFilter)
+        ?.name || "Responsavel"
+    );
+  }, [teamOwnerFilter, workspaceUsers]);
+
+  const scopeSummaryLabel =
+    appliedScope === "workspace"
+      ? `Equipe: ${selectedTeamMemberName}`
+      : "Minha carteira";
 
   async function load(next = {}) {
     const params = {
@@ -110,6 +146,9 @@ export default function RecurringReportsPage() {
       to: next.to ?? to,
       type: next.type ?? type,
       recurringStatus: next.recurringStatus ?? recurringStatus,
+      scope: next.scope ?? appliedScope,
+      ownerUserId:
+        next.ownerUserId !== undefined ? next.ownerUserId : selectedOwnerUserId,
     };
     setApplying(true);
     setError("");
@@ -125,9 +164,44 @@ export default function RecurringReportsPage() {
   }
 
   useEffect(() => {
-    load();
+    load({
+      scope: appliedScope,
+      ownerUserId: selectedOwnerUserId,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [appliedScope, selectedOwnerUserId]);
+
+  useEffect(() => {
+    if (!isOwnerTeamView) {
+      setWorkspaceUsers([]);
+      return;
+    }
+
+    let alive = true;
+
+    (async () => {
+      try {
+        setTeamUsersBusy(true);
+        const data = await listWorkspaceUsers();
+        if (!alive) return;
+        const rawItems = Array.isArray(data?.items) ? data.items : [];
+        setWorkspaceUsers(
+          rawItems.filter(
+            (item) =>
+              String(item?._id || "") !== ownerId && item?.status !== "disabled",
+          ),
+        );
+      } catch {
+        if (alive) setWorkspaceUsers([]);
+      } finally {
+        if (alive) setTeamUsersBusy(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [isOwnerTeamView, ownerId]);
 
   function applyPreset(nextPreset) {
     const base = new Date();
@@ -151,8 +225,10 @@ export default function RecurringReportsPage() {
     params.set("to", to);
     params.set("type", type);
     params.set("recurringStatus", recurringStatus);
+    params.set("scope", appliedScope);
+    if (selectedOwnerUserId) params.set("ownerUserId", selectedOwnerUserId);
     return params.toString();
-  }, [from, to, type, recurringStatus]);
+  }, [from, to, type, recurringStatus, appliedScope, selectedOwnerUserId]);
 
   async function downloadCsv() {
     try {
@@ -186,14 +262,15 @@ export default function RecurringReportsPage() {
 
   return (
     <Shell>
-      <div className="space-y-6">
+      <div className="mx-auto max-w-7xl px-4 py-6 space-y-6">
         <PageHeader
-          title="Relatorios de recorrencia"
-          subtitle="Acompanhe cobrancas recorrentes, dias de pagamento e clientes em atraso."
+          eyebrow="Relatórios"
+          title="Relatórios de recorrência"
+          subtitle="Acompanhe cobranças recorrentes, dias de pagamento e clientes em atraso."
           actions={
             <>
               <Link to="/reports">
-                <Button variant="secondary">Relatorios gerais</Button>
+                <Button variant="secondary">Relatórios gerais</Button>
               </Link>
               <Button variant="secondary" onClick={() => load()} disabled={applying}>
                 {applying ? "Atualizando..." : "Atualizar"}
@@ -207,6 +284,53 @@ export default function RecurringReportsPage() {
             </>
           }
         />
+
+        {isOwnerTeamView ? (
+          <Card>
+            <CardHeader
+              title="Escopo dos relatórios"
+              subtitle="Alterne entre sua carteira recorrente e a visão consolidada da equipe."
+            />
+            <CardBody className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  variant={effectiveScopeTab === "mine" ? "primary" : "secondary"}
+                  onClick={() => setScopeTab("mine")}
+                >
+                  Minha carteira
+                </Button>
+                <Button
+                  size="sm"
+                  variant={effectiveScopeTab === "workspace" ? "primary" : "secondary"}
+                  onClick={() => setScopeTab("workspace")}
+                >
+                  Equipe
+                </Button>
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                {effectiveScopeTab === "workspace" ? (
+                  <select
+                    value={teamOwnerFilter}
+                    onChange={(e) => setTeamOwnerFilter(e.target.value)}
+                    disabled={teamUsersBusy}
+                    className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-emerald-200 sm:w-[240px]"
+                  >
+                    <option value="all">Toda a equipe</option>
+                    <option value="me">Somente eu</option>
+                    {workspaceUsers.map((item) => (
+                      <option key={item._id} value={item._id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
+                <Badge tone="neutral">{scopeSummaryLabel}</Badge>
+              </div>
+            </CardBody>
+          </Card>
+        ) : null}
 
         {error ? <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div> : null}
 

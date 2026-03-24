@@ -17,8 +17,30 @@ import {
   runRecurringOfferNow,
   updateRecurringOffer,
 } from "../services/recurring-offers.service.js";
+import {
+  assertWorkspaceModuleAccess,
+  getScopedOwnerUserId,
+} from "../utils/workspaceAccess.js";
+import { resolveWorkspaceOwnerScope } from "../utils/workspaceOwnerScope.js";
 
 const r = Router();
+
+function assertRecurringModule(req, moduleKey = "offers") {
+  assertWorkspaceModuleAccess({
+    user: req.user,
+    workspacePlan: req.user?.workspacePlan,
+    workspaceOwnerUserId: req.user?.workspaceOwnerUserId,
+    moduleKey,
+  });
+}
+
+function getScopedOwner(req) {
+  return getScopedOwnerUserId({
+    user: req.user,
+    workspacePlan: req.user?.workspacePlan,
+    workspaceOwnerUserId: req.user?.workspaceOwnerUserId,
+  });
+}
 
 r.use(ensureAuth, tenantFromUser);
 
@@ -26,6 +48,7 @@ r.use(
   "/recurring-offers",
   asyncHandler(async (req, res, next) => {
     await assertRecurringFeatureForTenant(req.tenantId);
+    assertRecurringModule(req, "offers");
     next();
   }),
 );
@@ -41,24 +64,38 @@ function ensureId(req, res) {
 r.get(
   "/recurring-offers",
   asyncHandler(async (req, res) => {
+    const scopeInfo = await resolveWorkspaceOwnerScope({
+      user: req.user,
+      workspaceId: req.tenantId,
+      workspacePlan: req.user?.workspacePlan || "start",
+      workspaceOwnerUserId: req.user?.workspaceOwnerUserId || null,
+      scopeRaw: req.query.scope,
+      ownerUserIdRaw: req.query.ownerUserId,
+      defaultOwnerScope: "mine",
+      forbiddenMessage:
+        "Somente o dono do workspace pode visualizar as recorrencias da equipe.",
+      forbiddenCode: "WORKSPACE_RECURRING_SCOPE_FORBIDDEN",
+    });
+
     const items = await listRecurringOffers({
       tenantId: req.tenantId,
-      userId: req.user?._id,
+      userId: scopeInfo.ownerUserId,
       status: req.query?.status || "all",
       query: req.query?.q || "",
       bucket: req.query?.bucket || "",
     });
 
-    res.json({ ok: true, items });
+    res.json({ ok: true, scope: scopeInfo.appliedScope, items });
   }),
 );
 
 r.post(
   "/recurring-offers",
   asyncHandler(async (req, res) => {
+    assertRecurringModule(req, "newOffer");
     const data = await createRecurringOffer({
       tenantId: req.tenantId,
-      userId: req.user?._id,
+      userId: getScopedOwner(req) || req.user?._id,
       body: req.body,
       origin: req.headers.origin || req.headers.referer || "",
     });
@@ -80,7 +117,7 @@ r.get(
     const data = await getRecurringOfferDetails({
       recurringId: req.params.id,
       tenantId: req.tenantId,
-      userId: req.user?._id,
+      userId: getScopedOwner(req),
     });
 
     res.json({ ok: true, ...data });
@@ -95,7 +132,7 @@ r.patch(
     const recurring = await updateRecurringOffer({
       recurringId: req.params.id,
       tenantId: req.tenantId,
-      userId: req.user?._id,
+      userId: getScopedOwner(req),
       body: req.body,
     });
 
@@ -111,7 +148,7 @@ r.post(
     const recurring = await pauseRecurringOffer({
       recurringId: req.params.id,
       tenantId: req.tenantId,
-      userId: req.user?._id,
+      userId: getScopedOwner(req),
     });
     res.json({ ok: true, recurring });
   }),
@@ -125,7 +162,7 @@ r.post(
     const recurring = await resumeRecurringOffer({
       recurringId: req.params.id,
       tenantId: req.tenantId,
-      userId: req.user?._id,
+      userId: getScopedOwner(req),
     });
     res.json({ ok: true, recurring });
   }),
@@ -139,7 +176,7 @@ r.post(
     const data = await runRecurringOfferNow({
       recurringId: req.params.id,
       tenantId: req.tenantId,
-      userId: req.user?._id,
+      userId: getScopedOwner(req) || req.user?._id,
       origin: req.headers.origin || req.headers.referer || "",
     });
 
@@ -160,7 +197,7 @@ r.post(
     const recurring = await endRecurringOffer({
       recurringId: req.params.id,
       tenantId: req.tenantId,
-      userId: req.user?._id,
+      userId: getScopedOwner(req),
     });
     res.json({ ok: true, recurring });
   }),
@@ -174,7 +211,7 @@ r.post(
     const recurring = await duplicateRecurringOffer({
       recurringId: req.params.id,
       tenantId: req.tenantId,
-      userId: req.user?._id,
+      userId: getScopedOwner(req),
     });
     res.json({ ok: true, recurring });
   }),
@@ -188,7 +225,7 @@ r.get(
     const items = await getRecurringOfferLinkedOffers({
       recurringId: req.params.id,
       tenantId: req.tenantId,
-      userId: req.user?._id,
+      userId: getScopedOwner(req),
     });
     res.json({ ok: true, items });
   }),
@@ -202,7 +239,7 @@ r.get(
     const items = await getRecurringOfferHistory({
       recurringId: req.params.id,
       tenantId: req.tenantId,
-      userId: req.user?._id,
+      userId: getScopedOwner(req),
     });
     res.json({ ok: true, items });
   }),

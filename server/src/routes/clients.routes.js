@@ -6,8 +6,33 @@ import mongoose from "mongoose";
 import { ensureAuth, tenantFromUser } from "../middleware/auth.js";
 import { Client } from "../models/Client.js";
 import { createClientForWorkspace } from "../services/clients/createClient.service.js";
+import {
+  assertWorkspaceModuleAccess,
+  buildWorkspaceCatalogFilter,
+} from "../utils/workspaceAccess.js";
 
 const r = Router();
+
+function assertClientsModule(req) {
+  assertWorkspaceModuleAccess({
+    user: req.user,
+    workspacePlan: req.user?.workspacePlan,
+    workspaceOwnerUserId: req.user?.workspaceOwnerUserId,
+    moduleKey: "clients",
+  });
+}
+
+function buildCatalogFilter(req, extra = {}) {
+  return {
+    ...buildWorkspaceCatalogFilter({
+      user: req.user,
+      workspaceId: req.tenantId,
+      workspacePlan: req.user?.workspacePlan,
+      workspaceOwnerUserId: req.user?.workspaceOwnerUserId,
+    }),
+    ...extra,
+  };
+}
 
 function escapeRegex(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -25,9 +50,10 @@ function makeClientId() {
 // LIST / SEARCH
 r.get("/clients", ensureAuth, tenantFromUser, async (req, res) => {
   try {
+    assertClientsModule(req);
     const qRaw = String(req.query.q || "").trim();
     const qDigits = onlyDigits(qRaw);
-    const filter = { workspaceId: req.tenantId };
+    const filter = buildCatalogFilter(req);
 
     if (qRaw) {
       const rx = new RegExp(escapeRegex(qRaw), "i");
@@ -57,15 +83,15 @@ r.get("/clients", ensureAuth, tenantFromUser, async (req, res) => {
 // DETAIL
 r.get("/clients/:id", ensureAuth, tenantFromUser, async (req, res) => {
   try {
+    assertClientsModule(req);
     const id = String(req.params.id || "");
     if (!mongoose.isValidObjectId(id)) {
       return res.status(400).json({ ok: false, error: "ID inválido." });
     }
 
-    const doc = await Client.findOne({
-      _id: id,
-      workspaceId: req.tenantId,
-    }).lean();
+    const filter = buildCatalogFilter(req, { _id: id });
+
+    const doc = await Client.findOne(filter).lean();
     if (!doc) {
       return res
         .status(404)
@@ -83,6 +109,7 @@ r.get("/clients/:id", ensureAuth, tenantFromUser, async (req, res) => {
 // CREATE
 r.post("/clients", ensureAuth, tenantFromUser, async (req, res) => {
   try {
+    assertClientsModule(req);
     const fullName = String(req.body?.fullName || "").trim();
     const email = String(req.body?.email || "")
       .trim()
@@ -125,6 +152,7 @@ r.post("/clients", ensureAuth, tenantFromUser, async (req, res) => {
 // UPDATE (clientId imutável)
 r.put("/clients/:id", ensureAuth, tenantFromUser, async (req, res) => {
   try {
+    assertClientsModule(req);
     const id = String(req.params.id || "");
     if (!mongoose.isValidObjectId(id)) {
       return res.status(400).json({ ok: false, error: "ID inválido." });
@@ -146,8 +174,10 @@ r.put("/clients/:id", ensureAuth, tenantFromUser, async (req, res) => {
     if (!phone)
       return res.status(400).json({ ok: false, error: "phone required" });
 
+    const filter = buildCatalogFilter(req, { _id: id });
+
     const updated = await Client.findOneAndUpdate(
-      { _id: id, workspaceId: req.tenantId },
+      filter,
       { $set: { fullName, email, cpfCnpj, phone } },
       { new: true, runValidators: true },
     ).lean();

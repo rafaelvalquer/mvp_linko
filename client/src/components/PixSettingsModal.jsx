@@ -14,6 +14,7 @@ export default function PixSettingsModal({
   onSaved,
   contextTitle = "",
   contextDescription = "",
+  canManagePixAccount = true,
 }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -34,6 +35,7 @@ export default function PixSettingsModal({
       !!String(contextDescription || "").trim(),
     [contextTitle, contextDescription],
   );
+  const readOnly = canManagePixAccount !== true;
 
   async function load() {
     setLoading(true);
@@ -57,6 +59,7 @@ export default function PixSettingsModal({
   }, [open]);
 
   async function onSave() {
+    if (readOnly) return;
     try {
       setErr("");
       setSaving(true);
@@ -104,8 +107,9 @@ export default function PixSettingsModal({
                 Conta Pix
               </h2>
               <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                Configure a chave exibida para o cliente pagar e enviar o
-                comprovante no mesmo fluxo.
+                {readOnly
+                  ? "Visualize a chave Pix configurada para o workspace. A alteracao fica restrita ao dono do workspace."
+                  : "Configure a chave exibida para o cliente pagar e enviar o comprovante no mesmo fluxo."}
               </p>
             </div>
 
@@ -181,6 +185,17 @@ export default function PixSettingsModal({
               </div>
             ) : null}
 
+            {readOnly ? (
+              <div className="rounded-[24px] border border-amber-200/80 bg-amber-50 p-4 dark:border-amber-400/20 dark:bg-amber-400/10">
+                <div className="text-sm font-semibold text-amber-900 dark:text-amber-100">
+                  Somente leitura
+                </div>
+                <div className="mt-1 text-sm text-amber-800 dark:text-amber-200">
+                  Somente o dono do workspace pode configurar ou alterar a Conta Pix.
+                </div>
+              </div>
+            ) : null}
+
             {hasKey ? (
               <div className="rounded-[24px] border border-emerald-200/80 bg-emerald-50/90 p-4 dark:border-emerald-400/20 dark:bg-emerald-400/10">
                 <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-700 dark:text-emerald-200">
@@ -196,38 +211,40 @@ export default function PixSettingsModal({
               </div>
             )}
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-xs font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                  Tipo da chave
-                </label>
-                <select
-                  className="h-12 w-full rounded-2xl border border-slate-200/80 bg-white/92 px-3.5 text-sm text-slate-900 shadow-[0_14px_24px_-22px_rgba(15,23,42,0.2)] outline-none transition focus:border-cyan-300 focus:ring-2 focus:ring-cyan-500/30 dark:border-white/10 dark:bg-white/6 dark:text-slate-100 dark:shadow-none dark:focus:border-cyan-400/30 dark:focus:ring-cyan-400/20"
-                  value={payoutPixKeyType}
-                  onChange={(event) => setPayoutPixKeyType(event.target.value)}
-                  disabled={locked}
-                >
-                  {PIX_TYPES.map((type) => (
-                    <option key={type} value={type}>
-                      {type}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            {!readOnly ? (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-xs font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                    Tipo da chave
+                  </label>
+                  <select
+                    className="h-12 w-full rounded-2xl border border-slate-200/80 bg-white/92 px-3.5 text-sm text-slate-900 shadow-[0_14px_24px_-22px_rgba(15,23,42,0.2)] outline-none transition focus:border-cyan-300 focus:ring-2 focus:ring-cyan-500/30 dark:border-white/10 dark:bg-white/6 dark:text-slate-100 dark:shadow-none dark:focus:border-cyan-400/30 dark:focus:ring-cyan-400/20"
+                    value={payoutPixKeyType}
+                    onChange={(event) => setPayoutPixKeyType(event.target.value)}
+                    disabled={locked}
+                  >
+                    {PIX_TYPES.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-              <div>
-                <label className="mb-2 block text-xs font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                  Nova chave
-                </label>
-                <Input
-                  value={payoutPixKeyInput}
-                  onChange={(event) => setPayoutPixKeyInput(event.target.value)}
-                  placeholder="CPF, CNPJ, telefone, email ou EVP"
-                  disabled={locked}
-                  className="h-12"
-                />
+                <div>
+                  <label className="mb-2 block text-xs font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                    Nova chave
+                  </label>
+                  <Input
+                    value={payoutPixKeyInput}
+                    onChange={(event) => setPayoutPixKeyInput(event.target.value)}
+                    placeholder="CPF, CNPJ, telefone, email ou EVP"
+                    disabled={locked}
+                    className="h-12"
+                  />
+                </div>
               </div>
-            </div>
+            ) : null}
 
             <div className="rounded-[24px] border border-slate-200/80 bg-white/70 p-4 dark:border-white/10 dark:bg-white/5">
               <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
@@ -261,13 +278,15 @@ export default function PixSettingsModal({
             Fechar
           </Button>
 
-          <Button
-            onClick={onSave}
-            disabled={locked || !String(payoutPixKeyInput || "").trim()}
-            className="h-11 px-5"
-          >
-            {saving ? "Salvando..." : "Salvar chave Pix"}
-          </Button>
+          {!readOnly ? (
+            <Button
+              onClick={onSave}
+              disabled={locked || !String(payoutPixKeyInput || "").trim()}
+              className="h-11 px-5"
+            >
+              {saving ? "Salvando..." : "Salvar chave Pix"}
+            </Button>
+          ) : null}
         </div>
       </div>
     </ModalShell>

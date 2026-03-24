@@ -22,16 +22,43 @@ import {
   assertNotificationFeatureSelection,
   getDefaultOfferNotificationFlags,
   isEmailNotificationEnabled,
+  resolveWorkspaceOwnerNotificationContext,
   resolveWorkspaceNotificationContext,
 } from "../services/notificationSettings.js";
 import { cancelOfferByWorkspace } from "../services/offers/cancelOffer.service.js";
 import { createOfferFromPayload } from "../services/offers/createOffer.service.js";
+import {
+  notifyResponsibleSellerPixPaidWhatsApp,
+  notifyResponsibleSellerPlatformConfirmedWhatsApp,
+} from "../services/workspaceUserWhatsApp.service.js";
+import {
+  assertWorkspaceModuleAccess,
+  getScopedOwnerUserId,
+} from "../utils/workspaceAccess.js";
+import { resolveWorkspaceOwnerScope } from "../utils/workspaceOwnerScope.js";
 
 const r = Router();
 
 const LINK_TTL_DAYS = Number(process.env.OFFER_LINK_TTL_DAYS || 90);
 const HAS_TENANT = !!Offer?.schema?.path?.("workspaceId");
 const HAS_OWNER = !!Offer?.schema?.path?.("ownerUserId");
+
+function assertOffersModule(req, moduleKey = "offers") {
+  assertWorkspaceModuleAccess({
+    user: req.user,
+    workspacePlan: req.user?.workspacePlan,
+    workspaceOwnerUserId: req.user?.workspaceOwnerUserId,
+    moduleKey,
+  });
+}
+
+function getScopedOwner(req) {
+  return getScopedOwnerUserId({
+    user: req.user,
+    workspacePlan: req.user?.workspacePlan,
+    workspaceOwnerUserId: req.user?.workspaceOwnerUserId,
+  });
+}
 
 function isNonEmpty(s) {
   return String(s || "").trim().length > 0;
@@ -301,14 +328,42 @@ r.get(
   ensureAuth,
   tenantFromUser,
   asyncHandler(async (req, res) => {
+    assertOffersModule(req, "offers");
     const tenantId = req.tenantId;
-    const userId = req.user?._id;
+    const scopeInfo = await resolveWorkspaceOwnerScope({
+      user: req.user,
+      workspaceId: tenantId,
+      workspacePlan: req.user?.workspacePlan || "start",
+      workspaceOwnerUserId: req.user?.workspaceOwnerUserId || null,
+      scopeRaw: req.query.scope,
+      ownerUserIdRaw: req.query.ownerUserId,
+      defaultOwnerScope: "mine",
+      forbiddenMessage:
+        "Somente o dono do workspace pode visualizar as propostas da equipe.",
+      forbiddenCode: "WORKSPACE_OFFERS_SCOPE_FORBIDDEN",
+    });
 
     const q = { workspaceId: tenantId };
-    if (userId) q.ownerUserId = userId;
+    if (scopeInfo.ownerUserId) q.ownerUserId = scopeInfo.ownerUserId;
 
-    const items = await Offer.find(q).sort({ createdAt: -1 }).limit(200).lean();
-    res.json({ ok: true, items });
+    const docs = await Offer.find(q)
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .populate("ownerUserId", "_id name")
+      .lean();
+
+    const items = (docs || []).map((offer) => ({
+      ...offer,
+      ownerUserId: offer?.ownerUserId?._id || offer?.ownerUserId || null,
+      responsibleUser: offer?.ownerUserId
+        ? {
+            _id: offer.ownerUserId._id || null,
+            name: offer.ownerUserId.name || "",
+          }
+        : null,
+    }));
+
+    res.json({ ok: true, scope: scopeInfo.appliedScope, items });
   }),
 );
 
@@ -318,8 +373,9 @@ r.get(
   ensureAuth,
   tenantFromUser,
   asyncHandler(async (req, res) => {
+    assertOffersModule(req, "offers");
     const tenantId = req.tenantId;
-    const userId = req.user?._id;
+    const scopedOwnerUserId = getScopedOwner(req);
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -327,7 +383,7 @@ r.get(
     }
 
     const q = { _id: id, workspaceId: tenantId };
-    if (userId) q.ownerUserId = userId;
+    if (scopedOwnerUserId) q.ownerUserId = scopedOwnerUserId;
 
     const offer = await Offer.findOne(q).lean();
     if (!offer) {
@@ -357,8 +413,9 @@ r.get(
   ensureAuth,
   tenantFromUser,
   asyncHandler(async (req, res) => {
+    assertOffersModule(req, "offers");
     const tenantId = req.tenantId;
-    const userId = req.user?._id;
+    const scopedOwnerUserId = getScopedOwner(req);
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -366,7 +423,7 @@ r.get(
     }
 
     const q = { _id: id, workspaceId: tenantId };
-    if (userId) q.ownerUserId = userId;
+    if (scopedOwnerUserId) q.ownerUserId = scopedOwnerUserId;
 
     const offer = await Offer.findOne(q)
       .select("paymentProof paymentStatus status")
@@ -426,14 +483,17 @@ async function safeNotifyPaymentConfirmed(offerId) {
 }
 
 async function safeNotifySellerPixPaid({ offer, booking, now }) {
+  let internalWhatsApp = null;
+
   try {
-    const notificationContext = await resolveWorkspaceNotificationContext({
+    const notificationContext = await resolveWorkspaceOwnerNotificationContext({
       workspaceId: offer?.workspaceId || null,
-      ownerUserId: offer?.ownerUserId || null,
     });
 
+    let email = null;
+
     if (!isEmailNotificationEnabled(notificationContext, "sellerPixPaid")) {
-      return {
+      email = {
         status: "SKIPPED",
         reason:
           notificationContext?.capabilities?.environment?.email?.available !==
@@ -442,36 +502,56 @@ async function safeNotifySellerPixPaid({ offer, booking, now }) {
               "EMAIL_UNAVAILABLE"
             : "WORKSPACE_SETTING_DISABLED",
       };
+    } else {
+
+      const r2 = await notifySellerPixPaid({
+        offerId: offer._id,
+        offer,
+        booking,
+        pixId: offer?.payment?.lastPixId || null,
+        paidAt: offer?.paidAt || now,
+        paidAmountCents: offer?.paidAmountCents || null,
+      proof: offer?.paymentProof || null, // opcional (anexa se possível)
+      });
+
+      email = r2?.skipped
+        ? { status: "SKIPPED", reason: r2.reason || "" }
+        : { status: "SENT", id: r2?.id || null, to: r2?.to || "" };
     }
 
-    const r2 = await notifySellerPixPaid({
-      offerId: offer._id,
+    internalWhatsApp = await notifyResponsibleSellerPixPaidWhatsApp({
       offer,
       booking,
-      pixId: offer?.payment?.lastPixId || null, // manual -> null => key "paid"
+      pixId: offer?.payment?.lastPixId || null,
       paidAt: offer?.paidAt || now,
       paidAmountCents: offer?.paidAmountCents || null,
-      proof: offer?.paymentProof || null, // opcional (anexa se possível)
+      notificationContext,
     });
 
-    if (r2?.skipped) return { status: "SKIPPED", reason: r2.reason || "" };
-    return { status: "SENT", id: r2?.id || null, to: r2?.to || "" };
+    return { ...email, internalWhatsApp };
   } catch (e) {
-    return { status: "FAILED", error: String(e?.message || "email_failed") };
+    return {
+      status: "FAILED",
+      error: String(e?.message || "email_failed"),
+      internalWhatsApp,
+    };
   }
 }
 
 async function safeNotifySellerConfirmedOnPlatform({ offer, booking }) {
+  let internalWhatsApp = null;
+
   try {
-    const notificationContext = await resolveWorkspaceNotificationContext({
+    const notificationContext = await resolveWorkspaceOwnerNotificationContext({
       workspaceId: offer?.workspaceId || null,
-      ownerUserId: offer?.ownerUserId || null,
     });
+
+    let email = null;
 
     if (
       !isEmailNotificationEnabled(notificationContext, "sellerPlatformConfirmed")
     ) {
-      return {
+      email = {
         status: "SKIPPED",
         reason:
           notificationContext?.capabilities?.environment?.email?.available !==
@@ -480,25 +560,42 @@ async function safeNotifySellerConfirmedOnPlatform({ offer, booking }) {
               "EMAIL_UNAVAILABLE"
             : "WORKSPACE_SETTING_DISABLED",
       };
+    } else {
+
+      const r3 = await notifySellerPaymentConfirmedOnPlatform({
+        offerId: offer._id,
+        offer,
+        booking,
+        proof: offer?.paymentProof || null,
+      });
+
+      email = r3?.skipped
+        ? { status: "SKIPPED", reason: r3.reason || "" }
+        : { status: "SENT", id: r3?.id || null, to: r3?.to || "" };
     }
 
-    const r3 = await notifySellerPaymentConfirmedOnPlatform({
-      offerId: offer._id,
+    internalWhatsApp = await notifyResponsibleSellerPlatformConfirmedWhatsApp({
       offer,
       booking,
       proof: offer?.paymentProof || null,
+      notificationContext,
     });
 
-    if (r3?.skipped) return { status: "SKIPPED", reason: r3.reason || "" };
-    return { status: "SENT", id: r3?.id || null, to: r3?.to || "" };
+    return { ...email, internalWhatsApp };
   } catch (e) {
-    return { status: "FAILED", error: String(e?.message || "email_failed") };
+    return {
+      status: "FAILED",
+      error: String(e?.message || "email_failed"),
+      internalWhatsApp,
+    };
   }
 }
 
 async function confirmPaymentHandler(req, res) {
+  assertOffersModule(req, "offers");
   const tenantId = req.tenantId;
   const userId = req.user?._id;
+  const scopedOwnerUserId = getScopedOwner(req);
   const { id } = req.params;
 
   if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -506,7 +603,7 @@ async function confirmPaymentHandler(req, res) {
   }
 
   const q = { _id: id, workspaceId: tenantId };
-  if (userId) q.ownerUserId = userId;
+  if (scopedOwnerUserId) q.ownerUserId = scopedOwnerUserId;
 
   const offer0 = await Offer.findOne(q).lean();
   if (!offer0) {
@@ -668,8 +765,10 @@ r.post(
   ensureAuth,
   tenantFromUser,
   asyncHandler(async (req, res) => {
+    assertOffersModule(req, "offers");
     const tenantId = req.tenantId;
     const userId = req.user?._id;
+    const scopedOwnerUserId = getScopedOwner(req);
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -679,7 +778,7 @@ r.post(
     const reason = String(req.body?.reason || req.body?.note || "").trim();
 
     const q = { _id: id, workspaceId: tenantId };
-    if (userId) q.ownerUserId = userId;
+    if (scopedOwnerUserId) q.ownerUserId = scopedOwnerUserId;
 
     const offer = await Offer.findOne(q).lean();
     if (!offer) {
@@ -756,6 +855,7 @@ r.patch(
   ensureAuth,
   tenantFromUser,
   asyncHandler(async (req, res) => {
+    assertOffersModule(req, "offers");
     const tenantId = req.tenantId;
     const userId = req.user?._id;
     const { id } = req.params;
@@ -767,7 +867,7 @@ r.patch(
       const result = await cancelOfferByWorkspace({
         offerId: id,
         workspaceId: tenantId,
-        ownerUserId: userId || null,
+        ownerUserId: getScopedOwner(req) || null,
         cancelledByUserId: userId || null,
         reason: String(req.body?.reason || "").trim(),
         publicUrl: String(req.body?.publicUrl || "").trim(),
@@ -789,6 +889,7 @@ r.patch(
 r.post(
   "/offers",
   asyncHandler(async (req, res) => {
+    assertOffersModule(req, "newOffer");
     const {
       customerName,
       customerId,

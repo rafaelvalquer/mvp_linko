@@ -695,6 +695,26 @@ export async function resolveWorkspaceNotificationContext({
   };
 }
 
+export async function resolveWorkspaceOwnerNotificationContext({
+  workspaceId,
+  workspacePlan = null,
+}) {
+  let workspace = null;
+
+  if (workspaceId) {
+    workspace = await Workspace.findById(workspaceId)
+      .select("ownerUserId plan")
+      .lean()
+      .catch(() => null);
+  }
+
+  return resolveWorkspaceNotificationContext({
+    workspaceId,
+    ownerUserId: workspace?.ownerUserId || null,
+    workspacePlan: workspacePlan || workspace?.plan || null,
+  });
+}
+
 export function createNotificationFeatureError({
   context,
   featureKey,

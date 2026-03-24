@@ -3,10 +3,119 @@ import express from "express";
 import mongoose from "mongoose";
 
 import { ensureAuth, tenantFromUser } from "../middleware/auth.js";
+import {
+  assertWorkspaceModuleAccess,
+  canUseWorkspaceTeam,
+  getScopedOwnerUserId,
+  isWorkspaceOwnerUser,
+} from "../utils/workspaceAccess.js";
 
 import Booking from "../models/Booking.js";
+import { User } from "../models/User.js";
 
 const router = express.Router();
+
+function assertCalendarModule(req) {
+  assertWorkspaceModuleAccess({
+    user: req.user,
+    workspacePlan: req.user?.workspacePlan,
+    workspaceOwnerUserId: req.user?.workspaceOwnerUserId,
+    moduleKey: "calendar",
+  });
+}
+
+function getScopedOwner(req) {
+  return getScopedOwnerUserId({
+    user: req.user,
+    workspacePlan: req.user?.workspacePlan,
+    workspaceOwnerUserId: req.user?.workspaceOwnerUserId,
+  });
+}
+
+function normalizeBookingsScope(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+
+  if (normalized === "mine") return "mine";
+  if (normalized === "workspace") return "workspace";
+  return "";
+}
+
+async function resolveBookingsScope(req, tenantId) {
+  const workspacePlan = req.user?.workspacePlan || "start";
+  const workspaceOwnerUserId = req.user?.workspaceOwnerUserId || null;
+  const requestedScope = normalizeBookingsScope(req.query.scope);
+  const requestedOwnerUserId = String(req.query.ownerUserId || "").trim();
+  const isTeamPlan = canUseWorkspaceTeam(workspacePlan);
+  const isOwner = isWorkspaceOwnerUser(req.user, workspaceOwnerUserId);
+  const scopedOwnerUserId = getScopedOwner(req);
+
+  if (!isTeamPlan) {
+    return {
+      appliedScope: requestedScope === "mine" ? "mine" : "workspace",
+      ownerUserId: scopedOwnerUserId || null,
+    };
+  }
+
+  if (!isOwner) {
+    if (requestedScope === "workspace" || requestedOwnerUserId) {
+      const err = new Error(
+        "Somente o dono do workspace pode visualizar a agenda da equipe.",
+      );
+      err.status = 403;
+      err.code = "WORKSPACE_BOOKINGS_SCOPE_FORBIDDEN";
+      throw err;
+    }
+
+    return {
+      appliedScope: "mine",
+      ownerUserId: scopedOwnerUserId || req.user?._id || null,
+    };
+  }
+
+  if (requestedScope === "mine") {
+    return {
+      appliedScope: "mine",
+      ownerUserId: req.user?._id || null,
+    };
+  }
+
+  if (requestedOwnerUserId) {
+    if (!mongoose.isValidObjectId(requestedOwnerUserId)) {
+      const err = new Error("Responsavel invalido.");
+      err.status = 400;
+      err.code = "INVALID_OWNER_USER_ID";
+      throw err;
+    }
+
+    const responsibleUser = await User.findOne({
+      _id: requestedOwnerUserId,
+      workspaceId: tenantId,
+    })
+      .select("_id name")
+      .lean();
+
+    if (!responsibleUser) {
+      const err = new Error(
+        "Responsavel nao encontrado neste workspace.",
+      );
+      err.status = 404;
+      err.code = "WORKSPACE_USER_NOT_FOUND";
+      throw err;
+    }
+
+    return {
+      appliedScope: "workspace",
+      ownerUserId: responsibleUser._id,
+    };
+  }
+
+  return {
+    appliedScope: "workspace",
+    ownerUserId: null,
+  };
+}
 
 router.use(ensureAuth);
 router.use(tenantFromUser);
@@ -16,6 +125,7 @@ router.use(tenantFromUser);
  */
 router.get("/bookings", async (req, res, next) => {
   try {
+    assertCalendarModule(req);
     const tenantId = req.tenantId;
     if (!tenantId)
       return res.status(401).json({ ok: false, error: "Unauthorized" });
@@ -25,6 +135,8 @@ router.get("/bookings", async (req, res, next) => {
     const statusRaw = String(req.query.status || "").trim();
 
     const q = { workspaceId: tenantId };
+    const scopeInfo = await resolveBookingsScope(req, tenantId);
+    if (scopeInfo.ownerUserId) q.ownerUserId = scopeInfo.ownerUserId;
 
     if (from || to) {
       q.startAt = {};
@@ -50,10 +162,18 @@ router.get("/bookings", async (req, res, next) => {
     const docs = await Booking.find(q)
       .sort({ startAt: 1 })
       .populate("offerId", "_id title publicToken")
+      .populate("ownerUserId", "_id name")
       .lean();
 
     const items = (docs || []).map((b) => ({
       _id: b._id,
+      ownerUserId: b?.ownerUserId?._id || b?.ownerUserId || null,
+      responsibleUser: b?.ownerUserId
+        ? {
+            _id: b.ownerUserId._id || null,
+            name: b.ownerUserId.name || "",
+          }
+        : null,
       startAt: b.startAt,
       endAt: b.endAt,
       status: b.status,
@@ -69,7 +189,11 @@ router.get("/bookings", async (req, res, next) => {
         : null,
     }));
 
-    return res.json({ ok: true, items });
+    return res.json({
+      ok: true,
+      scope: scopeInfo.appliedScope,
+      items,
+    });
   } catch (e) {
     next(e);
   }
@@ -81,8 +205,10 @@ router.get("/bookings", async (req, res, next) => {
  */
 router.patch("/bookings/:id/cancel", async (req, res, next) => {
   try {
+    assertCalendarModule(req);
     const tenantId = req.tenantId;
     const { id } = req.params;
+    const scopedOwnerUserId = getScopedOwner(req);
 
     if (!tenantId)
       return res.status(401).json({ ok: false, error: "Unauthorized" });
@@ -92,13 +218,18 @@ router.patch("/bookings/:id/cancel", async (req, res, next) => {
     const current = await Booking.findOne({
       _id: id,
       workspaceId: tenantId,
+      ...(scopedOwnerUserId ? { ownerUserId: scopedOwnerUserId } : {}),
     })
       .select("startAt endAt")
       .lean();
 
     const actionAt = new Date();
     const doc = await Booking.findOneAndUpdate(
-      { _id: id, workspaceId: tenantId },
+      {
+        _id: id,
+        workspaceId: tenantId,
+        ...(scopedOwnerUserId ? { ownerUserId: scopedOwnerUserId } : {}),
+      },
       {
         $set: {
           status: "CANCELLED",
@@ -122,6 +253,7 @@ router.patch("/bookings/:id/cancel", async (req, res, next) => {
       { new: true },
     )
       .populate("offerId", "_id title publicToken")
+      .populate("ownerUserId", "_id name")
       .lean();
 
     if (!doc)
@@ -133,6 +265,13 @@ router.patch("/bookings/:id/cancel", async (req, res, next) => {
       ok: true,
       booking: {
         _id: doc._id,
+        ownerUserId: doc?.ownerUserId?._id || doc?.ownerUserId || null,
+        responsibleUser: doc?.ownerUserId
+          ? {
+              _id: doc.ownerUserId._id || null,
+              name: doc.ownerUserId.name || "",
+            }
+          : null,
         startAt: doc.startAt,
         endAt: doc.endAt,
         status: doc.status,

@@ -16,9 +16,10 @@ import {
 import {
   getNotificationFeatureCapability,
   isEmailNotificationEnabled,
-  resolveWorkspaceNotificationContext,
+  resolveWorkspaceOwnerNotificationContext,
 } from "./notificationSettings.js";
 import { queueOrSendWhatsApp } from "./whatsappOutbox.service.js";
+import { notifyResponsibleBookingChangeWhatsApp } from "./workspaceUserWhatsApp.service.js";
 
 const DEFAULT_TIMEZONE = DEFAULT_AGENDA.timezone || "America/Sao_Paulo";
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
@@ -1006,9 +1007,8 @@ async function notifyBookingChange({
   reason = "",
   timeZone = DEFAULT_TIMEZONE,
 }) {
-  const notificationContext = await resolveWorkspaceNotificationContext({
+  const notificationContext = await resolveWorkspaceOwnerNotificationContext({
     workspaceId: offerRaw?.workspaceId || null,
-    ownerUserId: offerRaw?.ownerUserId || null,
   });
   const emailEnabled = isEmailNotificationEnabled(
     notificationContext,
@@ -1054,7 +1054,12 @@ async function notifyBookingChange({
   const customerEmail = String(offerRaw?.customerEmail || "").trim();
   const workspaceEmail = await resolveWorkspaceEmail(offerRaw);
 
-  const [customerWhatsApp, customerEmailResult, workspaceEmailResult] =
+  const [
+    customerWhatsApp,
+    customerEmailResult,
+    workspaceEmailResult,
+    workspaceWhatsAppResult,
+  ] =
     await Promise.all([
       whatsappEnabled
         ? sendCustomerWhatsAppNotification({
@@ -1107,6 +1112,19 @@ async function notifyBookingChange({
             skipped: true,
             reason: emailEnabled ? "missing_workspace_email" : "email_booking_changes_disabled",
           }),
+      notifyResponsibleBookingChangeWhatsApp({
+        type,
+        offerRaw,
+        bookingBefore,
+        bookingAfter,
+        reason,
+        timeZone,
+        notificationContext,
+      }).catch((error) => ({
+        ok: false,
+        status: "FAILED",
+        reason: error?.message || "Falha ao enviar WhatsApp ao responsavel",
+      })),
     ]);
 
   return {
@@ -1119,6 +1137,7 @@ async function notifyBookingChange({
     customerWhatsApp,
     customerEmail: customerEmailResult,
     workspaceEmail: workspaceEmailResult,
+    workspaceWhatsApp: workspaceWhatsAppResult,
   };
 }
 
@@ -1479,9 +1498,8 @@ export async function notifyWorkspaceBookingChange({
   reason = "",
   timeZone = DEFAULT_TIMEZONE,
 }) {
-  const notificationContext = await resolveWorkspaceNotificationContext({
+  const notificationContext = await resolveWorkspaceOwnerNotificationContext({
     workspaceId: offerRaw?.workspaceId || null,
-    ownerUserId: offerRaw?.ownerUserId || null,
   });
   const whatsappCapability = getNotificationFeatureCapability(
     notificationContext,

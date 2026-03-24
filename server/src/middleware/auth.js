@@ -3,7 +3,13 @@
 import jwt from "jsonwebtoken";
 import { env } from "../config/env.js";
 import { User } from "../models/User.js";
+import { Workspace } from "../models/Workspace.js";
 import { enrichUserWithMasterAccess } from "../utils/masterAdmin.js";
+import {
+  normalizeWorkspacePlan,
+  isWorkspaceOwnerUser,
+  resolveModulePermissions,
+} from "../utils/workspaceAccess.js";
 
 function getBearerToken(req) {
   const h = String(req.headers?.authorization || "");
@@ -22,6 +28,11 @@ export async function authOptional(req, _res, next) {
 
     const u = await User.findById(userId).lean();
     if (!u || u.status !== "active") return next();
+    const workspace = await Workspace.findById(u.workspaceId)
+      .select("_id ownerUserId plan")
+      .lean();
+    const workspacePlan = normalizeWorkspacePlan(workspace?.plan || "start");
+    const isWorkspaceOwner = isWorkspaceOwnerUser(u, workspace?.ownerUserId);
 
     req.user = enrichUserWithMasterAccess({
       _id: u._id,
@@ -29,7 +40,20 @@ export async function authOptional(req, _res, next) {
       email: u.email,
       workspaceId: u.workspaceId,
       role: u.role,
+      profile: u.profile || (u.role === "owner" ? "owner" : "sales"),
       status: u.status,
+      permissions: u.permissions || {},
+      workspacePlan,
+      workspaceOwnerUserId: workspace?.ownerUserId || null,
+      isWorkspaceOwner,
+      modulePermissions: resolveModulePermissions({
+        user: {
+          ...u,
+          isWorkspaceOwner,
+        },
+        workspacePlan,
+        workspaceOwnerUserId: workspace?.ownerUserId || null,
+      }),
       whatsNewLastSeenAt: u.whatsNewLastSeenAt || null,
       whatsappPhone: u.whatsappPhone || "",
     });

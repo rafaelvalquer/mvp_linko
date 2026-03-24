@@ -12,8 +12,10 @@ import Calendar from "../pages/CalendarV2.jsx";
 import Login from "../pages/Login.jsx";
 import Register from "../pages/Register.jsx";
 import RequireAuth from "../components/auth/RequireAuth.jsx";
+import RequireModuleAccess from "../components/auth/RequireModuleAccess.jsx";
 import RequireMasterAdmin from "../components/auth/RequireMasterAdmin.jsx";
 import RequireRecurringPlan from "../components/auth/RequireRecurringPlan.jsx";
+import RequireWorkspaceOwner from "../components/auth/RequireWorkspaceOwner.jsx";
 import Products from "../pages/Products.jsx";
 import ProductDetails from "../pages/ProductDetails.jsx";
 import Clients from "../pages/Clients.jsx";
@@ -30,6 +32,7 @@ import SettingsAccount from "../pages/SettingsAccount.jsx";
 import SettingsAgentGuide from "../pages/SettingsAgentGuide.jsx";
 import SettingsAgenda from "../pages/SettingsAgenda.jsx";
 import SettingsNotifications from "../pages/SettingsNotifications.jsx";
+import SettingsTeam from "../pages/SettingsTeam.jsx";
 
 // ✅ billing
 import BillingPlans from "../pages/BillingPlans.jsx";
@@ -40,13 +43,14 @@ import BillingCancel from "../pages/BillingCancel.jsx";
 import Reports from "../pages/ReportsDashboard.jsx";
 import RecurringReportsPage from "../pages/RecurringReportsPage.jsx";
 import { useAuth } from "./AuthContext.jsx";
+import { getFirstAccessibleWorkspaceRoute } from "../utils/workspacePermissions.js";
 
 function RouterShell() {
   return <Outlet />;
 }
 
 function RootEntry() {
-  const { user, loadingMe } = useAuth();
+  const { user, loadingMe, perms } = useAuth();
 
   if (loadingMe && !user) {
     return (
@@ -57,7 +61,7 @@ function RootEntry() {
   }
 
   if (user) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={getFirstAccessibleWorkspaceRoute(perms)} replace />;
   }
 
   return <Home />;
@@ -68,229 +72,283 @@ export const router = createBrowserRouter(
     {
       element: <RouterShell />,
       children: [
-    { path: "/login", element: <Login /> },
-    { path: "/register", element: <Register /> },
-    { path: "/", element: <RootEntry /> },
+        { path: "/login", element: <Login /> },
+        { path: "/register", element: <Register /> },
+        { path: "/", element: <RootEntry /> },
 
-    {
-      path: "/billing/plans",
-      element: (
-        <RequireAuth>
-          <BillingPlans />
-        </RequireAuth>
-      ),
-    },
-    {
-      path: "/billing/success",
-      element: (
-        <RequireAuth>
-          <BillingSuccess />
-        </RequireAuth>
-      ),
-    },
-    {
-      path: "/billing/cancel",
-      element: (
-        <RequireAuth>
-          <BillingCancel />
-        </RequireAuth>
-      ),
-    },
+        {
+          path: "/billing/plans",
+          element: (
+            <RequireAuth>
+              <RequireWorkspaceOwner>
+                <BillingPlans />
+              </RequireWorkspaceOwner>
+            </RequireAuth>
+          ),
+        },
+        {
+          path: "/billing/success",
+          element: (
+            <RequireAuth>
+              <RequireWorkspaceOwner>
+                <BillingSuccess />
+              </RequireWorkspaceOwner>
+            </RequireAuth>
+          ),
+        },
+        {
+          path: "/billing/cancel",
+          element: (
+            <RequireAuth>
+              <RequireWorkspaceOwner>
+                <BillingCancel />
+              </RequireWorkspaceOwner>
+            </RequireAuth>
+          ),
+        },
 
-    {
-      path: "/dashboard",
-      element: (
-        <RequireAuth>
-          <Dashboard />
-        </RequireAuth>
-      ),
-    },
-    {
-      path: "/gerenciamento",
-      element: (
-        <RequireAuth>
-          <RequireMasterAdmin>
-            <Management />
-          </RequireMasterAdmin>
-        </RequireAuth>
-      ),
-    },
-    {
-      path: "/offers",
-      element: (
-        <RequireAuth>
-          <Offers />
-        </RequireAuth>
-      ),
-    },
-    {
-      path: "/offers/new",
-      element: (
-        <RequireAuth>
-          <NewOffer />
-        </RequireAuth>
-      ),
-    },
-    {
-      path: "/offers/recurring",
-      element: (
-        <RequireAuth>
-          <RequireRecurringPlan>
-            <RecurringOffers />
-          </RequireRecurringPlan>
-        </RequireAuth>
-      ),
-    },
-    {
-      path: "/offers/recurring/:id",
-      element: (
-        <RequireAuth>
-          <RequireRecurringPlan>
-            <RecurringOfferDetails />
-          </RequireRecurringPlan>
-        </RequireAuth>
-      ),
-    },
-    {
-      path: "/calendar",
-      element: (
-        <RequireAuth>
-          <Calendar />
-        </RequireAuth>
-      ),
-    },
+        {
+          path: "/dashboard",
+          element: (
+            <RequireAuth>
+              <RequireModuleAccess moduleKey="dashboard">
+                <Dashboard />
+              </RequireModuleAccess>
+            </RequireAuth>
+          ),
+        },
+        {
+          path: "/gerenciamento",
+          element: (
+            <RequireAuth>
+              <RequireMasterAdmin>
+                <Management />
+              </RequireMasterAdmin>
+            </RequireAuth>
+          ),
+        },
+        {
+          path: "/offers",
+          element: (
+            <RequireAuth>
+              <RequireModuleAccess moduleKey="offers">
+                <Offers />
+              </RequireModuleAccess>
+            </RequireAuth>
+          ),
+        },
+        {
+          path: "/offers/new",
+          element: (
+            <RequireAuth>
+              <RequireModuleAccess moduleKey="newOffer">
+                <NewOffer />
+              </RequireModuleAccess>
+            </RequireAuth>
+          ),
+        },
+        {
+          path: "/offers/recurring",
+          element: (
+            <RequireAuth>
+              <RequireModuleAccess moduleKey="offers">
+                <RequireRecurringPlan>
+                  <RecurringOffers />
+                </RequireRecurringPlan>
+              </RequireModuleAccess>
+            </RequireAuth>
+          ),
+        },
+        {
+          path: "/offers/recurring/:id",
+          element: (
+            <RequireAuth>
+              <RequireModuleAccess moduleKey="offers">
+                <RequireRecurringPlan>
+                  <RecurringOfferDetails />
+                </RequireRecurringPlan>
+              </RequireModuleAccess>
+            </RequireAuth>
+          ),
+        },
+        {
+          path: "/calendar",
+          element: (
+            <RequireAuth>
+              <RequireModuleAccess moduleKey="calendar">
+                <Calendar />
+              </RequireModuleAccess>
+            </RequireAuth>
+          ),
+        },
 
-    {
-      path: "/reports",
-      element: (
-        <RequireAuth>
-          <Reports />
-        </RequireAuth>
-      ),
-    },
-    {
-      path: "/reports/recurring",
-      element: (
-        <RequireAuth>
-          <RequireRecurringPlan redirectTo="/reports">
-            <RecurringReportsPage />
-          </RequireRecurringPlan>
-        </RequireAuth>
-      ),
-    },
+        {
+          path: "/reports",
+          element: (
+            <RequireAuth>
+              <RequireModuleAccess moduleKey="reports">
+                <Reports />
+              </RequireModuleAccess>
+            </RequireAuth>
+          ),
+        },
+        {
+          path: "/reports/recurring",
+          element: (
+            <RequireAuth>
+              <RequireModuleAccess moduleKey="reports">
+                <RequireRecurringPlan redirectTo="/reports">
+                  <RecurringReportsPage />
+                </RequireRecurringPlan>
+              </RequireModuleAccess>
+            </RequireAuth>
+          ),
+        },
 
-    {
-      path: "/settings",
-      element: (
-        <RequireAuth>
-          <Navigate to="/settings/account" replace />
-        </RequireAuth>
-      ),
-    },
-    {
-      path: "/settings/account",
-      element: (
-        <RequireAuth>
-          <SettingsAccount />
-        </RequireAuth>
-      ),
-    },
-    {
-      path: "/settings/account/agent-guide",
-      element: (
-        <RequireAuth>
-          <SettingsAgentGuide />
-        </RequireAuth>
-      ),
-    },
-    {
-      path: "/settings/notifications",
-      element: (
-        <RequireAuth>
-          <SettingsNotifications />
-        </RequireAuth>
-      ),
-    },
-    {
-      path: "/settings/agenda",
-      element: (
-        <RequireAuth>
-          <SettingsAgenda />
-        </RequireAuth>
-      ),
-    },
+        {
+          path: "/settings",
+          element: (
+            <RequireAuth>
+              <RequireModuleAccess moduleKey="settings">
+                <Navigate to="/settings/account" replace />
+              </RequireModuleAccess>
+            </RequireAuth>
+          ),
+        },
+        {
+          path: "/settings/account",
+          element: (
+            <RequireAuth>
+              <RequireModuleAccess moduleKey="settings">
+                <SettingsAccount />
+              </RequireModuleAccess>
+            </RequireAuth>
+          ),
+        },
+        {
+          path: "/settings/account/agent-guide",
+          element: (
+            <RequireAuth>
+              <RequireModuleAccess moduleKey="settings">
+                <SettingsAgentGuide />
+              </RequireModuleAccess>
+            </RequireAuth>
+          ),
+        },
+        {
+          path: "/settings/notifications",
+          element: (
+            <RequireAuth>
+              <RequireModuleAccess moduleKey="settings">
+                <SettingsNotifications />
+              </RequireModuleAccess>
+            </RequireAuth>
+          ),
+        },
+        {
+          path: "/settings/agenda",
+          element: (
+            <RequireAuth>
+              <RequireModuleAccess moduleKey="settings">
+                <SettingsAgenda />
+              </RequireModuleAccess>
+            </RequireAuth>
+          ),
+        },
+        {
+          path: "/settings/team",
+          element: (
+            <RequireAuth>
+              <RequireWorkspaceOwner>
+                <RequireModuleAccess moduleKey="settings">
+                  <SettingsTeam />
+                </RequireModuleAccess>
+              </RequireWorkspaceOwner>
+            </RequireAuth>
+          ),
+        },
 
-    // ✅ /withdraws agora abre o modal de Conta Pix (sem página)
-    {
-      path: "/withdraws",
-      element: (
-        <RequireAuth>
-          <Navigate to="/dashboard" replace state={{ openPixSettings: true }} />
-        </RequireAuth>
-      ),
-    },
+        // ✅ /withdraws agora abre o modal de Conta Pix (sem página)
+        {
+          path: "/withdraws",
+          element: (
+            <RequireAuth>
+              <Navigate
+                to="/dashboard"
+                replace
+                state={{ openPixSettings: true }}
+              />
+            </RequireAuth>
+          ),
+        },
 
-    {
-      path: "/store/products",
-      element: (
-        <RequireAuth>
-          <Products />
-        </RequireAuth>
-      ),
-    },
-    {
-      path: "/store/products/:id",
-      element: (
-        <RequireAuth>
-          <ProductDetails />
-        </RequireAuth>
-      ),
-    },
-    {
-      path: "/store/customers",
-      element: (
-        <RequireAuth>
-          <Clients />
-        </RequireAuth>
-      ),
-    },
+        {
+          path: "/store/products",
+          element: (
+            <RequireAuth>
+              <RequireModuleAccess moduleKey="products">
+                <Products />
+              </RequireModuleAccess>
+            </RequireAuth>
+          ),
+        },
+        {
+          path: "/store/products/:id",
+          element: (
+            <RequireAuth>
+              <RequireModuleAccess moduleKey="products">
+                <ProductDetails />
+              </RequireModuleAccess>
+            </RequireAuth>
+          ),
+        },
+        {
+          path: "/store/customers",
+          element: (
+            <RequireAuth>
+              <RequireModuleAccess moduleKey="clients">
+                <Clients />
+              </RequireModuleAccess>
+            </RequireAuth>
+          ),
+        },
 
-    // PÚBLICO
-    {
-      path: "/p/:token",
-      element: (
-        <PublicPaidGuard>
-          <PublicOffer />
-        </PublicPaidGuard>
-      ),
-    },
-    {
-      path: "/p/:token/schedule",
-      element: (
-        <PublicPaidGuard>
-          <PublicSchedule />
-        </PublicPaidGuard>
-      ),
-    },
-    {
-      path: "/p/:token/pay",
-      element: (
-        <PublicPaidGuard>
-          <PublicPixPayment />
-        </PublicPaidGuard>
-      ),
-    },
-    {
-      path: "/p/:token/cancelled",
-      element: (
-        <PublicPaidGuard>
-          <PublicOfferCancelled />
-        </PublicPaidGuard>
-      ),
-    },
-    { path: "/p/:token/manage", element: <PublicBookingManage /> },
+        // PÚBLICO
+        {
+          path: "/p/:token",
+          element: (
+            <PublicPaidGuard>
+              <PublicOffer />
+            </PublicPaidGuard>
+          ),
+        },
+        {
+          path: "/p/:token/schedule",
+          element: (
+            <PublicPaidGuard>
+              <PublicSchedule />
+            </PublicPaidGuard>
+          ),
+        },
+        {
+          path: "/p/:token/pay",
+          element: (
+            <PublicPaidGuard>
+              <PublicPixPayment />
+            </PublicPaidGuard>
+          ),
+        },
+        {
+          path: "/p/:token/cancelled",
+          element: (
+            <PublicPaidGuard>
+              <PublicOfferCancelled />
+            </PublicPaidGuard>
+          ),
+        },
+        { path: "/p/:token/manage", element: <PublicBookingManage /> },
 
-    { path: "/p/:token/done", element: <PublicOfferDone /> },
+        { path: "/p/:token/done", element: <PublicOfferDone /> },
       ],
     },
   ],

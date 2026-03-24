@@ -1,7 +1,9 @@
 // src/pages/CalendarV2.jsx
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { listWorkspaceUsers } from "../app/authApi.js";
 import { useAuth } from "../app/AuthContext.jsx";
+import useThemeToggle from "../app/useThemeToggle.js";
 import { cancelBooking, listBookings } from "../app/bookingsApi.js";
 import { getSettings } from "../app/settingsApi.js";
 import Badge from "../components/appui/Badge.jsx";
@@ -38,13 +40,25 @@ function renderLoadError(err, onRetry) {
 
 export default function Calendar() {
   const nav = useNavigate();
-  const { signOut } = useAuth();
+  const { signOut, perms, user } = useAuth();
+  const { isDark } = useThemeToggle();
+  const initialOwnerTeamCalendar =
+    perms?.isWorkspaceOwner === true && perms?.isWorkspaceTeamPlan === true;
 
   const [agendaSettings, setAgendaSettings] = useState(null);
   const [day, setDay] = useState(() => getTodayDateKey());
   const [rangeMode, setRangeMode] = useState("day");
   const [statusTab, setStatusTab] = useState("all");
   const [q, setQ] = useState("");
+  const [agendaScopeTab, setAgendaScopeTab] = useState(() =>
+    initialOwnerTeamCalendar ? "workspace" : "mine",
+  );
+  const [teamOwnerFilter, setTeamOwnerFilter] = useState("all");
+  const [teamUsers, setTeamUsers] = useState([]);
+  const [teamUsersBusy, setTeamUsersBusy] = useState(false);
+  const [ownerScopeInitialized, setOwnerScopeInitialized] = useState(
+    initialOwnerTeamCalendar,
+  );
 
   const [busy, setBusy] = useState(true);
   const [err, setErr] = useState("");
@@ -53,6 +67,12 @@ export default function Calendar() {
   const [calendarExpanded, setCalendarExpanded] = useState(true);
 
   const agendaTimeZone = getCalendarTimeZone(agendaSettings?.timezone);
+  const isOwnerTeamCalendar =
+    perms?.isWorkspaceOwner === true && perms?.isWorkspaceTeamPlan === true;
+  const canAccessAgendaSettings = perms?.modules?.settings === true;
+  const selectClass = isDark
+    ? "h-10 w-full rounded-2xl border border-white/10 bg-white/6 px-3 text-sm text-slate-100 outline-none transition focus:border-cyan-400/30 focus:ring-2 focus:ring-cyan-400/20"
+    : "h-10 w-full rounded-2xl border border-slate-200/80 bg-white/92 px-3 text-sm text-slate-900 outline-none transition focus:border-cyan-300 focus:ring-2 focus:ring-cyan-500/30";
 
   const { fromIso, toIso, title } = useMemo(() => {
     const start = new Date(`${day}T00:00:00`);
@@ -83,6 +103,60 @@ export default function Calendar() {
     return "HOLD,CONFIRMED";
   }, [statusTab]);
 
+  const teamSelectableUsers = useMemo(
+    () =>
+      (teamUsers || []).filter(
+        (member) => String(member?._id || "") !== String(user?._id || ""),
+      ),
+    [teamUsers, user?._id],
+  );
+
+  const selectedTeamMemberName = useMemo(() => {
+    if (teamOwnerFilter === "all") return "Toda a equipe";
+    if (teamOwnerFilter === "me") return "Somente eu";
+    const found = teamSelectableUsers.find(
+      (member) => String(member?._id || "") === String(teamOwnerFilter || ""),
+    );
+    return found?.name || "Usuario selecionado";
+  }, [teamOwnerFilter, teamSelectableUsers]);
+
+  const scopeBadgeLabel = useMemo(() => {
+    if (!isOwnerTeamCalendar) return "Minha agenda";
+    if (agendaScopeTab === "mine") return "Minha agenda";
+    return `Equipe: ${selectedTeamMemberName}`;
+  }, [agendaScopeTab, isOwnerTeamCalendar, selectedTeamMemberName]);
+
+  const bookingQuery = useMemo(() => {
+    const params = {
+      from: fromIso,
+      to: toIso,
+      status: statusParam,
+      scope: isOwnerTeamCalendar
+        ? agendaScopeTab === "workspace"
+          ? "workspace"
+          : "mine"
+        : "mine",
+    };
+
+    if (isOwnerTeamCalendar && agendaScopeTab === "workspace") {
+      if (teamOwnerFilter === "me" && user?._id) {
+        params.ownerUserId = user._id;
+      } else if (teamOwnerFilter && teamOwnerFilter !== "all") {
+        params.ownerUserId = teamOwnerFilter;
+      }
+    }
+
+    return params;
+  }, [
+    agendaScopeTab,
+    fromIso,
+    isOwnerTeamCalendar,
+    statusParam,
+    teamOwnerFilter,
+    toIso,
+    user?._id,
+  ]);
+
   async function handleUnauthorized(error) {
     if (error?.status !== 401) return false;
 
@@ -91,6 +165,24 @@ export default function Calendar() {
       replace: true,
     });
     return true;
+  }
+
+  async function loadTeamUsers() {
+    if (!isOwnerTeamCalendar) {
+      setTeamUsers([]);
+      return;
+    }
+
+    try {
+      setTeamUsersBusy(true);
+      const data = await listWorkspaceUsers();
+      setTeamUsers(data?.items || []);
+    } catch (error) {
+      if (await handleUnauthorized(error)) return;
+      setTeamUsers([]);
+    } finally {
+      setTeamUsersBusy(false);
+    }
   }
 
   async function loadAgendaSettings() {
@@ -107,11 +199,7 @@ export default function Calendar() {
     try {
       setErr("");
       setBusy(true);
-      const data = await listBookings({
-        from: fromIso,
-        to: toIso,
-        status: statusParam,
-      });
+      const data = await listBookings(bookingQuery);
       setItems(data.items || []);
     } catch (error) {
       if (await handleUnauthorized(error)) return;
@@ -124,12 +212,46 @@ export default function Calendar() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fromIso, toIso, statusParam]);
+  }, [bookingQuery]);
 
   useEffect(() => {
     loadAgendaSettings();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (isOwnerTeamCalendar) {
+      if (!ownerScopeInitialized) {
+        setAgendaScopeTab("workspace");
+        setTeamOwnerFilter("all");
+        setOwnerScopeInitialized(true);
+      }
+      return;
+    }
+
+    setAgendaScopeTab("mine");
+    setTeamOwnerFilter("all");
+    setTeamUsers([]);
+    setOwnerScopeInitialized(false);
+  }, [isOwnerTeamCalendar, ownerScopeInitialized]);
+
+  useEffect(() => {
+    loadTeamUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOwnerTeamCalendar]);
+
+  useEffect(() => {
+    if (!isOwnerTeamCalendar || agendaScopeTab !== "workspace") return;
+    if (teamOwnerFilter === "all" || teamOwnerFilter === "me") return;
+
+    const exists = teamSelectableUsers.some(
+      (member) => String(member?._id || "") === String(teamOwnerFilter || ""),
+    );
+
+    if (!exists) {
+      setTeamOwnerFilter("all");
+    }
+  }, [agendaScopeTab, isOwnerTeamCalendar, teamOwnerFilter, teamSelectableUsers]);
 
   const filtered = useMemo(() => {
     const term = String(q || "")
@@ -142,10 +264,14 @@ export default function Calendar() {
       const customer = String(booking.customerName || "").toLowerCase();
       const service = String(booking?.offer?.title || "").toLowerCase();
       const whatsapp = String(booking.customerWhatsApp || "").toLowerCase();
+      const responsible = String(
+        booking?.responsibleUser?.name || "",
+      ).toLowerCase();
       return (
         customer.includes(term) ||
         service.includes(term) ||
-        whatsapp.includes(term)
+        whatsapp.includes(term) ||
+        responsible.includes(term)
       );
     });
   }, [items, q]);
@@ -175,6 +301,41 @@ export default function Calendar() {
 
     return { total, confirmed, hold };
   }, [filtered]);
+
+  const showResponsibleDetails =
+    isOwnerTeamCalendar && agendaScopeTab === "workspace";
+
+  const responsibleSummary = useMemo(() => {
+    if (!showResponsibleDetails) return [];
+
+    const stats = new Map();
+    for (const booking of filtered || []) {
+      const responsibleId = String(
+        booking?.responsibleUser?._id || booking?.ownerUserId || "unknown",
+      );
+      const current = stats.get(responsibleId) || {
+        key: responsibleId,
+        name: booking?.responsibleUser?.name || "Sem responsavel",
+        total: 0,
+        confirmed: 0,
+        hold: 0,
+      };
+
+      current.total += 1;
+      if (String(booking?.status || "").toUpperCase() === "CONFIRMED") {
+        current.confirmed += 1;
+      }
+      if (String(booking?.status || "").toUpperCase() === "HOLD") {
+        current.hold += 1;
+      }
+
+      stats.set(responsibleId, current);
+    }
+
+    return Array.from(stats.values()).sort(
+      (a, b) => b.total - a.total || a.name.localeCompare(b.name, "pt-BR"),
+    );
+  }, [filtered, showResponsibleDetails]);
 
   async function handleCancel(bookingId) {
     const confirmed = window.confirm("Cancelar esta reserva?");
@@ -226,6 +387,7 @@ export default function Calendar() {
         minHeight={desktop ? 600 : 260}
         hourColumnWidth={56}
         compact={!desktop}
+        showResponsible={showResponsibleDetails}
       />
     );
 
@@ -310,7 +472,11 @@ export default function Calendar() {
       <Card>
         <CardHeader
           title={rangeMode === "day" ? "Lista do dia" : "Lista dos 7 dias"}
-          subtitle="Area operacional para abrir propostas e cancelar reservas."
+          subtitle={
+            showResponsibleDetails
+              ? "Area operacional da equipe com identificacao do responsavel por cada reserva."
+              : "Area operacional para abrir propostas e cancelar reservas."
+          }
         />
 
         <CardBody className="space-y-3">
@@ -339,6 +505,8 @@ export default function Calendar() {
                     : null;
                 const offerTitle = booking?.offer?.title || "-";
                 const publicToken = booking?.offer?.publicToken || "";
+                const responsibleName =
+                  booking?.responsibleUser?.name || "Sem responsavel";
 
                 return (
                   <div
@@ -370,6 +538,15 @@ export default function Calendar() {
                         <div className="mt-0.5 line-clamp-1 text-xs text-zinc-500 dark:text-slate-400">
                           Servico: {offerTitle}
                         </div>
+
+                        {showResponsibleDetails ? (
+                          <div className="mt-0.5 text-[11px] text-zinc-500 dark:text-slate-400">
+                            Responsavel:{" "}
+                            <span className="font-medium text-zinc-700 dark:text-slate-200">
+                              {responsibleName}
+                            </span>
+                          </div>
+                        ) : null}
 
                         {holdInfo ? (
                           <div className={`mt-1 text-[11px] ${holdInfo.tone}`}>
@@ -418,8 +595,13 @@ export default function Calendar() {
         <PageHeader
           eyebrow="Agenda"
           title="Agenda"
-          subtitle="Acompanhe reservas e confirmacoes do workspace em lista e timeline diaria."
+          subtitle={
+            isOwnerTeamCalendar
+              ? "Coordene sua agenda e a operacao da equipe com filtros por responsavel, lista e timeline diaria."
+              : "Acompanhe reservas e confirmacoes do workspace em lista e timeline diaria."
+          }
           actions={
+            canAccessAgendaSettings ? (
             <Button
               variant="secondary"
               size="md"
@@ -429,6 +611,7 @@ export default function Calendar() {
             >
               Configuracoes
             </Button>
+            ) : null
           }
         />
 
@@ -469,6 +652,9 @@ export default function Calendar() {
           }
           summary={
             <>
+              <Badge tone={agendaScopeTab === "workspace" ? "PUBLIC" : "DRAFT"}>
+                {scopeBadgeLabel}
+              </Badge>
               <Badge tone="DRAFT">{title}</Badge>
               <Badge tone="PUBLIC">{summary.total} no filtro</Badge>
               <Badge tone="CONFIRMED">{summary.confirmed} confirmados</Badge>
@@ -476,73 +662,164 @@ export default function Calendar() {
             </>
           }
         >
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <div className="flex flex-col gap-2 md:flex-row md:items-center">
-              <div className="w-full md:w-44">
-                <Input
-                  type="date"
-                  value={day}
-                  onChange={(event) => setDay(event.target.value)}
-                />
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  variant={rangeMode === "day" ? "secondary" : "ghost"}
-                  type="button"
-                  onClick={() => setRangeMode("day")}
-                >
-                  Dia
-                </Button>
-                <Button
-                  size="sm"
-                  variant={rangeMode === "week" ? "secondary" : "ghost"}
-                  type="button"
-                  onClick={() => setRangeMode("week")}
-                >
-                  7 dias
-                </Button>
-              </div>
-            </div>
+          <div className="space-y-3">
+            {isOwnerTeamCalendar ? (
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant={agendaScopeTab === "mine" ? "secondary" : "ghost"}
+                    type="button"
+                    onClick={() => setAgendaScopeTab("mine")}
+                  >
+                    Minha agenda
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={agendaScopeTab === "workspace" ? "secondary" : "ghost"}
+                    type="button"
+                    onClick={() => setAgendaScopeTab("workspace")}
+                  >
+                    Equipe
+                  </Button>
+                </div>
 
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  variant={statusTab === "all" ? "secondary" : "ghost"}
-                  onClick={() => setStatusTab("all")}
-                >
-                  Todos
-                </Button>
-                <Button
-                  size="sm"
-                  variant={statusTab === "confirmed" ? "secondary" : "ghost"}
-                  onClick={() => setStatusTab("confirmed")}
-                >
-                  Confirmados
-                </Button>
-                <Button
-                  size="sm"
-                  variant={statusTab === "hold" ? "secondary" : "ghost"}
-                  onClick={() => setStatusTab("hold")}
-                >
-                  Reservas
-                </Button>
-                <Button size="sm" variant="secondary" onClick={load} disabled={busy}>
-                  Atualizar
-                </Button>
+                {agendaScopeTab === "workspace" ? (
+                  <div className="w-full lg:w-[320px]">
+                    <select
+                      className={selectClass}
+                      value={teamOwnerFilter}
+                      onChange={(event) => setTeamOwnerFilter(event.target.value)}
+                      disabled={teamUsersBusy}
+                    >
+                      <option value="all">Toda a equipe</option>
+                      <option value="me">Somente eu</option>
+                      {teamSelectableUsers.map((member) => (
+                        <option key={member._id} value={member._id}>
+                          {member.name}
+                          {member.status === "disabled" ? " (desativado)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex flex-col gap-2 md:flex-row md:items-center">
+                <div className="w-full md:w-44">
+                  <Input
+                    type="date"
+                    value={day}
+                    onChange={(event) => setDay(event.target.value)}
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant={rangeMode === "day" ? "secondary" : "ghost"}
+                    type="button"
+                    onClick={() => setRangeMode("day")}
+                  >
+                    Dia
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={rangeMode === "week" ? "secondary" : "ghost"}
+                    type="button"
+                    onClick={() => setRangeMode("week")}
+                  >
+                    7 dias
+                  </Button>
+                </div>
               </div>
 
-              <div className="w-full sm:w-72">
-                <Input
-                  placeholder="Buscar por cliente, WhatsApp ou servico..."
-                  value={q}
-                  onChange={(event) => setQ(event.target.value)}
-                />
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant={statusTab === "all" ? "secondary" : "ghost"}
+                    onClick={() => setStatusTab("all")}
+                  >
+                    Todos
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={statusTab === "confirmed" ? "secondary" : "ghost"}
+                    onClick={() => setStatusTab("confirmed")}
+                  >
+                    Confirmados
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={statusTab === "hold" ? "secondary" : "ghost"}
+                    onClick={() => setStatusTab("hold")}
+                  >
+                    Reservas
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={load}
+                    disabled={busy}
+                  >
+                    Atualizar
+                  </Button>
+                </div>
+
+                <div className="w-full sm:w-80">
+                  <Input
+                    placeholder={
+                      showResponsibleDetails
+                        ? "Buscar por cliente, responsavel, WhatsApp ou servico..."
+                        : "Buscar por cliente, WhatsApp ou servico..."
+                    }
+                    value={q}
+                    onChange={(event) => setQ(event.target.value)}
+                  />
+                </div>
               </div>
             </div>
           </div>
         </FilterBar>
+
+        {showResponsibleDetails ? (
+          <Card>
+            <CardHeader
+              title="Equipe no periodo"
+              subtitle="Resumo rapido por responsavel para o filtro e intervalo atuais."
+            />
+            <CardBody>
+              {responsibleSummary.length ? (
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  {responsibleSummary.map((entry) => (
+                    <div
+                      key={entry.key}
+                      className="rounded-2xl border border-slate-200/80 bg-white/90 p-3 dark:border-white/10 dark:bg-white/[0.04]"
+                    >
+                      <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                        {entry.name}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        {entry.total} agendamento{entry.total === 1 ? "" : "s"} no periodo
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Badge tone="PUBLIC">{entry.total} total</Badge>
+                        <Badge tone="CONFIRMED">{entry.confirmed} confirmados</Badge>
+                        <Badge tone="HOLD">{entry.hold} reservas</Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-sm text-slate-500 dark:text-slate-400">
+                  Nenhum agendamento encontrado para o filtro atual da equipe.
+                </div>
+              )}
+            </CardBody>
+          </Card>
+        ) : null}
 
         {rangeMode === "day" ? (
           <>

@@ -9,6 +9,10 @@ import {
 } from "react";
 import * as authApi from "./authApi.js";
 import { api } from "./api.js";
+import {
+  isWorkspaceTeamPlan,
+  normalizeWorkspaceModulePermissions,
+} from "../utils/workspacePermissions.js";
 
 const AuthCtx = createContext(null);
 
@@ -250,13 +254,24 @@ export function AuthProvider({ children }) {
     const plan = workspace?.plan || "start";
     const store =
       plan === "pro" || plan === "business" || plan === "enterprise";
+    const isWorkspaceOwner = user?.isWorkspaceOwner === true || user?.role === "owner";
+    const modules = normalizeWorkspaceModulePermissions({
+      plan,
+      isWorkspaceOwner,
+      modulePermissions: user?.modulePermissions,
+    });
 
     return {
       plan,
       store,
+      isWorkspaceOwner,
+      canManagePixAccount: isWorkspaceOwner,
+      isWorkspaceTeamPlan: isWorkspaceTeamPlan(plan),
+      profile: user?.profile || (user?.role === "owner" ? "owner" : "sales"),
+      modules,
       workspaceId: workspace?._id || workspace?.id || null,
     };
-  }, [workspace]);
+  }, [workspace, user]);
 
   const value = useMemo(
     () => ({

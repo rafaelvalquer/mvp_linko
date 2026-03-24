@@ -1,5 +1,6 @@
 // src/pages/Reports.jsx
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   ResponsiveContainer,
   LineChart,
@@ -10,16 +11,20 @@ import {
   CartesianGrid,
   BarChart,
   Bar,
+  Legend,
 } from "recharts";
 
 import Shell from "../components/layout/Shell.jsx";
 import { api } from "../app/api.js";
+import { listWorkspaceUsers } from "../app/authApi.js";
+import { useAuth } from "../app/AuthContext.jsx";
 
 import Card, { CardBody, CardHeader } from "../components/appui/Card.jsx";
 import Button from "../components/appui/Button.jsx";
 import Skeleton from "../components/appui/Skeleton.jsx";
 import EmptyState from "../components/appui/EmptyState.jsx";
-import { Legend } from "recharts";
+import Badge from "../components/appui/Badge.jsx";
+import { downloadReportFile } from "../utils/reportDownloads.js";
 
 /* ========= helpers ========= */
 function pad2(n) {
@@ -97,6 +102,11 @@ function DarkTooltip({ active, payload, label, formatter, labelFormatter }) {
 
 /* ========= page ========= */
 export default function Reports() {
+  const { perms, user } = useAuth();
+  const isOwnerTeamView =
+    perms?.isWorkspaceOwner === true && perms?.isWorkspaceTeamPlan === true;
+  const ownerId = String(user?._id || "").trim();
+
   // presets
   const [preset, setPreset] = useState("30d"); // 7d | 30d | month | custom
   const [onlyPaid, setOnlyPaid] = useState(true);
@@ -108,6 +118,10 @@ export default function Reports() {
 
   const [from, setFrom] = useState(defaultFrom30);
   const [to, setTo] = useState(defaultTo);
+  const [scopeTab, setScopeTab] = useState("mine");
+  const [teamOwnerFilter, setTeamOwnerFilter] = useState("all");
+  const [workspaceUsers, setWorkspaceUsers] = useState([]);
+  const [teamUsersBusy, setTeamUsersBusy] = useState(false);
 
   const [applying, setApplying] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -119,17 +133,46 @@ export default function Reports() {
   const [topClients, setTopClients] = useState([]);
   const [topItems, setTopItems] = useState([]);
   const [transactions, setTransactions] = useState([]);
+  const [performanceByUser, setPerformanceByUser] = useState([]);
 
   // evita warning do Recharts (container 0)
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  function buildQS({ from, to, type, onlyPaid }) {
+  const effectiveScopeTab = isOwnerTeamView ? scopeTab : "mine";
+  const appliedScope =
+    isOwnerTeamView && effectiveScopeTab === "workspace" ? "workspace" : "mine";
+  const selectedOwnerUserId =
+    appliedScope !== "workspace"
+      ? ""
+      : teamOwnerFilter === "me"
+        ? ownerId
+        : teamOwnerFilter !== "all"
+          ? teamOwnerFilter
+          : "";
+
+  const selectedTeamMemberName = useMemo(() => {
+    if (teamOwnerFilter === "all") return "Toda a equipe";
+    if (teamOwnerFilter === "me") return "Somente eu";
+    return (
+      workspaceUsers.find((item) => String(item?._id || "") === teamOwnerFilter)
+        ?.name || "Responsavel"
+    );
+  }, [teamOwnerFilter, workspaceUsers]);
+
+  const scopeSummaryLabel =
+    appliedScope === "workspace"
+      ? `Equipe: ${selectedTeamMemberName}`
+      : "Minha carteira";
+
+  function buildQS({ from, to, type, onlyPaid, scope, ownerUserId }) {
     const p = new URLSearchParams();
     p.set("from", from);
     p.set("to", to);
     p.set("type", type);
     p.set("onlyPaid", onlyPaid ? "1" : "0");
+    p.set("scope", scope || "mine");
+    if (ownerUserId) p.set("ownerUserId", ownerUserId);
     return p.toString();
   }
 
@@ -165,28 +208,59 @@ export default function Reports() {
     p.set("to", to);
     p.set("type", type);
     p.set("onlyPaid", onlyPaid ? "1" : "0");
+    p.set("scope", appliedScope);
+    if (selectedOwnerUserId) p.set("ownerUserId", selectedOwnerUserId);
     return p.toString();
-  }, [from, to, type, onlyPaid]);
+  }, [from, to, type, onlyPaid, appliedScope, selectedOwnerUserId]);
 
-  async function loadAllWith(next = {}) {
+  const loadWorkspaceTeam = useCallback(async () => {
+    if (!isOwnerTeamView) {
+      setWorkspaceUsers([]);
+      return;
+    }
+
+    try {
+      setTeamUsersBusy(true);
+      const data = await listWorkspaceUsers();
+      const rawItems = Array.isArray(data?.items) ? data.items : [];
+      setWorkspaceUsers(
+        rawItems.filter(
+          (item) =>
+            String(item?._id || "") !== ownerId && item?.status !== "disabled",
+        ),
+      );
+    } catch {
+      setWorkspaceUsers([]);
+    } finally {
+      setTeamUsersBusy(false);
+    }
+  }, [isOwnerTeamView, ownerId]);
+
+  const loadAllWith = useCallback(async (next = {}) => {
     const q = buildQS({
       from: next.from ?? from,
       to: next.to ?? to,
       type: next.type ?? type,
       onlyPaid: next.onlyPaid ?? onlyPaid,
+      scope: next.scope ?? appliedScope,
+      ownerUserId:
+        next.ownerUserId !== undefined ? next.ownerUserId : selectedOwnerUserId,
     });
 
     setErr("");
     setApplying(true);
 
     try {
-      const [s, rev, cvp, tc, ti, tx] = await Promise.all([
+      const [s, rev, cvp, tc, ti, tx, pbu] = await Promise.all([
         api(`/reports/summary?${q}`),
         api(`/reports/revenue-daily?${q}`),
         api(`/reports/created-vs-paid-daily?${q}`),
         api(`/reports/top-clients?${q}`),
         api(`/reports/top-items?${q}`),
         api(`/reports/transactions?${q}`),
+        isOwnerTeamView
+          ? api(`/reports/performance-by-user?${q}`)
+          : Promise.resolve({ items: [] }),
       ]);
 
       setSummary(s?.summary || null);
@@ -205,18 +279,26 @@ export default function Reports() {
       setTopClients(tc?.items || []);
       setTopItems(ti?.items || []);
       setTransactions(tx?.items || []);
+      setPerformanceByUser(pbu?.items || []);
     } catch (e) {
       setErr(e?.data?.error || e?.message || "Falha ao carregar relatórios");
     } finally {
       setApplying(false);
       setLoading(false);
     }
-  }
+  }, [from, to, type, onlyPaid, appliedScope, selectedOwnerUserId, isOwnerTeamView]);
 
   useEffect(() => {
-    loadAllWith();
+    loadWorkspaceTeam();
+  }, [loadWorkspaceTeam]);
+
+  useEffect(() => {
+    loadAllWith({
+      scope: appliedScope,
+      ownerUserId: selectedOwnerUserId,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [appliedScope, selectedOwnerUserId]);
 
   async function onApply() {
     await loadAllWith();
@@ -224,37 +306,23 @@ export default function Reports() {
 
   async function downloadCSV() {
     try {
-      const base = import.meta.env.VITE_API_BASE || "http://localhost:8011/api";
-      const url = `${base}/reports/export.csv?${qs}`;
-
-      const token =
-        typeof window !== "undefined" ? localStorage.getItem("auth_token") : "";
-
-      const res = await fetch(url, {
-        method: "GET",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-
-      if (!res.ok) {
-        let msg = "Falha no download";
-        try {
-          const j = await res.json();
-          msg = j?.error || msg;
-        } catch {}
-        throw new Error(msg);
-      }
-
-      const blob = await res.blob();
-      const href = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = href;
-      a.download = `relatorios_${from}_a_${to}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(href);
+      await downloadReportFile(
+        `/reports/export.csv?${qs}`,
+        `relatorios_${from}_a_${to}.csv`,
+      );
     } catch (e) {
       setErr(e?.message || "Falha ao baixar CSV");
+    }
+  }
+
+  async function downloadPDF() {
+    try {
+      await downloadReportFile(
+        `/reports/export.pdf?${qs}`,
+        `relatorios_${from}_a_${to}.pdf`,
+      );
+    } catch (e) {
+      setErr(e?.message || "Falha ao baixar PDF");
     }
   }
 
@@ -269,6 +337,9 @@ export default function Reports() {
     };
   }, [summary]);
 
+  const shouldShowPerformanceBlock =
+    isOwnerTeamView && appliedScope === "workspace" && !selectedOwnerUserId;
+
   return (
     <Shell>
       <div className="mx-auto max-w-7xl px-4 py-6 space-y-6">
@@ -281,6 +352,7 @@ export default function Reports() {
                   <h1 className="text-2xl sm:text-3xl font-bold text-zinc-900 tracking-tight">
                     Relatórios
                   </h1>
+                  <Badge tone="neutral">{scopeSummaryLabel}</Badge>
                 </div>
 
                 <p className="text-zinc-500 text-sm sm:text-base leading-relaxed max-w-2xl">
@@ -290,6 +362,16 @@ export default function Reports() {
 
               <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
                 <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <Link to="/reports/recurring" className="flex-1 sm:flex-none">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="w-full justify-center items-center gap-2 h-11 px-4 active:scale-95 transition-all"
+                    >
+                      <span className="font-semibold">Relatorio de recorrencia</span>
+                    </Button>
+                  </Link>
+
                   <Button
                     variant="secondary"
                     size="sm"
@@ -315,9 +397,9 @@ export default function Reports() {
 
                 <Button
                   size="sm"
-                  disabled
-                  title="Em breve"
-                  className="w-full sm:w-auto justify-center items-center gap-2 h-11 px-6 bg-zinc-200 text-zinc-500 shadow-none cursor-not-allowed font-bold"
+                  onClick={downloadPDF}
+                  disabled={applying}
+                  className="w-full sm:w-auto justify-center items-center gap-2 h-11 px-6 font-bold"
                 >
                   Baixar PDF
                 </Button>
@@ -325,6 +407,53 @@ export default function Reports() {
             </div>
           </div>
         </div>
+
+        {isOwnerTeamView ? (
+          <Card>
+            <CardHeader
+              title="Escopo dos relatórios"
+              subtitle="Alterne entre sua carteira e a visão consolidada da equipe."
+            />
+            <CardBody className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  variant={effectiveScopeTab === "mine" ? "primary" : "secondary"}
+                  onClick={() => setScopeTab("mine")}
+                >
+                  Minha carteira
+                </Button>
+                <Button
+                  size="sm"
+                  variant={effectiveScopeTab === "workspace" ? "primary" : "secondary"}
+                  onClick={() => setScopeTab("workspace")}
+                >
+                  Equipe
+                </Button>
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                {effectiveScopeTab === "workspace" ? (
+                  <select
+                    value={teamOwnerFilter}
+                    onChange={(e) => setTeamOwnerFilter(e.target.value)}
+                    disabled={teamUsersBusy}
+                    className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-emerald-200 sm:w-[240px]"
+                  >
+                    <option value="all">Toda a equipe</option>
+                    <option value="me">Somente eu</option>
+                    {workspaceUsers.map((item) => (
+                      <option key={item._id} value={item._id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
+                <Badge tone="neutral">{scopeSummaryLabel}</Badge>
+              </div>
+            </CardBody>
+          </Card>
+        ) : null}
 
         {err && (
           <div className="p-4 rounded-xl bg-red-50 border border-red-100 text-sm text-red-700 flex justify-between items-center">
@@ -501,6 +630,54 @@ export default function Reports() {
         </div>
 
         {/* Gráficos */}
+        {shouldShowPerformanceBlock ? (
+          <Card>
+            <CardHeader
+              title="Desempenho por usuario"
+              subtitle="Resumo nominal da equipe no periodo visivel"
+            />
+            <CardBody>
+              {applying && performanceByUser.length === 0 ? (
+                <Skeleton className="h-40 w-full" />
+              ) : performanceByUser.length === 0 ? (
+                <EmptyState
+                  title="Sem desempenho consolidado"
+                  subtitle="Ainda nao ha dados suficientes para comparar a equipe neste periodo."
+                />
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="text-xs text-zinc-500">
+                      <tr className="border-b border-zinc-100">
+                        <th className="py-2 pr-3 font-semibold">Usuario</th>
+                        <th className="py-2 pr-3 font-semibold">Criadas</th>
+                        <th className="py-2 pr-3 font-semibold">Pagas</th>
+                        <th className="py-2 pr-3 font-semibold">Conversao</th>
+                        <th className="py-2 pr-0 font-semibold">Receita</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-zinc-900">
+                      {performanceByUser.map((item) => (
+                        <tr key={item.ownerUserId} className="border-b border-zinc-50">
+                          <td className="py-2 pr-3 font-semibold">
+                            {item?.responsibleUser?.name || "Usuario"}
+                          </td>
+                          <td className="py-2 pr-3">{item.createdCount || 0}</td>
+                          <td className="py-2 pr-3">{item.paidCount || 0}</td>
+                          <td className="py-2 pr-3">{Number(item.conversionPct || 0).toFixed(1)}%</td>
+                          <td className="py-2 pr-0">
+                            {formatBRLFromCents(item.paidRevenueCents || 0)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardBody>
+          </Card>
+        ) : null}
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <Card>
             <CardHeader

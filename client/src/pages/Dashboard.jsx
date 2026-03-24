@@ -24,6 +24,7 @@ import EmptyState from "../components/appui/EmptyState.jsx";
 import PageHeader from "../components/appui/PageHeader.jsx";
 import { useAuth } from "../app/AuthContext.jsx";
 import useThemeToggle from "../app/useThemeToggle.js";
+import { useMyWhatsAppModal } from "../components/layout/MyWhatsAppModalContext.jsx";
 import AnalyticsSection from "../components/dashboard/AnalyticsSection.jsx";
 import PixSettingsModal from "../components/PixSettingsModal.jsx";
 import WhatsNewModalHost from "../components/whats-new/WhatsNewModalHost.jsx";
@@ -322,17 +323,61 @@ function holdRemainingLabel(iso) {
   return `reserva expira em ${min} min`;
 }
 
+function WhatsAppSetupBanner({ isDark }) {
+  const { openMyWhatsAppModal } = useMyWhatsAppModal();
+
+  return (
+    <div
+      className={[
+        "rounded-[24px] border p-4 shadow-[0_20px_40px_-28px_rgba(37,99,235,0.28)]",
+        isDark
+          ? "border-cyan-400/20 bg-[linear-gradient(135deg,rgba(8,47,73,0.3),rgba(15,23,42,0.22))] text-cyan-50"
+          : "border-cyan-200/80 bg-[linear-gradient(135deg,#ecfeff,#eff6ff)] text-slate-800",
+      ].join(" ")}
+    >
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="text-sm font-bold uppercase tracking-[0.16em] text-cyan-700 dark:text-cyan-200">
+            Ative seus comandos por WhatsApp
+          </div>
+          <div className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-200">
+            Adicione o WhatsApp da sua conta para liberar o envio de
+            comandos por texto e audio para a Luminor.
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={openMyWhatsAppModal}
+          className={[
+            "inline-flex items-center justify-center rounded-2xl px-4 py-3 text-sm font-semibold transition",
+            isDark
+              ? "bg-white text-slate-950 hover:bg-slate-100"
+              : "bg-slate-950 text-white hover:bg-slate-800",
+          ].join(" ")}
+        >
+          Configurar WhatsApp
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const { isDark } = useThemeToggle();
   const [offers, setOffers] = useState([]);
   const [bookings, setBookings] = useState([]);
+  const [workspaceUsers, setWorkspaceUsers] = useState([]);
   const [activeRecurringCount, setActiveRecurringCount] = useState(0);
   const [activeRecurringIds, setActiveRecurringIds] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [bookingsBusy, setBookingsBusy] = useState(true);
+  const [teamUsersBusy, setTeamUsersBusy] = useState(false);
   const [error, setError] = useState("");
   const [bookingsErr, setBookingsErr] = useState("");
+  const [scopeTab, setScopeTab] = useState("mine");
+  const [teamOwnerFilter, setTeamOwnerFilter] = useState("all");
 
   const [localPayoutPixKeyMasked, setLocalPayoutPixKeyMasked] = useState("");
   const [pixModalState, setPixModalState] = useState({
@@ -351,8 +396,11 @@ export default function Dashboard() {
   const [whatsNewItems, setWhatsNewItems] = useState([]);
   const [whatsNewError, setWhatsNewError] = useState("");
 
-  const { signOut, user, workspace, loadingMe, refreshWorkspace } = useAuth();
+  const { signOut, user, workspace, loadingMe, refreshWorkspace, perms } = useAuth();
   const hasRecurringPlan = canUseRecurringPlan(workspace?.plan);
+  const canManagePixAccount = perms?.canManagePixAccount === true;
+  const isOwnerTeamDashboard =
+    perms?.isWorkspaceOwner === true && perms?.isWorkspaceTeamPlan === true;
   const needsWhatsAppSetup =
     !loadingMe && !String(user?.whatsappPhone || "").trim();
   const userId = String(user?._id || "").trim();
@@ -369,6 +417,30 @@ export default function Dashboard() {
     () => getEffectivePixKeyMasked(workspace, localPayoutPixKeyMasked),
     [workspace, localPayoutPixKeyMasked],
   );
+  const appliedScope =
+    isOwnerTeamDashboard && scopeTab === "workspace" ? "workspace" : "mine";
+  const selectedOwnerUserId =
+    appliedScope !== "workspace"
+      ? ""
+      : teamOwnerFilter === "me"
+        ? userId
+        : teamOwnerFilter !== "all"
+          ? teamOwnerFilter
+          : "";
+
+  const selectedTeamMemberName = useMemo(() => {
+    if (teamOwnerFilter === "all") return "Toda a equipe";
+    if (teamOwnerFilter === "me") return "Somente eu";
+    return (
+      workspaceUsers.find((item) => String(item?._id || "") === teamOwnerFilter)
+        ?.name || "Responsavel"
+    );
+  }, [teamOwnerFilter, workspaceUsers]);
+
+  const scopeSummaryLabel =
+    appliedScope === "workspace"
+      ? `Equipe: ${selectedTeamMemberName}`
+      : "Minha carteira";
 
   useEffect(() => {
     setLocalPayoutPixKeyMasked(
@@ -452,8 +524,9 @@ export default function Dashboard() {
       navigate: nav,
       openPixModal,
       targetPath: "/offers/new",
+      canManagePixAccount,
     });
-  }, [workspace, effectivePayoutPixKeyMasked, nav]);
+  }, [workspace, effectivePayoutPixKeyMasked, nav, canManagePixAccount]);
 
   useEffect(() => {
     if (location?.state?.openPixSettings) {
@@ -547,6 +620,24 @@ export default function Dashboard() {
     });
   }, [acknowledgeWhatsNew, nav]);
 
+  const loadWorkspaceTeam = useCallback(async () => {
+    if (!isOwnerTeamDashboard) {
+      setWorkspaceUsers([]);
+      return;
+    }
+
+    try {
+      setTeamUsersBusy(true);
+      const data = await authApi.listWorkspaceUsers();
+      const rawItems = Array.isArray(data?.items) ? data.items : [];
+      setWorkspaceUsers(rawItems.filter((item) => item?.status !== "disabled"));
+    } catch {
+      setWorkspaceUsers([]);
+    } finally {
+      setTeamUsersBusy(false);
+    }
+  }, [isOwnerTeamDashboard]);
+
   async function loadBookings() {
     try {
       setBookingsBusy(true);
@@ -558,6 +649,8 @@ export default function Dashboard() {
         from: from.toISOString(),
         to: to.toISOString(),
         status: "HOLD,CONFIRMED",
+        scope: appliedScope,
+        ownerUserId: selectedOwnerUserId || undefined,
       });
       setBookings(d.items || []);
     } catch (e) {
@@ -572,10 +665,19 @@ export default function Dashboard() {
     try {
       setLoading(true);
       setError("");
+      const offersPath = `/offers?${new URLSearchParams({
+        scope: appliedScope,
+        ...(selectedOwnerUserId ? { ownerUserId: selectedOwnerUserId } : {}),
+      }).toString()}`;
+      const recurringPath = `/recurring-offers?${new URLSearchParams({
+        status: "active",
+        scope: appliedScope,
+        ...(selectedOwnerUserId ? { ownerUserId: selectedOwnerUserId } : {}),
+      }).toString()}`;
       const [offersResult, recurringResult] = await Promise.allSettled([
-        api("/offers"),
+        api(offersPath),
         hasRecurringPlan
-          ? api("/recurring-offers?status=active")
+          ? api(recurringPath)
           : Promise.resolve({ items: [] }),
       ]);
 
@@ -621,7 +723,11 @@ export default function Dashboard() {
     if (loadingMe) return;
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasRecurringPlan, loadingMe]);
+  }, [hasRecurringPlan, loadingMe, appliedScope, selectedOwnerUserId]);
+
+  useEffect(() => {
+    loadWorkspaceTeam();
+  }, [loadWorkspaceTeam]);
 
   const kpis = useMemo(() => {
     const total = offers.length;
@@ -764,6 +870,28 @@ export default function Dashboard() {
       .slice(0, 5);
   }, [offers]);
 
+  const teamPerformanceRows = useMemo(() => {
+    return (workspaceUsers || [])
+      .map((item) => ({
+        _id: item?._id,
+        name: item?.name || "Usuario",
+        paidRevenueCents: Number(item?.performance?.paidRevenueCents || 0),
+        paidOffers: Number(item?.performance?.paidOffers || 0),
+        offersCreated: Number(item?.performance?.offersCreated || 0),
+        conversionPct: Number(item?.performance?.conversionPct || 0),
+      }))
+      .sort(
+        (a, b) =>
+          b.paidRevenueCents - a.paidRevenueCents ||
+          b.paidOffers - a.paidOffers ||
+          b.offersCreated - a.offersCreated,
+      )
+      .slice(0, 5);
+  }, [workspaceUsers]);
+
+  const shouldShowTeamRanking =
+    isOwnerTeamDashboard && appliedScope === "workspace" && !selectedOwnerUserId;
+
   const whatsNewCount = whatsNewItems.length;
   const canOpenWhatsNew = whatsNewCount > 0 && !whatsNewLoading;
 
@@ -829,7 +957,7 @@ export default function Dashboard() {
 
               <Button size="md" variant="secondary" onClick={() => openPixModal()}>
                 <WalletIcon className="h-[18px] w-[18px]" />
-                Conta Pix
+                {canManagePixAccount ? "Conta Pix" : "Ver Conta Pix"}
               </Button>
 
               <Button size="lg" onClick={handleCreateOffer}>
@@ -914,39 +1042,59 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {needsWhatsAppSetup ? (
-          <div
-            className={[
-              "rounded-[24px] border p-4 shadow-[0_20px_40px_-28px_rgba(37,99,235,0.28)]",
-              isDark
-                ? "border-cyan-400/20 bg-[linear-gradient(135deg,rgba(8,47,73,0.3),rgba(15,23,42,0.22))] text-cyan-50"
-                : "border-cyan-200/80 bg-[linear-gradient(135deg,#ecfeff,#eff6ff)] text-slate-800",
-            ].join(" ")}
-          >
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <div className="text-sm font-bold uppercase tracking-[0.16em] text-cyan-700 dark:text-cyan-200">
-                  Ative seus comandos por WhatsApp
-                </div>
-                <div className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-200">
-                  Adicione o WhatsApp da sua conta para liberar o envio de
-                  comandos por texto e audio para a Luminor.
-                </div>
+        {isOwnerTeamDashboard ? (
+          <Card>
+            <CardBody className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  variant={scopeTab === "mine" ? "primary" : "secondary"}
+                  onClick={() => setScopeTab("mine")}
+                >
+                  Minha carteira
+                </Button>
+                <Button
+                  size="sm"
+                  variant={scopeTab === "workspace" ? "primary" : "secondary"}
+                  onClick={() => setScopeTab("workspace")}
+                >
+                  Equipe
+                </Button>
               </div>
 
-              <Link
-                to="/settings/account"
-                className={[
-                  "inline-flex items-center justify-center rounded-2xl px-4 py-3 text-sm font-semibold transition",
-                  isDark
-                    ? "bg-white text-slate-950 hover:bg-slate-100"
-                    : "bg-slate-950 text-white hover:bg-slate-800",
-                ].join(" ")}
-              >
-                Configurar WhatsApp
-              </Link>
-            </div>
-          </div>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                {appliedScope === "workspace" ? (
+                  <select
+                    value={teamOwnerFilter}
+                    onChange={(e) => setTeamOwnerFilter(e.target.value)}
+                    disabled={teamUsersBusy}
+                    className={[
+                      "h-10 rounded-xl border px-3 text-sm outline-none transition",
+                      isDark
+                        ? "border-white/10 bg-white/5 text-slate-100 focus:border-cyan-400/40"
+                        : "border-zinc-200 bg-white text-slate-800 focus:border-sky-300",
+                    ].join(" ")}
+                  >
+                    <option value="all">Toda a equipe</option>
+                    <option value="me">Somente eu</option>
+                    {workspaceUsers
+                      .filter((item) => String(item?._id || "") !== userId)
+                      .map((item) => (
+                        <option key={item._id} value={item._id}>
+                          {item.name}
+                        </option>
+                      ))}
+                  </select>
+                ) : null}
+
+                <Badge tone="neutral">{scopeSummaryLabel}</Badge>
+              </div>
+            </CardBody>
+          </Card>
+        ) : null}
+
+        {needsWhatsAppSetup ? (
+          <WhatsAppSetupBanner isDark={isDark} />
         ) : null}
 
         {error && (
@@ -1041,7 +1189,9 @@ export default function Dashboard() {
             subtitle={
               kpis.pixConfigured
                 ? `Chave: ${effectivePayoutPixKeyMasked || ""}`
-                : "Configure para receber pagamentos"
+                : canManagePixAccount
+                  ? "Configure para receber pagamentos"
+                  : "Peca ao dono do workspace para configurar a Conta Pix"
             }
             highlight
             loading={loadingMe}
@@ -1058,7 +1208,12 @@ export default function Dashboard() {
           />
         </section>
 
-        <AnalyticsSection offers={offers} />
+        <AnalyticsSection
+          offers={offers}
+          scope={appliedScope}
+          ownerUserId={selectedOwnerUserId}
+          scopeLabel={scopeSummaryLabel}
+        />
 
         <div className="grid grid-cols-12 gap-6">
           <div className="col-span-12 space-y-6 lg:col-span-8">
@@ -1130,6 +1285,11 @@ export default function Dashboard() {
                                   ? `• ${o.customerWhatsApp}`
                                   : ""}
                               </div>
+                              {appliedScope === "workspace" ? (
+                                <div className={isDark ? "mt-1 text-[11px] text-slate-500" : "mt-1 text-[11px] text-slate-500"}>
+                                  Responsavel: {o?.responsibleUser?.name || "Equipe"}
+                                </div>
+                              ) : null}
 
                               <div className="mt-2 flex items-center gap-2">
                                 <code
@@ -1181,6 +1341,58 @@ export default function Dashboard() {
           </div>
 
           <div className="col-span-12 space-y-6 lg:col-span-4">
+            {shouldShowTeamRanking ? (
+              <Card>
+                <CardHeader
+                  title="Desempenho da equipe"
+                  subtitle="Resumo geral por usuario no workspace"
+                  right={<Badge tone="neutral">{teamPerformanceRows.length} usuarios</Badge>}
+                />
+                <CardBody className="space-y-3">
+                  {teamUsersBusy && teamPerformanceRows.length === 0 ? (
+                    <Skeleton className="h-32 w-full rounded-xl" />
+                  ) : teamPerformanceRows.length === 0 ? (
+                    <div className="py-4 text-center">
+                      <p className={isDark ? "text-xs font-medium text-slate-500" : "text-xs font-medium text-slate-400"}>
+                        Sem dados consolidados da equipe
+                      </p>
+                    </div>
+                  ) : (
+                    teamPerformanceRows.map((item) => (
+                      <div
+                        key={item._id || item.name}
+                        className={[
+                          "rounded-2xl border px-4 py-3",
+                          isDark
+                            ? "border-white/10 bg-white/5"
+                            : "border-slate-200/80 bg-slate-50/70",
+                        ].join(" ")}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className={isDark ? "text-sm font-semibold text-white" : "text-sm font-semibold text-slate-900"}>
+                              {item.name}
+                            </div>
+                            <div className={isDark ? "mt-1 text-[11px] text-slate-400" : "mt-1 text-[11px] text-slate-500"}>
+                              {item.offersCreated} proposta(s) • {item.paidOffers} paga(s)
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className={isDark ? "text-sm font-bold text-white" : "text-sm font-bold text-slate-900"}>
+                              {fmtBRL(item.paidRevenueCents)}
+                            </div>
+                            <div className={isDark ? "mt-1 text-[11px] text-slate-400" : "mt-1 text-[11px] text-slate-500"}>
+                              {Number(item.conversionPct || 0).toFixed(1)}% conv.
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </CardBody>
+              </Card>
+            ) : null}
+
             <Card>
               <CardHeader
                 title="Agenda (7 dias)"
@@ -1221,6 +1433,11 @@ export default function Dashboard() {
                       <div className={isDark ? "line-clamp-1 text-[11px] text-slate-400" : "line-clamp-1 text-[11px] text-slate-500"}>
                         {b?.offer?.title}
                       </div>
+                      {appliedScope === "workspace" ? (
+                        <div className={isDark ? "mt-1 text-[10px] font-medium uppercase tracking-[0.18em] text-slate-500" : "mt-1 text-[10px] font-medium uppercase tracking-[0.18em] text-slate-400"}>
+                          {b?.responsibleUser?.name || "Equipe"}
+                        </div>
+                      ) : null}
                       {normStatus(b.status) === "HOLD" && (
                         <div className="mt-1 text-[10px] font-bold italic text-amber-600">
                           {holdRemainingLabel(b.holdExpiresAt)}
@@ -1330,6 +1547,7 @@ export default function Dashboard() {
         onSaved={handlePixSaved}
         contextTitle={pixModalState.title}
         contextDescription={pixModalState.description}
+        canManagePixAccount={canManagePixAccount}
       />
 
       <OfferDetailsModal

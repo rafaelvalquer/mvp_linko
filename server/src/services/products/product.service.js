@@ -126,6 +126,7 @@ export async function createProductForWorkspace({
 export async function updateProductForWorkspace({
   workspaceId,
   productMongoId,
+  ownerUserId = null,
   name,
   description = "",
   priceCents,
@@ -151,7 +152,11 @@ export async function updateProductForWorkspace({
   }
 
   return Product.findOneAndUpdate(
-    { _id: productMongoId, workspaceId },
+    {
+      _id: productMongoId,
+      workspaceId,
+      ...(ownerUserId ? { ownerUserId } : {}),
+    },
     { $set: patch },
     { new: true, runValidators: true },
   ).lean();

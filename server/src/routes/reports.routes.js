@@ -3,12 +3,17 @@ import { Router } from "express";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ensureAuth, tenantFromUser } from "../middleware/auth.js";
 import { Offer } from "../models/Offer.js";
+import { User } from "../models/User.js";
 import { buildGeneralReportsSnapshot } from "../services/generalReports.service.js";
 import {
   buildGeneralReportPdfBuffer,
   buildRecurringReportPdfBuffer,
 } from "../services/reportPdf.service.js";
 import { buildRecurringReportsDashboard } from "../services/recurringReports.service.js";
+import {
+  assertWorkspaceModuleAccess,
+} from "../utils/workspaceAccess.js";
+import { resolveWorkspaceOwnerScope } from "../utils/workspaceOwnerScope.js";
 
 const r = Router();
 
@@ -34,13 +39,25 @@ function daysBetween(a, b) {
   return Math.ceil(ms / (24 * 60 * 60 * 1000));
 }
 
-function buildTenantMatch(req) {
-  const tenantId = req.tenantId;
-  const userId = req.user?._id;
+async function buildTenantScope(req, options = {}) {
+  const scopeInfo = await resolveWorkspaceOwnerScope({
+    user: req.user,
+    workspaceId: req.tenantId,
+    workspacePlan: req.user?.workspacePlan || "start",
+    workspaceOwnerUserId: req.user?.workspaceOwnerUserId || null,
+    scopeRaw: req.query.scope,
+    ownerUserIdRaw: req.query.ownerUserId,
+    defaultOwnerScope: options.defaultOwnerScope || "mine",
+    forbiddenMessage:
+      options.forbiddenMessage ||
+      "Somente o dono do workspace pode visualizar os relatorios da equipe.",
+    forbiddenCode: options.forbiddenCode || "WORKSPACE_REPORTS_SCOPE_FORBIDDEN",
+  });
 
-  const m = { workspaceId: tenantId };
-  if (userId) m.ownerUserId = userId;
-  return m;
+  const tenantMatch = { workspaceId: req.tenantId };
+  if (scopeInfo.ownerUserId) tenantMatch.ownerUserId = scopeInfo.ownerUserId;
+
+  return { scopeInfo, tenantMatch };
 }
 
 function buildTypeMatch(type) {
@@ -110,6 +127,19 @@ function formatRecurringPortfolioCsvRows(dashboard) {
 
 // Auth + tenant
 r.use(ensureAuth, tenantFromUser);
+r.use((req, _res, next) => {
+  try {
+    assertWorkspaceModuleAccess({
+      user: req.user,
+      workspacePlan: req.user?.workspacePlan,
+      workspaceOwnerUserId: req.user?.workspaceOwnerUserId,
+      moduleKey: "reports",
+    });
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
 
 r.get(
   "/reports/recurring/dashboard",
@@ -134,9 +164,11 @@ r.get(
       });
     }
 
+    const { scopeInfo } = await buildTenantScope(req);
+
     const dashboard = await buildRecurringReportsDashboard({
       tenantId: req.tenantId,
-      userId: req.user?._id || null,
+      userId: scopeInfo.ownerUserId || null,
       fromYMD,
       toYMD,
       type,
@@ -147,7 +179,7 @@ r.get(
       portfolioLimit: 5000,
     });
 
-    res.json({ ok: true, ...dashboard });
+    res.json({ ok: true, scope: scopeInfo.appliedScope, ...dashboard });
   }),
 );
 
@@ -174,9 +206,11 @@ r.get(
       });
     }
 
+    const { scopeInfo } = await buildTenantScope(req);
+
     const dashboard = await buildRecurringReportsDashboard({
       tenantId: req.tenantId,
-      userId: req.user?._id || null,
+      userId: scopeInfo.ownerUserId || null,
       fromYMD,
       toYMD,
       type,
@@ -238,9 +272,11 @@ r.get(
       });
     }
 
+    const { scopeInfo } = await buildTenantScope(req);
+
     const dashboard = await buildRecurringReportsDashboard({
       tenantId: req.tenantId,
-      userId: req.user?._id || null,
+      userId: scopeInfo.ownerUserId || null,
       fromYMD,
       toYMD,
       type,
@@ -281,7 +317,7 @@ r.get(
       });
     }
 
-    const tenantMatch = buildTenantMatch(req);
+    const { scopeInfo, tenantMatch } = await buildTenantScope(req);
     const typeMatch = buildTypeMatch(type);
 
     const pipeline = [
@@ -348,7 +384,160 @@ r.get(
     // onlyPaid afeta apenas tabelas/exports no front; KPIs seguem o filtro do endpoint (pagos sempre calculados por isPaid)
     // createdCount sempre é "emitidas" (createdAt range). paidCount/revenue sempre pagos no range.
     // Se o usuário selecionar "Todos", ele vai enxergar transações adicionais na tabela (endpoint /transactions).
-    res.json({ ok: true, summary: s, onlyPaid });
+    res.json({ ok: true, scope: scopeInfo.appliedScope, summary: s, onlyPaid });
+  }),
+);
+
+r.get(
+  "/reports/performance-by-user",
+  asyncHandler(async (req, res) => {
+    const fromYMD = parseYMD(req.query.from);
+    const toYMD = parseYMD(req.query.to);
+    const type = String(req.query.type || "all");
+
+    if (!fromYMD || !toYMD) {
+      return res
+        .status(400)
+        .json({ ok: false, error: "ParÃ¢metros from/to invÃ¡lidos" });
+    }
+
+    const { start, end } = rangeInSaoPaulo(fromYMD, toYMD);
+    const days = daysBetween(start, end);
+    if (days > MAX_DAYS + 1) {
+      return res.status(400).json({
+        ok: false,
+        error: `PerÃ­odo mÃ¡ximo excedido (${MAX_DAYS} dias)`,
+      });
+    }
+
+    const { scopeInfo, tenantMatch } = await buildTenantScope(req);
+    const typeMatch = buildTypeMatch(type);
+
+    const rows = await Offer.aggregate([
+      { $match: { ...tenantMatch, ...typeMatch } },
+      addPaidFieldsStage(),
+      {
+        $group: {
+          _id: "$ownerUserId",
+          createdCount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $gte: ["$createdAt", start] },
+                    { $lt: ["$createdAt", end] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          paidCount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ["$isPaid", true] },
+                    { $gte: ["$paidDate", start] },
+                    { $lt: ["$paidDate", end] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          paidRevenueCents: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ["$isPaid", true] },
+                    { $gte: ["$paidDate", start] },
+                    { $lt: ["$paidDate", end] },
+                  ],
+                },
+                "$paidCents",
+                0,
+              ],
+            },
+          },
+        },
+      },
+    ]).allowDiskUse(true);
+
+    let users = [];
+    if (scopeInfo.ownerUserId) {
+      users = await User.find({
+        _id: scopeInfo.ownerUserId,
+        workspaceId: req.tenantId,
+      })
+        .select("_id name status")
+        .lean();
+    } else if (scopeInfo.appliedScope === "workspace") {
+      users = await User.find({ workspaceId: req.tenantId })
+        .select("_id name status")
+        .sort({ role: 1, name: 1 })
+        .lean();
+    } else {
+      users = await User.find({
+        _id: req.user?._id,
+        workspaceId: req.tenantId,
+      })
+        .select("_id name status")
+        .lean();
+    }
+
+    const metricsByUser = new Map(
+      (rows || []).map((row) => [
+        String(row._id || ""),
+        {
+          createdCount: Number(row.createdCount || 0),
+          paidCount: Number(row.paidCount || 0),
+          paidRevenueCents: Number(row.paidRevenueCents || 0),
+        },
+      ]),
+    );
+
+    const items = (users || [])
+      .map((user) => {
+        const metrics = metricsByUser.get(String(user._id)) || {
+          createdCount: 0,
+          paidCount: 0,
+          paidRevenueCents: 0,
+        };
+        const conversionPct =
+          metrics.createdCount > 0
+            ? Math.round((metrics.paidCount / metrics.createdCount) * 10000) /
+              100
+            : 0;
+
+        return {
+          ownerUserId: user._id,
+          responsibleUser: {
+            _id: user._id,
+            name: user.name || "",
+            status: user.status || "active",
+          },
+          createdCount: metrics.createdCount,
+          paidCount: metrics.paidCount,
+          paidRevenueCents: metrics.paidRevenueCents,
+          conversionPct,
+        };
+      })
+      .sort(
+        (a, b) =>
+          b.paidRevenueCents - a.paidRevenueCents ||
+          b.paidCount - a.paidCount ||
+          b.createdCount - a.createdCount ||
+          String(a?.responsibleUser?.name || "").localeCompare(
+            String(b?.responsibleUser?.name || ""),
+            "pt-BR",
+          ),
+      );
+
+    res.json({ ok: true, scope: scopeInfo.appliedScope, items });
   }),
 );
 
@@ -375,7 +564,7 @@ r.get(
         });
     }
 
-    const tenantMatch = buildTenantMatch(req);
+    const { tenantMatch } = await buildTenantScope(req);
     const typeMatch = buildTypeMatch(type);
 
     const pipeline = [
@@ -420,7 +609,7 @@ r.get(
         });
     }
 
-    const tenantMatch = buildTenantMatch(req);
+    const { tenantMatch } = await buildTenantScope(req);
     const typeMatch = buildTypeMatch(type);
 
     const pipeline = [
@@ -504,7 +693,7 @@ r.get(
         });
     }
 
-    const tenantMatch = buildTenantMatch(req);
+    const { tenantMatch } = await buildTenantScope(req);
     const typeMatch = buildTypeMatch(type);
 
     const pipeline = [
@@ -561,7 +750,7 @@ r.get(
         });
     }
 
-    const tenantMatch = buildTenantMatch(req);
+    const { tenantMatch } = await buildTenantScope(req);
     const typeMatch = buildTypeMatch(type);
 
     const pipeline = [
@@ -620,7 +809,7 @@ r.get(
         });
     }
 
-    const tenantMatch = buildTenantMatch(req);
+    const { tenantMatch } = await buildTenantScope(req);
     const typeMatch = buildTypeMatch(type);
 
     const pipeline = [
@@ -675,7 +864,7 @@ r.get(
         });
     }
 
-    const tenantMatch = buildTenantMatch(req);
+    const { tenantMatch } = await buildTenantScope(req);
     const typeMatch = buildTypeMatch(type);
 
     const pipeline = [
@@ -756,9 +945,11 @@ r.get(
       });
     }
 
+    const { scopeInfo } = await buildTenantScope(req);
+
     const snapshot = await buildGeneralReportsSnapshot({
       tenantId: req.tenantId,
-      userId: req.user?._id || null,
+      userId: scopeInfo.ownerUserId || null,
       fromYMD,
       toYMD,
       start,

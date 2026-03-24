@@ -592,7 +592,48 @@ function MiniRangeToggle({ value, onChange }) {
   );
 }
 
-export default function AnalyticsSection({ offers: offersProp = [] }) {
+function MiniModeToggle({ value, onChange, options = [] }) {
+  const { isDark } = useThemeToggle();
+
+  return (
+    <div
+      className={[
+        "inline-flex items-center rounded-lg border p-0.5",
+        isDark
+          ? "border-white/10 bg-white/5"
+          : "border-slate-200 bg-white/90 shadow-[0_10px_24px_-18px_rgba(15,23,42,0.25)]",
+      ].join(" ")}
+      role="group"
+      aria-label="Selecionar visualizacao"
+    >
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => onChange(option.value)}
+          className={[
+            "px-2.5 py-1 text-[11px] font-semibold rounded-md transition",
+            value === option.value
+              ? "bg-[linear-gradient(135deg,#2563eb,#14b8a6)] text-white shadow-[0_12px_24px_-16px_rgba(37,99,235,0.65)]"
+              : isDark
+                ? "text-slate-300 hover:bg-white/10"
+                : "text-slate-700 hover:bg-slate-50",
+          ].join(" ")}
+          aria-pressed={value === option.value}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export default function AnalyticsSection({
+  offers: offersProp = [],
+  scope = "mine",
+  ownerUserId = "",
+  scopeLabel = "",
+}) {
   const { isDark } = useThemeToggle();
   const [open, setOpen] = useState(() => readOpenDefault());
 
@@ -605,10 +646,26 @@ export default function AnalyticsSection({ offers: offersProp = [] }) {
 
   const [pieRange, setPieRange] = useState("today");
   const [volumeRange, setVolumeRange] = useState("last30");
+  const [volumeMode, setVolumeMode] = useState("aggregate");
   const [createdPaidRange, setCreatedPaidRange] = useState("last30");
 
   const [hiddenSeries, setHiddenSeries] = useState(() => new Set());
   const [hiddenPie, setHiddenPie] = useState(() => new Set());
+
+  useEffect(() => {
+    fetchedRef.current = false;
+    setData(null);
+    setErr("");
+  }, [scope, ownerUserId]);
+
+  const canCompareTeamUsersInVolume =
+    scope === "workspace" && !String(ownerUserId || "").trim();
+
+  useEffect(() => {
+    if (!canCompareTeamUsersInVolume && volumeMode !== "aggregate") {
+      setVolumeMode("aggregate");
+    }
+  }, [canCompareTeamUsersInVolume, volumeMode]);
 
   async function fetchAnalytics() {
     if (inflightRef.current) return inflightRef.current;
@@ -621,13 +678,15 @@ export default function AnalyticsSection({ offers: offersProp = [] }) {
         setLoading(true);
         setErr("");
 
-        const res = await api(
-          `/analytics/dashboard?tz=${encodeURIComponent(TZ_DEFAULT)}`,
-          {
-            headers: withAuthHeaders(),
-            signal: controller.signal,
-          },
-        );
+        const params = new URLSearchParams();
+        params.set("tz", TZ_DEFAULT);
+        if (scope) params.set("scope", scope);
+        if (ownerUserId) params.set("ownerUserId", ownerUserId);
+
+        const res = await api(`/analytics/dashboard?${params.toString()}`, {
+          headers: withAuthHeaders(),
+          signal: controller.signal,
+        });
 
         if (!res?.ok) {
           throw new Error(res?.error || "Falha ao carregar analytics");
@@ -659,7 +718,7 @@ export default function AnalyticsSection({ offers: offersProp = [] }) {
       fetchAnalytics();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, scope, ownerUserId]);
 
   function toggleOpen() {
     setOpen((prev) => {
@@ -796,6 +855,117 @@ export default function AnalyticsSection({ offers: offersProp = [] }) {
     [volumeBase, volumeRange],
   );
 
+  const volumeTeamBreakdown = useMemo(() => {
+    const offers = Array.isArray(offersProp) ? offersProp : [];
+    if (!offers.length) return { rows: [], series: [] };
+
+    const rowsMap = new Map(last30Days.map((date) => [date, { date }]));
+    const labels = new Map();
+    const totals = new Map();
+
+    for (const offer of offers) {
+      if (!isOfferPaid(offer)) continue;
+
+      const day = getPaidDateYMD(offer);
+      if (!day || !last30Set.has(day)) continue;
+
+      const cents = offerPaidAmountToCents(offer);
+      if (!cents) continue;
+
+      const rawUserKey =
+        offer?.responsibleUser?._id || offer?.ownerUserId || "unknown";
+      const dataKey = `user:${String(rawUserKey)}`;
+      const label =
+        String(offer?.responsibleUser?.name || "").trim() || "Sem responsavel";
+
+      labels.set(dataKey, label);
+      totals.set(dataKey, (totals.get(dataKey) || 0) + cents);
+
+      const row = rowsMap.get(day) || { date: day };
+      row[dataKey] = safeNum(row[dataKey], 0) + cents / 100;
+      rowsMap.set(day, row);
+    }
+
+    const series = Array.from(totals.entries())
+      .sort(
+        (a, b) =>
+          b[1] - a[1] ||
+          String(labels.get(a[0]) || "").localeCompare(
+            String(labels.get(b[0]) || ""),
+            "pt-BR",
+          ),
+      )
+      .map(([dataKey], index) => ({
+        dataKey,
+        name: labels.get(dataKey) || "Sem responsavel",
+        color: FALLBACK_COLORS[index % FALLBACK_COLORS.length],
+      }));
+
+    const rows = last30Days.map((date) => {
+      const source = rowsMap.get(date) || { date };
+      const row = { date };
+      for (const item of series) {
+        row[item.dataKey] = safeNum(source[item.dataKey], 0);
+      }
+      return row;
+    });
+
+    return { rows, series };
+  }, [offersProp, last30Days, last30Set]);
+
+  useEffect(() => {
+    if (
+      volumeMode === "team" &&
+      (!canCompareTeamUsersInVolume || volumeTeamBreakdown.series.length === 0)
+    ) {
+      setVolumeMode("aggregate");
+    }
+  }, [
+    canCompareTeamUsersInVolume,
+    volumeMode,
+    volumeTeamBreakdown.series.length,
+  ]);
+
+  const showVolumeModeToggle =
+    canCompareTeamUsersInVolume && volumeTeamBreakdown.series.length > 0;
+
+  const activeVolumeSeries = useMemo(() => {
+    if (showVolumeModeToggle && volumeMode === "team") {
+      return sliceByRange(volumeTeamBreakdown.rows, volumeRange);
+    }
+    return volumeSeries;
+  }, [
+    showVolumeModeToggle,
+    volumeMode,
+    volumeTeamBreakdown.rows,
+    volumeRange,
+    volumeSeries,
+  ]);
+
+  const volumeSubtitle = useMemo(() => {
+    const period = volumeRange === "last7" ? "Ultimos 7 dias" : "Ultimos 30 dias";
+    if (showVolumeModeToggle && volumeMode === "team") {
+      return `${period} • uma linha por usuario`;
+    }
+    if (canCompareTeamUsersInVolume) {
+      return `${period} • acumulado de toda a equipe`;
+    }
+    return period;
+  }, [
+    canCompareTeamUsersInVolume,
+    showVolumeModeToggle,
+    volumeMode,
+    volumeRange,
+  ]);
+
+  const analyticsScopeLabel = scopeLabel
+    ? String(scopeLabel)
+    : scope === "workspace"
+      ? ownerUserId
+        ? "Equipe filtrada"
+        : "Equipe"
+      : "Minha carteira";
+
   const createdPaidBase = useMemo(() => {
     const offers = Array.isArray(offersProp) ? offersProp : [];
 
@@ -889,6 +1059,16 @@ export default function AnalyticsSection({ offers: offersProp = [] }) {
               ].join(" ")}
             >
               Desempenho de vendas
+              <span
+                className={[
+                  "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em]",
+                  isDark
+                    ? "border-white/10 bg-white/10 text-slate-200"
+                    : "border-slate-200 bg-slate-50 text-slate-600",
+                ].join(" ")}
+              >
+                {analyticsScopeLabel}
+              </span>
               {err ? (
                 <span className="inline-flex items-center rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-700">
                   erro
@@ -953,16 +1133,24 @@ export default function AnalyticsSection({ offers: offersProp = [] }) {
                   {/* VOLUME */}
                   <ChartCard
                     title="Volume diário (R$)"
-                    subtitle={
-                      volumeRange === "last7"
-                        ? "Últimos 7 dias"
-                        : "Últimos 30 dias"
-                    }
+                    subtitle={volumeSubtitle}
                     right={
-                      <MiniRangeToggle
-                        value={volumeRange}
-                        onChange={setVolumeRange}
-                      />
+                      <div className="flex flex-col items-end gap-2">
+                        {showVolumeModeToggle ? (
+                          <MiniModeToggle
+                            value={volumeMode}
+                            onChange={setVolumeMode}
+                            options={[
+                              { value: "aggregate", label: "Acumulado" },
+                              { value: "team", label: "Por usuario" },
+                            ]}
+                          />
+                        ) : null}
+                        <MiniRangeToggle
+                          value={volumeRange}
+                          onChange={setVolumeRange}
+                        />
+                      </div>
                     }
                   >
                     {showSkeleton ? (
@@ -971,7 +1159,7 @@ export default function AnalyticsSection({ offers: offersProp = [] }) {
                       <div className="h-[220px]">
                         <ResponsiveContainer width="100%" height="100%">
                           <LineChart
-                            data={volumeSeries}
+                            data={activeVolumeSeries}
                             margin={{ top: 10, right: 16, left: 0, bottom: 0 }}
                           >
                             <CartesianGrid
@@ -1016,17 +1204,36 @@ export default function AnalyticsSection({ offers: offersProp = [] }) {
                                 />
                               )}
                             />
-                            {!hiddenSeries.has("volume") ? (
-                              <Line
-                                type="monotone"
-                                dataKey="volume"
-                                name="Volume"
-                                stroke="#14b8a6"
-                                strokeWidth={2}
-                                dot={{ r: 2 }}
-                                activeDot={{ r: 5 }}
-                              />
-                            ) : null}
+                            {showVolumeModeToggle && volumeMode === "team"
+                              ? volumeTeamBreakdown.series.map((seriesItem) =>
+                                  hiddenSeries.has(seriesItem.dataKey) ? null : (
+                                    <Line
+                                      key={seriesItem.dataKey}
+                                      type="monotone"
+                                      dataKey={seriesItem.dataKey}
+                                      name={seriesItem.name}
+                                      stroke={seriesItem.color}
+                                      strokeWidth={2}
+                                      dot={{ r: 2 }}
+                                      activeDot={{ r: 5 }}
+                                    />
+                                  ),
+                                )
+                              : !hiddenSeries.has("volume") ? (
+                                  <Line
+                                    type="monotone"
+                                    dataKey="volume"
+                                    name={
+                                      canCompareTeamUsersInVolume
+                                        ? "Equipe acumulada"
+                                        : "Volume"
+                                    }
+                                    stroke="#14b8a6"
+                                    strokeWidth={2}
+                                    dot={{ r: 2 }}
+                                    activeDot={{ r: 5 }}
+                                  />
+                                ) : null}
                           </LineChart>
                         </ResponsiveContainer>
                       </div>

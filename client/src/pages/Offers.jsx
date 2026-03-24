@@ -1,8 +1,9 @@
-// src/pages/Offers.jsx
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { api } from "../app/api.js";
+import { listWorkspaceUsers } from "../app/authApi.js";
+import { useAuth } from "../app/AuthContext.jsx";
 
 import Shell from "../components/layout/Shell.jsx";
 import PageHeader from "../components/appui/PageHeader.jsx";
@@ -57,11 +58,33 @@ function PulseGlowBadge({ children, isDark }) {
   );
 }
 
+function sameId(a, b) {
+  if (!a || !b) return false;
+  return String(a) === String(b);
+}
+
+function buildOffersQuery({ scope, ownerUserId }) {
+  const params = new URLSearchParams();
+  params.set("scope", scope);
+  if (ownerUserId) params.set("ownerUserId", ownerUserId);
+  return params.toString();
+}
+
 export default function Offers() {
   const { isDark } = useThemeToggle();
+  const { perms, user } = useAuth();
+  const isOwnerTeamView =
+    perms?.isWorkspaceOwner === true && perms?.isWorkspaceTeamPlan === true;
+  const ownerUserId = String(user?._id || "").trim();
+
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [workspaceUsers, setWorkspaceUsers] = useState([]);
+  const [teamUsersBusy, setTeamUsersBusy] = useState(false);
+
+  const [scopeTab, setScopeTab] = useState("workspace");
+  const [teamOwnerFilter, setTeamOwnerFilter] = useState("all");
 
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("ALL");
@@ -80,6 +103,33 @@ export default function Offers() {
   const tableBorderClass = isDark ? "border-white/10" : "border-zinc-100";
   const tableRowClass = isDark ? "hover:bg-white/5" : "hover:bg-zinc-50/50";
 
+  const effectiveScopeTab = isOwnerTeamView ? scopeTab : "mine";
+  const appliedScope =
+    isOwnerTeamView && effectiveScopeTab === "workspace" ? "workspace" : "mine";
+  const selectedOwnerUserId =
+    appliedScope !== "workspace"
+      ? ""
+      : teamOwnerFilter === "me"
+        ? ownerUserId
+        : teamOwnerFilter !== "all"
+          ? teamOwnerFilter
+          : "";
+  const showResponsibleColumn = appliedScope === "workspace";
+
+  const selectedTeamMemberName = useMemo(() => {
+    if (teamOwnerFilter === "all") return "Toda a equipe";
+    if (teamOwnerFilter === "me") return "Somente eu";
+    return (
+      workspaceUsers.find((item) => sameId(item?._id, teamOwnerFilter))?.name ||
+      "Responsavel"
+    );
+  }, [teamOwnerFilter, workspaceUsers]);
+
+  const scopeSummaryLabel =
+    appliedScope === "workspace"
+      ? `Equipe: ${selectedTeamMemberName}`
+      : "Minha carteira";
+
   const patchOfferInList = useCallback((updated) => {
     if (!updated?._id) return;
     setItems((prev) =>
@@ -92,11 +142,39 @@ export default function Offers() {
     );
   }, []);
 
+  const loadWorkspaceTeam = useCallback(async () => {
+    if (!isOwnerTeamView) {
+      setWorkspaceUsers([]);
+      return;
+    }
+
+    try {
+      setTeamUsersBusy(true);
+      const data = await listWorkspaceUsers();
+      const rawItems = Array.isArray(data?.items) ? data.items : [];
+      setWorkspaceUsers(
+        rawItems.filter(
+          (item) =>
+            !sameId(item?._id, ownerUserId) && item?.status !== "disabled",
+        ),
+      );
+    } catch {
+      setWorkspaceUsers([]);
+    } finally {
+      setTeamUsersBusy(false);
+    }
+  }, [isOwnerTeamView, ownerUserId]);
+
   const load = useCallback(async () => {
     try {
       setLoading(true);
       setError("");
-      const d = await api("/offers");
+      const d = await api(
+        `/offers?${buildOffersQuery({
+          scope: appliedScope,
+          ownerUserId: selectedOwnerUserId,
+        })}`,
+      );
       setItems(d?.items || []);
     } catch (e) {
       setError(e?.message || "Falha ao carregar propostas.");
@@ -104,31 +182,36 @@ export default function Offers() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [appliedScope, selectedOwnerUserId]);
 
   useEffect(() => {
     load();
   }, [load]);
 
+  useEffect(() => {
+    loadWorkspaceTeam();
+  }, [loadWorkspaceTeam]);
+
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
 
-    let base = filter === "ALL"
-      ? items
-      : (items || []).filter((o) => {
-          const pay = norm(o?.paymentStatus);
-          const flow = norm(o?.status || "PUBLIC");
-          const paid =
-            ["PAID", "CONFIRMED"].includes(pay) ||
-            ["PAID", "CONFIRMED"].includes(flow);
+    let base =
+      filter === "ALL"
+        ? items
+        : (items || []).filter((o) => {
+            const pay = norm(o?.paymentStatus);
+            const flow = norm(o?.status || "PUBLIC");
+            const paid =
+              ["PAID", "CONFIRMED"].includes(pay) ||
+              ["PAID", "CONFIRMED"].includes(flow);
 
-          if (filter === "PAID") return paid;
-          if (["PENDING", "WAITING_CONFIRMATION", "REJECTED"].includes(filter)) {
-            return pay === filter;
-          }
+            if (filter === "PAID") return paid;
+            if (["PENDING", "WAITING_CONFIRMATION", "REJECTED"].includes(filter)) {
+              return pay === filter;
+            }
 
-          return flow === filter;
-        });
+            return flow === filter;
+          });
 
     if (originFilter !== "ALL") {
       base = base.filter((o) => {
@@ -142,10 +225,16 @@ export default function Offers() {
     if (!query) return base;
 
     return base.filter((o) => {
-      const a = String(o?.customerName || "").toLowerCase();
-      const b = String(o?.title || "").toLowerCase();
-      const c = String(o?.recurringNameSnapshot || "").toLowerCase();
-      return a.includes(query) || b.includes(query) || c.includes(query);
+      const customerName = String(o?.customerName || "").toLowerCase();
+      const title = String(o?.title || "").toLowerCase();
+      const recurringName = String(o?.recurringNameSnapshot || "").toLowerCase();
+      const responsibleName = String(o?.responsibleUser?.name || "").toLowerCase();
+      return (
+        customerName.includes(query) ||
+        title.includes(query) ||
+        recurringName.includes(query) ||
+        responsibleName.includes(query)
+      );
     });
   }, [items, q, filter, originFilter]);
 
@@ -189,13 +278,57 @@ export default function Offers() {
         <PageHeader
           eyebrow="Propostas"
           title="Propostas"
-          subtitle="Gerencie propostas avulsas, cobranças recorrentes e confirmações de pagamento."
+          subtitle="Gerencie propostas avulsas, cobrancas recorrentes e confirmacoes de pagamento."
           actions={
             <Link to="/offers/new">
               <Button size="lg">Nova proposta</Button>
             </Link>
           }
         />
+
+        {isOwnerTeamView ? (
+          <Card>
+            <CardBody className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  variant={effectiveScopeTab === "mine" ? "primary" : "secondary"}
+                  onClick={() => setScopeTab("mine")}
+                >
+                  Minha carteira
+                </Button>
+                <Button
+                  size="sm"
+                  variant={effectiveScopeTab === "workspace" ? "primary" : "secondary"}
+                  onClick={() => setScopeTab("workspace")}
+                >
+                  Equipe
+                </Button>
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                {effectiveScopeTab === "workspace" ? (
+                  <select
+                    className={selectClass}
+                    value={teamOwnerFilter}
+                    onChange={(e) => setTeamOwnerFilter(e.target.value)}
+                    disabled={teamUsersBusy}
+                  >
+                    <option value="all">Toda a equipe</option>
+                    <option value="me">Somente eu</option>
+                    {workspaceUsers.map((item) => (
+                      <option key={item._id} value={item._id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
+
+                <Badge tone="neutral">{scopeSummaryLabel}</Badge>
+              </div>
+            </CardBody>
+          </Card>
+        ) : null}
 
         <FilterBar
           actions={
@@ -205,9 +338,10 @@ export default function Offers() {
           }
           summary={
             <>
-              <Badge tone="DRAFT">{worklistSummary.total} visíveis</Badge>
+              <Badge tone="DRAFT">{scopeSummaryLabel}</Badge>
+              <Badge tone="DRAFT">{worklistSummary.total} visiveis</Badge>
               <Badge tone="ACCEPTED">{worklistSummary.pending} pendentes</Badge>
-              <Badge tone="PUBLIC">{worklistSummary.waiting} em análise</Badge>
+              <Badge tone="PUBLIC">{worklistSummary.waiting} em analise</Badge>
               <Badge tone="PAID">{worklistSummary.paid} pagas</Badge>
             </>
           }
@@ -219,12 +353,12 @@ export default function Offers() {
               onChange={(e) => setFilter(e.target.value)}
             >
               <option value="ALL">Todos os status</option>
-              <option value="WAITING_CONFIRMATION">Aguardando confirmação</option>
+              <option value="WAITING_CONFIRMATION">Aguardando confirmacao</option>
               <option value="PENDING">Aguardando pagamento</option>
               <option value="REJECTED">Comprovante recusado</option>
               <option value="PAID">Pago (confirmado)</option>
               <option value="ACCEPTED">Aceito</option>
-              <option value="PUBLIC">Público</option>
+              <option value="PUBLIC">Publico</option>
               <option value="EXPIRED">Expirado</option>
               <option value="CANCELLED">Cancelado</option>
             </select>
@@ -243,7 +377,11 @@ export default function Offers() {
               <Input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="Buscar cliente, proposta ou recorrência..."
+                placeholder={
+                  showResponsibleColumn
+                    ? "Buscar cliente, proposta, recorrencia ou responsavel..."
+                    : "Buscar cliente, proposta ou recorrencia..."
+                }
                 className="h-10"
               />
             </div>
@@ -253,7 +391,7 @@ export default function Offers() {
         <Card className="overflow-hidden">
           <CardHeader
             title="Lista operacional"
-            subtitle="Cliente, valor e status em primeiro plano para agir mais rápido."
+            subtitle="Cliente, valor e status em primeiro plano para agir mais rapido."
             right={<Badge tone="DRAFT">{items.length} total</Badge>}
           />
           <CardBody className="p-0">
@@ -289,9 +427,12 @@ export default function Offers() {
                     <tr>
                       <th className={`border-b px-5 py-3 pr-4 ${tableBorderClass}`}>Cliente</th>
                       <th className={`border-b px-5 py-3 pr-4 ${tableBorderClass}`}>Proposta</th>
+                      {showResponsibleColumn ? (
+                        <th className={`border-b px-5 py-3 pr-4 ${tableBorderClass}`}>Responsavel</th>
+                      ) : null}
                       <th className={`border-b px-5 py-3 pr-4 ${tableBorderClass}`}>Valor</th>
                       <th className={`border-b px-5 py-3 pr-4 ${tableBorderClass}`}>Status</th>
-                      <th className={`border-b px-5 py-3 text-right ${tableBorderClass}`}>Ações</th>
+                      <th className={`border-b px-5 py-3 text-right ${tableBorderClass}`}>Acoes</th>
                     </tr>
                   </thead>
                   <tbody className={isDark ? "divide-y divide-white/10" : "divide-y divide-zinc-100"}>
@@ -305,16 +446,20 @@ export default function Offers() {
                         !["CANCELLED", "EXPIRED"].includes(flowStatus);
                       const isWaitingConfirmation =
                         pay?.code === "WAITING_CONFIRMATION";
-                      const isRecurring = String(o?.generatedBy || "manual").toLowerCase() === "recurring";
+                      const isRecurring =
+                        String(o?.generatedBy || "manual").toLowerCase() === "recurring";
+                      const responsibleName =
+                        o?.responsibleUser?.name || "Sem responsavel";
+                      const isMine = sameId(o?.ownerUserId, ownerUserId);
 
                       return (
                         <tr key={o._id} className={tableRowClass}>
                           <td className="px-5 py-4 pr-4">
                             <div className={isDark ? "font-semibold text-white" : "font-semibold text-zinc-900"}>
-                              {o.customerName || "—"}
+                              {o.customerName || "-"}
                             </div>
                             <div className={isDark ? "text-xs text-slate-400" : "text-xs text-zinc-500"}>
-                              {o.customerWhatsApp || "—"}
+                              {o.customerWhatsApp || "-"}
                             </div>
                           </td>
                           <td className="px-5 py-4 pr-4">
@@ -338,10 +483,20 @@ export default function Offers() {
                                 to={`/offers/recurring/${o.recurringOfferId}`}
                                 className={isDark ? "mt-1 inline-flex text-xs font-medium text-indigo-300 hover:text-indigo-200" : "mt-1 inline-flex text-xs font-medium text-indigo-600 hover:text-indigo-800"}
                               >
-                                {o?.recurringNameSnapshot || "Ver recorrência"}
+                                {o?.recurringNameSnapshot || "Ver recorrencia"}
                               </Link>
                             ) : null}
                           </td>
+                          {showResponsibleColumn ? (
+                            <td className="px-5 py-4 pr-4">
+                              <div className={isDark ? "text-sm font-semibold text-white" : "text-sm font-semibold text-zinc-900"}>
+                                {responsibleName}
+                              </div>
+                              <div className={isDark ? "text-xs text-slate-400" : "text-xs text-zinc-500"}>
+                                {isMine ? "Sua carteira" : "Carteira da equipe"}
+                              </div>
+                            </td>
+                          ) : null}
                           <td className={isDark ? "px-5 py-4 pr-4 font-semibold tabular-nums text-white" : "px-5 py-4 pr-4 font-semibold tabular-nums text-zinc-900"}>
                             {fmtBRLFromCents(getAmountCents(o))}
                           </td>

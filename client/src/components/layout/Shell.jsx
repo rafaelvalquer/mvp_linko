@@ -1,11 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PanelLeft } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { useAuth } from "../../app/AuthContext.jsx";
 import useThemeToggle from "../../app/useThemeToggle.js";
+import MyWhatsAppModal from "../account/MyWhatsAppModal.jsx";
 import Sidebar from "./Sidebar.jsx";
 import Topbar from "./Topbar.jsx";
+import {
+  MyWhatsAppModalProvider,
+} from "./MyWhatsAppModalContext.jsx";
 
 function readSidebarExpanded() {
   try {
@@ -110,6 +114,15 @@ export default function Shell({ children, topbarAction = null }) {
   const { isDark, setIsDark } = useThemeToggle();
   const [sidebarExpanded, setSidebarExpanded] = useState(readSidebarExpanded);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [myWhatsAppModalOpen, setMyWhatsAppModalOpen] = useState(false);
+
+  const myWhatsAppModalActions = useMemo(
+    () => ({
+      openMyWhatsAppModal: () => setMyWhatsAppModalOpen(true),
+      closeMyWhatsAppModal: () => setMyWhatsAppModalOpen(false),
+    }),
+    [],
+  );
 
   useEffect(() => {
     persistSidebarExpanded(sidebarExpanded);
@@ -138,104 +151,112 @@ export default function Shell({ children, topbarAction = null }) {
   }, []);
 
   return (
-      <div
-      className={[
-        "relative min-h-screen overflow-x-hidden transition-colors",
-        isDark ? "bg-[#040b18] text-white" : "bg-[rgb(246,248,252)] text-slate-900",
-      ].join(" ")}
-    >
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div
-          className={[
-            "absolute left-[-140px] top-[-140px] h-80 w-80 rounded-full blur-3xl",
-            isDark ? "bg-cyan-400/14" : "bg-cyan-400/18",
-          ].join(" ")}
-        />
-        <div
-          className={[
-            "absolute right-[-160px] top-1/4 h-96 w-96 rounded-full blur-3xl",
-            isDark ? "bg-blue-500/18" : "bg-blue-500/14",
-          ].join(" ")}
-        />
-        <div className="absolute bottom-[-220px] left-1/3 h-[30rem] w-[30rem] rounded-full bg-emerald-400/10 blur-3xl" />
-      </div>
-
-      <Topbar
-        isDark={isDark}
-        setIsDark={setIsDark}
-        contextualAction={topbarAction}
-      />
-      <MobileMenuButton
-        isDark={isDark}
-        onClick={() => setMobileSidebarOpen(true)}
-      />
-
-      <div className="relative flex w-full">
-        <aside
-          className={[
-            "hidden md:block md:shrink-0",
-            "transition-[width] duration-300 ease-out",
-            sidebarExpanded ? "md:w-[288px]" : "md:w-[104px]",
-          ].join(" ")}
-        >
-          <div className="sticky top-[68px] h-[calc(100vh-68px)] overflow-y-auto p-4">
-            <Sidebar
-              collapsed={!sidebarExpanded}
-              onToggle={() => setSidebarExpanded((previous) => !previous)}
-            />
-          </div>
-        </aside>
-
-        <main className="min-w-0 flex-1 pb-8">
-          <div className="px-4 pb-6 pt-[80px] sm:px-5 lg:px-6">
-            <div
-              className={[
-                "min-h-[calc(100vh-104px)] rounded-[30px] border p-4 backdrop-blur-xl transition-colors sm:p-5 lg:p-6",
-                isDark
-                  ? "border-white/10 bg-[linear-gradient(180deg,rgba(12,19,34,0.94),rgba(6,12,24,0.9))] shadow-[0_22px_72px_-52px_rgba(15,23,42,0.8)]"
-                  : "border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(243,246,250,0.9))] shadow-[0_22px_72px_-56px_rgba(15,23,42,0.16)]",
-              ].join(" ")}
-            >
-              <div className="space-y-6">
-                <BillingInlineNotice isDark={isDark} />
-                {children}
-              </div>
-            </div>
-          </div>
-        </main>
-      </div>
-
+    <MyWhatsAppModalProvider value={myWhatsAppModalActions}>
       <div
         className={[
-          "fixed inset-0 z-50 md:hidden",
-          mobileSidebarOpen ? "pointer-events-auto" : "pointer-events-none",
+          "relative min-h-screen overflow-x-hidden transition-colors",
+          isDark ? "bg-[#040b18] text-white" : "bg-[rgb(246,248,252)] text-slate-900",
         ].join(" ")}
       >
-        <div
-          onClick={() => setMobileSidebarOpen(false)}
-          className={[
-            "absolute inset-0 backdrop-blur-sm transition-opacity duration-300",
-            isDark ? "bg-slate-950/60" : "bg-slate-950/30",
-            mobileSidebarOpen ? "opacity-100" : "opacity-0",
-          ].join(" ")}
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div
+            className={[
+              "absolute left-[-140px] top-[-140px] h-80 w-80 rounded-full blur-3xl",
+              isDark ? "bg-cyan-400/14" : "bg-cyan-400/18",
+            ].join(" ")}
+          />
+          <div
+            className={[
+              "absolute right-[-160px] top-1/4 h-96 w-96 rounded-full blur-3xl",
+              isDark ? "bg-blue-500/18" : "bg-blue-500/14",
+            ].join(" ")}
+          />
+          <div className="absolute bottom-[-220px] left-1/3 h-[30rem] w-[30rem] rounded-full bg-emerald-400/10 blur-3xl" />
+        </div>
+
+        <Topbar
+          isDark={isDark}
+          setIsDark={setIsDark}
+          contextualAction={topbarAction}
+          onOpenMyWhatsApp={myWhatsAppModalActions.openMyWhatsAppModal}
         />
+        <MobileMenuButton
+          isDark={isDark}
+          onClick={() => setMobileSidebarOpen(true)}
+        />
+
+        <div className="relative flex w-full">
+          <aside
+            className={[
+              "hidden md:block md:shrink-0",
+              "transition-[width] duration-300 ease-out",
+              sidebarExpanded ? "md:w-[288px]" : "md:w-[104px]",
+            ].join(" ")}
+          >
+            <div className="sticky top-[68px] h-[calc(100vh-68px)] overflow-y-auto p-4">
+              <Sidebar
+                collapsed={!sidebarExpanded}
+                onToggle={() => setSidebarExpanded((previous) => !previous)}
+              />
+            </div>
+          </aside>
+
+          <main className="min-w-0 flex-1 pb-8">
+            <div className="px-4 pb-6 pt-[80px] sm:px-5 lg:px-6">
+              <div
+                className={[
+                  "min-h-[calc(100vh-104px)] rounded-[30px] border p-4 backdrop-blur-xl transition-colors sm:p-5 lg:p-6",
+                  isDark
+                    ? "border-white/10 bg-[linear-gradient(180deg,rgba(12,19,34,0.94),rgba(6,12,24,0.9))] shadow-[0_22px_72px_-52px_rgba(15,23,42,0.8)]"
+                    : "border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(243,246,250,0.9))] shadow-[0_22px_72px_-56px_rgba(15,23,42,0.16)]",
+                ].join(" ")}
+              >
+                <div className="space-y-6">
+                  <BillingInlineNotice isDark={isDark} />
+                  {children}
+                </div>
+              </div>
+            </div>
+          </main>
+        </div>
 
         <div
           className={[
-            "absolute inset-y-0 left-0 w-[90vw] max-w-[340px] transition-transform duration-300 ease-out",
-            mobileSidebarOpen ? "translate-x-0" : "-translate-x-full",
+            "fixed inset-0 z-50 md:hidden",
+            mobileSidebarOpen ? "pointer-events-auto" : "pointer-events-none",
           ].join(" ")}
         >
-          <div className="h-full overflow-y-auto p-4 pt-[84px]">
-            <Sidebar
-              collapsed={false}
-              mobile
-              onToggle={() => setMobileSidebarOpen(false)}
-              onNavigate={() => setMobileSidebarOpen(false)}
-            />
+          <div
+            onClick={() => setMobileSidebarOpen(false)}
+            className={[
+              "absolute inset-0 backdrop-blur-sm transition-opacity duration-300",
+              isDark ? "bg-slate-950/60" : "bg-slate-950/30",
+              mobileSidebarOpen ? "opacity-100" : "opacity-0",
+            ].join(" ")}
+          />
+
+          <div
+            className={[
+              "absolute inset-y-0 left-0 w-[90vw] max-w-[340px] transition-transform duration-300 ease-out",
+              mobileSidebarOpen ? "translate-x-0" : "-translate-x-full",
+            ].join(" ")}
+          >
+            <div className="h-full overflow-y-auto p-4 pt-[84px]">
+              <Sidebar
+                collapsed={false}
+                mobile
+                onToggle={() => setMobileSidebarOpen(false)}
+                onNavigate={() => setMobileSidebarOpen(false)}
+              />
+            </div>
           </div>
         </div>
+
+        <MyWhatsAppModal
+          open={myWhatsAppModalOpen}
+          onClose={myWhatsAppModalActions.closeMyWhatsAppModal}
+        />
       </div>
-    </div>
+    </MyWhatsAppModalProvider>
   );
 }

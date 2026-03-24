@@ -32,11 +32,13 @@ function withAuthHeaders(extra) {
   };
 }
 
-export async function listBookings({ from, to, status } = {}) {
+export async function listBookings({ from, to, status, scope, ownerUserId } = {}) {
   const q = new URLSearchParams();
   if (from) q.set("from", from);
   if (to) q.set("to", to);
   if (status) q.set("status", status);
+  if (scope) q.set("scope", scope);
+  if (ownerUserId) q.set("ownerUserId", ownerUserId);
 
   return api(`/bookings?${q.toString()}`, {
     headers: withAuthHeaders(),

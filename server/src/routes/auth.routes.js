@@ -8,6 +8,8 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { env } from "../config/env.js";
 import { User } from "../models/User.js";
 import { Workspace } from "../models/Workspace.js";
+import { Offer } from "../models/Offer.js";
+import Booking from "../models/Booking.js";
 import { PendingRegistration } from "../models/PendingRegistration.js";
 import { PasswordResetCode } from "../models/PasswordResetCode.js";
 import { authOptional, ensureAuth } from "../middleware/auth.js";
@@ -20,6 +22,15 @@ import {
 import { isMasterAdminEmail } from "../utils/masterAdmin.js";
 import { normalizeUserWhatsAppPhone } from "../utils/phone.js";
 import { assertWhatsAppAccountPhoneAllowed } from "../utils/planFeatures.js";
+import {
+  assertWorkspaceOwner,
+  assertWorkspaceTeamPlan,
+  getWorkspaceProfileCatalog,
+  normalizeWorkspacePlan,
+  normalizeWorkspaceProfile,
+  resolveModulePermissions,
+  sanitizeModulePermissions,
+} from "../utils/workspaceAccess.js";
 
 const r = Router();
 
@@ -220,6 +231,7 @@ function buildWorkspacePayload(ws) {
     payoutPixKeyMasked: ws.payoutPixKeyMasked || "",
     autoPayoutEnabled: !!ws.autoPayoutEnabled,
     payoutHoldMinutes: Number(ws.payoutHoldMinutes ?? 0) || 0,
+    ownerUserId: ws.ownerUserId || null,
   };
 }
 
@@ -227,14 +239,37 @@ export function buildUserPayload(user) {
   if (!user) return null;
 
   const isMasterAdmin = isMasterAdminEmail(user?.email);
+  const workspacePlan = normalizeWorkspacePlan(
+    user?.workspacePlan || user?.workspace?.plan || "start",
+  );
+  const isWorkspaceOwner = user?.isWorkspaceOwner === true || user?.role === "owner";
+  const modulePermissions =
+    user?.modulePermissions ||
+    resolveModulePermissions({
+      user: {
+        ...user,
+        isWorkspaceOwner,
+      },
+      workspacePlan,
+      workspaceOwnerUserId: user?.workspaceOwnerUserId || null,
+    });
+
   return {
     _id: user._id,
     name: user.name,
     email: user.email,
     workspaceId: user.workspaceId,
     role: user.role,
+    profile: normalizeWorkspaceProfile(
+      user?.profile,
+      user?.role === "owner" ? "owner" : "sales",
+    ),
     status: user.status,
     isMasterAdmin,
+    isWorkspaceOwner,
+    workspacePlan,
+    permissions: sanitizeModulePermissions(user?.permissions),
+    modulePermissions,
     whatsNewLastSeenAt: user.whatsNewLastSeenAt || null,
     whatsappPhone: user.whatsappPhone || "",
   };
@@ -242,17 +277,240 @@ export function buildUserPayload(user) {
 
 function buildAuthResponse(user, ws) {
   const token = signToken(user);
+  const enrichedUser = user
+    ? {
+        ...(user.toObject?.() || user),
+        workspacePlan: ws?.plan || user?.workspacePlan || "start",
+        workspaceOwnerUserId: ws?.ownerUserId || user?.workspaceOwnerUserId || null,
+        isWorkspaceOwner:
+          user?.isWorkspaceOwner === true ||
+          user?.role === "owner" ||
+          String(user?._id || "") === String(ws?.ownerUserId || ""),
+      }
+    : null;
 
   return {
     ok: true,
     token,
-    user: buildUserPayload(user),
+    user: buildUserPayload(enrichedUser),
     workspace: buildWorkspacePayload(ws),
   };
 }
 
 function sendError(res, status, error, code, extra = {}) {
   return res.status(status).json({ ok: false, error, code, ...extra });
+}
+
+function pickWorkspaceContext(req) {
+  return {
+    workspacePlan: req.user?.workspacePlan || "start",
+    workspaceOwnerUserId: req.user?.workspaceOwnerUserId || null,
+  };
+}
+
+function assertWorkspaceTeamOwnerRequest(req) {
+  const { workspacePlan, workspaceOwnerUserId } = pickWorkspaceContext(req);
+  assertWorkspaceTeamPlan(workspacePlan);
+  assertWorkspaceOwner(req.user, workspaceOwnerUserId);
+  return { workspacePlan, workspaceOwnerUserId };
+}
+
+function sanitizeWorkspaceUserPayload(body = {}) {
+  const name = String(body?.name || "").trim();
+  const email = normEmail(body?.email);
+  const password = String(body?.password || "");
+  const profile = normalizeWorkspaceProfile(body?.profile, "sales");
+  const status =
+    String(body?.status || "active").trim().toLowerCase() === "disabled"
+      ? "disabled"
+      : "active";
+  const permissions = sanitizeModulePermissions(body?.permissions);
+
+  if (!name) {
+    const err = new Error("Nome do usuario obrigatorio.");
+    err.status = 400;
+    err.code = "TEAM_USER_NAME_REQUIRED";
+    throw err;
+  }
+  if (!isValidEmail(email)) {
+    const err = new Error("E-mail invalido.");
+    err.status = 400;
+    err.code = "EMAIL_INVALID";
+    throw err;
+  }
+  if (!password || password.length < 6) {
+    const err = new Error("A senha deve ter pelo menos 6 caracteres.");
+    err.status = 400;
+    err.code = "PASSWORD_TOO_SHORT";
+    throw err;
+  }
+
+  return { name, email, password, profile, status, permissions };
+}
+
+function sanitizeWorkspaceUserPatch(body = {}) {
+  const patch = {};
+  if (body?.name != null) {
+    const name = String(body.name || "").trim();
+    if (!name) {
+      const err = new Error("Nome do usuario obrigatorio.");
+      err.status = 400;
+      err.code = "TEAM_USER_NAME_REQUIRED";
+      throw err;
+    }
+    patch.name = name;
+  }
+  if (body?.profile != null) {
+    patch.profile = normalizeWorkspaceProfile(body.profile, "sales");
+  }
+  if (body?.status != null) {
+    patch.status =
+      String(body.status || "active").trim().toLowerCase() === "disabled"
+        ? "disabled"
+        : "active";
+  }
+  if (body?.permissions != null) {
+    patch.permissions = sanitizeModulePermissions(body.permissions);
+  }
+  if (body?.password != null) {
+    const password = String(body.password || "");
+    if (password && password.length < 6) {
+      const err = new Error("A senha deve ter pelo menos 6 caracteres.");
+      err.status = 400;
+      err.code = "PASSWORD_TOO_SHORT";
+      throw err;
+    }
+    patch.password = password;
+  }
+  return patch;
+}
+
+async function listWorkspaceUsersWithPerformance({ workspaceId, workspacePlan }) {
+  const users = await User.find({ workspaceId })
+    .select(
+      "_id name email role profile status permissions whatsappPhone createdAt updatedAt",
+    )
+    .sort({ role: 1, createdAt: 1 })
+    .lean();
+
+  const [offerStats, bookingStats] = await Promise.all([
+    Offer.aggregate([
+      { $match: { workspaceId } },
+      {
+        $group: {
+          _id: "$ownerUserId",
+          offersCreated: { $sum: 1 },
+          paidOffers: {
+            $sum: {
+              $cond: [
+                {
+                  $or: [
+                    { $eq: ["$paymentStatus", "PAID"] },
+                    { $eq: ["$paymentStatus", "CONFIRMED"] },
+                    { $eq: ["$status", "PAID"] },
+                    { $eq: ["$status", "CONFIRMED"] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          paidRevenueCents: {
+            $sum: {
+              $cond: [
+                {
+                  $or: [
+                    { $eq: ["$paymentStatus", "PAID"] },
+                    { $eq: ["$paymentStatus", "CONFIRMED"] },
+                    { $eq: ["$status", "PAID"] },
+                    { $eq: ["$status", "CONFIRMED"] },
+                  ],
+                },
+                { $ifNull: ["$paidAmountCents", { $ifNull: ["$totalCents", "$amountCents"] }] },
+                0,
+              ],
+            },
+          },
+          customersCount: {
+            $addToSet: "$customerWhatsApp",
+          },
+        },
+      },
+    ]),
+    Booking.aggregate([
+      { $match: { workspaceId } },
+      {
+        $group: {
+          _id: "$ownerUserId",
+          bookingsTotal: { $sum: 1 },
+          bookingsConfirmed: {
+            $sum: { $cond: [{ $eq: ["$status", "CONFIRMED"] }, 1, 0] },
+          },
+          bookingsCancelled: {
+            $sum: { $cond: [{ $eq: ["$status", "CANCELLED"] }, 1, 0] },
+          },
+        },
+      },
+    ]),
+  ]);
+
+  const offersMap = new Map(
+    (offerStats || []).map((item) => [
+      String(item._id || ""),
+      {
+        offersCreated: Number(item.offersCreated || 0),
+        paidOffers: Number(item.paidOffers || 0),
+        paidRevenueCents: Number(item.paidRevenueCents || 0),
+        customersCount: Array.isArray(item.customersCount)
+          ? item.customersCount.filter(Boolean).length
+          : 0,
+      },
+    ]),
+  );
+
+  const bookingsMap = new Map(
+    (bookingStats || []).map((item) => [
+      String(item._id || ""),
+      {
+        bookingsTotal: Number(item.bookingsTotal || 0),
+        bookingsConfirmed: Number(item.bookingsConfirmed || 0),
+        bookingsCancelled: Number(item.bookingsCancelled || 0),
+      },
+    ]),
+  );
+
+  return (users || []).map((user) => {
+    const offers = offersMap.get(String(user._id)) || {};
+    const bookings = bookingsMap.get(String(user._id)) || {};
+    const modulePermissions = resolveModulePermissions({
+      user,
+      workspacePlan,
+      workspaceOwnerUserId: null,
+    });
+    const offersCreated = Number(offers.offersCreated || 0);
+    const paidOffers = Number(offers.paidOffers || 0);
+
+    return {
+      ...buildUserPayload(user),
+      createdAt: user.createdAt || null,
+      updatedAt: user.updatedAt || null,
+      whatsappPhone: user.whatsappPhone || "",
+      permissions: sanitizeModulePermissions(user.permissions),
+      modulePermissions,
+      performance: {
+        offersCreated,
+        paidOffers,
+        conversionPct:
+          offersCreated > 0 ? Math.round((paidOffers / offersCreated) * 10000) / 100 : 0,
+        paidRevenueCents: Number(offers.paidRevenueCents || 0),
+        customersCount: Number(offers.customersCount || 0),
+        bookingsTotal: Number(bookings.bookingsTotal || 0),
+        bookingsConfirmed: Number(bookings.bookingsConfirmed || 0),
+        bookingsCancelled: Number(bookings.bookingsCancelled || 0),
+      },
+    };
+  });
 }
 
 async function createPendingRegistration(data) {
@@ -653,6 +911,7 @@ r.post(
               passwordHash: pending.passwordHash,
               workspaceId,
               role: "owner",
+              profile: "owner",
               status: "active",
               whatsappPhone: pending.whatsappPhone || "",
               whatsappPhoneDigits: pending.whatsappPhoneDigits || "",
@@ -870,8 +1129,123 @@ r.get(
 
     return res.json({
       ok: true,
-      user: buildUserPayload(authUser || req.user),
+      user: buildUserPayload({
+        ...((authUser && typeof authUser === "object" ? authUser : {}) || {}),
+        ...req.user,
+      }),
       workspace: buildWorkspacePayload(ws),
+    });
+  }),
+);
+
+r.get(
+  "/auth/workspace-users",
+  ensureAuth,
+  asyncHandler(async (req, res) => {
+    const { workspacePlan } = assertWorkspaceTeamOwnerRequest(req);
+    const items = await listWorkspaceUsersWithPerformance({
+      workspaceId: req.user.workspaceId,
+      workspacePlan,
+    });
+
+    return res.json({
+      ok: true,
+      items,
+      profileCatalog: getWorkspaceProfileCatalog(),
+    });
+  }),
+);
+
+r.post(
+  "/auth/workspace-users",
+  ensureAuth,
+  asyncHandler(async (req, res) => {
+    const { workspacePlan, workspaceOwnerUserId } =
+      assertWorkspaceTeamOwnerRequest(req);
+    const payload = sanitizeWorkspaceUserPayload(req.body);
+
+    const exists = await User.exists({ email: payload.email });
+    if (exists) {
+      return sendError(res, 409, "Este e-mail ja esta em uso.", "EMAIL_IN_USE");
+    }
+
+    const passwordHash = await bcrypt.hash(payload.password, 10);
+    const created = await User.create({
+      name: payload.name,
+      email: payload.email,
+      passwordHash,
+      workspaceId: req.user.workspaceId,
+      role: "member",
+      profile: payload.profile,
+      status: payload.status,
+      permissions: payload.permissions,
+    });
+
+    const fresh = await User.findById(created._id).lean();
+    return res.status(201).json({
+      ok: true,
+      user: buildUserPayload({
+        ...fresh,
+        workspacePlan,
+        workspaceOwnerUserId,
+      }),
+    });
+  }),
+);
+
+r.patch(
+  "/auth/workspace-users/:id",
+  ensureAuth,
+  asyncHandler(async (req, res) => {
+    const { workspacePlan, workspaceOwnerUserId } =
+      assertWorkspaceTeamOwnerRequest(req);
+    const { id } = req.params;
+
+    if (!mongoose.isValidObjectId(id)) {
+      return sendError(res, 400, "ID invalido.", "INVALID_ID");
+    }
+
+    const patch = sanitizeWorkspaceUserPatch(req.body);
+    const target = await User.findOne({
+      _id: id,
+      workspaceId: req.user.workspaceId,
+    });
+
+    if (!target) {
+      return sendError(
+        res,
+        404,
+        "Usuario nao encontrado neste workspace.",
+        "WORKSPACE_USER_NOT_FOUND",
+      );
+    }
+
+    if (target.role === "owner" || String(target._id) === String(workspaceOwnerUserId)) {
+      return sendError(
+        res,
+        409,
+        "O dono do workspace nao pode ser editado por esta rota.",
+        "WORKSPACE_OWNER_IMMUTABLE",
+      );
+    }
+
+    if (patch.name != null) target.name = patch.name;
+    if (patch.profile != null) target.profile = patch.profile;
+    if (patch.status != null) target.status = patch.status;
+    if (patch.permissions != null) target.permissions = patch.permissions;
+    if (patch.password) {
+      target.passwordHash = await bcrypt.hash(patch.password, 10);
+    }
+
+    await target.save();
+
+    return res.json({
+      ok: true,
+      user: buildUserPayload({
+        ...(target.toObject?.() || target),
+        workspacePlan,
+        workspaceOwnerUserId,
+      }),
     });
   }),
 );
@@ -914,7 +1288,13 @@ r.patch(
 
     return res.json({
       ok: true,
-      user: buildUserPayload(freshUser || req.user),
+      user: buildUserPayload({
+        ...((freshUser && typeof freshUser === "object" ? freshUser : {}) || {}),
+        workspacePlan: workspace?.plan || req.user?.workspacePlan || "start",
+        workspaceOwnerUserId:
+          req.user?.workspaceOwnerUserId || workspace?.ownerUserId || null,
+        isWorkspaceOwner: req.user?.isWorkspaceOwner === true,
+      }),
     });
   }),
 );

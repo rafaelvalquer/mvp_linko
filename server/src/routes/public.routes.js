@@ -26,8 +26,9 @@ import { uploadPaymentProof } from "../middleware/uploadProof.js";
 import { notifySellerPaymentProofSubmitted } from "../services/resendEmail.js";
 import {
   isEmailNotificationEnabled,
-  resolveWorkspaceNotificationContext,
+  resolveWorkspaceOwnerNotificationContext,
 } from "../services/notificationSettings.js";
+import { notifyResponsibleSellerProofSubmittedWhatsApp } from "../services/workspaceUserWhatsApp.service.js";
 import path from "path";
 
 const router = express.Router();
@@ -1184,11 +1185,29 @@ router.post("/p/:token/payment/proof", async (req, res, next) => {
 
         // ✅ dispara e-mail para o vendedor (com idempotência por offerId + proofKey)
         let email = null;
+        let internalWhatsApp = null;
+        let notificationContext = null;
+        let fullOffer = null;
+        let booking = null;
         try {
-          const notificationContext = await resolveWorkspaceNotificationContext({
+          notificationContext = await resolveWorkspaceOwnerNotificationContext({
             workspaceId: offer?.workspaceId || null,
-            ownerUserId: offer?.ownerUserId || null,
           });
+
+          fullOffer = await Offer.findById(offer._id)
+            .lean()
+            .catch(() => null);
+
+          try {
+            booking = await Booking.findOne({
+              offerId: offer._id,
+              ...(offer?.workspaceId ? { workspaceId: offer.workspaceId } : {}),
+            })
+              .sort({ startAt: -1 })
+              .lean();
+          } catch {
+            booking = null;
+          }
 
           if (
             !isEmailNotificationEnabled(
@@ -1206,33 +1225,18 @@ router.post("/p/:token/payment/proof", async (req, res, next) => {
                   : "WORKSPACE_SETTING_DISABLED",
             };
           } else {
-          const fullOffer = await Offer.findById(offer._id)
-            .lean()
-            .catch(() => null);
-
-          // booking é opcional (só para enriquecer email quando for serviço)
-          let booking = null;
-          try {
-            booking = await Booking.findOne({
+            const r = await notifySellerPaymentProofSubmitted({
               offerId: offer._id,
-              ...(offer?.workspaceId ? { workspaceId: offer.workspaceId } : {}),
-            })
-              .sort({ startAt: -1 })
-              .lean();
-          } catch {}
+              offer: fullOffer || offer,
+              booking,
+              proof,
+            });
 
-          const r = await notifySellerPaymentProofSubmitted({
-            offerId: offer._id,
-            offer: fullOffer || offer,
-            booking,
-            proof,
-          });
-
-          if (r?.skipped) {
-            email = { status: "SKIPPED", reason: r.reason || "" };
-          } else {
-            email = { status: "SENT", id: r?.id || null, to: r?.to || "" };
-          }
+            if (r?.skipped) {
+              email = { status: "SKIPPED", reason: r.reason || "" };
+            } else {
+              email = { status: "SENT", id: r?.id || null, to: r?.to || "" };
+            }
           }
 
           console.log("[email] proof submitted", {
@@ -1250,8 +1254,28 @@ router.post("/p/:token/payment/proof", async (req, res, next) => {
           });
         }
 
+        try {
+          internalWhatsApp = await notifyResponsibleSellerProofSubmittedWhatsApp({
+            offer: fullOffer || offer,
+            booking,
+            proof,
+            notificationContext,
+          });
+        } catch (waError) {
+          internalWhatsApp = {
+            ok: false,
+            status: "FAILED",
+            error: waError?.message || "internal_whatsapp_failed",
+          };
+          console.warn("[whatsapp] responsible proof submitted failed", {
+            offerId: String(offer._id),
+            proofKey: String(proof?.storage?.key || ""),
+            err: waError?.message || String(waError),
+          });
+        }
+
         noStore(res);
-        return res.json({ ok: true, email });
+        return res.json({ ok: true, email, internalWhatsApp });
       } catch (e2) {
         return next(e2);
       }

@@ -14,11 +14,14 @@ import {
 } from "recharts";
 import Shell from "../components/layout/Shell.jsx";
 import { api } from "../app/api.js";
+import { listWorkspaceUsers } from "../app/authApi.js";
+import { useAuth } from "../app/AuthContext.jsx";
 import PageHeader from "../components/appui/PageHeader.jsx";
 import Card, { CardBody, CardHeader } from "../components/appui/Card.jsx";
 import Button from "../components/appui/Button.jsx";
 import Skeleton from "../components/appui/Skeleton.jsx";
 import EmptyState from "../components/appui/EmptyState.jsx";
+import Badge from "../components/appui/Badge.jsx";
 import { downloadReportFile } from "../utils/reportDownloads.js";
 
 function pad2(value) {
@@ -110,6 +113,10 @@ function MetricCard({ title, subtitle, value, loading }) {
 }
 
 export default function ReportsDashboard() {
+  const { perms, user } = useAuth();
+  const isOwnerTeamView =
+    perms?.isWorkspaceOwner === true && perms?.isWorkspaceTeamPlan === true;
+  const ownerId = String(user?._id || "").trim();
   const now = useMemo(() => new Date(), []);
   const [mounted, setMounted] = useState(false);
   const [preset, setPreset] = useState("30d");
@@ -120,6 +127,10 @@ export default function ReportsDashboard() {
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState("");
+  const [scopeTab, setScopeTab] = useState("mine");
+  const [teamOwnerFilter, setTeamOwnerFilter] = useState("all");
+  const [workspaceUsers, setWorkspaceUsers] = useState([]);
+  const [teamUsersBusy, setTeamUsersBusy] = useState(false);
   const [summary, setSummary] = useState(null);
   const [revenueDaily, setRevenueDaily] = useState([]);
   const [createdVsPaidDaily, setCreatedVsPaidDaily] = useState([]);
@@ -129,12 +140,42 @@ export default function ReportsDashboard() {
 
   useEffect(() => setMounted(true), []);
 
+  const effectiveScopeTab = isOwnerTeamView ? scopeTab : "mine";
+  const appliedScope =
+    isOwnerTeamView && effectiveScopeTab === "workspace" ? "workspace" : "mine";
+  const selectedOwnerUserId =
+    appliedScope !== "workspace"
+      ? ""
+      : teamOwnerFilter === "me"
+        ? ownerId
+        : teamOwnerFilter !== "all"
+          ? teamOwnerFilter
+          : "";
+
+  const selectedTeamMemberName = useMemo(() => {
+    if (teamOwnerFilter === "all") return "Toda a equipe";
+    if (teamOwnerFilter === "me") return "Somente eu";
+    return (
+      workspaceUsers.find((item) => String(item?._id || "") === teamOwnerFilter)
+        ?.name || "Responsavel"
+    );
+  }, [teamOwnerFilter, workspaceUsers]);
+
+  const scopeSummaryLabel =
+    appliedScope === "workspace"
+      ? `Equipe: ${selectedTeamMemberName}`
+      : "Minha carteira";
+
   function buildQS(next = {}) {
     const params = new URLSearchParams();
     params.set("from", next.from ?? from);
     params.set("to", next.to ?? to);
     params.set("type", next.type ?? type);
     params.set("onlyPaid", (next.onlyPaid ?? onlyPaid) ? "1" : "0");
+    params.set("scope", next.scope ?? appliedScope);
+    if (next.ownerUserId ?? selectedOwnerUserId) {
+      params.set("ownerUserId", next.ownerUserId ?? selectedOwnerUserId);
+    }
     return params.toString();
   }
 
@@ -145,8 +186,10 @@ export default function ReportsDashboard() {
         to,
         type,
         onlyPaid,
+        scope: appliedScope,
+        ownerUserId: selectedOwnerUserId,
       }),
-    [from, to, type, onlyPaid],
+    [from, to, type, onlyPaid, appliedScope, selectedOwnerUserId],
   );
 
   async function load(next = {}) {
@@ -190,9 +233,44 @@ export default function ReportsDashboard() {
   }
 
   useEffect(() => {
-    load();
+    load({
+      scope: appliedScope,
+      ownerUserId: selectedOwnerUserId,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [appliedScope, selectedOwnerUserId]);
+
+  useEffect(() => {
+    if (!isOwnerTeamView) {
+      setWorkspaceUsers([]);
+      return;
+    }
+
+    let alive = true;
+
+    (async () => {
+      try {
+        setTeamUsersBusy(true);
+        const data = await listWorkspaceUsers();
+        if (!alive) return;
+        const rawItems = Array.isArray(data?.items) ? data.items : [];
+        setWorkspaceUsers(
+          rawItems.filter(
+            (item) =>
+              String(item?._id || "") !== ownerId && item?.status !== "disabled",
+          ),
+        );
+      } catch {
+        if (alive) setWorkspaceUsers([]);
+      } finally {
+        if (alive) setTeamUsersBusy(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [isOwnerTeamView, ownerId]);
 
   function applyPreset(nextPreset) {
     const base = new Date();
@@ -255,14 +333,15 @@ export default function ReportsDashboard() {
 
   return (
     <Shell>
-      <div className="space-y-6">
+      <div className="mx-auto max-w-7xl px-4 py-6 space-y-6">
         <PageHeader
-          title="Relatorios"
-          subtitle="Acompanhe receita, conversao, clientes e operacao em um painel comercial mais executivo."
+          eyebrow="Relatórios"
+          title="Relatórios"
+          subtitle="Acompanhe receita, conversão, clientes e operação em um painel comercial mais executivo."
           actions={
             <>
               <Link to="/reports/recurring">
-                <Button variant="secondary">Relatorios de recorrencia</Button>
+                <Button variant="secondary">Relatórios de recorrência</Button>
               </Link>
               <Button variant="secondary" onClick={() => load()} disabled={applying}>
                 {applying ? "Atualizando..." : "Atualizar"}
@@ -276,6 +355,53 @@ export default function ReportsDashboard() {
             </>
           }
         />
+
+        {isOwnerTeamView ? (
+          <Card>
+            <CardHeader
+              title="Escopo dos relatórios"
+              subtitle="Alterne entre sua carteira e a visão consolidada da equipe."
+            />
+            <CardBody className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  variant={effectiveScopeTab === "mine" ? "primary" : "secondary"}
+                  onClick={() => setScopeTab("mine")}
+                >
+                  Minha carteira
+                </Button>
+                <Button
+                  size="sm"
+                  variant={effectiveScopeTab === "workspace" ? "primary" : "secondary"}
+                  onClick={() => setScopeTab("workspace")}
+                >
+                  Equipe
+                </Button>
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                {effectiveScopeTab === "workspace" ? (
+                  <select
+                    value={teamOwnerFilter}
+                    onChange={(e) => setTeamOwnerFilter(e.target.value)}
+                    disabled={teamUsersBusy}
+                    className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-emerald-200 sm:w-[240px]"
+                  >
+                    <option value="all">Toda a equipe</option>
+                    <option value="me">Somente eu</option>
+                    {workspaceUsers.map((item) => (
+                      <option key={item._id} value={item._id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
+                <Badge tone="neutral">{scopeSummaryLabel}</Badge>
+              </div>
+            </CardBody>
+          </Card>
+        ) : null}
 
         {error ? <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div> : null}
 

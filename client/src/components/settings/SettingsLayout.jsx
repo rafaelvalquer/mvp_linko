@@ -24,6 +24,12 @@ const TABS = [
     label: "Agenda",
     description: "Disponibilidade, horarios e excecoes.",
   },
+  {
+    key: "team",
+    to: "/settings/team",
+    label: "Equipe",
+    description: "Usuarios, acessos e performance por colaborador.",
+  },
 ];
 
 function formatPlanLabel(value) {
@@ -45,6 +51,12 @@ export default function SettingsLayout({
   const { isDark } = useThemeToggle();
   const plan =
     perms?.plan || workspace?.plan || user?.plan || user?.workspace?.plan || "start";
+  const visibleTabs = TABS.filter((tab) => {
+    if (tab.key === "team") {
+      return perms?.isWorkspaceTeamPlan === true && perms?.isWorkspaceOwner === true;
+    }
+    return true;
+  });
 
   return (
     <Shell>
@@ -77,14 +89,14 @@ export default function SettingsLayout({
             <div
               className={[
                 "grid gap-2",
-                TABS.length > 2
+                visibleTabs.length > 2
                   ? "sm:grid-cols-2 lg:grid-cols-3"
-                  : TABS.length > 1
+                  : visibleTabs.length > 1
                     ? "sm:grid-cols-2"
                     : "sm:grid-cols-1",
               ].join(" ")}
             >
-              {TABS.map((tab) => {
+              {visibleTabs.map((tab) => {
                 const active = tab.key === activeTab;
                 return (
                   <NavLink

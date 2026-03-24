@@ -107,6 +107,7 @@ export default function DayTimeline({
   minHeight = MIN_TIMELINE_HEIGHT,
   hourColumnWidth = 64,
   compact = false,
+  showResponsible = false,
 }) {
   const { isDark } = useThemeToggle();
   const timeZone = useMemo(
@@ -289,6 +290,7 @@ export default function DayTimeline({
               const isEventCompact = compact || event.height < 86;
               const customer = event.item?.customerName || "Cliente";
               const service = event.item?.offer?.title || "Servico";
+              const responsible = event.item?.responsibleUser?.name || "";
               const holdInfo =
                 event.status === "HOLD"
                   ? holdRemaining(event.item?.holdExpiresAt)
@@ -328,6 +330,12 @@ export default function DayTimeline({
                   <div className="mt-1 truncate text-sm font-semibold">
                     {customer}
                   </div>
+
+                  {!isEventCompact && showResponsible && responsible ? (
+                    <div className="mt-1 truncate text-[10px] font-semibold uppercase tracking-[0.12em] opacity-75">
+                      {responsible}
+                    </div>
+                  ) : null}
 
                   {!isEventCompact ? (
                     <div className="mt-1 line-clamp-2 text-[11px] leading-4 opacity-85">

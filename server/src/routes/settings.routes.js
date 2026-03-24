@@ -14,10 +14,28 @@ import {
   sanitizeNotificationPatch,
   resolveWorkspaceNotificationContext,
 } from "../services/notificationSettings.js";
+import {
+  assertWorkspaceModuleAccess,
+  assertWorkspaceOwner,
+} from "../utils/workspaceAccess.js";
 
 const r = Router();
 
 r.use(ensureAuth, tenantFromUser);
+r.use((req, _res, next) => {
+  try {
+    assertWorkspaceModuleAccess({
+      user: req.user,
+      workspacePlan: req.user?.workspacePlan,
+      workspaceOwnerUserId: req.user?.workspaceOwnerUserId,
+      moduleKey: "settings",
+    });
+    assertWorkspaceOwner(req.user, req.user?.workspaceOwnerUserId);
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
 
 /**
  * GET /settings

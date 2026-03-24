@@ -103,8 +103,8 @@ export default function Products() {
     <Shell>
       <div className="space-y-4">
         <PageHeader
-          title="Seus Produtos"
-          subtitle="Cadastre, pesquise e gerencie seus produtos."
+          title="Produtos"
+          subtitle="Cadastre, pesquise e gerencie o catalogo do workspace."
           actions={viewToggle}
         />
 
@@ -123,7 +123,7 @@ export default function Products() {
         <Card>
           <CardHeader
             title="Produtos"
-            subtitle="Pesquise por Nome ou ID do produto."
+            subtitle="Pesquise por nome ou ID em todo o catalogo do workspace."
             right={<div className="text-xs text-zinc-500">{count} itens</div>}
           />
           <CardBody className="space-y-3">
@@ -155,7 +155,7 @@ export default function Products() {
             ) : items.length === 0 ? (
               <EmptyState
                 title="Nenhum produto cadastrado"
-                description="Clique em “Novo” para cadastrar seu primeiro produto."
+                description='Clique em "Novo" para cadastrar o primeiro produto do workspace.'
                 ctaLabel="Novo produto"
                 onCta={() => setOpenNew(true)}
               />

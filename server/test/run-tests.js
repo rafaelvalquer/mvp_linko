@@ -54,6 +54,12 @@ import {
   assertWhatsAppAccountPhoneAllowed,
   getPlanFeatureMatrix,
 } from "../src/utils/planFeatures.js";
+import {
+  assertWorkspaceModuleAccess,
+  buildWorkspaceCatalogFilter,
+  canUseWorkspaceSharedCatalog,
+  getScopedCatalogOwnerUserId,
+} from "../src/utils/workspaceAccess.js";
 import { applyProductSelectionToItem } from "../src/services/whatsapp-ai/whatsappEntityResolver.service.js";
 import {
   buildDeliveryAckPatch,
@@ -179,29 +185,32 @@ await check("PendingRegistration normalizes WhatsApp on validation", async () =>
 });
 
 await check("buildUserPayload exposes whatsappPhone", () => {
-  assert.deepEqual(
-    buildUserPayload({
-      _id: "user-1",
-      name: "Rafael",
-      email: "rafael@example.com",
-      workspaceId: "workspace-1",
-      role: "owner",
-      status: "active",
-      whatsNewLastSeenAt: null,
-      whatsappPhone: "11 99999-8888",
-    }),
-    {
-      _id: "user-1",
-      name: "Rafael",
-      email: "rafael@example.com",
-      workspaceId: "workspace-1",
-      role: "owner",
-      status: "active",
-      isMasterAdmin: false,
-      whatsNewLastSeenAt: null,
-      whatsappPhone: "11 99999-8888",
-    },
-  );
+  const payload = buildUserPayload({
+    _id: "user-1",
+    name: "Rafael",
+    email: "rafael@example.com",
+    workspaceId: "workspace-1",
+    role: "owner",
+    status: "active",
+    whatsNewLastSeenAt: null,
+    whatsappPhone: "11 99999-8888",
+  });
+
+  assert.equal(payload._id, "user-1");
+  assert.equal(payload.name, "Rafael");
+  assert.equal(payload.email, "rafael@example.com");
+  assert.equal(payload.workspaceId, "workspace-1");
+  assert.equal(payload.role, "owner");
+  assert.equal(payload.profile, "owner");
+  assert.equal(payload.status, "active");
+  assert.equal(payload.isMasterAdmin, false);
+  assert.equal(payload.isWorkspaceOwner, true);
+  assert.equal(payload.workspacePlan, "start");
+  assert.deepEqual(payload.permissions, {});
+  assert.equal(payload.whatsNewLastSeenAt, null);
+  assert.equal(payload.whatsappPhone, "11 99999-8888");
+  assert.equal(payload.modulePermissions?.products, true);
+  assert.equal(payload.modulePermissions?.clients, true);
 });
 
 await check("notification settings include offer cancelled toggle", () => {
@@ -246,6 +255,86 @@ await check("assertWhatsAppAccountPhoneAllowed blocks Start plan", () => {
     /WhatsApp da conta/i,
   );
   assert.equal(assertWhatsAppAccountPhoneAllowed("pro"), "pro");
+});
+
+await check("workspace catalog is shared for Business and Enterprise members", () => {
+  const member = {
+    _id: "507f191e810c19729de860ea",
+    role: "member",
+  };
+
+  assert.equal(canUseWorkspaceSharedCatalog("business"), true);
+  assert.equal(canUseWorkspaceSharedCatalog("enterprise"), true);
+  assert.equal(
+    getScopedCatalogOwnerUserId({
+      user: member,
+      workspacePlan: "business",
+      workspaceOwnerUserId: "507f1f77bcf86cd799439011",
+    }),
+    null,
+  );
+
+  assert.deepEqual(
+    buildWorkspaceCatalogFilter({
+      user: member,
+      workspaceId: "507f191e810c19729de860eb",
+      workspacePlan: "enterprise",
+      workspaceOwnerUserId: "507f1f77bcf86cd799439011",
+    }),
+    {
+      workspaceId: "507f191e810c19729de860eb",
+    },
+  );
+});
+
+await check("workspace catalog keeps members scoped outside shared plans", () => {
+  const member = {
+    _id: "507f191e810c19729de860ec",
+    role: "member",
+  };
+
+  assert.equal(canUseWorkspaceSharedCatalog("start"), false);
+  assert.equal(canUseWorkspaceSharedCatalog("pro"), false);
+  assert.equal(
+    String(
+      getScopedCatalogOwnerUserId({
+        user: member,
+        workspacePlan: "pro",
+        workspaceOwnerUserId: "507f1f77bcf86cd799439011",
+      }),
+    ),
+    "507f191e810c19729de860ec",
+  );
+
+  const filter = buildWorkspaceCatalogFilter({
+    user: member,
+    workspaceId: "507f191e810c19729de860ed",
+    workspacePlan: "start",
+    workspaceOwnerUserId: "507f1f77bcf86cd799439011",
+  });
+
+  assert.equal(filter.workspaceId, "507f191e810c19729de860ed");
+  assert.equal(String(filter.ownerUserId), "507f191e810c19729de860ec");
+});
+
+await check("workspace module access still blocks unauthorized catalog modules", () => {
+  assert.throws(
+    () =>
+      assertWorkspaceModuleAccess({
+        user: {
+          _id: "507f191e810c19729de860ee",
+          role: "member",
+          profile: "sales",
+          permissions: {
+            clients: false,
+          },
+        },
+        workspacePlan: "business",
+        workspaceOwnerUserId: "507f1f77bcf86cd799439011",
+        moduleKey: "clients",
+      }),
+    /permissao/i,
+  );
 });
 
 await check("plan matrix blocks WhatsApp AI offer creation on Start", () => {

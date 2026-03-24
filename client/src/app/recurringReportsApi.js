@@ -7,6 +7,8 @@ export function getRecurringReportsDashboard(params = {}) {
   if (params.to) qs.set("to", params.to);
   if (params.type) qs.set("type", params.type);
   if (params.recurringStatus) qs.set("recurringStatus", params.recurringStatus);
+  if (params.scope) qs.set("scope", params.scope);
+  if (params.ownerUserId) qs.set("ownerUserId", params.ownerUserId);
 
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   return api(`/reports/recurring/dashboard${suffix}`);

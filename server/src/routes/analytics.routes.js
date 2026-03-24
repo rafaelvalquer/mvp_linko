@@ -4,6 +4,10 @@ import mongoose from "mongoose";
 
 import { ensureAuth, tenantFromUser } from "../middleware/auth.js";
 import { Offer } from "../models/Offer.js";
+import {
+  assertWorkspaceModuleAccess,
+} from "../utils/workspaceAccess.js";
+import { resolveWorkspaceOwnerScope } from "../utils/workspaceOwnerScope.js";
 
 const r = Router();
 
@@ -105,10 +109,28 @@ function round2(n) {
  */
 r.get("/analytics/dashboard", ensureAuth, tenantFromUser, async (req, res) => {
   try {
+    assertWorkspaceModuleAccess({
+      user: req.user,
+      workspacePlan: req.user?.workspacePlan,
+      workspaceOwnerUserId: req.user?.workspaceOwnerUserId,
+      moduleKey: "reports",
+    });
     const tz = clampTz(req.query.tz);
 
     const tenantIdRaw = req.tenantId;
-    const userIdRaw = req.user?._id;
+    const scopeInfo = await resolveWorkspaceOwnerScope({
+      user: req.user,
+      workspaceId: tenantIdRaw,
+      workspacePlan: req.user?.workspacePlan || "start",
+      workspaceOwnerUserId: req.user?.workspaceOwnerUserId || null,
+      scopeRaw: req.query.scope,
+      ownerUserIdRaw: req.query.ownerUserId,
+      defaultOwnerScope: "mine",
+      forbiddenMessage:
+        "Somente o dono do workspace pode visualizar os analytics da equipe.",
+      forbiddenCode: "WORKSPACE_ANALYTICS_SCOPE_FORBIDDEN",
+    });
+    const userIdRaw = scopeInfo.ownerUserId;
 
     if (!mongoose.isValidObjectId(tenantIdRaw)) {
       return res.status(400).json({ ok: false, error: "workspace inválido" });
@@ -337,6 +359,7 @@ r.get("/analytics/dashboard", ensureAuth, tenantFromUser, async (req, res) => {
 
     return res.json({
       ok: true,
+      scope: scopeInfo.appliedScope,
       monthDaily,
       last30Ticket,
       paymentDist: { today: distToday, last7: distLast7, last30: distLast30 },

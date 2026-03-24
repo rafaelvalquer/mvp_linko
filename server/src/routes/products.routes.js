@@ -11,8 +11,42 @@ import {
   createProductForWorkspace,
   updateProductForWorkspace,
 } from "../services/products/product.service.js";
+import {
+  assertWorkspaceModuleAccess,
+  buildWorkspaceCatalogFilter,
+  getScopedCatalogOwnerUserId,
+} from "../utils/workspaceAccess.js";
 
 const r = Router();
+
+function assertProductsModule(req) {
+  assertWorkspaceModuleAccess({
+    user: req.user,
+    workspacePlan: req.user?.workspacePlan,
+    workspaceOwnerUserId: req.user?.workspaceOwnerUserId,
+    moduleKey: "products",
+  });
+}
+
+function buildCatalogFilter(req, extra = {}) {
+  return {
+    ...buildWorkspaceCatalogFilter({
+      user: req.user,
+      workspaceId: req.tenantId,
+      workspacePlan: req.user?.workspacePlan,
+      workspaceOwnerUserId: req.user?.workspaceOwnerUserId,
+    }),
+    ...extra,
+  };
+}
+
+function getCatalogOwnerUserId(req) {
+  return getScopedCatalogOwnerUserId({
+    user: req.user,
+    workspacePlan: req.user?.workspacePlan,
+    workspaceOwnerUserId: req.user?.workspaceOwnerUserId,
+  });
+}
 
 function escapeRegex(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -50,8 +84,9 @@ const upload = multer({
 // LISTAR / FILTRAR
 r.get("/products", ensureAuth, tenantFromUser, async (req, res) => {
   try {
+    assertProductsModule(req);
     const q = String(req.query.q || "").trim();
-    const filter = { workspaceId: req.tenantId };
+    const filter = buildCatalogFilter(req);
 
     if (q) {
       const rx = new RegExp(escapeRegex(q), "i");
@@ -74,15 +109,15 @@ r.get("/products", ensureAuth, tenantFromUser, async (req, res) => {
 // DETALHE
 r.get("/products/:id", ensureAuth, tenantFromUser, async (req, res) => {
   try {
+    assertProductsModule(req);
     const id = String(req.params.id || "");
     if (!mongoose.isValidObjectId(id)) {
       return res.status(400).json({ ok: false, error: "ID inválido." });
     }
 
-    const doc = await Product.findOne({
-      _id: id,
-      workspaceId: req.tenantId,
-    }).lean();
+    const filter = buildCatalogFilter(req, { _id: id });
+
+    const doc = await Product.findOne(filter).lean();
     if (!doc)
       return res
         .status(404)
@@ -104,6 +139,7 @@ r.post(
   upload.single("image"),
   async (req, res) => {
     try {
+      assertProductsModule(req);
       const productId = String(req.body?.productId || "").trim();
       const name = String(req.body?.name || "").trim();
       const description = String(req.body?.description || "").trim();
@@ -152,6 +188,7 @@ r.put(
   upload.single("image"),
   async (req, res) => {
     try {
+      assertProductsModule(req);
       const id = String(req.params.id || "");
       if (!mongoose.isValidObjectId(id)) {
         return res.status(400).json({ ok: false, error: "ID inválido." });
@@ -169,6 +206,7 @@ r.put(
       const updated = await updateProductForWorkspace({
         workspaceId: req.tenantId,
         productMongoId: id,
+        ownerUserId: getCatalogOwnerUserId(req) || null,
         name,
         description,
         priceCents,

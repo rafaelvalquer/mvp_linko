@@ -66,7 +66,7 @@ export default function Clients() {
   const hasItems = items.length > 0;
 
   const subtitle = useMemo(() => {
-    return "Cadastre e gerencie seus clientes. Busca por nome, e-mail, CPF/CNPJ.";
+    return "Cadastre e gerencie os clientes do workspace. Busca por nome, e-mail e CPF/CNPJ.";
   }, []);
 
   async function onCreate(payload) {
@@ -110,7 +110,7 @@ export default function Clients() {
         <Card>
           <CardHeader
             title="Lista de clientes"
-            subtitle="Pesquise por nome, e-mail, CPF/CNPJ."
+            subtitle="Pesquise por nome, e-mail ou CPF/CNPJ em todo o workspace."
             right={
               <div className="w-72 max-w-full">
                 <Input
@@ -144,7 +144,7 @@ export default function Clients() {
               <div className="p-5">
                 <EmptyState
                   title="Nenhum cliente cadastrado"
-                  description="Cadastre o primeiro cliente para usar na sua loja."
+                  description="Cadastre o primeiro cliente do workspace para usar nas propostas."
                   ctaLabel="Cadastrar cliente"
                   onCta={() => {
                     setEditTarget(null);

@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import {
   CreditCard,
   LogOut,
+  MessageCircle,
   Moon,
   Settings2,
   Sun,
@@ -60,6 +61,7 @@ export default function Topbar({
   isDark = false,
   setIsDark,
   contextualAction = null,
+  onOpenMyWhatsApp = null,
 }) {
   const { user, workspace, loadingBilling, subscriptionStatus, signOut } =
     useAuth();
@@ -76,6 +78,7 @@ export default function Topbar({
   const normalized = String(subscriptionStatus || "").toLowerCase();
   const needsAttention = normalized !== "active";
   const isPastDue = normalized === "past_due";
+  const hasWhatsAppConfigured = String(user?.whatsappPhone || "").trim().length > 0;
 
   function handleLogout() {
     signOut?.();
@@ -206,31 +209,99 @@ export default function Topbar({
                 </Link>
               ) : null}
 
-              <div
-              className={[
-                "hidden rounded-2xl border px-4 py-2 text-right lg:block",
-                isDark
-                  ? "border-white/10 bg-white/5"
-                  : "border-slate-200/80 bg-white/78 shadow-[0_14px_28px_-20px_rgba(15,23,42,0.18)]",
-                ].join(" ")}
-              >
+              {onOpenMyWhatsApp ? (
+                <button
+                  type="button"
+                  onClick={onOpenMyWhatsApp}
+                  className={[
+                    "inline-flex h-10 w-10 items-center justify-center rounded-2xl border transition lg:hidden",
+                    isDark
+                      ? "border-white/10 bg-white/5 text-slate-200 hover:border-cyan-400/20 hover:bg-white/10 hover:text-white"
+                      : "border-slate-200/80 bg-white/80 text-slate-700 shadow-[0_14px_28px_-20px_rgba(15,23,42,0.18)] hover:border-cyan-300 hover:bg-sky-50 hover:text-slate-950",
+                  ].join(" ")}
+                  title="Meu WhatsApp"
+                  aria-label="Abrir Meu WhatsApp"
+                >
+                  <MessageCircle className="h-4 w-4" />
+                </button>
+              ) : null}
+
+              {onOpenMyWhatsApp ? (
+                <button
+                  type="button"
+                  onClick={onOpenMyWhatsApp}
+                  className={[
+                    "hidden rounded-2xl border px-4 py-2 text-left transition lg:block",
+                    hasWhatsAppConfigured
+                      ? isDark
+                        ? "border-white/10 bg-white/5 hover:border-cyan-400/20 hover:bg-white/10"
+                        : "border-slate-200/80 bg-white/78 shadow-[0_14px_28px_-20px_rgba(15,23,42,0.18)] hover:border-cyan-300 hover:bg-sky-50"
+                      : isDark
+                        ? "border-cyan-400/20 bg-cyan-400/10 hover:border-cyan-300/30 hover:bg-cyan-400/14"
+                        : "border-cyan-200 bg-cyan-50 shadow-[0_14px_28px_-20px_rgba(14,165,233,0.24)] hover:border-cyan-300 hover:bg-cyan-100/80",
+                  ].join(" ")}
+                  title="Abrir Meu WhatsApp"
+                >
+                  <div
+                    className={[
+                      "text-[10px] font-bold uppercase tracking-[0.18em]",
+                      isDark ? "text-slate-400" : "text-slate-500",
+                    ].join(" ")}
+                  >
+                    Meu WhatsApp
+                  </div>
+                  <div
+                    className={[
+                      "max-w-[190px] truncate text-sm font-semibold",
+                      isDark ? "text-slate-100" : "text-slate-900",
+                    ].join(" ")}
+                  >
+                    {displayName}
+                  </div>
+                  <div
+                    className={[
+                      "mt-0.5 text-xs",
+                      hasWhatsAppConfigured
+                        ? isDark
+                          ? "text-emerald-300"
+                          : "text-emerald-700"
+                        : isDark
+                          ? "text-cyan-200"
+                          : "text-cyan-700",
+                    ].join(" ")}
+                  >
+                    {hasWhatsAppConfigured
+                      ? "Numero configurado"
+                      : "Configurar numero"}
+                  </div>
+                </button>
+              ) : (
                 <div
                   className={[
-                    "text-[10px] font-bold uppercase tracking-[0.18em]",
-                    isDark ? "text-slate-400" : "text-slate-500",
+                    "hidden rounded-2xl border px-4 py-2 text-right lg:block",
+                    isDark
+                      ? "border-white/10 bg-white/5"
+                      : "border-slate-200/80 bg-white/78 shadow-[0_14px_28px_-20px_rgba(15,23,42,0.18)]",
                   ].join(" ")}
                 >
-                  Usuario logado
+                  <div
+                    className={[
+                      "text-[10px] font-bold uppercase tracking-[0.18em]",
+                      isDark ? "text-slate-400" : "text-slate-500",
+                    ].join(" ")}
+                  >
+                    Usuario logado
+                  </div>
+                  <div
+                    className={[
+                      "max-w-[180px] truncate text-sm font-semibold",
+                      isDark ? "text-slate-100" : "text-slate-900",
+                    ].join(" ")}
+                  >
+                    {displayName}
+                  </div>
                 </div>
-                <div
-                  className={[
-                    "max-w-[180px] truncate text-sm font-semibold",
-                    isDark ? "text-slate-100" : "text-slate-900",
-                  ].join(" ")}
-                >
-                  {displayName}
-                </div>
-              </div>
+              )}
 
               <button
                 type="button"

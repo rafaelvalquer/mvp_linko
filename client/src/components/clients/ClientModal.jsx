@@ -89,8 +89,8 @@ export default function ClientModal({
           </div>
           <div className="mt-1 text-sm text-slate-500 dark:text-slate-300">
             {isEdit
-              ? "Atualize os dados do cliente."
-              : "Cadastre um cliente para usar na sua loja."}
+              ? "Atualize os dados do cliente do workspace."
+              : "Cadastre um cliente para usar nas propostas do workspace."}
           </div>
         </div>
 

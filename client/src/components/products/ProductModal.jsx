@@ -108,8 +108,8 @@ export default function ProductModal({
         </div>
         <div className="mt-1 text-sm text-slate-500 dark:text-slate-300">
           {isEdit
-            ? "Atualize as informacoes do produto."
-            : "Cadastre um novo produto na sua loja."}
+            ? "Atualize as informacoes do produto no catalogo do workspace."
+            : "Cadastre um novo produto no catalogo do workspace."}
         </div>
 
         {err ? (

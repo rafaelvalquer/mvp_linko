@@ -109,7 +109,6 @@ function maskPixKey(type, key) {
 
 async function findWorkspace(req) {
   const tenantId = req.tenantId;
-  const userId = req.user?._id;
 
   if (!tenantId) {
     const err = new Error("Workspace não resolvido (tenant).");
@@ -118,16 +117,31 @@ async function findWorkspace(req) {
   }
 
   // preferível validar dono; se seu tenantFromUser já garante isso, continua ok.
-  const q = { _id: tenantId };
-  if (userId) q.ownerUserId = userId;
-
-  const ws = await Workspace.findOne(q).catch(() => null);
+  const ws = await Workspace.findById(tenantId).catch(() => null);
   if (!ws) {
     const err = new Error("Workspace não encontrado.");
     err.status = 404;
     throw err;
   }
   return ws;
+}
+
+function assertWorkspaceOwnerForPixSettings(req, workspace) {
+  const requestUserId = String(req.user?._id || "").trim();
+  const ownerUserId = String(workspace?.ownerUserId || "").trim();
+  const isWorkspaceOwner =
+    req.user?.isWorkspaceOwner === true ||
+    req.user?.role === "owner" ||
+    (requestUserId && ownerUserId && requestUserId === ownerUserId);
+
+  if (isWorkspaceOwner) return;
+
+  const err = new Error(
+    "Somente o dono do workspace pode configurar ou alterar a Conta Pix.",
+  );
+  err.status = 403;
+  err.code = "PIX_SETTINGS_OWNER_REQUIRED";
+  throw err;
 }
 
 /**
@@ -163,6 +177,7 @@ r.get("/withdraw/payout-settings", async (req, res, next) => {
 r.put("/withdraw/payout-settings", async (req, res, next) => {
   try {
     const ws = await findWorkspace(req);
+    assertWorkspaceOwnerForPixSettings(req, ws);
 
     const type = String(req.body?.payoutPixKeyType || "").toUpperCase();
     if (!PIX_TYPES.includes(type)) {
@@ -232,6 +247,15 @@ r.put("/withdraw/payout-settings", async (req, res, next) => {
       payoutUpdatedAt: ws.payoutUpdatedAt,
     });
   } catch (e) {
+    if (e?.status === 403) {
+      return res.status(403).json({
+        ok: false,
+        error:
+          e?.message ||
+          "Somente o dono do workspace pode configurar ou alterar a Conta Pix.",
+        code: e?.code || "PIX_SETTINGS_OWNER_REQUIRED",
+      });
+    }
     next(e);
   }
 });

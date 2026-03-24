@@ -53,6 +53,7 @@ export default function RecurringOffers() {
   const canUseRecurringFeatures = canUseRecurringPlan(
     perms?.plan || workspace?.plan || user?.plan || user?.workspace?.plan || "start",
   );
+  const canManagePixAccount = perms?.canManagePixAccount === true;
 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -154,8 +155,16 @@ export default function RecurringOffers() {
       navigate: nav,
       openPixModal,
       targetPath: "/offers/new?mode=recurring",
+      canManagePixAccount,
     });
-  }, [canUseRecurringFeatures, localPayoutPixKeyMasked, nav, openPixModal, workspace]);
+  }, [
+    canUseRecurringFeatures,
+    localPayoutPixKeyMasked,
+    nav,
+    openPixModal,
+    workspace,
+    canManagePixAccount,
+  ]);
 
   const runAction = useCallback(
     async (item, action) => {
@@ -402,6 +411,7 @@ export default function RecurringOffers() {
         onSaved={handlePixSaved}
         contextTitle={pixModalState.title}
         contextDescription={pixModalState.description}
+        canManagePixAccount={canManagePixAccount}
       />
     </Shell>
   );

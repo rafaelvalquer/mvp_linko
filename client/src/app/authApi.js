@@ -49,3 +49,21 @@ export function ackWhatsNew({ seenAt }) {
     body: JSON.stringify({ seenAt }),
   });
 }
+
+export function listWorkspaceUsers() {
+  return api("/auth/workspace-users");
+}
+
+export function createWorkspaceUser(payload) {
+  return api("/auth/workspace-users", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateWorkspaceUser(id, payload) {
+  return api(`/auth/workspace-users/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
