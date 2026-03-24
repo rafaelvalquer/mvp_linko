@@ -730,8 +730,59 @@ export default function AnalyticsSection({
     });
   }
 
+  const last30Days = useMemo(() => lastNDaysYMD(30), []);
+  const last30Set = useMemo(() => new Set(last30Days), [last30Days]);
+  const todayKey = last30Days[last30Days.length - 1] || null;
+  const last7Days = useMemo(() => last30Days.slice(-7), [last30Days]);
+  const last7Set = useMemo(() => new Set(last7Days), [last7Days]);
+
+  const hasLocalOfferFallback =
+    Array.isArray(offersProp) && offersProp.length > 0;
+  const showBlockingErrorState = Boolean(err) && !hasLocalOfferFallback;
+
   const monthDaily = data?.monthDaily || [];
-  const paymentDist = data?.paymentDist || {};
+  const localPaymentDist = useMemo(() => {
+    const offers = Array.isArray(offersProp) ? offersProp : [];
+    const buckets = {
+      today: new Map(),
+      last7: new Map(),
+      last30: new Map(),
+    };
+
+    for (const offer of offers) {
+      const createdDay = getCreatedDateYMD(offer);
+      if (!createdDay) continue;
+
+      const status = normStatus(offer?.status) || "PUBLIC";
+
+      if (todayKey && createdDay === todayKey) {
+        buckets.today.set(status, (buckets.today.get(status) || 0) + 1);
+      }
+      if (last7Set.has(createdDay)) {
+        buckets.last7.set(status, (buckets.last7.get(status) || 0) + 1);
+      }
+      if (last30Set.has(createdDay)) {
+        buckets.last30.set(status, (buckets.last30.get(status) || 0) + 1);
+      }
+    }
+
+    return Object.fromEntries(
+      Object.entries(buckets).map(([key, map]) => [
+        key,
+        Array.from(map.entries())
+          .map(([status, count]) => ({ status, count }))
+          .sort(
+            (a, b) =>
+              (Number(b.count) || 0) - (Number(a.count) || 0) ||
+              String(a.status || "").localeCompare(
+                String(b.status || ""),
+                "pt-BR",
+              ),
+          ),
+      ]),
+    );
+  }, [offersProp, last30Set, last7Set, todayKey]);
+  const paymentDist = data?.paymentDist || localPaymentDist;
 
   const pieData = useMemo(() => {
     const rows = paymentDist?.[pieRange] || [];
@@ -788,9 +839,6 @@ export default function AnalyticsSection({
       return next;
     });
   }
-
-  const last30Days = useMemo(() => lastNDaysYMD(30), []);
-  const last30Set = useMemo(() => new Set(last30Days), [last30Days]);
 
   const volumeBase = useMemo(() => {
     const offers = Array.isArray(offersProp) ? offersProp : [];
@@ -1069,7 +1117,7 @@ export default function AnalyticsSection({
               >
                 {analyticsScopeLabel}
               </span>
-              {err ? (
+              {showBlockingErrorState ? (
                 <span className="inline-flex items-center rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-700">
                   erro
                 </span>
@@ -1111,7 +1159,7 @@ export default function AnalyticsSection({
               className="overflow-hidden"
             >
               <div className="px-5 pb-5">
-                {err ? (
+                {showBlockingErrorState ? (
                   <div
                     className={[
                       "rounded-[24px] border p-6",
@@ -1129,7 +1177,8 @@ export default function AnalyticsSection({
                   </div>
                 ) : null}
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4">
+                {!showBlockingErrorState ? (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4">
                   {/* VOLUME */}
                   <ChartCard
                     title="Volume diário (R$)"
@@ -1395,7 +1444,8 @@ export default function AnalyticsSection({
                       )}
                     </ChartCard>
                   </div>
-                </div>
+                  </div>
+                ) : null}
               </div>
             </motion.div>
           ) : null}

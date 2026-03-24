@@ -113,7 +113,7 @@ r.get("/analytics/dashboard", ensureAuth, tenantFromUser, async (req, res) => {
       user: req.user,
       workspacePlan: req.user?.workspacePlan,
       workspaceOwnerUserId: req.user?.workspaceOwnerUserId,
-      moduleKey: "reports",
+      moduleKey: "dashboard",
     });
     const tz = clampTz(req.query.tz);
 
@@ -366,7 +366,7 @@ r.get("/analytics/dashboard", ensureAuth, tenantFromUser, async (req, res) => {
     });
   } catch (e) {
     return res
-      .status(500)
+      .status(Number(e?.status) || 500)
       .json({ ok: false, error: e?.message || "Falha ao carregar analytics." });
   }
 });
