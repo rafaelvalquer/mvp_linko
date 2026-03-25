@@ -23,6 +23,7 @@ import {
   listWebAgentAutomationOfferCandidates,
   resolveAutomationOfferCandidate,
 } from "../webAgentAutomation.service.js";
+import { generateLuminaInsight } from "../luminaInsight.service.js";
 import {
   applyCustomerSelection,
   applyProductSelectionToItem,
@@ -168,6 +169,7 @@ function resolveIntentModuleKey(intent) {
   const normalized = String(intent || "").trim();
 
   if (normalized === "create_offer_send_whatsapp") return "newOffer";
+  if (normalized === "generate_sales_insight") return "reports";
   if (
     [
       "query_pending_offers",
@@ -1977,6 +1979,71 @@ async function runOfferAutomationSummaryForSession({
     ok: true,
     status: "completed",
     session: completedSession,
+  };
+}
+
+async function runLuminaInsightForSession({
+  session,
+  user,
+  text,
+  dedupeSuffix,
+  routingExtraction = null,
+}) {
+  const accessDenied = await maybeHandleWebModuleAccessDenied({
+    session,
+    user,
+    moduleKey: resolveIntentModuleKey(routingExtraction?.intent || "generate_sales_insight"),
+    dedupeSuffix,
+  });
+  if (accessDenied) return accessDenied;
+
+  const insight = await generateLuminaInsight({
+    user,
+    now: new Date(),
+    windowDays: 30,
+  });
+
+  const updatedSession = await updateWhatsAppSession(session._id, {
+    flowType: "insight_analysis",
+    state: "NEW",
+    pendingFields: [],
+    candidateCustomers: [],
+    candidateProducts: [],
+    candidateBookings: [],
+    candidateOffers: [],
+    confirmationSummaryText: "",
+    lastQuestionKey: "insight_summary",
+    lastQuestionText: insight.message,
+    extracted: buildSessionExtracted(session?.extracted, {
+      ...(routingExtraction ? { intentRouting: routingExtraction } : {}),
+    }),
+    resolved: {
+      ...stripIntentSelectionContext(session?.resolved || {}),
+      source_text: String(text || "").trim(),
+      insightWindowDays: 30,
+      insightGeneratedAt: insight?.snapshot?.meta?.generatedAt || new Date().toISOString(),
+      insightConfidence: String(insight?.analysis?.confidence || "medium").trim(),
+      insightHeadline: String(insight?.analysis?.headline || "").trim(),
+      insightSuggestedActions: Array.isArray(insight?.analysis?.suggestedActions)
+        ? insight.analysis.suggestedActions
+        : [],
+    },
+    completedAt: null,
+    cancelledAt: null,
+    lastError: null,
+  });
+
+  await replyToSession({
+    session: updatedSession,
+    user,
+    message: insight.message,
+    dedupeSuffix,
+  });
+
+  return {
+    ok: true,
+    status: "insight_ready",
+    session: updatedSession,
   };
 }
 
@@ -4379,6 +4446,16 @@ async function dispatchInitialSessionRouting({
       user,
       text,
       dedupeSuffix: `${messageId}:pending-offers`,
+      routingExtraction,
+    });
+  }
+
+  if (routingExtraction.intent === "generate_sales_insight") {
+    return runLuminaInsightForSession({
+      session: sessionAfterRouting,
+      user,
+      text,
+      dedupeSuffix: `${messageId}:sales-insight`,
       routingExtraction,
     });
   }

@@ -150,6 +150,7 @@ const WhatsAppCommandSessionSchema = new mongoose.Schema(
     flowType: {
       type: String,
       enum: [
+        "insight_analysis",
         "offer_create",
         "offer_query",
         "offer_payment_reminder",

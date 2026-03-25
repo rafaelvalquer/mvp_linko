@@ -7,6 +7,7 @@ export const WHATSAPP_AI_INTENTS = [
 
 export const WHATSAPP_AI_ROUTING_INTENTS = [
   "create_offer_send_whatsapp",
+  "generate_sales_insight",
   "query_daily_agenda",
   "query_weekly_agenda",
   "query_next_booking",

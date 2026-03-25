@@ -5,6 +5,7 @@ import {
   Bot,
   History,
   LayoutGrid,
+  Lightbulb,
   Loader2,
   MessageCircleMore,
   Plus,
@@ -23,6 +24,7 @@ import {
 } from "../../app/agentWebApi.js";
 import useThemeToggle from "../../app/useThemeToggle.js";
 import { canUseWhatsAppAiOfferCreation } from "../../utils/planFeatures.js";
+import { hasWorkspaceModuleAccess } from "../../utils/workspacePermissions.js";
 import Button from "../appui/Button.jsx";
 import { Textarea } from "../appui/Input.jsx";
 import { getLuminaMotionPreset } from "./luminaMotion.js";
@@ -31,6 +33,21 @@ const PASSIVE_TEASER_DISMISS_MS = 15 * 60 * 1000;
 const PASSIVE_ACKNOWLEDGE_MS = 45 * 60 * 1000;
 const PASSIVE_REFRESH_INTERVAL_MS = 15 * 60 * 1000;
 const PASSIVE_FOCUS_STALE_MS = 10 * 60 * 1000;
+const INSIGHT_ACTION_KEY = "insight_summary";
+const INSIGHT_ACTION_TEXT = "Quero gerar um insight financeiro";
+const INTERRUPTIBLE_OPERATIONAL_FLOW_TYPES = new Set([
+  "offer_create",
+  "offer_query",
+  "offer_payment_reminder",
+  "offer_cancel",
+  "client_create",
+  "product_create",
+  "product_update",
+  "lookup_query",
+  "agenda_query",
+  "booking_reschedule",
+  "booking_cancel",
+]);
 const DEFAULT_PASSIVE_SESSION_STATE = {
   lastShownSignature: "",
   lastAcknowledgedSignature: "",
@@ -125,6 +142,17 @@ function TypingDots({ motionPreset, reducedMotion, isDark }) {
   );
 }
 
+function isInterruptibleOperationalSession(session = null) {
+  if (!session?._id) return false;
+  if (session?.isTerminal === true) return false;
+
+  const state = String(session?.state || "").trim().toUpperCase();
+  const flowType = String(session?.flowType || "").trim();
+
+  if (!state || state === "NEW") return false;
+  return INTERRUPTIBLE_OPERATIONAL_FLOW_TYPES.has(flowType);
+}
+
 function MessageBubble({ item, isDark, motionPreset }) {
   const isUser = item?.role === "user";
 
@@ -205,6 +233,7 @@ function TypingBubble({ isDark, motionPreset, reducedMotion }) {
 
 function OverlayControlButton({
   icon: Icon,
+  iconClassName = "",
   label,
   onClick,
   isDark,
@@ -253,7 +282,7 @@ function OverlayControlButton({
               : "border-slate-200/80 bg-white text-slate-700 hover:bg-slate-100",
         ].join(" ")}
       >
-        <Icon className="h-4 w-4" />
+        <Icon className={["h-4 w-4", iconClassName].join(" ").trim()} />
         {label}
       </motion.button>
     </motion.div>
@@ -932,6 +961,7 @@ export default function LuminaChatWidget() {
   const [bootstrapping, setBootstrapping] = useState(false);
   const [openingPassiveSession, setOpeningPassiveSession] = useState(false);
   const [sending, setSending] = useState(false);
+  const [runningInsight, setRunningInsight] = useState(false);
   const [switchingSessionId, setSwitchingSessionId] = useState("");
   const [payload, setPayload] = useState(null);
   const [passiveStatus, setPassiveStatus] = useState(null);
@@ -966,6 +996,11 @@ export default function LuminaChatWidget() {
 
   const plan = workspace?.plan || perms?.plan || "start";
   const canUseLumina = isAuthenticated && canUseWhatsAppAiOfferCreation(plan);
+  const canUseInsightByPermissions =
+    canUseLumina &&
+    (hasWorkspaceModuleAccess(perms, "reports") ||
+      user?.role === "owner" ||
+      !["business", "enterprise"].includes(String(plan || "").trim().toLowerCase()));
   const passiveSessionStorageKey = useMemo(() => {
     const workspaceId = String(workspace?._id || workspace?.id || perms?.workspaceId || "").trim();
     const userId = String(user?._id || user?.id || "").trim();
@@ -1039,6 +1074,34 @@ export default function LuminaChatWidget() {
     }
     return [];
   }, [payload]);
+  const canUseInsight = useMemo(
+    () =>
+      canUseInsightByPermissions ||
+      actionMenu.some((category) =>
+        Array.isArray(category?.actions)
+          ? category.actions.some(
+              (action) => String(action?.actionKey || "").trim() === INSIGHT_ACTION_KEY,
+            )
+          : false,
+      ),
+    [canUseInsightByPermissions, actionMenu],
+  );
+
+  const insightAction = useMemo(() => {
+    if (!canUseInsight) return null;
+
+    const found = actionMenu
+      .flatMap((category) => (Array.isArray(category?.actions) ? category.actions : []))
+      .find((action) => String(action?.actionKey || "").trim() === INSIGHT_ACTION_KEY);
+
+    return (
+      found || {
+        actionKey: INSIGHT_ACTION_KEY,
+        label: "Insight",
+        value: INSIGHT_ACTION_TEXT,
+      }
+    );
+  }, [actionMenu, canUseInsight]);
 
   const recentSessions = useMemo(() => {
     if (!Array.isArray(payload?.recentSessions)) return [];
@@ -1053,6 +1116,7 @@ export default function LuminaChatWidget() {
 
   const activeSession = payload?.activeSession || null;
   const currentSession = payload?.session || null;
+  const hasInterruptibleConversation = isInterruptibleOperationalSession(activeSession);
   const composerPlaceholder =
     payload?.ui?.composerPlaceholder ||
     "Fale com a Lumina sobre proposta, agenda, cobranca ou cadastro";
@@ -1082,6 +1146,7 @@ export default function LuminaChatWidget() {
   const isHistoryOverlayOpen = activeOverlay === "history";
   const isActionsOverlayOpen = activeOverlay === "actions";
   const isReplySelectorOpen = activeOverlay === "reply-selector";
+  const isInsightSwitchOverlayOpen = activeOverlay === "insight-switch";
   const showPassiveLauncherSignal = !!activePassiveNudge;
   const shouldShowPassiveEntryBubble =
     !!passiveEntryMessage &&
@@ -1100,6 +1165,23 @@ export default function LuminaChatWidget() {
     !bootstrapping &&
     actionMenu.length > 0 &&
     !isActionsOverlayOpen;
+  const insightSwitchReplyControl = useMemo(() => {
+    if (!hasInterruptibleConversation) return null;
+
+    return {
+      title: "Existe uma conversa em andamento",
+      options: [
+        {
+          label: "Abrir insight agora",
+          value: "OPEN_INSIGHT",
+        },
+        {
+          label: "Continuar conversa atual",
+          value: "KEEP_CURRENT",
+        },
+      ],
+    };
+  }, [hasInterruptibleConversation]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -1146,6 +1228,12 @@ export default function LuminaChatWidget() {
     if (selectorReplyControl) return;
     setActiveOverlay("");
   }, [activeOverlay, selectorReplyControl]);
+
+  useEffect(() => {
+    if (activeOverlay !== "insight-switch") return;
+    if (insightSwitchReplyControl) return;
+    setActiveOverlay("");
+  }, [activeOverlay, insightSwitchReplyControl]);
 
   async function loadBootstrap() {
     const requestId = bootstrapRequestIdRef.current + 1;
@@ -1377,6 +1465,7 @@ export default function LuminaChatWidget() {
       setErrorMessage("");
       setDraft("");
       setPendingUserMessage("");
+      setRunningInsight(false);
       setActiveOverlay("");
       setActionsCtaDismissed(false);
       setDismissedAutomationIds([]);
@@ -1493,6 +1582,82 @@ export default function LuminaChatWidget() {
     } finally {
       setSending(false);
     }
+  }
+
+  async function runInsightConversation() {
+    if (!insightAction || runningInsight) return;
+
+    setRunningInsight(true);
+    setSending(true);
+    setErrorMessage("");
+    setPendingUserMessage(insightAction.value || INSIGHT_ACTION_TEXT);
+    setDraft("");
+    setActiveOverlay("");
+    setActionsCtaDismissed(true);
+    setActivePassiveNudge(null);
+    setPendingPassiveEntry(null);
+    setDismissedAutomationIds([]);
+    setOpen(true);
+
+    try {
+      const freshConversation = await startNewLuminaSession();
+      setPayload(freshConversation);
+
+      const response = await sendLuminaMessage({
+        text: insightAction.value || INSIGHT_ACTION_TEXT,
+        actionKey: insightAction.actionKey || INSIGHT_ACTION_KEY,
+      });
+
+      setPayload(response);
+      void loadPassiveStatus();
+    } catch (error) {
+      setErrorMessage(
+        error?.data?.error || error?.message || "Nao consegui gerar o insight agora.",
+      );
+    } finally {
+      setPendingUserMessage("");
+      setSending(false);
+      setRunningInsight(false);
+    }
+  }
+
+  async function handleInsightTrigger() {
+    if (!canUseInsight || !insightAction || runningInsight || sending) return;
+
+    let effectivePayload = payload;
+
+    if (!effectivePayload) {
+      setOpen(true);
+      effectivePayload = await loadBootstrap();
+      if (!effectivePayload) return;
+    } else if (!open) {
+      setOpen(true);
+    }
+
+    if (isInterruptibleOperationalSession(effectivePayload?.activeSession || activeSession)) {
+      setActiveOverlay("insight-switch");
+      return;
+    }
+
+    await runInsightConversation();
+  }
+
+  function handleSelectInsightSwitchOption(option = null) {
+    const decision = String(option?.value || "").trim();
+    setActiveOverlay("");
+
+    if (decision === "OPEN_INSIGHT") {
+      void runInsightConversation();
+    }
+  }
+
+  function handleActionMenuSelection(text = "", actionKey = "") {
+    if (String(actionKey || "").trim() === INSIGHT_ACTION_KEY) {
+      void handleInsightTrigger();
+      return;
+    }
+
+    return handleSendMessage(text, actionKey);
   }
 
   async function handleSendMessage(customText = "", actionKey = "", automationContext = null) {
@@ -1841,6 +2006,21 @@ export default function LuminaChatWidget() {
                         motionPreset={motionPreset}
                       />
                     ) : null}
+
+                    {insightAction ? (
+                      <OverlayControlButton
+                        icon={runningInsight ? Loader2 : Lightbulb}
+                        iconClassName={runningInsight ? "animate-spin" : ""}
+                        label={runningInsight ? "Analisando..." : "Insight"}
+                        onClick={() => {
+                          void handleInsightTrigger();
+                        }}
+                        isDark={isDark}
+                        active={isInsightSwitchOverlayOpen}
+                        disabled={bootstrapping || sending || runningInsight}
+                        motionPreset={motionPreset}
+                      />
+                    ) : null}
                   </motion.div>
                 </motion.div>
 
@@ -1976,7 +2156,7 @@ export default function LuminaChatWidget() {
                           actionMenu={actionMenu}
                           selectedCategoryKey={selectedCategoryKey}
                           onSelectCategory={setSelectedCategoryKey}
-                          onSelectAction={handleSendMessage}
+                          onSelectAction={handleActionMenuSelection}
                           onClose={() => setActiveOverlay("")}
                           isDark={isDark}
                           isMobile={isMobile}
@@ -2003,6 +2183,28 @@ export default function LuminaChatWidget() {
                           isDark={isDark}
                           isMobile={isMobile}
                           disabled={sending || bootstrapping}
+                          motionPreset={motionPreset}
+                        />
+                      </div>
+                    ) : null}
+
+                    {isInsightSwitchOverlayOpen && insightSwitchReplyControl ? (
+                      <div
+                        key="lumina-insight-switch-overlay"
+                        className={[
+                          "absolute z-20",
+                          isMobile
+                            ? "inset-x-0 bottom-0"
+                            : "inset-x-4 top-4 md:inset-x-5",
+                        ].join(" ")}
+                      >
+                        <LuminaReplySelector
+                          replyControls={insightSwitchReplyControl}
+                          onSelectOption={handleSelectInsightSwitchOption}
+                          onClose={() => setActiveOverlay("")}
+                          isDark={isDark}
+                          isMobile={isMobile}
+                          disabled={sending || bootstrapping || runningInsight}
                           motionPreset={motionPreset}
                         />
                       </div>

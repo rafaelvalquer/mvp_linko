@@ -3,6 +3,7 @@ import { canAccessWorkspaceModule } from "../utils/workspaceAccess.js";
 const TERMINAL_STATES = new Set(["COMPLETED", "CANCELLED", "ERROR", "EXPIRED"]);
 
 const FLOW_LABELS = {
+  insight_analysis: "Insight",
   offer_create: "Proposta",
   offer_query: "Propostas",
   offer_payment_reminder: "Cobranca",
@@ -91,9 +92,10 @@ function buildSuggestedActionConfig({
   };
 }
 
-const ACTION_CATEGORY_ORDER = ["proposal", "agenda", "billing", "registry"];
+const ACTION_CATEGORY_ORDER = ["insight", "proposal", "agenda", "billing", "registry"];
 
 const ACTION_CATEGORY_LABELS = Object.freeze({
+  insight: "Insight",
   proposal: "Proposta",
   agenda: "Agenda",
   billing: "Cobranca",
@@ -101,6 +103,17 @@ const ACTION_CATEGORY_LABELS = Object.freeze({
 });
 
 const WEB_AGENT_ACTIONS = [
+  buildSuggestedActionConfig({
+    categoryKey: "insight",
+    key: "insight_summary",
+    label: "Gerar insight financeiro",
+    description: "Analise comercial dos ultimos 30 dias com oportunidades para vender mais.",
+    value: "Quero gerar um insight financeiro",
+    routingIntent: "generate_sales_insight",
+    flowType: "insight_analysis",
+    moduleKey: "reports",
+    matchPhrases: ["Gerar insight financeiro", "Insight financeiro", "Insight comercial"],
+  }),
   buildSuggestedActionConfig({
     categoryKey: "proposal",
     key: "offer_create",
