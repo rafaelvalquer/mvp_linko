@@ -62,6 +62,11 @@ import {
 } from "../src/utils/workspaceAccess.js";
 import { applyProductSelectionToItem } from "../src/services/whatsapp-ai/whatsappEntityResolver.service.js";
 import {
+  buildOfferOpportunityLine,
+  buildPendingOfferCandidate,
+  groupPendingOfferAutomations,
+} from "../src/services/webAgentAutomation.service.js";
+import {
   buildDeliveryAckPatch,
   deliveryAckCodeToState,
   normalizeDeliveryState,
@@ -769,10 +774,13 @@ await check("offer sales messages render pending list and confirmations", () => 
     title: "Televisao",
     totalCents: 5000,
     createdAt: "2026-03-19T12:00:00.000Z",
-    expiresAt: "2026-03-20T12:00:00.000Z",
+    dueAt: "2026-03-20T12:00:00.000Z",
+    linkExpiresAt: "2026-06-07T12:00:00.000Z",
   });
   assert.match(reminderSummary, /Confirma o envio do lembrete/);
   assert.match(reminderSummary, /Rafael/);
+  assert.match(reminderSummary, /Vence em:\s*20\/03\/2026/);
+  assert.doesNotMatch(reminderSummary, /07\/06\/2026/);
   assert.match(reminderSummary, /Digite CONFIRMAR/);
 
   const cancelSummary = buildOfferCancelConfirmation({
@@ -783,6 +791,44 @@ await check("offer sales messages render pending list and confirmations", () => 
   });
   assert.match(cancelSummary, /Confirma o cancelamento desta proposta/);
   assert.match(cancelSummary, /Televisao/);
+});
+
+await check("web agent billing priorities use proposal due date instead of public link expiry", () => {
+  const offer = {
+    _id: "offer-1",
+    ownerUserId: "user-1",
+    customerName: "Rafael",
+    title: "Televisao",
+    totalCents: 5000,
+    status: "OPEN",
+    paymentStatus: "PENDING",
+    createdAt: "2026-03-01T15:00:00.000Z",
+    updatedAt: "2026-03-02T15:00:00.000Z",
+    validityEnabled: true,
+    validityDays: 5,
+    expiresAt: "2026-06-07T12:00:00.000Z",
+  };
+
+  const candidate = buildPendingOfferCandidate(offer, "UTC");
+  assert.ok(candidate.dueAt instanceof Date);
+  assert.ok(candidate.linkExpiresAt instanceof Date);
+  assert.notEqual(candidate.dueAt.getTime(), candidate.linkExpiresAt.getTime());
+
+  const line = buildOfferOpportunityLine(candidate, "UTC");
+  assert.match(line, /vence em 06\/03/i);
+  assert.doesNotMatch(line, /,\s*\d{2}:\d{2}/);
+  assert.doesNotMatch(line, /07\/06/);
+
+  const grouped = groupPendingOfferAutomations({
+    offers: [offer],
+    now: new Date("2026-03-06T12:00:00.000Z"),
+    timeZone: "UTC",
+  });
+
+  assert.equal(grouped.allPending.length, 1);
+  assert.equal(grouped.dueToday.length, 1);
+  assert.equal(grouped.overdue.length, 0);
+  assert.equal(grouped.staleFollowup.length, 0);
 });
 
 await check("backoffice messages render confirmations and lookups", () => {

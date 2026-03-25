@@ -32,6 +32,9 @@ export const DEFAULT_NOTIFICATION_SETTINGS = {
       defaults: { ...DEFAULT_PAYMENT_REMINDER_DEFAULTS },
     },
   },
+  agent: {
+    passiveEnabled: true,
+  },
 };
 
 const NOTIFICATION_FEATURE_META = {
@@ -190,6 +193,13 @@ export function mergeNotificationSettings(base, patch) {
             DEFAULT_NOTIFICATION_SETTINGS.whatsapp.paymentReminders.defaults,
         ),
       },
+    },
+    agent: {
+      passiveEnabled: boolOrDefault(
+        input?.agent?.passiveEnabled,
+        source?.agent?.passiveEnabled ??
+          DEFAULT_NOTIFICATION_SETTINGS.agent.passiveEnabled,
+      ),
     },
   };
 }

@@ -16,6 +16,7 @@ import {
 import { useAuth } from "../../app/AuthContext.jsx";
 import {
   getLuminaBootstrap,
+  getLuminaPassiveStatus,
   getLuminaSession,
   sendLuminaMessage,
   startNewLuminaSession,
@@ -25,6 +26,48 @@ import { canUseWhatsAppAiOfferCreation } from "../../utils/planFeatures.js";
 import Button from "../appui/Button.jsx";
 import { Textarea } from "../appui/Input.jsx";
 import { getLuminaMotionPreset } from "./luminaMotion.js";
+
+const PASSIVE_TEASER_DISMISS_MS = 15 * 60 * 1000;
+const PASSIVE_ACKNOWLEDGE_MS = 45 * 60 * 1000;
+const PASSIVE_REFRESH_INTERVAL_MS = 15 * 60 * 1000;
+const PASSIVE_FOCUS_STALE_MS = 10 * 60 * 1000;
+const DEFAULT_PASSIVE_SESSION_STATE = {
+  lastShownSignature: "",
+  lastAcknowledgedSignature: "",
+  lastDismissedSignature: "",
+  nextEligibleAt: 0,
+  lastFetchedAt: 0,
+};
+
+function readPassiveSessionState(storageKey) {
+  if (!storageKey || typeof window === "undefined") {
+    return { ...DEFAULT_PASSIVE_SESSION_STATE };
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(storageKey);
+    if (!raw) return { ...DEFAULT_PASSIVE_SESSION_STATE };
+    const parsed = JSON.parse(raw);
+
+    return {
+      lastShownSignature: String(parsed?.lastShownSignature || "").trim(),
+      lastAcknowledgedSignature: String(parsed?.lastAcknowledgedSignature || "").trim(),
+      lastDismissedSignature: String(parsed?.lastDismissedSignature || "").trim(),
+      nextEligibleAt: Number(parsed?.nextEligibleAt || 0),
+      lastFetchedAt: Number(parsed?.lastFetchedAt || 0),
+    };
+  } catch {
+    return { ...DEFAULT_PASSIVE_SESSION_STATE };
+  }
+}
+
+function writePassiveSessionState(storageKey, value) {
+  if (!storageKey || typeof window === "undefined") return;
+
+  try {
+    window.sessionStorage.setItem(storageKey, JSON.stringify(value));
+  } catch {}
+}
 
 function formatMessageTime(value) {
   if (!value) return "";
@@ -498,20 +541,411 @@ function LuminaActionMenu({
   );
 }
 
+function LuminaReplySelector({
+  replyControls,
+  onSelectOption,
+  onClose,
+  isDark,
+  isMobile,
+  disabled,
+  motionPreset,
+}) {
+  const options = Array.isArray(replyControls?.options) ? replyControls.options : [];
+  if (!options.length) return null;
+
+  return (
+    <motion.section
+      variants={isMobile ? motionPreset.sheetPanelVariants : motionPreset.floatingPanelVariants}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
+      transition={motionPreset.transitions.panel}
+      className={[
+        "border px-4 py-4 shadow-[0_28px_80px_-36px_rgba(15,23,42,0.58)]",
+        isMobile
+          ? "max-h-[60vh] rounded-t-[28px] rounded-b-none"
+          : "rounded-[24px]",
+        isDark
+          ? "border-white/10 bg-[linear-gradient(180deg,rgba(16,25,44,0.76),rgba(10,18,34,0.7))]"
+          : "border-slate-200/80 bg-white/95",
+      ].join(" ")}
+    >
+      <motion.div
+        variants={motionPreset.overlayPanelHeaderVariants.container}
+        initial="hidden"
+        animate="visible"
+        className="flex items-start justify-between gap-3"
+      >
+        <motion.div variants={motionPreset.overlayPanelHeaderVariants.item}>
+          <div
+            className={[
+              "text-[10px] font-bold uppercase tracking-[0.2em]",
+              isDark ? "text-slate-400" : "text-slate-500",
+            ].join(" ")}
+          >
+            Escolhas
+          </div>
+          <div
+            className={[
+              "mt-1 text-sm font-semibold",
+              isDark ? "text-white" : "text-slate-950",
+            ].join(" ")}
+          >
+            {replyControls?.title || "Selecione uma opcao"}
+          </div>
+          <div
+            className={[
+              "mt-2 text-xs leading-5",
+              isDark ? "text-slate-300" : "text-slate-600",
+            ].join(" ")}
+          >
+            Escolha uma opcao abaixo ou responda em texto, se preferir.
+          </div>
+        </motion.div>
+
+        <motion.button
+          type="button"
+          onClick={onClose}
+          whileHover="hover"
+          whileTap="tap"
+          variants={motionPreset.categoryTabVariants}
+          className={[
+            "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+            isDark
+              ? "border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+              : "border-slate-200/80 bg-white text-slate-600 hover:bg-slate-100",
+          ].join(" ")}
+        >
+          Fechar
+          <X className="h-4 w-4" />
+        </motion.button>
+      </motion.div>
+
+      <motion.div
+        variants={motionPreset.actionGridVariants.container}
+        initial="hidden"
+        animate="visible"
+        className={[
+          "mt-3 grid gap-2 overflow-y-auto pr-1",
+          isMobile ? "max-h-[42vh]" : "max-h-[320px]",
+        ].join(" ")}
+      >
+        <AnimatePresence initial={false}>
+          {options.map((option, index) => (
+            <motion.button
+              key={`${option?.value || option?.label || "option"}-${index}`}
+              layout
+              type="button"
+              disabled={disabled}
+              onClick={() => onSelectOption?.(option)}
+              whileHover="hover"
+              whileTap="tap"
+              variants={motionPreset.actionCardVariants}
+              transition={motionPreset.transitions.soft}
+              className={[
+                "rounded-[18px] border px-3.5 py-3 text-left disabled:opacity-60",
+                option?.variant === "danger"
+                  ? isDark
+                    ? "border-rose-400/20 bg-rose-400/10 text-rose-50"
+                    : "border-rose-200 bg-rose-50 text-rose-700"
+                  : isDark
+                    ? "border-white/10 bg-white/5 text-slate-100"
+                    : "border-slate-200/80 bg-white text-slate-800",
+              ].join(" ")}
+            >
+              <div className="flex items-start gap-3">
+                <div
+                  className={[
+                    "mt-0.5 inline-flex min-h-[26px] min-w-[26px] items-center justify-center rounded-full px-2 text-[11px] font-bold",
+                    option?.variant === "danger"
+                      ? isDark
+                        ? "bg-rose-300/12 text-rose-100"
+                        : "bg-rose-100 text-rose-700"
+                      : isDark
+                        ? "bg-cyan-400/12 text-cyan-100"
+                        : "bg-cyan-100 text-cyan-700",
+                  ].join(" ")}
+                >
+                  {String(option?.value || "").trim().match(/^\d+$/)
+                    ? String(option.value).trim()
+                    : option?.variant === "danger"
+                      ? "X"
+                      : "+"}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold">
+                    {option?.label || option?.value || "Opcao"}
+                  </div>
+                </div>
+              </div>
+            </motion.button>
+          ))}
+        </AnimatePresence>
+      </motion.div>
+    </motion.section>
+  );
+}
+
+function LuminaAutomationInbox({
+  items,
+  onRunAutomation,
+  onDismiss,
+  isDark,
+  disabled,
+  motionPreset,
+}) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return null;
+  }
+
+  return (
+    <motion.section
+      variants={motionPreset.welcomeCardVariants}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
+      transition={motionPreset.transitions.base}
+      className={[
+        "rounded-[26px] border px-4 py-4",
+        isDark
+          ? "border-cyan-400/15 bg-[linear-gradient(180deg,rgba(10,24,42,0.78),rgba(8,17,32,0.82))]"
+          : "border-cyan-100 bg-[linear-gradient(180deg,rgba(239,246,255,0.96),rgba(255,255,255,0.98))]",
+      ].join(" ")}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div
+            className={[
+              "text-[10px] font-bold uppercase tracking-[0.2em]",
+              isDark ? "text-cyan-200/70" : "text-cyan-700/80",
+            ].join(" ")}
+          >
+            Sugestoes da Lumina
+          </div>
+          <div
+            className={[
+              "mt-1 text-sm font-semibold",
+              isDark ? "text-white" : "text-slate-950",
+            ].join(" ")}
+          >
+            Oportunidades para revisar agora
+          </div>
+        </div>
+        <div
+          className={[
+            "rounded-full px-2.5 py-1 text-[11px] font-semibold",
+            isDark ? "bg-cyan-400/10 text-cyan-100" : "bg-cyan-100 text-cyan-700",
+          ].join(" ")}
+        >
+          {items.length}
+        </div>
+      </div>
+
+      <motion.div
+        variants={motionPreset.actionGridVariants.container}
+        initial="hidden"
+        animate="visible"
+        className="mt-3 grid gap-2.5"
+      >
+        <AnimatePresence initial={false}>
+          {items.map((item) => (
+            <motion.article
+              key={item?.id || item?.title}
+              layout
+              variants={motionPreset.actionCardVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              transition={motionPreset.transitions.soft}
+              className={[
+                "rounded-[20px] border px-3.5 py-3",
+                isDark
+                  ? "border-white/10 bg-white/5 text-slate-100"
+                  : "border-slate-200/80 bg-white/90 text-slate-900",
+              ].join(" ")}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold">
+                    {item?.title || "Acao sugerida"}
+                  </div>
+                  <div
+                    className={[
+                      "mt-1 line-clamp-3 text-xs leading-5",
+                      isDark ? "text-slate-300" : "text-slate-600",
+                    ].join(" ")}
+                  >
+                    {item?.summary || ""}
+                  </div>
+                </div>
+                <div
+                  className={[
+                    "shrink-0 rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-[0.14em]",
+                    Number(item?.priority || 0) >= 3
+                      ? isDark
+                        ? "bg-rose-400/12 text-rose-100"
+                        : "bg-rose-100 text-rose-700"
+                      : isDark
+                        ? "bg-white/8 text-slate-300"
+                        : "bg-slate-100 text-slate-600",
+                  ].join(" ")}
+                >
+                  {Number(item?.priority || 0) >= 3 ? "Alta" : "Hoje"}
+                </div>
+              </div>
+
+              <div className="mt-3 flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => onRunAutomation?.(item)}
+                  disabled={disabled}
+                >
+                  {item?.ctaLabel || "Abrir"}
+                </Button>
+
+                <button
+                  type="button"
+                  onClick={() => onDismiss?.(item?.id || "")}
+                  disabled={disabled}
+                  className={[
+                    "inline-flex items-center rounded-full px-3 py-2 text-xs font-semibold transition disabled:opacity-60",
+                    isDark
+                      ? "text-slate-300 hover:bg-white/5 hover:text-white"
+                      : "text-slate-500 hover:bg-slate-100 hover:text-slate-700",
+                  ].join(" ")}
+                >
+                  {item?.dismissLabel || "Agora nao"}
+                </button>
+              </div>
+            </motion.article>
+          ))}
+        </AnimatePresence>
+      </motion.div>
+    </motion.section>
+  );
+}
+
+function LuminaPassiveTeaser({
+  message,
+  count = 0,
+  onOpen,
+  onDismiss,
+  isDark,
+  motionPreset,
+}) {
+  if (!message) return null;
+
+  return (
+    <motion.div
+      variants={motionPreset.welcomeCardVariants}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
+      transition={motionPreset.transitions.base}
+      className="fixed bottom-24 right-4 z-[96] w-[min(320px,calc(100vw-2rem))] md:right-6"
+    >
+      <div
+        className={[
+          "relative rounded-[24px] border px-4 py-3 text-left shadow-[0_24px_48px_-28px_rgba(15,23,42,0.45)] backdrop-blur-xl transition",
+          isDark
+            ? "border-cyan-400/20 bg-[linear-gradient(135deg,rgba(8,22,40,0.96),rgba(8,34,50,0.94))] text-white"
+            : "border-cyan-200/80 bg-[linear-gradient(135deg,rgba(255,255,255,0.98),rgba(236,254,255,0.94))] text-slate-900",
+        ].join(" ")}
+      >
+        <button
+          type="button"
+          onClick={onOpen}
+          className={[
+            "group block w-full rounded-[18px] text-left transition",
+            isDark ? "hover:text-white" : "hover:text-slate-950",
+          ].join(" ")}
+        >
+          <div className="flex items-start gap-3 pr-10">
+            <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#2563eb,#14b8a6)] text-white shadow-[0_16px_30px_-22px_rgba(37,99,235,0.7)]">
+              <Sparkles className="h-4 w-4" />
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <div>
+                <div
+                  className={[
+                    "text-[10px] font-bold uppercase tracking-[0.18em]",
+                    isDark ? "text-cyan-200/80" : "text-cyan-700",
+                  ].join(" ")}
+                >
+                  Lumina
+                </div>
+                <div className="mt-1 text-sm font-semibold">
+                  {message}
+                </div>
+              </div>
+
+              <div
+                className={[
+                  "mt-2 flex items-center justify-between gap-3 text-xs",
+                  isDark ? "text-slate-300" : "text-slate-600",
+                ].join(" ")}
+              >
+                <span>
+                  {count} oportunidade{count === 1 ? "" : "s"} relevante
+                  {count === 1 ? "" : "s"} agora
+                </span>
+                <span
+                  className={[
+                    "rounded-full px-2.5 py-1 font-semibold",
+                    isDark ? "bg-cyan-400/12 text-cyan-100" : "bg-cyan-100 text-cyan-700",
+                  ].join(" ")}
+                >
+                  Abrir Lumina
+                </span>
+              </div>
+            </div>
+          </div>
+        </button>
+
+        <div className="flex items-start gap-3">
+          <button
+            type="button"
+            onClick={onDismiss}
+            className={[
+              "absolute right-3 top-3 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition",
+              isDark
+                ? "text-slate-300 hover:bg-white/8 hover:text-white"
+                : "text-slate-500 hover:bg-slate-100 hover:text-slate-700",
+            ].join(" ")}
+            aria-label="Dispensar sugestao passiva da Lumina"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 export default function LuminaChatWidget() {
   const { isDark } = useThemeToggle();
-  const { isAuthenticated, workspace, perms } = useAuth();
+  const { isAuthenticated, user, workspace, perms } = useAuth();
   const prefersReducedMotion = useReducedMotion();
   const [open, setOpen] = useState(false);
   const [bootstrapping, setBootstrapping] = useState(false);
+  const [openingPassiveSession, setOpeningPassiveSession] = useState(false);
   const [sending, setSending] = useState(false);
   const [switchingSessionId, setSwitchingSessionId] = useState("");
   const [payload, setPayload] = useState(null);
+  const [passiveStatus, setPassiveStatus] = useState(null);
+  const [activePassiveNudge, setActivePassiveNudge] = useState(null);
+  const [passiveSessionState, setPassiveSessionState] = useState(
+    DEFAULT_PASSIVE_SESSION_STATE,
+  );
+  const [pendingPassiveEntry, setPendingPassiveEntry] = useState(null);
   const [draft, setDraft] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [pendingUserMessage, setPendingUserMessage] = useState("");
   const [activeOverlay, setActiveOverlay] = useState("");
   const [actionsCtaDismissed, setActionsCtaDismissed] = useState(false);
+  const [dismissedAutomationIds, setDismissedAutomationIds] = useState([]);
   const [selectedCategoryKey, setSelectedCategoryKey] = useState("");
   const [composerFocused, setComposerFocused] = useState(false);
   const [isMobile, setIsMobile] = useState(() =>
@@ -519,6 +953,8 @@ export default function LuminaChatWidget() {
   );
   const messagesRef = useRef(null);
   const bootstrapRequestIdRef = useRef(0);
+  const passiveRequestIdRef = useRef(0);
+  const passiveFetchedAtRef = useRef(0);
   const motionPreset = useMemo(
     () =>
       getLuminaMotionPreset({
@@ -530,6 +966,12 @@ export default function LuminaChatWidget() {
 
   const plan = workspace?.plan || perms?.plan || "start";
   const canUseLumina = isAuthenticated && canUseWhatsAppAiOfferCreation(plan);
+  const passiveSessionStorageKey = useMemo(() => {
+    const workspaceId = String(workspace?._id || workspace?.id || perms?.workspaceId || "").trim();
+    const userId = String(user?._id || user?.id || "").trim();
+    if (!workspaceId || !userId) return "";
+    return `lumina-passive:${workspaceId}:${userId}`;
+  }, [workspace?._id, workspace?.id, perms?.workspaceId, user?._id, user?.id]);
 
   const displayedMessages = useMemo(() => {
     const baseMessages = Array.isArray(payload?.messages) ? payload.messages : [];
@@ -547,15 +989,46 @@ export default function LuminaChatWidget() {
     ];
   }, [payload?.messages, pendingUserMessage]);
 
-  const quickReplies = useMemo(() => {
-    if (Array.isArray(payload?.quickReplies) && payload.quickReplies.length > 0) {
-      return payload.quickReplies;
+  const replyControls = useMemo(() => {
+    const explicitReplyControls =
+      payload?.replyControls && typeof payload.replyControls === "object"
+        ? payload.replyControls
+        : payload?.ui?.replyControls && typeof payload.ui.replyControls === "object"
+          ? payload.ui.replyControls
+          : null;
+
+    if (
+      explicitReplyControls &&
+      Array.isArray(explicitReplyControls.options) &&
+      explicitReplyControls.options.length > 0
+    ) {
+      return explicitReplyControls;
     }
-    if (Array.isArray(payload?.ui?.quickReplies) && payload.ui.quickReplies.length > 0) {
-      return payload.ui.quickReplies;
-    }
-    return [];
+
+    const legacyQuickReplies = Array.isArray(payload?.quickReplies)
+      ? payload.quickReplies
+      : Array.isArray(payload?.ui?.quickReplies)
+        ? payload.ui.quickReplies
+        : [];
+
+    if (!legacyQuickReplies.length) return null;
+
+    return {
+      presentation: "chips",
+      options: legacyQuickReplies,
+    };
   }, [payload]);
+
+  const chipReplies = useMemo(() => {
+    if (replyControls?.presentation !== "chips") return [];
+    return Array.isArray(replyControls?.options) ? replyControls.options : [];
+  }, [replyControls]);
+
+  const selectorReplyControl = useMemo(() => {
+    if (replyControls?.presentation !== "selector") return null;
+    if (!Array.isArray(replyControls?.options) || replyControls.options.length === 0) return null;
+    return replyControls;
+  }, [replyControls]);
 
   const actionMenu = useMemo(() => {
     if (Array.isArray(payload?.actionMenu) && payload.actionMenu.length > 0) {
@@ -572,6 +1045,12 @@ export default function LuminaChatWidget() {
     return payload.recentSessions.slice(0, 6);
   }, [payload?.recentSessions]);
 
+  const automationInbox = useMemo(() => {
+    const source = Array.isArray(payload?.automationInbox) ? payload.automationInbox : [];
+    if (!dismissedAutomationIds.length) return source;
+    return source.filter((item) => !dismissedAutomationIds.includes(String(item?.id || "")));
+  }, [payload?.automationInbox, dismissedAutomationIds]);
+
   const activeSession = payload?.activeSession || null;
   const currentSession = payload?.session || null;
   const composerPlaceholder =
@@ -582,8 +1061,37 @@ export default function LuminaChatWidget() {
       !!activeSession?._id &&
       String(currentSession._id) !== String(activeSession._id)) ||
     (!!currentSession?.isTerminal && !activeSession?._id);
+  const passiveEnabled = passiveStatus?.enabled === true;
+  const passiveOpportunityCount = Number(passiveStatus?.count || 0);
+  const passiveTopOpportunityId = String(passiveStatus?.topOpportunity?.id || "").trim();
+  const passiveMessage = String(passiveStatus?.humanizedMessage || "").trim();
+  const passiveBadgeLabel =
+    passiveOpportunityCount > 9 ? "9+" : String(passiveOpportunityCount || 0);
+  const passiveSignature = `${passiveTopOpportunityId}:${passiveMessage}:${passiveOpportunityCount}`;
+  const activePassiveSignature = String(activePassiveNudge?.signature || "").trim();
+  const passiveEntryMessage = useMemo(() => {
+    if (!pendingPassiveEntry?.message) return null;
+    return {
+      _id: `lumina-passive-entry-${pendingPassiveEntry.signature || pendingPassiveEntry.id || "default"}`,
+      role: "assistant",
+      inputType: "text",
+      text: pendingPassiveEntry.message,
+      createdAt: pendingPassiveEntry.createdAt || new Date().toISOString(),
+    };
+  }, [pendingPassiveEntry]);
   const isHistoryOverlayOpen = activeOverlay === "history";
   const isActionsOverlayOpen = activeOverlay === "actions";
+  const isReplySelectorOpen = activeOverlay === "reply-selector";
+  const showPassiveLauncherSignal = !!activePassiveNudge;
+  const shouldShowPassiveEntryBubble =
+    !!passiveEntryMessage &&
+    !bootstrapping;
+  const shouldHighlightLauncher =
+    !open && showPassiveLauncherSignal;
+  const shouldShowPassiveTeaser =
+    !open &&
+    showPassiveLauncherSignal &&
+    !!String(activePassiveNudge?.message || "").trim();
   const shouldHighlightActionsCta =
     open &&
     !actionsCtaDismissed &&
@@ -630,7 +1138,14 @@ export default function LuminaChatWidget() {
     if (open && canUseLumina) return;
     setActiveOverlay("");
     setActionsCtaDismissed(false);
+    setDismissedAutomationIds([]);
   }, [open, canUseLumina]);
+
+  useEffect(() => {
+    if (activeOverlay !== "reply-selector") return;
+    if (selectorReplyControl) return;
+    setActiveOverlay("");
+  }, [activeOverlay, selectorReplyControl]);
 
   async function loadBootstrap() {
     const requestId = bootstrapRequestIdRef.current + 1;
@@ -657,6 +1172,52 @@ export default function LuminaChatWidget() {
     }
   }
 
+  async function loadPassiveStatus() {
+    if (!canUseLumina) {
+      setPassiveStatus(null);
+      return null;
+    }
+
+    const requestId = passiveRequestIdRef.current + 1;
+    passiveRequestIdRef.current = requestId;
+
+    try {
+      const response = await getLuminaPassiveStatus();
+      if (passiveRequestIdRef.current !== requestId) return null;
+      const nextPassive =
+        response?.passive && typeof response.passive === "object"
+          ? response.passive
+          : null;
+      setPassiveStatus(nextPassive);
+      const now = Date.now();
+      passiveFetchedAtRef.current = now;
+      setPassiveSessionState((current) => {
+        const next = {
+          ...current,
+          lastFetchedAt: now,
+        };
+        writePassiveSessionState(passiveSessionStorageKey, next);
+        return next;
+      });
+      return nextPassive;
+    } catch {
+      if (passiveRequestIdRef.current !== requestId) return null;
+      setPassiveStatus(null);
+      return null;
+    }
+  }
+
+  function updatePassiveSessionState(updater) {
+    setPassiveSessionState((current) => {
+      const next =
+        typeof updater === "function"
+          ? updater(current)
+          : { ...current, ...(updater || {}) };
+      writePassiveSessionState(passiveSessionStorageKey, next);
+      return next;
+    });
+  }
+
   useEffect(() => {
     if (!open) return undefined;
 
@@ -681,15 +1242,123 @@ export default function LuminaChatWidget() {
   }, [open, activeOverlay]);
 
   useEffect(() => {
-    if (!open || !canUseLumina || payload) return;
+    if (!open || !canUseLumina || payload || openingPassiveSession) return;
     void loadBootstrap();
-  }, [open, canUseLumina, payload]);
+  }, [open, canUseLumina, payload, openingPassiveSession]);
+
+  useEffect(() => {
+    const nextState = readPassiveSessionState(passiveSessionStorageKey);
+    passiveFetchedAtRef.current = Number(nextState?.lastFetchedAt || 0);
+    setPassiveSessionState(nextState);
+    setActivePassiveNudge(null);
+    setPendingPassiveEntry(null);
+  }, [passiveSessionStorageKey]);
+
+  useEffect(() => {
+    if (!canUseLumina) {
+      passiveRequestIdRef.current += 1;
+      passiveFetchedAtRef.current = 0;
+      setPassiveStatus(null);
+      setActivePassiveNudge(null);
+      return;
+    }
+
+    void loadPassiveStatus();
+
+    const intervalId = window.setInterval(() => {
+      void loadPassiveStatus();
+    }, PASSIVE_REFRESH_INTERVAL_MS);
+
+    function handleFocusRefresh() {
+      const lastFetchedAt = Number(passiveFetchedAtRef.current || 0);
+      if (!lastFetchedAt || Date.now() - lastFetchedAt >= PASSIVE_FOCUS_STALE_MS) {
+        void loadPassiveStatus();
+      }
+    }
+
+    window.addEventListener("focus", handleFocusRefresh);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", handleFocusRefresh);
+    };
+  }, [canUseLumina]);
+
+  useEffect(() => {
+    if (!open || !canUseLumina) return;
+    void loadPassiveStatus();
+  }, [open, canUseLumina]);
 
   useEffect(() => {
     if (open && canUseLumina) return;
     bootstrapRequestIdRef.current += 1;
     setBootstrapping(false);
   }, [open, canUseLumina]);
+
+  useEffect(() => {
+    if (!canUseLumina || !passiveEnabled || !passiveOpportunityCount || !passiveSignature) {
+      setActivePassiveNudge(null);
+      return;
+    }
+
+    if (activePassiveSignature === passiveSignature) {
+      return;
+    }
+
+    const now = Date.now();
+    const alreadyAcknowledged =
+      passiveSessionState.lastAcknowledgedSignature === passiveSignature &&
+      Number(passiveSessionState.nextEligibleAt || 0) > now;
+    const alreadyDismissed =
+      passiveSessionState.lastDismissedSignature === passiveSignature &&
+      Number(passiveSessionState.nextEligibleAt || 0) > now;
+    const alreadyShownRecently =
+      passiveSessionState.lastShownSignature === passiveSignature &&
+      Number(passiveSessionState.nextEligibleAt || 0) > now;
+
+    if (alreadyAcknowledged || alreadyDismissed || alreadyShownRecently) {
+      setActivePassiveNudge(null);
+      return;
+    }
+
+    const nextNudge = {
+      signature: passiveSignature,
+      id: passiveTopOpportunityId || "passive-nudge",
+      message: passiveMessage,
+      count: passiveOpportunityCount,
+      topOpportunity: passiveStatus?.topOpportunity || null,
+    };
+
+    setActivePassiveNudge(nextNudge);
+    updatePassiveSessionState((current) => ({
+      ...current,
+      lastShownSignature: passiveSignature,
+      nextEligibleAt: now + PASSIVE_TEASER_DISMISS_MS,
+    }));
+  }, [
+    canUseLumina,
+    passiveEnabled,
+    passiveOpportunityCount,
+    passiveSignature,
+    passiveTopOpportunityId,
+    passiveMessage,
+    passiveStatus?.topOpportunity,
+    passiveSessionState,
+    activePassiveSignature,
+  ]);
+
+  useEffect(() => {
+    if (open) return;
+    if (!pendingPassiveEntry) return;
+    setPendingPassiveEntry(null);
+  }, [open, pendingPassiveEntry]);
+
+  useEffect(() => {
+    if (!passiveEntryMessage) return;
+    if (pendingUserMessage) {
+      setPendingPassiveEntry(null);
+    }
+  }, [passiveEntryMessage, pendingUserMessage]);
 
   useEffect(() => {
     if (!open) return;
@@ -710,10 +1379,71 @@ export default function LuminaChatWidget() {
       setPendingUserMessage("");
       setActiveOverlay("");
       setActionsCtaDismissed(false);
+      setDismissedAutomationIds([]);
       setSelectedCategoryKey("");
       setComposerFocused(false);
+      setPassiveStatus(null);
+      setActivePassiveNudge(null);
+      setPendingPassiveEntry(null);
+      setOpeningPassiveSession(false);
+      setPassiveSessionState(DEFAULT_PASSIVE_SESSION_STATE);
     }
   }, [canUseLumina]);
+
+  async function openLuminaFromLauncher() {
+    const shouldOpenFreshPassiveSession =
+      showPassiveLauncherSignal &&
+      String(activePassiveNudge?.message || "").trim() &&
+      activePassiveSignature;
+
+    if (!shouldOpenFreshPassiveSession) {
+      setOpen(true);
+      return;
+    }
+
+    const passiveEntry = {
+      id: activePassiveNudge?.id || "passive-entry",
+      signature: activePassiveSignature,
+      message: String(activePassiveNudge?.message || "").trim(),
+      topOpportunity: activePassiveNudge?.topOpportunity || null,
+      createdAt: new Date().toISOString(),
+    };
+
+    setPendingPassiveEntry(passiveEntry);
+    setActivePassiveNudge(null);
+    updatePassiveSessionState((current) => ({
+      ...current,
+      lastAcknowledgedSignature: activePassiveSignature,
+      lastDismissedSignature:
+        current.lastDismissedSignature === activePassiveSignature
+          ? ""
+          : current.lastDismissedSignature,
+      nextEligibleAt: Date.now() + PASSIVE_ACKNOWLEDGE_MS,
+    }));
+    setActiveOverlay("");
+    setErrorMessage("");
+    setPendingUserMessage("");
+    setDraft("");
+    setDismissedAutomationIds([]);
+    setActionsCtaDismissed(false);
+    setOpeningPassiveSession(true);
+    setPayload(null);
+    setOpen(true);
+
+    bootstrapRequestIdRef.current += 1;
+
+    try {
+      const response = await startNewLuminaSession();
+      setPayload(response);
+      void loadPassiveStatus();
+    } catch (error) {
+      setErrorMessage(
+        error?.data?.error || error?.message || "Nao consegui abrir a Lumina com esse contexto agora.",
+      );
+    } finally {
+      setOpeningPassiveSession(false);
+    }
+  }
 
   async function reloadBootstrap() {
     return loadBootstrap();
@@ -727,9 +1457,12 @@ export default function LuminaChatWidget() {
     setSwitchingSessionId(normalizedId);
     setErrorMessage("");
     setActiveOverlay("");
+    setActivePassiveNudge(null);
+    setPendingPassiveEntry(null);
     try {
       const response = await getLuminaSession(normalizedId);
       setPayload(response);
+      void loadPassiveStatus();
     } catch (error) {
       setErrorMessage(
         error?.data?.error || error?.message || "Nao foi possivel abrir essa conversa.",
@@ -745,10 +1478,14 @@ export default function LuminaChatWidget() {
     setPendingUserMessage("");
     setActiveOverlay("");
     setActionsCtaDismissed(false);
+    setDismissedAutomationIds([]);
+    setActivePassiveNudge(null);
+    setPendingPassiveEntry(null);
     try {
       const response = await startNewLuminaSession();
       setPayload(response);
       setDraft("");
+      void loadPassiveStatus();
     } catch (error) {
       setErrorMessage(
         error?.data?.error || error?.message || "Nao consegui iniciar uma nova conversa.",
@@ -758,7 +1495,7 @@ export default function LuminaChatWidget() {
     }
   }
 
-  async function handleSendMessage(customText = "", actionKey = "") {
+  async function handleSendMessage(customText = "", actionKey = "", automationContext = null) {
     const textToSend = String(customText || draft || "").trim();
     if (!textToSend || sending || bootstrapping || !canUseLumina) return;
 
@@ -785,13 +1522,17 @@ export default function LuminaChatWidget() {
     setDraft("");
     setActiveOverlay("");
     setActionsCtaDismissed(true);
+    setActivePassiveNudge(null);
+    setPendingPassiveEntry(null);
 
     try {
       const response = await sendLuminaMessage({
         text: textToSend,
         actionKey,
+        automationContext,
       });
       setPayload(response);
+      void loadPassiveStatus();
     } catch (error) {
       if (!String(actionKey || "").trim()) {
         setDraft(textToSend);
@@ -819,47 +1560,132 @@ export default function LuminaChatWidget() {
     setActiveOverlay((currentValue) => (currentValue === panelKey ? "" : panelKey));
   }
 
+  function handleSelectReplyOption(option = null) {
+    setActiveOverlay("");
+    return handleSendMessage(option?.value || option?.label || "");
+  }
+
+  function handleDismissAutomation(itemId = "") {
+    const normalizedId = String(itemId || "").trim();
+    if (!normalizedId) return;
+    setDismissedAutomationIds((current) =>
+      current.includes(normalizedId) ? current : [...current, normalizedId],
+    );
+  }
+
+  async function handleRunAutomation(item = null) {
+    const normalizedId = String(item?.id || "").trim();
+    if (normalizedId) {
+      handleDismissAutomation(normalizedId);
+    }
+
+    const sessionId = String(item?.context?.sessionId || "").trim();
+    if (sessionId && !String(item?.actionKey || "").trim()) {
+      await handleOpenSession(sessionId);
+      return;
+    }
+
+    return handleSendMessage(
+      item?.text || item?.title || "",
+      item?.actionKey || "",
+      item?.context || null,
+    );
+  }
+
   if (!canUseLumina || typeof document === "undefined") {
     return null;
   }
 
   return (
     <>
-      <motion.button
-        type="button"
-        onClick={() => setOpen(true)}
-        initial="hidden"
-        animate="visible"
-        whileHover={prefersReducedMotion ? undefined : { y: -2, scale: 1.02 }}
-        whileTap={prefersReducedMotion ? undefined : { scale: 0.98 }}
-        transition={motionPreset.transitions.soft}
-        variants={motionPreset.launcherVariants}
-        className={[
-          "fixed bottom-6 right-6 z-[95] inline-flex items-center gap-3 rounded-full border px-4 py-3 shadow-[0_24px_48px_-24px_rgba(37,99,235,0.7)] transition hover:brightness-110",
-          isDark
-            ? "border-white/10 bg-[linear-gradient(135deg,#2563eb,#14b8a6)] text-white"
-            : "border-slate-200/80 bg-[linear-gradient(135deg,#2563eb,#14b8a6)] text-white",
-        ].join(" ")}
-        aria-label="Abrir chat da Lumina"
-      >
-        <div className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-white/15">
-          <motion.span
-            aria-hidden="true"
-            className="absolute inset-0 rounded-full bg-white/20 blur-md"
-            variants={motionPreset.launcherGlowVariants}
-            initial="idle"
-            animate={open ? "open" : "idle"}
-            transition={motionPreset.transitions.glow}
+      <AnimatePresence initial={false}>
+        {shouldShowPassiveTeaser ? (
+          <LuminaPassiveTeaser
+            key={`lumina-passive-teaser-${passiveSignature || "default"}`}
+            message={String(activePassiveNudge?.message || "").trim()}
+            count={Number(activePassiveNudge?.count || 0)}
+            onOpen={openLuminaFromLauncher}
+            onDismiss={() => {
+              const dismissedSignature = activePassiveSignature;
+              setActivePassiveNudge(null);
+              updatePassiveSessionState((current) => ({
+                ...current,
+                lastDismissedSignature: dismissedSignature,
+                nextEligibleAt: Date.now() + PASSIVE_TEASER_DISMISS_MS,
+              }));
+            }}
+            isDark={isDark}
+            motionPreset={motionPreset}
           />
-          <Bot className="h-5 w-5" />
-        </div>
-        <div className="hidden text-left sm:block">
-          <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/80">
-            Lumina
+        ) : null}
+      </AnimatePresence>
+
+      <motion.div
+        initial="idle"
+        animate={shouldHighlightLauncher ? "highlighted" : "idle"}
+        variants={motionPreset.attentionCtaVariants}
+        transition={motionPreset.transitions.attention}
+        className="fixed bottom-6 right-6 z-[95] rounded-full"
+      >
+        <motion.button
+          type="button"
+          onClick={openLuminaFromLauncher}
+          initial="hidden"
+          animate="visible"
+          whileHover={prefersReducedMotion ? undefined : { y: -2, scale: 1.02 }}
+          whileTap={prefersReducedMotion ? undefined : { scale: 0.98 }}
+          transition={motionPreset.transitions.soft}
+          variants={motionPreset.launcherVariants}
+          className={[
+            "relative inline-flex items-center gap-3 rounded-full border px-4 py-3 shadow-[0_24px_48px_-24px_rgba(37,99,235,0.7)] transition hover:brightness-110",
+            shouldHighlightLauncher
+              ? isDark
+                ? "border-cyan-200/30 bg-[linear-gradient(135deg,#2563eb,#14b8a6)] text-white"
+                : "border-cyan-100 bg-[linear-gradient(135deg,#2563eb,#14b8a6)] text-white"
+              : isDark
+                ? "border-white/10 bg-[linear-gradient(135deg,#2563eb,#14b8a6)] text-white"
+                : "border-slate-200/80 bg-[linear-gradient(135deg,#2563eb,#14b8a6)] text-white",
+          ].join(" ")}
+          aria-label="Abrir chat da Lumina"
+        >
+          {shouldHighlightLauncher ? (
+            <motion.span
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 rounded-full bg-cyan-300/20 blur-xl"
+              variants={motionPreset.attentionGlowVariants}
+              initial="idle"
+              animate="highlighted"
+              transition={motionPreset.transitions.attention}
+            />
+          ) : null}
+
+          {showPassiveLauncherSignal ? (
+            <span className="absolute -right-1 -top-1 inline-flex min-w-[24px] items-center justify-center rounded-full border border-white/40 bg-rose-500 px-1.5 py-1 text-[11px] font-bold leading-none text-white shadow-[0_14px_28px_-18px_rgba(244,63,94,0.8)]">
+              {passiveBadgeLabel}
+            </span>
+          ) : null}
+
+          <div className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-white/15">
+            <motion.span
+              aria-hidden="true"
+              className="absolute inset-0 rounded-full bg-white/20 blur-md"
+              variants={motionPreset.launcherGlowVariants}
+              initial="idle"
+              animate={open ? "open" : "idle"}
+              transition={motionPreset.transitions.glow}
+            />
+            <Bot className="h-5 w-5" />
           </div>
-          <div className="text-sm font-semibold">Falar com a agente</div>
-        </div>
-      </motion.button>
+          <div className="hidden text-left sm:block">
+            <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/80">
+              Lumina
+            </div>
+            <div className="text-sm font-semibold">
+              {shouldHighlightLauncher ? "Tenho algo para voce" : "Falar com a agente"}
+            </div>
+          </div>
+        </motion.button>
+      </motion.div>
 
       {createPortal(
         <AnimatePresence>
@@ -1159,6 +1985,28 @@ export default function LuminaChatWidget() {
                         />
                       </div>
                     ) : null}
+
+                    {isReplySelectorOpen && selectorReplyControl ? (
+                      <div
+                        key="lumina-reply-selector-overlay"
+                        className={[
+                          "absolute z-20",
+                          isMobile
+                            ? "inset-x-0 bottom-0"
+                            : "inset-x-4 top-4 md:inset-x-5",
+                        ].join(" ")}
+                      >
+                        <LuminaReplySelector
+                          replyControls={selectorReplyControl}
+                          onSelectOption={handleSelectReplyOption}
+                          onClose={() => setActiveOverlay("")}
+                          isDark={isDark}
+                          isMobile={isMobile}
+                          disabled={sending || bootstrapping}
+                          motionPreset={motionPreset}
+                        />
+                      </div>
+                    ) : null}
                   </AnimatePresence>
 
                   <AnimatePresence initial={false}>
@@ -1230,6 +2078,17 @@ export default function LuminaChatWidget() {
                     </AnimatePresence>
 
                     <AnimatePresence initial={false}>
+                      {shouldShowPassiveEntryBubble ? (
+                        <MessageBubble
+                          key={passiveEntryMessage?._id || "lumina-passive-entry"}
+                          item={passiveEntryMessage}
+                          isDark={isDark}
+                          motionPreset={motionPreset}
+                        />
+                      ) : null}
+                    </AnimatePresence>
+
+                    <AnimatePresence initial={false}>
                       {payload?.welcomeMessage && displayedMessages.length === 0 ? (
                         <motion.div
                           key="lumina-welcome"
@@ -1279,6 +2138,20 @@ export default function LuminaChatWidget() {
                     </AnimatePresence>
 
                     <AnimatePresence initial={false}>
+                      {displayedMessages.length === 0 && automationInbox.length > 0 ? (
+                        <LuminaAutomationInbox
+                          key="lumina-automation-inbox"
+                          items={automationInbox}
+                          onRunAutomation={handleRunAutomation}
+                          onDismiss={handleDismissAutomation}
+                          isDark={isDark}
+                          disabled={sending || bootstrapping}
+                          motionPreset={motionPreset}
+                        />
+                      ) : null}
+                    </AnimatePresence>
+
+                    <AnimatePresence initial={false}>
                       {displayedMessages.map((item) => (
                         <MessageBubble
                           key={item?._id || item?.createdAt}
@@ -1308,16 +2181,16 @@ export default function LuminaChatWidget() {
                     ].join(" ")}
                   >
                     <AnimatePresence initial={false}>
-                      {quickReplies.length > 0 ? (
+                      {chipReplies.length > 0 ? (
                         <motion.div
                           key="lumina-quick-replies"
                           variants={motionPreset.quickRepliesVariants.container}
                           initial="hidden"
                           animate="visible"
                           exit="exit"
-                          className="mb-3 flex flex-wrap gap-2"
+                          className="mb-3 flex max-h-[92px] flex-wrap gap-2 overflow-hidden"
                         >
-                          {quickReplies.map((reply, index) => (
+                          {chipReplies.map((reply, index) => (
                             <motion.button
                               key={`${reply?.value || reply?.label || "reply"}-${index}`}
                               type="button"
@@ -1329,14 +2202,67 @@ export default function LuminaChatWidget() {
                               transition={motionPreset.transitions.chip}
                               className={[
                                 "rounded-full border px-3 py-2 text-sm font-semibold transition disabled:opacity-60",
-                                isDark
-                                  ? "border-white/10 bg-white/5 text-slate-100 hover:border-cyan-400/20 hover:bg-white/10"
-                                  : "border-slate-200/80 bg-white text-slate-700 hover:border-cyan-300 hover:bg-cyan-50",
+                                reply?.variant === "danger"
+                                  ? isDark
+                                    ? "border-rose-400/20 bg-rose-400/10 text-rose-50 hover:bg-rose-400/15"
+                                    : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                                  : isDark
+                                    ? "border-white/10 bg-white/5 text-slate-100 hover:border-cyan-400/20 hover:bg-white/10"
+                                    : "border-slate-200/80 bg-white text-slate-700 hover:border-cyan-300 hover:bg-cyan-50",
                               ].join(" ")}
                             >
                               {reply?.label || reply?.value || "Acao rapida"}
                             </motion.button>
                           ))}
+                        </motion.div>
+                      ) : selectorReplyControl ? (
+                        <motion.div
+                          key="lumina-selector-trigger"
+                          variants={motionPreset.quickRepliesVariants.container}
+                          initial="hidden"
+                          animate="visible"
+                          exit="exit"
+                          className="mb-3 flex items-center gap-2"
+                        >
+                          <motion.button
+                            type="button"
+                            disabled={sending || bootstrapping}
+                            onClick={() => toggleOverlay("reply-selector")}
+                            whileHover="hover"
+                            whileTap="tap"
+                            variants={motionPreset.quickReplyVariants}
+                            transition={motionPreset.transitions.chip}
+                            className={[
+                              "inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold transition disabled:opacity-60",
+                              isReplySelectorOpen
+                                ? isDark
+                                  ? "border-cyan-400/30 bg-cyan-400/12 text-cyan-100"
+                                  : "border-cyan-300 bg-cyan-50 text-cyan-800"
+                                : isDark
+                                  ? "border-white/10 bg-white/5 text-slate-100 hover:border-cyan-400/20 hover:bg-white/10"
+                                  : "border-slate-200/80 bg-white text-slate-700 hover:border-cyan-300 hover:bg-cyan-50",
+                            ].join(" ")}
+                          >
+                            <LayoutGrid className="h-4 w-4" />
+                            <span className="truncate">Selecionar opcao</span>
+                            <span
+                              className={[
+                                "rounded-full px-2 py-0.5 text-[11px] font-bold",
+                                isDark ? "bg-white/10 text-slate-200" : "bg-slate-100 text-slate-600",
+                              ].join(" ")}
+                            >
+                              {selectorReplyControl.options.length}
+                            </span>
+                          </motion.button>
+
+                          <div
+                            className={[
+                              "min-w-0 text-xs leading-5",
+                              isDark ? "text-slate-400" : "text-slate-500",
+                            ].join(" ")}
+                          >
+                            {selectorReplyControl?.title || "Escolha uma opcao ou responda em texto."}
+                          </div>
                         </motion.div>
                       ) : null}
                     </AnimatePresence>

@@ -1,6 +1,7 @@
 import { User } from "../../models/User.js";
 import { Workspace } from "../../models/Workspace.js";
 import {
+  formatPhoneDisplay,
   normalizeDestinationPhoneN11,
   normalizeWhatsAppPhoneDigits,
 } from "../../utils/phone.js";
@@ -17,6 +18,11 @@ import {
   humanizeLuminaMessage,
   resolveWebAgentActionInput,
 } from "../webAgentUi.service.js";
+import {
+  buildWebAgentAutomationSummaryMessage,
+  listWebAgentAutomationOfferCandidates,
+  resolveAutomationOfferCandidate,
+} from "../webAgentAutomation.service.js";
 import {
   applyCustomerSelection,
   applyProductSelectionToItem,
@@ -165,6 +171,10 @@ function resolveIntentModuleKey(intent) {
   if (
     [
       "query_pending_offers",
+      "query_due_today_offers",
+      "query_overdue_offers",
+      "query_stale_offer_followups",
+      "query_billing_priorities",
       "send_offer_payment_reminder",
       "cancel_offer",
     ].includes(normalized)
@@ -330,6 +340,27 @@ function buildForcedOfferSalesExtraction(intent, text = "") {
   };
 }
 
+function normalizeAutomationContext(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return value;
+}
+
+async function resolveSelectedOfferCandidateFromAutomationContext({
+  user,
+  automationContext = null,
+}) {
+  const context = normalizeAutomationContext(automationContext);
+  const offerId = String(context?.offerId || "").trim();
+  if (!offerId) return null;
+
+  return resolveAutomationOfferCandidate({
+    user,
+    offerId,
+  });
+}
+
 async function maybeRearmWebSessionForNextInput(session) {
   if (!session?._id || !isWebSourceChannel(session?.sourceChannel)) {
     return session;
@@ -396,6 +427,20 @@ function parseConfirmationReply(value) {
   ) {
     return "CANCELAR";
   }
+  return "";
+}
+
+function parseCandidateSelectionReply(value) {
+  const normalized = normalizeComparableText(value);
+
+  if (
+    ["cancelar", "cancela", "cancelado"].includes(normalized) ||
+    normalized === "0" ||
+    normalized.startsWith("cancel")
+  ) {
+    return "CANCELAR";
+  }
+
   return "";
 }
 
@@ -633,7 +678,17 @@ function resolveIntentSelectionFromDeterministicAction({
   }
 
   if (selectionType === "offer_sales_operation") {
-    if (routedIntent === "query_pending_offers") return "CONSULTAR_PENDENTES";
+    if (
+      [
+        "query_pending_offers",
+        "query_due_today_offers",
+        "query_overdue_offers",
+        "query_stale_offer_followups",
+        "query_billing_priorities",
+      ].includes(routedIntent)
+    ) {
+      return "CONSULTAR_PENDENTES";
+    }
     if (routedIntent === "send_offer_payment_reminder") return "COBRAR_CLIENTE";
     if (routedIntent === "cancel_offer") return "CANCELAR_PROPOSTA";
     return "";
@@ -644,6 +699,10 @@ function resolveIntentSelectionFromDeterministicAction({
     if (
       [
         "query_pending_offers",
+        "query_due_today_offers",
+        "query_overdue_offers",
+        "query_stale_offer_followups",
+        "query_billing_priorities",
         "send_offer_payment_reminder",
         "cancel_offer",
         "ambiguous_offer_sales_operation",
@@ -994,6 +1053,23 @@ async function replyToSession({ session, user, message, dedupeSuffix }) {
 
   await maybeRearmWebSessionForNextInput(session);
   return reply;
+}
+
+async function cancelSessionAndReply({ session, user, dedupeSuffix }) {
+  const cancelledSession = await markSessionCancelled(session._id);
+  await closeActiveSessionsForRequester({
+    userId: user._id,
+    requesterPhoneDigits: cancelledSession.requesterPhoneDigits,
+    excludeSessionId: cancelledSession._id,
+    state: "EXPIRED",
+  });
+  await replyToSession({
+    session: cancelledSession,
+    user,
+    message: buildCancelledMessage(),
+    dedupeSuffix,
+  });
+  return cancelledSession;
 }
 
 async function replyNotLinkedRequester({ event, requesterPhoneDigits }) {
@@ -1787,6 +1863,123 @@ async function runPendingOffersQueryForSession({
   };
 }
 
+async function runOfferAutomationSummaryForSession({
+  session,
+  user,
+  text,
+  dedupeSuffix,
+  routingExtraction = null,
+  automationType = "",
+}) {
+  const accessDenied = await maybeHandleWebModuleAccessDenied({
+    session,
+    user,
+    moduleKey: resolveIntentModuleKey(routingExtraction?.intent || "query_pending_offers"),
+    dedupeSuffix,
+  });
+  if (accessDenied) return accessDenied;
+
+  const normalizedAutomationType = String(automationType || "").trim();
+  const automationCandidates = await listWebAgentAutomationOfferCandidates({
+    user,
+    automationType: normalizedAutomationType,
+    limit: 8,
+    now: new Date(),
+  });
+  const message = await buildWebAgentAutomationSummaryMessage({
+    user,
+    automationType: normalizedAutomationType,
+    candidates: automationCandidates,
+  });
+
+  if (
+    isWebSourceChannel(session?.sourceChannel) &&
+    ["due_today", "overdue", "stale_followup", "billing_priorities"].includes(
+      normalizedAutomationType,
+    ) &&
+    automationCandidates.length > 0
+  ) {
+    const timeZone = await getWorkspaceAgendaTimeZone(user.workspaceId);
+    const draft = {
+      ...createEmptyOfferSalesOperationExtraction(),
+      intent: "send_offer_payment_reminder",
+      source_text: String(text || "").trim(),
+    };
+
+    const updatedSession = await updateWhatsAppSession(session._id, {
+      flowType: "offer_payment_reminder",
+      state: "AWAITING_OFFER_SELECTION",
+      lastQuestionKey: "offer_selection",
+      lastQuestionText: message,
+      candidateOffers: automationCandidates,
+      extracted: buildSessionExtracted(session?.extracted, {
+        ...(routingExtraction ? { intentRouting: routingExtraction } : {}),
+        offerSalesOperation: draft,
+      }),
+      resolved: {
+        ...stripIntentSelectionContext(session?.resolved || {}),
+        source_text: text,
+        automationType: normalizedAutomationType,
+        offerSalesOperation: draft,
+        offerSalesTimeZone: timeZone,
+        selectedOfferCandidate: null,
+      },
+    });
+
+    await replyToSession({
+      session: updatedSession,
+      user,
+      message,
+      dedupeSuffix,
+    });
+
+    return {
+      ok: true,
+      status: "awaiting_offer_selection",
+      session: updatedSession,
+    };
+  }
+
+  const completedSession = await markSessionCompleted(session._id, {
+    flowType: "offer_query",
+    extracted: buildSessionExtracted(session?.extracted, {
+      ...(routingExtraction ? { intentRouting: routingExtraction } : {}),
+      offerSalesOperation: {
+        intent: String(routingExtraction?.intent || "query_pending_offers").trim(),
+        target_customer_name: "",
+        target_created_day_kind: "unspecified",
+        target_created_date_iso: "",
+        source_text: text,
+      },
+    }),
+      resolved: {
+        ...stripIntentSelectionContext(session?.resolved || {}),
+        source_text: text,
+        automationType: normalizedAutomationType,
+      },
+    });
+
+  await closeActiveSessionsForRequester({
+    userId: user._id,
+    requesterPhoneDigits: completedSession.requesterPhoneDigits,
+    excludeSessionId: completedSession._id,
+    state: "EXPIRED",
+  });
+
+  await replyToSession({
+    session: completedSession,
+    user,
+    message,
+    dedupeSuffix,
+  });
+
+  return {
+    ok: true,
+    status: "completed",
+    session: completedSession,
+  };
+}
+
 async function initializeOfferSession({
   session,
   user,
@@ -2254,6 +2447,7 @@ async function initializeOfferSalesOperationSession({
   dedupeSuffix,
   routingExtraction = null,
   forcedExtraction = null,
+  automationContext = null,
 }) {
   const accessDenied = await maybeHandleWebModuleAccessDenied({
     session,
@@ -2274,6 +2468,10 @@ async function initializeOfferSalesOperationSession({
       todayDateIso,
       timeZone,
     }));
+  const selectedOfferCandidate = await resolveSelectedOfferCandidateFromAutomationContext({
+    user,
+    automationContext,
+  });
 
   const updatedSession = await updateWhatsAppSession(session._id, {
     flowType:
@@ -2289,7 +2487,7 @@ async function initializeOfferSalesOperationSession({
       source_text: text,
       offerSalesOperation: extraction,
       offerSalesTimeZone: timeZone,
-      selectedOfferCandidate: null,
+      selectedOfferCandidate,
     },
   });
 
@@ -2367,6 +2565,39 @@ async function runBackofficeLookupForSession({
       limit: 5,
     });
     lookupCount = lookup.count;
+    if (lookup.count > 1) {
+      message = buildClientLookupMessage(draft.client_full_name, lookup.lines);
+      const updatedSession = await updateWhatsAppSession(session._id, {
+        flowType: "lookup_query",
+        state: "AWAITING_CUSTOMER_SELECTION",
+        pendingFields: [],
+        lastQuestionKey: "lookup_client_phone_selection",
+        lastQuestionText: message,
+        candidateCustomers: lookup.items,
+        extracted: buildSessionExtracted(session?.extracted, {
+          ...(routingExtraction ? { intentRouting: routingExtraction } : {}),
+          backofficeOperation: draft,
+        }),
+        resolved: {
+          ...(stripIntentSelectionContext(session?.resolved || {})),
+          source_text: text,
+          backofficeOperation: draft,
+          customerLookupQuery: String(draft.client_full_name || "").trim(),
+          customerLookupMiss: false,
+        },
+      });
+      await replyToSession({
+        session: updatedSession,
+        user,
+        message,
+        dedupeSuffix,
+      });
+      return {
+        ok: true,
+        status: "awaiting_customer_selection",
+        session: updatedSession,
+      };
+    }
     message = buildClientLookupMessage(draft.client_full_name, lookup.lines);
   } else {
     const sourceSuggestsCode = /\b(?:codigo|id(?: do produto)?|cod)\b/i.test(
@@ -4104,6 +4335,7 @@ async function dispatchInitialSessionRouting({
   messageId,
   routingExtraction,
   deterministicAction = null,
+  automationContext = null,
 }) {
   const sessionAfterRouting = await updateWhatsAppSession(session._id, {
     extracted: buildSessionExtracted(session?.extracted, {
@@ -4148,6 +4380,50 @@ async function dispatchInitialSessionRouting({
       text,
       dedupeSuffix: `${messageId}:pending-offers`,
       routingExtraction,
+    });
+  }
+
+  if (routingExtraction.intent === "query_due_today_offers") {
+    return runOfferAutomationSummaryForSession({
+      session: sessionAfterRouting,
+      user,
+      text,
+      dedupeSuffix: `${messageId}:due-today-offers`,
+      routingExtraction,
+      automationType: "due_today",
+    });
+  }
+
+  if (routingExtraction.intent === "query_overdue_offers") {
+    return runOfferAutomationSummaryForSession({
+      session: sessionAfterRouting,
+      user,
+      text,
+      dedupeSuffix: `${messageId}:overdue-offers`,
+      routingExtraction,
+      automationType: "overdue",
+    });
+  }
+
+  if (routingExtraction.intent === "query_stale_offer_followups") {
+    return runOfferAutomationSummaryForSession({
+      session: sessionAfterRouting,
+      user,
+      text,
+      dedupeSuffix: `${messageId}:stale-offer-followups`,
+      routingExtraction,
+      automationType: "stale_followup",
+    });
+  }
+
+  if (routingExtraction.intent === "query_billing_priorities") {
+    return runOfferAutomationSummaryForSession({
+      session: sessionAfterRouting,
+      user,
+      text,
+      dedupeSuffix: `${messageId}:billing-priorities`,
+      routingExtraction,
+      automationType: "billing_priorities",
     });
   }
 
@@ -4232,6 +4508,7 @@ async function dispatchInitialSessionRouting({
       text,
       dedupeSuffix: `${messageId}:offer-sales-operation`,
       routingExtraction,
+      automationContext,
       forcedExtraction:
         deterministicAction?.routingIntent === routingExtraction.intent
           ? buildForcedOfferSalesExtraction(routingExtraction.intent, text)
@@ -4328,6 +4605,7 @@ async function handleOpenSession({ session, user, event, text }) {
       messageId: event.messageId,
       routingExtraction,
       deterministicAction,
+      automationContext: event?.automationContext,
     });
   }
 
@@ -4341,6 +4619,80 @@ async function handleOpenSession({ session, user, event, text }) {
   }
 
   if (refreshedSession.state === "AWAITING_CUSTOMER_SELECTION") {
+    const selection = parseCandidateSelectionReply(text);
+    if (selection === "CANCELAR") {
+      const cancelledSession = await cancelSessionAndReply({
+        session: refreshedSession,
+        user,
+        dedupeSuffix: `${event.messageId}:cancel`,
+      });
+      return { ok: true, status: "cancelled", session: cancelledSession };
+    }
+
+    if (
+      refreshedSession.flowType === "lookup_query" &&
+      refreshedSession.lastQuestionKey === "lookup_client_phone_selection"
+    ) {
+      const selectedLookupCustomer = pickCandidateByOrdinal(
+        text,
+        refreshedSession.candidateCustomers || [],
+      );
+      if (!selectedLookupCustomer) {
+        await replyToSession({
+          session: refreshedSession,
+          user,
+          message: buildInvalidSelectionMessage(refreshedSession.lastQuestionText),
+          dedupeSuffix,
+        });
+        return { ok: true, status: "awaiting_customer_selection", session: refreshedSession };
+      }
+
+      const draft = getBackofficeOperationDraft(refreshedSession);
+      const selectedLine = `1. ${String(
+        selectedLookupCustomer?.fullName || draft.client_full_name || "Cliente",
+      ).trim()} - ${formatPhoneDisplay(
+        selectedLookupCustomer?.phoneDigits || selectedLookupCustomer?.phone || "",
+      )}`;
+      const message = buildClientLookupMessage(
+        selectedLookupCustomer?.fullName || draft.client_full_name,
+        [selectedLine],
+      );
+
+      const completedSession = await markSessionCompleted(refreshedSession._id, {
+        flowType: "lookup_query",
+        extracted: buildSessionExtracted(refreshedSession?.extracted, {
+          backofficeOperation: draft,
+        }),
+        resolved: {
+          ...(stripIntentSelectionContext(refreshedSession?.resolved || {})),
+          source_text: String(
+            draft.source_text || refreshedSession?.lastUserMessageText || "",
+          ).trim(),
+          backofficeOperation: draft,
+          customerId: selectedLookupCustomer?.customerId || null,
+          customerName: String(
+            selectedLookupCustomer?.fullName || draft.client_full_name || "",
+          ).trim(),
+          customerLookupQuery: String(draft.client_full_name || "").trim(),
+          customerLookupMiss: false,
+          lookupCount: 1,
+        },
+      });
+      await closeActiveSessionsForRequester({
+        userId: user._id,
+        requesterPhoneDigits: completedSession.requesterPhoneDigits,
+        excludeSessionId: completedSession._id,
+        state: "EXPIRED",
+      });
+      await replyToSession({
+        session: completedSession,
+        user,
+        message,
+        dedupeSuffix,
+      });
+      return { ok: true, status: "completed", session: completedSession };
+    }
+
     if (
       refreshedSession.flowType === "client_create" &&
       refreshedSession.lastQuestionKey === "client_create_existing_selection"
@@ -4463,6 +4815,16 @@ async function handleOpenSession({ session, user, event, text }) {
   }
 
   if (refreshedSession.state === "AWAITING_PRODUCT_SELECTION") {
+    const selection = parseCandidateSelectionReply(text);
+    if (selection === "CANCELAR") {
+      const cancelledSession = await cancelSessionAndReply({
+        session: refreshedSession,
+        user,
+        dedupeSuffix: `${event.messageId}:cancel`,
+      });
+      return { ok: true, status: "cancelled", session: cancelledSession };
+    }
+
     if (
       refreshedSession.flowType === "product_update" &&
       refreshedSession.lastQuestionKey === "product_update_selection"
@@ -4614,6 +4976,16 @@ async function handleOpenSession({ session, user, event, text }) {
   }
 
   if (refreshedSession.state === "AWAITING_BOOKING_SELECTION") {
+    const selection = parseCandidateSelectionReply(text);
+    if (selection === "CANCELAR") {
+      const cancelledSession = await cancelSessionAndReply({
+        session: refreshedSession,
+        user,
+        dedupeSuffix: `${event.messageId}:cancel`,
+      });
+      return { ok: true, status: "cancelled", session: cancelledSession };
+    }
+
     const selected = pickBookingCandidateByOrdinal(
       text,
       refreshedSession.candidateBookings || [],
@@ -4643,6 +5015,16 @@ async function handleOpenSession({ session, user, event, text }) {
   }
 
   if (refreshedSession.state === "AWAITING_OFFER_SELECTION") {
+    const selection = parseCandidateSelectionReply(text);
+    if (selection === "CANCELAR") {
+      const cancelledSession = await cancelSessionAndReply({
+        session: refreshedSession,
+        user,
+        dedupeSuffix: `${event.messageId}:cancel`,
+      });
+      return { ok: true, status: "cancelled", session: cancelledSession };
+    }
+
     const selected = pickCandidateByOrdinal(
       text,
       refreshedSession.candidateOffers || [],
@@ -5108,6 +5490,7 @@ export async function processInboundWhatsAppEvent(event, options = {}) {
       messageId: event.messageId,
       routingExtraction,
       deterministicAction,
+      automationContext: event?.automationContext,
     });
   } catch (error) {
     if (typeof user !== "undefined" && sessionForError?._id) {

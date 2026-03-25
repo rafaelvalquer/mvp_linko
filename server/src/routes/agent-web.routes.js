@@ -5,6 +5,7 @@ import { ensureAuth } from "../middleware/auth.js";
 import { WhatsAppCommandSession } from "../models/WhatsAppCommandSession.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { canUseWhatsAppAiOfferCreation } from "../utils/planFeatures.js";
+import { resolveWorkspaceOwnerNotificationContext } from "../services/notificationSettings.js";
 import {
   closeActiveSessionsForRequester,
   findOpenWhatsAppSession,
@@ -19,6 +20,10 @@ import {
   serializeWebAgentMessages,
   serializeWebAgentSession,
 } from "../services/webAgentUi.service.js";
+import {
+  buildWebAgentPassiveStatus,
+  scanWebAgentAutomationInbox,
+} from "../services/webAgentAutomation.service.js";
 
 const r = Router();
 const WEB_SOURCE_CHANNEL = "web";
@@ -37,7 +42,7 @@ function normalizeText(value) {
   return String(value || "").trim();
 }
 
-function buildSessionResponsePayload({
+async function buildSessionResponsePayload({
   user,
   activeSession = null,
   selectedSession = null,
@@ -50,6 +55,11 @@ function buildSessionResponsePayload({
   const ui = buildWebAgentUiPayload({
     session: effectiveSession,
     user,
+  });
+  const automationInbox = await scanWebAgentAutomationInbox({
+    user,
+    activeSession,
+    selectedSession: effectiveSession,
   });
 
   return {
@@ -67,10 +77,15 @@ function buildSessionResponsePayload({
     ui,
     uiHints: ui,
     quickReplies: Array.isArray(ui.quickReplies) ? ui.quickReplies : [],
+    replyControls:
+      ui.replyControls && typeof ui.replyControls === "object"
+        ? ui.replyControls
+        : null,
     suggestedActions: Array.isArray(ui.suggestedActions)
       ? ui.suggestedActions
       : [],
     actionMenu: Array.isArray(ui.actionMenu) ? ui.actionMenu : [],
+    automationInbox: Array.isArray(automationInbox) ? automationInbox : [],
     readOnly:
       !!serializedSelectedSession &&
       String(serializedSelectedSession?._id || "") !==
@@ -109,7 +124,33 @@ async function loadWebSessionForUser(req, sessionId) {
   }).lean();
 }
 
+async function loadPassiveStatusForUser(req) {
+  const notificationContext = await resolveWorkspaceOwnerNotificationContext({
+    workspaceId: req.user?.workspaceId,
+    workspacePlan: req.user?.workspacePlan || "start",
+  });
+  const passiveEnabled = notificationContext?.settings?.agent?.passiveEnabled === true;
+
+  return buildWebAgentPassiveStatus({
+    user: req.user,
+    enabled: passiveEnabled,
+  });
+}
+
 r.use(ensureAuth);
+
+r.get(
+  "/agent/web/passive-status",
+  asyncHandler(async (req, res) => {
+    assertAgentPlanAllowed(req);
+
+    const passive = await loadPassiveStatusForUser(req);
+    return res.json({
+      ok: true,
+      passive,
+    });
+  }),
+);
 
 r.get(
   "/agent/web/bootstrap",
@@ -133,7 +174,7 @@ r.get(
     }
 
     return res.json(
-      buildSessionResponsePayload({
+      await buildSessionResponsePayload({
         user: req.user,
         activeSession,
         selectedSession,
@@ -165,7 +206,7 @@ r.get(
     });
 
     return res.json(
-      buildSessionResponsePayload({
+      await buildSessionResponsePayload({
         user: req.user,
         activeSession,
         selectedSession: session,
@@ -205,6 +246,13 @@ r.post(
       throw err;
     }
 
+    const automationContext =
+      req.body?.automationContext &&
+      typeof req.body.automationContext === "object" &&
+      !Array.isArray(req.body.automationContext)
+        ? req.body.automationContext
+        : null;
+
     const messageId = `web-${crypto.randomUUID()}`;
 
     const result = await processInboundWhatsAppEvent(
@@ -215,6 +263,7 @@ r.post(
         type: "text",
         text,
         actionKey: explicitAction?.actionKey || actionKey,
+        automationContext,
         pushName: String(req.user?.name || "").trim(),
       },
       {
@@ -235,7 +284,7 @@ r.post(
       : [];
 
     return res.json(
-      buildSessionResponsePayload({
+      await buildSessionResponsePayload({
         user: req.user,
         activeSession,
         selectedSession,
@@ -260,7 +309,7 @@ r.post(
     const recentSessions = await listRecentWebSessions(req, null);
 
     return res.json(
-      buildSessionResponsePayload({
+      await buildSessionResponsePayload({
         user: req.user,
         activeSession: null,
         messages: [],

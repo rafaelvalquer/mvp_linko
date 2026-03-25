@@ -330,8 +330,30 @@ export default function SettingsNotifications() {
         context?.settings?.whatsapp?.paymentReminders?.enabled === true,
         "Lembretes de pagamento por WhatsApp ficam disponiveis a partir do plano Pro.",
       ),
+      luminaPassive: (() => {
+        const planAllowed =
+          getPlanFeatureMatrix(currentPlan).whatsappAiOfferCreation === true;
+
+        if (planAllowed && context?.settings?.agent?.passiveEnabled === true) {
+          return { tone: "PAID", label: "Ativo agora", note: "" };
+        }
+
+        if (!planAllowed) {
+          return {
+            tone: "ACCEPTED",
+            label: "Bloqueado pelo plano",
+            note: "As notificacoes passivas da Lumina ficam disponiveis a partir do plano Pro.",
+          };
+        }
+
+        return {
+          tone: "DRAFT",
+          label: "Desativado no workspace",
+          note: "O launcher deixa de mostrar badge e aviso passivo, mas a Lumina continua disponivel no app.",
+        };
+      })(),
     }),
-    [context],
+    [context, currentPlan],
   );
 
   const handleSave = useCallback(async () => {
@@ -696,6 +718,28 @@ export default function SettingsNotifications() {
                 })}
               </div>
             </ToggleRow>
+          </div>
+
+          <div className="space-y-4 border-t border-slate-200/80 pt-6 dark:border-white/10">
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+              Lumina
+            </div>
+
+            <ToggleRow
+              label="Notificacoes passivas da Lumina"
+              description="Controla o badge e o aviso sutil no launcher da Lumina quando houver cobrancas de hoje, lembretes acionaveis ou propostas sem resposta."
+              checked={draft.agent.passiveEnabled}
+              onChange={(value) =>
+                setDraft((prev) => ({
+                  ...prev,
+                  agent: {
+                    ...prev.agent,
+                    passiveEnabled: value,
+                  },
+                }))
+              }
+              status={statusStates.luminaPassive}
+            />
           </div>
 
           <div className="space-y-3 border-t border-slate-200/80 pt-6 dark:border-white/10">

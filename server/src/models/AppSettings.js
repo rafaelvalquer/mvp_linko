@@ -153,10 +153,18 @@ const NotificationWhatsAppSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const NotificationAgentSchema = new mongoose.Schema(
+  {
+    passiveEnabled: { type: Boolean, default: true },
+  },
+  { _id: false },
+);
+
 const NotificationSettingsSchema = new mongoose.Schema(
   {
     email: { type: NotificationEmailSchema, default: () => ({}) },
     whatsapp: { type: NotificationWhatsAppSchema, default: () => ({}) },
+    agent: { type: NotificationAgentSchema, default: () => ({}) },
   },
   { _id: false },
 );

@@ -47,10 +47,11 @@ function lowerFirst(value) {
   return normalized.charAt(0).toLowerCase() + normalized.slice(1);
 }
 
-function candidateReply(label, value) {
+function candidateReply(label, value, variant = "default") {
   return {
     label: compactWhitespace(label),
     value: String(value || "").trim(),
+    variant: variant === "danger" ? "danger" : "default",
   };
 }
 
@@ -169,25 +170,69 @@ const WEB_AGENT_ACTIONS = [
   }),
   buildSuggestedActionConfig({
     categoryKey: "billing",
+    key: "billing_due_today",
+    label: "Quem preciso cobrar hoje?",
+    description: "Listar as cobrancas que vencem hoje na sua carteira.",
+    value: "Quem preciso cobrar hoje?",
+    routingIntent: "query_due_today_offers",
+    flowType: "offer_query",
+    moduleKey: "offers",
+    matchPhrases: ["Quem cobrar hoje", "Cobrar vencidas de hoje"],
+  }),
+  buildSuggestedActionConfig({
+    categoryKey: "billing",
     key: "pending_offers",
-    label: "Consultar pendentes",
-    description: "Listar propostas que ainda aguardam pagamento.",
-    value: "Quais propostas estao pendentes?",
+    label: "Montar lista de pendentes",
+    description: "Montar uma lista rapida das propostas pendentes da carteira.",
+    value: "Quero montar a lista de propostas pendentes",
     routingIntent: "query_pending_offers",
     flowType: "offer_query",
     moduleKey: "offers",
-    matchPhrases: ["Propostas pendentes", "Consultar pendentes"],
+    matchPhrases: ["Propostas pendentes", "Consultar pendentes", "Lista de pendentes"],
   }),
   buildSuggestedActionConfig({
     categoryKey: "billing",
     key: "offer_payment_reminder",
-    label: "Cobrar cliente",
-    description: "Enviar lembrete de pagamento para uma proposta.",
-    value: "Quero cobrar um cliente",
+    label: "Enviar lembrete para uma proposta",
+    description: "Escolher uma proposta e revisar a cobranca antes do envio.",
+    value: "Quero enviar lembrete para uma proposta",
     routingIntent: "send_offer_payment_reminder",
     flowType: "offer_payment_reminder",
     moduleKey: "offers",
-    matchPhrases: ["Cobrar cliente", "Enviar cobranca"],
+    matchPhrases: ["Cobrar cliente", "Enviar cobranca", "Enviar lembrete para proposta"],
+  }),
+  buildSuggestedActionConfig({
+    categoryKey: "billing",
+    key: "billing_followup_stale",
+    label: "Retomar propostas sem resposta",
+    description: "Localizar propostas que pedem follow-up de cobranca.",
+    value: "Quero retomar propostas sem resposta",
+    routingIntent: "query_stale_offer_followups",
+    flowType: "offer_query",
+    moduleKey: "offers",
+    matchPhrases: ["Retomar propostas sem resposta", "Propostas sem resposta"],
+  }),
+  buildSuggestedActionConfig({
+    categoryKey: "billing",
+    key: "billing_priorities",
+    label: "Ver minhas prioridades do dia",
+    description: "Resumo rapido do que pedir follow-up agora na cobranca.",
+    value: "Quero ver minhas prioridades de cobranca do dia",
+    routingIntent: "query_billing_priorities",
+    flowType: "offer_query",
+    moduleKey: "offers",
+    matchPhrases: ["Minhas prioridades do dia", "Prioridades de cobranca"],
+  }),
+  buildSuggestedActionConfig({
+    categoryKey: "billing",
+    key: "billing_overdue",
+    label: "Ver cobrancas atrasadas",
+    description: "Listar as propostas que ja passaram do vencimento.",
+    value: "Quais cobrancas atrasadas eu tenho?",
+    routingIntent: "query_overdue_offers",
+    flowType: "offer_query",
+    moduleKey: "offers",
+    matchPhrases: ["Cobrancas atrasadas", "Propostas atrasadas"],
   }),
   buildSuggestedActionConfig({
     categoryKey: "billing",
@@ -262,9 +307,11 @@ for (const action of WEB_AGENT_ACTIONS) {
   action.categoryLabel = ACTION_CATEGORY_LABELS[action.categoryKey] || action.categoryKey;
 }
 
-function buildSelectionReplies(items = []) {
-  return items
-    .slice(0, 6)
+function buildSelectionReplies(items = [], { limit = null } = {}) {
+  const source =
+    Number.isInteger(limit) && limit >= 0 ? items.slice(0, limit) : [...items];
+
+  return source
     .map((item, index) => {
       const label = compactWhitespace(
         item?.displayLabel ||
@@ -275,6 +322,165 @@ function buildSelectionReplies(items = []) {
       );
       return candidateReply(label, String(index + 1));
     });
+}
+
+function buildReplyControls(session = null) {
+  if (!session?._id) return null;
+
+  const state = String(session.state || "").trim().toUpperCase();
+  const lastQuestionKey = String(session.lastQuestionKey || "").trim();
+  const title = compactWhitespace(
+    String(session.lastQuestionText || "Escolha uma opcao")
+      .split(/\r?\n/)[0]
+      .trim(),
+  );
+
+  if (state === "AWAITING_INTENT_SELECTION") {
+    if (lastQuestionKey === "intent_selection") {
+      return {
+        presentation: "chips",
+        options: [
+          candidateReply("Proposta", "1"),
+          candidateReply("Agenda", "2"),
+          candidateReply("Cancelar", "CANCELAR", "danger"),
+        ],
+      };
+    }
+
+    if (lastQuestionKey === "booking_operation_selection") {
+      return {
+        presentation: "chips",
+        options: [
+          candidateReply("Consultar agenda", "1"),
+          candidateReply("Reagendar", "2"),
+          candidateReply("Cancelar compromisso", "3", "danger"),
+          candidateReply("Cancelar", "CANCELAR", "danger"),
+        ],
+      };
+    }
+
+    if (lastQuestionKey === "offer_sales_operation_selection") {
+      return {
+        presentation: "chips",
+        options: [
+          candidateReply("Pendentes", "1"),
+          candidateReply("Cobrar cliente", "2"),
+          candidateReply("Cancelar proposta", "3", "danger"),
+          candidateReply("Cancelar", "CANCELAR", "danger"),
+        ],
+      };
+    }
+
+    if (lastQuestionKey === "backoffice_operation_selection") {
+      return {
+        presentation: "chips",
+        options: [
+          candidateReply("Cadastrar cliente", "1"),
+          candidateReply("Cadastrar produto", "2"),
+          candidateReply("Atualizar preco", "3"),
+          candidateReply("Consultar dados", "4"),
+          candidateReply("Cancelar", "CANCELAR", "danger"),
+        ],
+      };
+    }
+
+    if (lastQuestionKey === "offer_sales_context_switch") {
+      return {
+        presentation: "chips",
+        options: [
+          candidateReply("Continuar proposta", "1"),
+          candidateReply("Cobranca e vendas", "2"),
+          candidateReply("Cancelar", "CANCELAR", "danger"),
+        ],
+      };
+    }
+
+    if (lastQuestionKey === "backoffice_context_switch") {
+      return {
+        presentation: "chips",
+        options: [
+          candidateReply("Continuar proposta", "1"),
+          candidateReply("Cadastro e backoffice", "2"),
+          candidateReply("Cancelar", "CANCELAR", "danger"),
+        ],
+      };
+    }
+  }
+
+  if (
+    [
+      "AWAITING_CONFIRMATION",
+      "AWAITING_BOOKING_CHANGE_CONFIRMATION",
+      "AWAITING_OFFER_ACTION_CONFIRMATION",
+      "AWAITING_BACKOFFICE_ACTION_CONFIRMATION",
+    ].includes(state)
+  ) {
+    return {
+      presentation: "chips",
+      options: [
+        candidateReply("Confirmar", "CONFIRMAR"),
+        candidateReply("Cancelar", "CANCELAR", "danger"),
+      ],
+    };
+  }
+
+  if (state === "AWAITING_CUSTOMER_SELECTION") {
+    if (lastQuestionKey === "client_create_existing_selection") {
+      return {
+        presentation: "selector",
+        title,
+        options: [
+          ...buildSelectionReplies(session.candidateCustomers || []),
+          candidateReply("Novo cadastro", "NOVO"),
+          candidateReply("Cancelar", "CANCELAR", "danger"),
+        ],
+      };
+    }
+
+    return {
+      presentation: "selector",
+      title,
+      options: [
+        ...buildSelectionReplies(session.candidateCustomers || []),
+        candidateReply("Cancelar", "CANCELAR", "danger"),
+      ],
+    };
+  }
+
+  if (state === "AWAITING_PRODUCT_SELECTION") {
+    return {
+      presentation: "selector",
+      title,
+      options: [
+        ...buildSelectionReplies(session.candidateProducts || []),
+        candidateReply("Cancelar", "CANCELAR", "danger"),
+      ],
+    };
+  }
+
+  if (state === "AWAITING_BOOKING_SELECTION") {
+    return {
+      presentation: "selector",
+      title,
+      options: [
+        ...buildSelectionReplies(session.candidateBookings || []),
+        candidateReply("Cancelar", "CANCELAR", "danger"),
+      ],
+    };
+  }
+
+  if (state === "AWAITING_OFFER_SELECTION") {
+    return {
+      presentation: "selector",
+      title,
+      options: [
+        ...buildSelectionReplies(session.candidateOffers || []),
+        candidateReply("Cancelar", "CANCELAR", "danger"),
+      ],
+    };
+  }
+
+  return null;
 }
 
 function resolveSessionPreview(session = null) {
@@ -400,7 +606,7 @@ export function buildWebAgentSuggestedActions(user = null) {
   const preferredKeys = [
     "offer_create",
     "agenda_today",
-    "pending_offers",
+    "billing_priorities",
     "client_create",
   ];
 
@@ -483,10 +689,12 @@ export function buildWebAgentUiPayload(sessionOrOptions = null, maybeUser = null
   const user = config?.user || null;
   const actionMenu = buildWebAgentActionMenu(user);
   const suggestedActions = buildWebAgentSuggestedActions(user);
+  const replyControls = buildReplyControls(session);
 
   if (!session?._id) {
     return {
       quickReplies: [],
+      replyControls: null,
       suggestedActions,
       actionMenu,
       composerPlaceholder: "Fale com a Lumina sobre proposta, agenda, cobranca ou cadastro",
@@ -496,28 +704,28 @@ export function buildWebAgentUiPayload(sessionOrOptions = null, maybeUser = null
 
   const state = String(session.state || "").trim().toUpperCase();
   const lastQuestionKey = String(session.lastQuestionKey || "").trim();
-  let quickReplies = [];
+  let quickReplies = Array.isArray(replyControls?.options) ? replyControls.options : [];
 
-  if (state === "AWAITING_INTENT_SELECTION") {
+  if (state === "AWAITING_INTENT_SELECTION" && quickReplies.length === 0) {
     if (lastQuestionKey === "intent_selection") {
       quickReplies = [
         candidateReply("Proposta", "1"),
         candidateReply("Agenda", "2"),
-        candidateReply("Cancelar", "CANCELAR"),
+        candidateReply("Cancelar", "CANCELAR", "danger"),
       ];
     } else if (lastQuestionKey === "booking_operation_selection") {
       quickReplies = [
         candidateReply("Consultar agenda", "1"),
         candidateReply("Reagendar", "2"),
-        candidateReply("Cancelar compromisso", "3"),
-        candidateReply("Cancelar", "CANCELAR"),
+        candidateReply("Cancelar compromisso", "3", "danger"),
+        candidateReply("Cancelar", "CANCELAR", "danger"),
       ];
     } else if (lastQuestionKey === "offer_sales_operation_selection") {
       quickReplies = [
         candidateReply("Pendentes", "1"),
         candidateReply("Cobrar cliente", "2"),
-        candidateReply("Cancelar proposta", "3"),
-        candidateReply("Cancelar", "CANCELAR"),
+        candidateReply("Cancelar proposta", "3", "danger"),
+        candidateReply("Cancelar", "CANCELAR", "danger"),
       ];
     } else if (lastQuestionKey === "backoffice_operation_selection") {
       quickReplies = [
@@ -525,7 +733,7 @@ export function buildWebAgentUiPayload(sessionOrOptions = null, maybeUser = null
         candidateReply("Cadastrar produto", "2"),
         candidateReply("Atualizar preco", "3"),
         candidateReply("Consultar dados", "4"),
-        candidateReply("Cancelar", "CANCELAR"),
+        candidateReply("Cancelar", "CANCELAR", "danger"),
       ];
     }
   } else if (
@@ -535,39 +743,44 @@ export function buildWebAgentUiPayload(sessionOrOptions = null, maybeUser = null
       "AWAITING_OFFER_ACTION_CONFIRMATION",
       "AWAITING_BACKOFFICE_ACTION_CONFIRMATION",
     ].includes(state)
+    && quickReplies.length === 0
   ) {
     quickReplies = [
       candidateReply("Confirmar", "CONFIRMAR"),
-      candidateReply("Cancelar", "CANCELAR"),
+      candidateReply("Cancelar", "CANCELAR", "danger"),
     ];
-  } else if (state === "AWAITING_CUSTOMER_SELECTION") {
+  } else if (state === "AWAITING_CUSTOMER_SELECTION" && quickReplies.length === 0) {
     quickReplies = [
-      ...buildSelectionReplies(session.candidateCustomers || []),
-      candidateReply("Cancelar", "CANCELAR"),
+      ...buildSelectionReplies(session.candidateCustomers || [], { limit: 6 }),
+      ...(lastQuestionKey === "client_create_existing_selection"
+        ? [candidateReply("Novo cadastro", "NOVO")]
+        : []),
+      candidateReply("Cancelar", "CANCELAR", "danger"),
     ];
-  } else if (state === "AWAITING_PRODUCT_SELECTION") {
+  } else if (state === "AWAITING_PRODUCT_SELECTION" && quickReplies.length === 0) {
     quickReplies = [
-      ...buildSelectionReplies(session.candidateProducts || []),
-      candidateReply("Cancelar", "CANCELAR"),
+      ...buildSelectionReplies(session.candidateProducts || [], { limit: 6 }),
+      candidateReply("Cancelar", "CANCELAR", "danger"),
     ];
-  } else if (state === "AWAITING_BOOKING_SELECTION") {
+  } else if (state === "AWAITING_BOOKING_SELECTION" && quickReplies.length === 0) {
     quickReplies = [
-      ...buildSelectionReplies(session.candidateBookings || []),
-      candidateReply("Cancelar", "CANCELAR"),
+      ...buildSelectionReplies(session.candidateBookings || [], { limit: 6 }),
+      candidateReply("Cancelar", "CANCELAR", "danger"),
     ];
-  } else if (state === "AWAITING_OFFER_SELECTION") {
+  } else if (state === "AWAITING_OFFER_SELECTION" && quickReplies.length === 0) {
     quickReplies = [
-      ...buildSelectionReplies(session.candidateOffers || []),
-      candidateReply("Cancelar", "CANCELAR"),
+      ...buildSelectionReplies(session.candidateOffers || [], { limit: 6 }),
+      candidateReply("Cancelar", "CANCELAR", "danger"),
     ];
   }
 
   return {
     quickReplies,
+    replyControls,
     suggestedActions,
     actionMenu,
     composerPlaceholder:
-      quickReplies.length > 0
+      quickReplies.length > 0 || replyControls
         ? "Toque em uma acao rapida ou responda em texto"
         : "Escreva sua proxima mensagem para a Lumina",
     headerSubtitle: "Agente operacional da sua carteira",

@@ -173,7 +173,13 @@ export function buildBookingAmbiguityQuestion(candidates = [], actionLabel = "es
     )
     .join("\n");
 
-  return `Encontrei ${candidates.length} compromissos para ${actionLabel}. Responda com o numero:\n${options}`;
+  return [
+    `Encontrei ${candidates.length} compromissos para ${actionLabel}.`,
+    buildDiscreteChoiceHint(),
+    options,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export function buildCustomerAmbiguityQuestion(candidates = []) {
@@ -184,7 +190,13 @@ export function buildCustomerAmbiguityQuestion(candidates = []) {
     )
     .join("\n");
 
-  return `Encontrei ${candidates.length} clientes com esse nome. Responda com o numero:\n${options}`;
+  return [
+    `Encontrei ${candidates.length} clientes com esse nome.`,
+    buildDiscreteChoiceHint(),
+    options,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export function buildProductAmbiguityQuestion(candidates = [], context = {}) {
@@ -201,7 +213,13 @@ export function buildProductAmbiguityQuestion(candidates = [], context = {}) {
       ? ` para o item ${itemIndex + 1}${context?.itemLabel || ""}`
       : "";
 
-  return `Encontrei ${candidates.length} produtos parecidos${suffix}. Responda com o numero:\n${formattedOptions}`;
+  return [
+    `Encontrei ${candidates.length} produtos parecidos${suffix}.`,
+    buildDiscreteChoiceHint(),
+    formattedOptions,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export function buildProductCodeNotFoundQuestion(productCode = "", context = {}) {
@@ -212,6 +230,14 @@ export function buildProductCodeNotFoundQuestion(productCode = "", context = {})
   const suffix = itemIndex != null ? ` para o item ${itemIndex + 1}` : "";
 
   return `Nao encontrei produto com o codigo ${String(productCode || "informado").trim()}${suffix}. Informe outro codigo ou o nome do produto.`;
+}
+
+function buildDiscreteChoiceHint() {
+  return "Escolha uma opcao abaixo ou responda em texto.";
+}
+
+function buildConfirmOrCancelHint() {
+  return "Escolha CONFIRMAR ou CANCELAR abaixo, ou responda em texto.";
 }
 
 export function buildMissingFieldQuestion(field, resolved = {}) {
@@ -264,7 +290,7 @@ export function buildConfirmationSummary(resolved = {}) {
     ...itemLines,
     `Total geral: ${formatMoney(totalCents)}`,
     "",
-    "Responda com CONFIRMAR ou CANCELAR.",
+    buildConfirmOrCancelHint(),
   ].join("\n");
 }
 
@@ -282,7 +308,7 @@ export function buildErrorMessage() {
 
 export function buildInvalidSelectionMessage(originalQuestion) {
   return [
-    "Nao entendi a opcao informada. Responda apenas com o numero da opcao desejada.",
+    "Nao entendi a opcao informada. Escolha uma opcao abaixo ou responda em texto.",
     "",
     String(originalQuestion || "").trim(),
   ]
@@ -291,12 +317,12 @@ export function buildInvalidSelectionMessage(originalQuestion) {
 }
 
 export function buildInvalidConfirmationMessage() {
-  return "Responda com CONFIRMAR ou CANCELAR.";
+  return buildConfirmOrCancelHint();
 }
 
 export function buildInvalidIntentSelectionMessage(originalQuestion) {
   return [
-    "Nao entendi sua escolha. Responda com PROPOSTA, AGENDA, 1, 2 ou CANCELAR.",
+    "Nao entendi sua escolha. Escolha uma opcao abaixo ou responda em texto com PROPOSTA, AGENDA, 1, 2 ou CANCELAR.",
     "",
     String(originalQuestion || buildIntentDisambiguationQuestion()).trim(),
   ]
@@ -306,7 +332,7 @@ export function buildInvalidIntentSelectionMessage(originalQuestion) {
 
 export function buildInvalidBookingOperationSelectionMessage(originalQuestion) {
   return [
-    "Nao entendi sua escolha. Responda com AGENDA, REAGENDAR, CANCELAR, 1, 2 ou 3.",
+    "Nao entendi sua escolha. Escolha uma opcao abaixo ou responda em texto com AGENDA, REAGENDAR, CANCELAR, 1, 2 ou 3.",
     "",
     String(originalQuestion || buildBookingOperationDisambiguationQuestion()).trim(),
   ]
@@ -316,7 +342,7 @@ export function buildInvalidBookingOperationSelectionMessage(originalQuestion) {
 
 export function buildInvalidOfferSalesSelectionMessage(originalQuestion) {
   return [
-    "Nao entendi sua escolha. Responda com PENDENTES, COBRAR, CANCELAR, 1, 2 ou 3.",
+    "Nao entendi sua escolha. Escolha uma opcao abaixo ou responda em texto com PENDENTES, COBRAR, CANCELAR, 1, 2 ou 3.",
     "",
     String(originalQuestion || buildOfferSalesOperationDisambiguationQuestion()).trim(),
   ]
@@ -326,7 +352,7 @@ export function buildInvalidOfferSalesSelectionMessage(originalQuestion) {
 
 export function buildInvalidOfferSalesContextSwitchMessage(originalQuestion) {
   return [
-    "Nao entendi sua escolha. Responda com PROPOSTA, COBRANCA, 1, 2 ou CANCELAR.",
+    "Nao entendi sua escolha. Escolha uma opcao abaixo ou responda em texto com PROPOSTA, COBRANCA, 1, 2 ou CANCELAR.",
     "",
     String(originalQuestion || buildOfferSalesContextSwitchQuestion()).trim(),
   ]
@@ -336,7 +362,7 @@ export function buildInvalidOfferSalesContextSwitchMessage(originalQuestion) {
 
 export function buildInvalidBackofficeSelectionMessage(originalQuestion) {
   return [
-    "Nao entendi sua escolha. Responda com CLIENTE, PRODUTO, PRECO, CONSULTAR, 1, 2, 3 ou 4.",
+    "Nao entendi sua escolha. Escolha uma opcao abaixo ou responda em texto com CLIENTE, PRODUTO, PRECO, CONSULTAR, 1, 2, 3 ou 4.",
     "",
     String(originalQuestion || buildBackofficeOperationDisambiguationQuestion()).trim(),
   ]
@@ -346,7 +372,7 @@ export function buildInvalidBackofficeSelectionMessage(originalQuestion) {
 
 export function buildInvalidBackofficeContextSwitchMessage(originalQuestion) {
   return [
-    "Nao entendi sua escolha. Responda com PROPOSTA, BACKOFFICE, 1, 2 ou CANCELAR.",
+    "Nao entendi sua escolha. Escolha uma opcao abaixo ou responda em texto com PROPOSTA, BACKOFFICE, 1, 2 ou CANCELAR.",
     "",
     String(originalQuestion || buildBackofficeContextSwitchQuestion()).trim(),
   ]
@@ -364,7 +390,7 @@ export function buildClientExistingMatchesQuestion(candidates = []) {
 
   return [
     `Encontrei ${candidates.length} clientes parecidos.`,
-    "Responda com o numero para usar um cadastro existente ou com NOVO para criar outro.",
+    "Escolha uma opcao abaixo, responda em texto com o numero ou diga NOVO para criar outro cadastro.",
     options,
   ]
     .filter(Boolean)
@@ -380,7 +406,7 @@ export function buildClientCreateConfirmation(draft = {}) {
     `Email: ${String(draft?.client_email || "").trim()}`,
     `CPF/CNPJ: ${String(draft?.client_cpf_cnpj || "").trim()}`,
     "",
-    "Digite CONFIRMAR para continuar ou CANCELAR para desistir.",
+    buildConfirmOrCancelHint(),
   ].join("\n");
 }
 
@@ -400,7 +426,7 @@ export function buildProductCreateConfirmation(draft = {}) {
       ? `Descricao: ${String(draft.product_description || "").trim()}`
       : "",
     "",
-    "Digite CONFIRMAR para continuar ou CANCELAR para desistir.",
+    buildConfirmOrCancelHint(),
   ]
     .filter(Boolean)
     .join("\n");
@@ -421,7 +447,7 @@ export function buildProductPriceUpdateConfirmation(product = {}, draft = {}) {
     `Preco atual: ${formatMoney(product?.priceCents)}`,
     `Novo preco: ${formatMoney(draft?.product_price_cents)}`,
     "",
-    "Digite CONFIRMAR para continuar ou CANCELAR para desistir.",
+    buildConfirmOrCancelHint(),
   ].join("\n");
 }
 
@@ -524,15 +550,31 @@ export function buildOfferAmbiguityQuestion(candidates = [], actionLabel = "essa
     )
     .join("\n");
 
-  return `Encontrei ${candidates.length} propostas para ${actionLabel}. Responda com o numero:\n${options}`;
+  return [
+    `Encontrei ${candidates.length} propostas para ${actionLabel}.`,
+    buildDiscreteChoiceHint(),
+    options,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function buildOfferDeadlineLine(candidate = {}, timeZone = "America/Sao_Paulo") {
+  const dueAt = candidate?.dueAt || candidate?.expiresAt || null;
+  const dueLabel = dueAt ? formatAgendaDateTime(dueAt, timeZone) : "";
+  if (dueLabel) return `Vence em: ${dueLabel}`;
+
+  const linkExpiresAt = candidate?.linkExpiresAt || null;
+  const linkLabel = linkExpiresAt
+    ? formatAgendaDateTime(linkExpiresAt, timeZone)
+    : "";
+  return linkLabel ? `Link expira em: ${linkLabel}` : "";
 }
 
 export function buildOfferReminderConfirmation(candidate = {}) {
   const createdAt =
     formatAgendaDateTime(candidate?.createdAt, "America/Sao_Paulo") || "--";
-  const expiresAt = candidate?.expiresAt
-    ? formatAgendaDateTime(candidate.expiresAt, "America/Sao_Paulo")
-    : "";
+  const deadlineLine = buildOfferDeadlineLine(candidate, "America/Sao_Paulo");
 
   return [
     "Confirma o envio do lembrete desta proposta?",
@@ -541,9 +583,9 @@ export function buildOfferReminderConfirmation(candidate = {}) {
     `Proposta: ${String(candidate?.title || "Proposta").trim()}`,
     `Valor: ${formatMoney(candidate?.totalCents)}`,
     `Criada em: ${createdAt}`,
-    expiresAt ? `Vence em: ${expiresAt}` : "",
+    deadlineLine,
     "",
-    "Digite CONFIRMAR para continuar ou CANCELAR para desistir.",
+    buildConfirmOrCancelHint(),
   ]
     .filter(Boolean)
     .join("\n");
@@ -552,9 +594,7 @@ export function buildOfferReminderConfirmation(candidate = {}) {
 export function buildOfferCancelConfirmation(candidate = {}) {
   const createdAt =
     formatAgendaDateTime(candidate?.createdAt, "America/Sao_Paulo") || "--";
-  const expiresAt = candidate?.expiresAt
-    ? formatAgendaDateTime(candidate.expiresAt, "America/Sao_Paulo")
-    : "";
+  const deadlineLine = buildOfferDeadlineLine(candidate, "America/Sao_Paulo");
 
   return [
     "Confirma o cancelamento desta proposta?",
@@ -563,9 +603,9 @@ export function buildOfferCancelConfirmation(candidate = {}) {
     `Proposta: ${String(candidate?.title || "Proposta").trim()}`,
     `Valor: ${formatMoney(candidate?.totalCents)}`,
     `Criada em: ${createdAt}`,
-    expiresAt ? `Vence em: ${expiresAt}` : "",
+    deadlineLine,
     "",
-    "Digite CONFIRMAR para continuar ou CANCELAR para desistir.",
+    buildConfirmOrCancelHint(),
   ]
     .filter(Boolean)
     .join("\n");
@@ -674,7 +714,7 @@ export function buildBookingRescheduleConfirmation(candidate = {}, nextSchedule 
       candidate?.timeZone,
     )}`,
     "",
-    "Digite CONFIRMAR para continuar ou CANCELAR para desistir.",
+    buildConfirmOrCancelHint(),
   ].join("\n");
 }
 
@@ -686,7 +726,7 @@ export function buildBookingCancelConfirmation(candidate = {}) {
     `Servico: ${String(candidate?.offerTitle || "Servico").trim()}`,
     `Horario atual: ${formatAgendaDateTime(candidate?.startAt, candidate?.timeZone)}`,
     "",
-    "Digite CONFIRMAR para continuar ou CANCELAR para desistir.",
+    buildConfirmOrCancelHint(),
   ].join("\n");
 }
 

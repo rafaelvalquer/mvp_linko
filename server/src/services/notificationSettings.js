@@ -37,6 +37,9 @@ export const DEFAULT_NOTIFICATION_SETTINGS = {
       defaults: { ...DEFAULT_PAYMENT_REMINDER_DEFAULTS },
     },
   },
+  agent: {
+    passiveEnabled: true,
+  },
 };
 
 const NOTIFICATION_FEATURE_META = {
@@ -199,6 +202,13 @@ export function mergeNotificationSettings(base, patch) {
             DEFAULT_NOTIFICATION_SETTINGS.whatsapp.paymentReminders.defaults,
         ),
       },
+    },
+    agent: {
+      passiveEnabled: boolOrDefault(
+        input?.agent?.passiveEnabled,
+        source?.agent?.passiveEnabled ??
+          DEFAULT_NOTIFICATION_SETTINGS.agent.passiveEnabled,
+      ),
     },
   };
 }
@@ -585,6 +595,14 @@ export function sanitizeNotificationPatch(input) {
     }
 
     if (Object.keys(patch.whatsapp).length === 0) delete patch.whatsapp;
+  }
+
+  if (raw.agent && typeof raw.agent === "object") {
+    patch.agent = {};
+    if (raw.agent.passiveEnabled === true || raw.agent.passiveEnabled === false) {
+      patch.agent.passiveEnabled = raw.agent.passiveEnabled;
+    }
+    if (Object.keys(patch.agent).length === 0) delete patch.agent;
   }
 
   return patch;
