@@ -1,18 +1,18 @@
 export const AGENT_PREREQUISITES = [
   {
-    title: "WhatsApp da conta cadastrado",
+    title: "Canal certo para cada contexto",
     description:
-      "Use o numero salvo em Configuracoes > Conta para o sistema reconhecer quem esta enviando o comando.",
+      "No site, a Lumina usa sua sessao autenticada. No WhatsApp, o numero salvo em Configuracoes > Conta identifica quem esta enviando o comando.",
   },
   {
     title: "Plano elegivel",
     description:
-      "O agente fica liberado para os planos Pro, Business e Enterprise. No Start, o guia continua visivel, mas o uso fica bloqueado.",
+      "A Lumina no site e o agente operacional ficam liberados para os planos Pro, Business e Enterprise. No Start, o guia continua visivel, mas o uso fica bloqueado.",
   },
   {
-    title: "Ambiente do WhatsApp ativo",
+    title: "Ambiente do canal ativo",
     description:
-      "O gateway e o servidor precisam estar ativos para receber textos, audios e devolver respostas no mesmo chat.",
+      "No site, basta estar autenticado. No WhatsApp, o gateway e o servidor precisam estar ativos para receber textos, audios e devolver respostas no mesmo chat.",
   },
 ];
 
@@ -87,7 +87,7 @@ export const AGENT_FAQ = [
   {
     question: "Quais planos liberam o agente?",
     answer:
-      "O uso operacional do agente fica disponivel nos planos Pro, Business e Enterprise. O plano Start ve o guia, mas nao consegue executar comandos.",
+      "O uso operacional da Lumina no site e do agente no WhatsApp fica disponivel nos planos Pro, Business e Enterprise. O plano Start ve o guia, mas nao consegue executar comandos.",
   },
   {
     question: "Posso mandar audio em vez de texto?",

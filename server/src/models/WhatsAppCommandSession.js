@@ -135,7 +135,7 @@ const WhatsAppCommandSessionSchema = new mongoose.Schema(
     requesterPushName: { type: String, default: "" },
     sourceChannel: {
       type: String,
-      enum: ["whatsapp"],
+      enum: ["whatsapp", "web"],
       default: "whatsapp",
     },
     sourceMessageIds: { type: [String], default: [] },
@@ -201,6 +201,7 @@ const WhatsAppCommandSessionSchema = new mongoose.Schema(
 WhatsAppCommandSessionSchema.index({ userId: 1, state: 1 });
 WhatsAppCommandSessionSchema.index({ requesterPhoneDigits: 1, state: 1 });
 WhatsAppCommandSessionSchema.index({ workspaceId: 1, createdAt: -1 });
+WhatsAppCommandSessionSchema.index({ userId: 1, sourceChannel: 1, updatedAt: -1 });
 
 export const WhatsAppCommandSession =
   mongoose.models.WhatsAppCommandSession ||

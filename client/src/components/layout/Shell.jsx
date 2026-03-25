@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../../app/AuthContext.jsx";
 import useThemeToggle from "../../app/useThemeToggle.js";
 import MyWhatsAppModal from "../account/MyWhatsAppModal.jsx";
+import LuminaChatWidget from "../agent/LuminaChatWidget.jsx";
 import Sidebar from "./Sidebar.jsx";
 import Topbar from "./Topbar.jsx";
 import {
@@ -256,6 +257,7 @@ export default function Shell({ children, topbarAction = null }) {
           open={myWhatsAppModalOpen}
           onClose={myWhatsAppModalActions.closeMyWhatsAppModal}
         />
+        <LuminaChatWidget />
       </div>
     </MyWhatsAppModalProvider>
   );

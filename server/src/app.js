@@ -9,6 +9,7 @@ import recurringOffersRoutes from "./routes/recurring-offers.routes.js";
 import publicRoutes from "./routes/public.routes.js";
 import authRoutes from "./routes/auth.routes.js";
 import whatsappAiRoutes from "./routes/whatsapp-ai.routes.js";
+import agentWebRoutes from "./routes/agent-web.routes.js";
 import { authOptional } from "./middleware/auth.js";
 import bookingsRoutes from "./routes/bookings.routes.js";
 import withdrawRoutes from "./routes/withdraws.routes.js";
@@ -101,6 +102,7 @@ export function createApp() {
 
   app.use("/api", healthRoutes);
   app.use("/api", authRoutes);
+  app.use("/api", agentWebRoutes);
   app.use("/api", offersRoutes);
   app.use("/api", recurringOffersRoutes);
   app.use("/api", bookingsRoutes);

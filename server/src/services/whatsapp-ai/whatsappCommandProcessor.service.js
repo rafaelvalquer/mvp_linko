@@ -5,7 +5,18 @@ import {
   normalizeWhatsAppPhoneDigits,
 } from "../../utils/phone.js";
 import { canUseWhatsAppAiOfferCreation } from "../../utils/planFeatures.js";
+import { assertWorkspaceModuleAccess } from "../../utils/workspaceAccess.js";
 import { queueOrSendWhatsApp } from "../whatsappOutbox.service.js";
+import {
+  appendWebAgentAssistantMessage,
+  appendWebAgentUserMessage,
+} from "../webAgentMessages.service.js";
+import {
+  buildWebAgentRequesterKey,
+  buildWebModuleAccessDeniedMessage,
+  humanizeLuminaMessage,
+  resolveWebAgentActionInput,
+} from "../webAgentUi.service.js";
 import {
   applyCustomerSelection,
   applyProductSelectionToItem,
@@ -18,6 +29,7 @@ import {
   buildSparseItemPatch,
   createEmptyBackofficeOperationExtraction,
   createEmptyBookingOperationExtraction,
+  createEmptyOfferSalesOperationExtraction,
   createEmptyResolved,
   listMissingMandatoryFields,
   mergeResolvedDraft,
@@ -144,6 +156,132 @@ import {
 
 const inflightInboundEventKeys = new Set();
 const INTENT_SELECTION_CONTEXT_KEY = "_intentSelectionContext";
+const WEB_SOURCE_CHANNEL = "web";
+
+function resolveIntentModuleKey(intent) {
+  const normalized = String(intent || "").trim();
+
+  if (normalized === "create_offer_send_whatsapp") return "newOffer";
+  if (
+    [
+      "query_pending_offers",
+      "send_offer_payment_reminder",
+      "cancel_offer",
+    ].includes(normalized)
+  ) {
+    return "offers";
+  }
+  if (
+    [
+      "query_daily_agenda",
+      "query_weekly_agenda",
+      "query_next_booking",
+      "reschedule_booking",
+      "cancel_booking",
+    ].includes(normalized)
+  ) {
+    return "calendar";
+  }
+  if (["create_client", "lookup_client_phone"].includes(normalized)) {
+    return "clients";
+  }
+  if (
+    ["create_product", "update_product_price", "lookup_product"].includes(
+      normalized,
+    )
+  ) {
+    return "products";
+  }
+  return "";
+}
+
+function isWebSourceChannel(sourceChannel) {
+  return String(sourceChannel || "").trim().toLowerCase() === WEB_SOURCE_CHANNEL;
+}
+
+async function maybeHandleWebModuleAccessDenied({
+  session,
+  user,
+  moduleKey,
+  dedupeSuffix,
+}) {
+  if (!session?._id || !user || !isWebSourceChannel(session?.sourceChannel)) {
+    return null;
+  }
+
+  const normalizedModuleKey = String(moduleKey || "").trim();
+  if (!normalizedModuleKey) return null;
+
+  try {
+    assertWorkspaceModuleAccess({
+      user,
+      workspacePlan: user?.workspacePlan,
+      workspaceOwnerUserId: user?.workspaceOwnerUserId,
+      moduleKey: normalizedModuleKey,
+    });
+    return null;
+  } catch (error) {
+    if (error?.code !== "MODULE_ACCESS_DENIED") throw error;
+
+    const cancelledSession = await markSessionCancelled(session._id, {
+      lastError: {
+        message: error.message || "Modulo indisponivel para este usuario.",
+        code: error.code || "MODULE_ACCESS_DENIED",
+        details: {
+          moduleKey: normalizedModuleKey,
+        },
+        at: new Date(),
+      },
+    });
+
+    await closeActiveSessionsForRequester({
+      userId: user._id,
+      requesterPhoneDigits: session.requesterPhoneDigits,
+      excludeSessionId: cancelledSession._id,
+      state: "EXPIRED",
+    });
+
+    await replyToSession({
+      session: cancelledSession,
+      user,
+      message: buildWebModuleAccessDeniedMessage(normalizedModuleKey),
+      dedupeSuffix: `${dedupeSuffix}:module-access-denied`,
+    });
+
+    return {
+      ok: true,
+      status: "module_access_denied",
+      session: cancelledSession,
+    };
+  }
+}
+
+async function recordWebInboundMessageIfNeeded({
+  event,
+  session,
+  user,
+  text,
+}) {
+  if (
+    !session?._id ||
+    !user?._id ||
+    !isWebSourceChannel(event?.sourceChannel || session?.sourceChannel)
+  ) {
+    return null;
+  }
+
+  return appendWebAgentUserMessage({
+    sessionId: session._id,
+    workspaceId: user?.workspaceId || session?.workspaceId || null,
+    userId: user._id,
+    text,
+    sourceMessageId: String(event?.messageId || "").trim(),
+    inputType: "text",
+    meta: {
+      sourceChannel: WEB_SOURCE_CHANNEL,
+    },
+  });
+}
 
 function normalizeComparableText(value) {
   return String(value || "")
@@ -151,6 +289,102 @@ function normalizeComparableText(value) {
     .replace(/[\u0300-\u036f]/g, "")
     .trim()
     .toLowerCase();
+}
+
+function isTerminalSessionState(state) {
+  return ["COMPLETED", "CANCELLED", "ERROR", "EXPIRED"].includes(
+    String(state || "").trim().toUpperCase(),
+  );
+}
+
+function buildDeterministicWebRoutingExtraction(action = null, text = "") {
+  if (!action?.routingIntent) return null;
+
+  return {
+    intent: String(action.routingIntent || "").trim(),
+    source_text: String(text || action.value || "").trim(),
+  };
+}
+
+function buildForcedBackofficeExtraction(intent, text = "") {
+  return {
+    ...createEmptyBackofficeOperationExtraction(),
+    intent: String(intent || "").trim() || "unknown",
+    source_text: String(text || "").trim(),
+  };
+}
+
+function buildForcedBookingExtraction(intent, text = "") {
+  return {
+    ...createEmptyBookingOperationExtraction(),
+    intent: String(intent || "").trim() || "unknown",
+    source_text: String(text || "").trim(),
+  };
+}
+
+function buildForcedOfferSalesExtraction(intent, text = "") {
+  return {
+    ...createEmptyOfferSalesOperationExtraction(),
+    intent: String(intent || "").trim() || "unknown",
+    source_text: String(text || "").trim(),
+  };
+}
+
+async function maybeRearmWebSessionForNextInput(session) {
+  if (!session?._id || !isWebSourceChannel(session?.sourceChannel)) {
+    return session;
+  }
+
+  if (!isTerminalSessionState(session?.state)) {
+    return session;
+  }
+
+  return updateWhatsAppSession(session._id, {
+    flowType: "intent_disambiguation",
+    state: "NEW",
+    pendingFields: [],
+    extracted: {},
+    resolved: createEmptyResolved(),
+    candidateCustomers: [],
+    candidateProducts: [],
+    candidateBookings: [],
+    candidateOffers: [],
+    confirmationSummaryText: "",
+    lastQuestionKey: "",
+    lastQuestionText: "",
+    completedAt: null,
+    cancelledAt: null,
+    lastError: null,
+  });
+}
+
+async function resolveInitialRoutingForSession({
+  session,
+  text,
+  actionKey = "",
+  user = null,
+}) {
+  if (isWebSourceChannel(session?.sourceChannel)) {
+    const deterministicAction = resolveWebAgentActionInput({
+      actionKey,
+      value: text,
+      user,
+    });
+    if (deterministicAction) {
+      return {
+        deterministicAction,
+        routingExtraction: buildDeterministicWebRoutingExtraction(
+          deterministicAction,
+          text,
+        ),
+      };
+    }
+  }
+
+  return {
+    deterministicAction: null,
+    routingExtraction: await routeWhatsAppMessageIntent({ text }),
+  };
 }
 
 function parseConfirmationReply(value) {
@@ -178,6 +412,7 @@ function parseIntentSelectionReply(value) {
   if (
     normalized === "1" ||
     normalized.startsWith("proposta") ||
+    normalized.includes("proposta") ||
     normalized.includes("orcamento")
   ) {
     return "PROPOSTA";
@@ -215,12 +450,13 @@ function parseBookingOperationSelectionReply(value) {
   if (
     normalized === "2" ||
     normalized.startsWith("reagendar") ||
+    normalized.includes("reagendar") ||
     normalized.includes("remarcar")
   ) {
     return "REAGENDAR";
   }
 
-  if (normalized === "3") {
+  if (normalized === "3" || normalized.includes("cancel")) {
     return "CANCELAR_COMPROMISSO";
   }
 
@@ -330,6 +566,7 @@ function parseOfferSalesContextSwitchReply(value) {
     normalized === "2" ||
     normalized.startsWith("cobranca") ||
     normalized.startsWith("cobrar") ||
+    normalized.includes("cobrar") ||
     normalized.includes("venda")
   ) {
     return "OPERACAO";
@@ -351,6 +588,7 @@ function parseBackofficeContextSwitchReply(value) {
   if (
     normalized === "1" ||
     normalized.startsWith("proposta") ||
+    normalized.includes("proposta") ||
     normalized.includes("orcamento")
   ) {
     return "PROPOSTA";
@@ -364,6 +602,91 @@ function parseBackofficeContextSwitchReply(value) {
     normalized.includes("produto")
   ) {
     return "BACKOFFICE";
+  }
+
+  return "";
+}
+
+function resolveIntentSelectionFromDeterministicAction({
+  context = null,
+  actionKey = "",
+  text = "",
+  user = null,
+}) {
+  const action = resolveWebAgentActionInput({
+    actionKey,
+    value: text,
+    user,
+  });
+  const routedIntent = String(action?.routingIntent || "").trim();
+  if (!routedIntent) return "";
+
+  const selectionType = String(context?.selectionType || "").trim();
+
+  if (selectionType === "booking_operation") {
+    if (["query_daily_agenda", "query_weekly_agenda", "query_next_booking"].includes(routedIntent)) {
+      return "CONSULTAR_AGENDA";
+    }
+    if (routedIntent === "reschedule_booking") return "REAGENDAR";
+    if (routedIntent === "cancel_booking") return "CANCELAR_COMPROMISSO";
+    return "";
+  }
+
+  if (selectionType === "offer_sales_operation") {
+    if (routedIntent === "query_pending_offers") return "CONSULTAR_PENDENTES";
+    if (routedIntent === "send_offer_payment_reminder") return "COBRAR_CLIENTE";
+    if (routedIntent === "cancel_offer") return "CANCELAR_PROPOSTA";
+    return "";
+  }
+
+  if (selectionType === "offer_sales_context_switch") {
+    if (routedIntent === "create_offer_send_whatsapp") return "PROPOSTA";
+    if (
+      [
+        "query_pending_offers",
+        "send_offer_payment_reminder",
+        "cancel_offer",
+        "ambiguous_offer_sales_operation",
+      ].includes(routedIntent)
+    ) {
+      return "OPERACAO";
+    }
+    return "";
+  }
+
+  if (selectionType === "backoffice_operation") {
+    if (routedIntent === "create_client") return "CRIAR_CLIENTE";
+    if (routedIntent === "create_product") return "CRIAR_PRODUTO";
+    if (routedIntent === "update_product_price") return "ATUALIZAR_PRECO";
+    if (["lookup_client_phone", "lookup_product"].includes(routedIntent)) {
+      return "CONSULTAR";
+    }
+    return "";
+  }
+
+  if (selectionType === "backoffice_context_switch") {
+    if (routedIntent === "create_offer_send_whatsapp") return "PROPOSTA";
+    if (
+      [
+        "create_client",
+        "create_product",
+        "update_product_price",
+        "lookup_client_phone",
+        "lookup_product",
+        "ambiguous_backoffice_operation",
+      ].includes(routedIntent)
+    ) {
+      return "BACKOFFICE";
+    }
+    return "";
+  }
+
+  if (["query_daily_agenda", "query_weekly_agenda", "query_next_booking", "reschedule_booking", "cancel_booking", "ambiguous_offer_or_agenda"].includes(routedIntent)) {
+    return "AGENDA";
+  }
+
+  if (routedIntent === "create_offer_send_whatsapp") {
+    return "PROPOSTA";
   }
 
   return "";
@@ -619,7 +942,30 @@ async function sendWhatsAppReply({
   dedupeKey,
   meta = null,
 }) {
-  if (!to || !message) return { ok: false, status: "skipped" };
+  if (!message) return { ok: false, status: "skipped" };
+
+  if (isWebSourceChannel(session?.sourceChannel)) {
+    const humanizedMessage = humanizeLuminaMessage({ message, session });
+
+    await appendWebAgentAssistantMessage({
+      sessionId: session?._id || null,
+      workspaceId,
+      userId: session?.userId || null,
+      text: humanizedMessage,
+      meta: {
+        ...(meta && typeof meta === "object" ? meta : {}),
+        sourceChannel: WEB_SOURCE_CHANNEL,
+      },
+    });
+
+    return {
+      ok: true,
+      status: "stored",
+      channel: WEB_SOURCE_CHANNEL,
+    };
+  }
+
+  if (!to) return { ok: false, status: "skipped" };
 
   return queueOrSendWhatsApp({
     workspaceId,
@@ -633,7 +979,7 @@ async function sendWhatsAppReply({
 }
 
 async function replyToSession({ session, user, message, dedupeSuffix }) {
-  return sendWhatsAppReply({
+  const reply = await sendWhatsAppReply({
     workspaceId: user?.workspaceId || session?.workspaceId || null,
     session,
     to: normalizeWhatsAppPhoneDigits(session?.requesterPhoneDigits || ""),
@@ -645,6 +991,9 @@ async function replyToSession({ session, user, message, dedupeSuffix }) {
       questionKey: session?.lastQuestionKey || null,
     },
   });
+
+  await maybeRearmWebSessionForNextInput(session);
+  return reply;
 }
 
 async function replyNotLinkedRequester({ event, requesterPhoneDigits }) {
@@ -751,10 +1100,16 @@ async function maybeAskForIntentSelection({
   session,
   user,
   text,
+  actionKey = "",
   dedupeSuffix,
   origin = "existing_session",
 }) {
-  const routingExtraction = await routeWhatsAppMessageIntent({ text });
+  const { routingExtraction } = await resolveInitialRoutingForSession({
+    session,
+    text,
+    actionKey,
+    user,
+  });
 
   if (
     ![
@@ -962,10 +1317,16 @@ async function maybeAskForOfferSalesContextSwitch({
   session,
   user,
   text,
+  actionKey = "",
   dedupeSuffix,
   origin = "existing_session",
 }) {
-  const routingExtraction = await routeWhatsAppMessageIntent({ text });
+  const { routingExtraction } = await resolveInitialRoutingForSession({
+    session,
+    text,
+    actionKey,
+    user,
+  });
 
   if (
     ![
@@ -1042,10 +1403,16 @@ async function maybeAskForBackofficeContextSwitch({
   session,
   user,
   text,
+  actionKey = "",
   dedupeSuffix,
   origin = "existing_session",
 }) {
-  const routingExtraction = await routeWhatsAppMessageIntent({ text });
+  const { routingExtraction } = await resolveInitialRoutingForSession({
+    session,
+    text,
+    actionKey,
+    user,
+  });
 
   if (
     ![
@@ -1127,6 +1494,14 @@ async function runAgendaQueryForSession({
   dedupeSuffix,
   routingExtraction = null,
 }) {
+  const accessDenied = await maybeHandleWebModuleAccessDenied({
+    session,
+    user,
+    moduleKey: resolveIntentModuleKey("query_daily_agenda"),
+    dedupeSuffix,
+  });
+  if (accessDenied) return accessDenied;
+
   const timeZone = await getWorkspaceAgendaTimeZone(user.workspaceId);
   const now = new Date();
   const todayDateIso = getDateIsoForTimeZone(now, timeZone);
@@ -1217,6 +1592,14 @@ async function runWeeklyAgendaQueryForSession({
   dedupeSuffix,
   routingExtraction = null,
 }) {
+  const accessDenied = await maybeHandleWebModuleAccessDenied({
+    session,
+    user,
+    moduleKey: resolveIntentModuleKey("query_weekly_agenda"),
+    dedupeSuffix,
+  });
+  if (accessDenied) return accessDenied;
+
   const timeZone = await getWorkspaceAgendaTimeZone(user.workspaceId);
   const now = new Date();
   const startDateISO = getDateIsoForTimeZone(now, timeZone);
@@ -1282,6 +1665,14 @@ async function runNextBookingQueryForSession({
   dedupeSuffix,
   routingExtraction = null,
 }) {
+  const accessDenied = await maybeHandleWebModuleAccessDenied({
+    session,
+    user,
+    moduleKey: resolveIntentModuleKey("query_next_booking"),
+    dedupeSuffix,
+  });
+  if (accessDenied) return accessDenied;
+
   const timeZone = await getWorkspaceAgendaTimeZone(user.workspaceId);
   const nextBooking = await findNextBookingForWorkspace({
     workspaceId: user.workspaceId,
@@ -1337,6 +1728,14 @@ async function runPendingOffersQueryForSession({
   dedupeSuffix,
   routingExtraction = null,
 }) {
+  const accessDenied = await maybeHandleWebModuleAccessDenied({
+    session,
+    user,
+    moduleKey: resolveIntentModuleKey("query_pending_offers"),
+    dedupeSuffix,
+  });
+  if (accessDenied) return accessDenied;
+
   const timeZone = await getWorkspaceAgendaTimeZone(user.workspaceId);
   const offers = await listPendingOffers({
     workspaceId: user.workspaceId,
@@ -1396,6 +1795,14 @@ async function initializeOfferSession({
   routingExtraction = null,
   forceOfferFlow = false,
 }) {
+  const accessDenied = await maybeHandleWebModuleAccessDenied({
+    session,
+    user,
+    moduleKey: resolveIntentModuleKey("create_offer_send_whatsapp"),
+    dedupeSuffix,
+  });
+  if (accessDenied) return accessDenied;
+
   const extracted = await extractWhatsAppIntent({ text });
   const normalizedExtracted =
     forceOfferFlow && extracted.intent !== "create_offer_send_whatsapp"
@@ -1655,14 +2062,27 @@ async function initializeBookingOperationSession({
   text,
   dedupeSuffix,
   routingExtraction = null,
+  forcedExtraction = null,
 }) {
+  const accessDenied = await maybeHandleWebModuleAccessDenied({
+    session,
+    user,
+    moduleKey: resolveIntentModuleKey(
+      routingExtraction?.intent || "reschedule_booking",
+    ),
+    dedupeSuffix,
+  });
+  if (accessDenied) return accessDenied;
+
   const timeZone = await getWorkspaceAgendaTimeZone(user.workspaceId);
   const todayDateIso = getDateIsoForTimeZone(new Date(), timeZone);
-  const extraction = await extractWhatsAppBookingOperation({
-    text,
-    todayDateIso,
-    timeZone,
-  });
+  const extraction =
+    forcedExtraction ||
+    (await extractWhatsAppBookingOperation({
+      text,
+      todayDateIso,
+      timeZone,
+    }));
 
   const updatedSession = await updateWhatsAppSession(session._id, {
     flowType:
@@ -1833,14 +2253,27 @@ async function initializeOfferSalesOperationSession({
   text,
   dedupeSuffix,
   routingExtraction = null,
+  forcedExtraction = null,
 }) {
+  const accessDenied = await maybeHandleWebModuleAccessDenied({
+    session,
+    user,
+    moduleKey: resolveIntentModuleKey(
+      routingExtraction?.intent || "query_pending_offers",
+    ),
+    dedupeSuffix,
+  });
+  if (accessDenied) return accessDenied;
+
   const timeZone = await getWorkspaceAgendaTimeZone(user.workspaceId);
   const todayDateIso = getDateIsoForTimeZone(new Date(), timeZone);
-  const extraction = await extractWhatsAppOfferSalesOperation({
-    text,
-    todayDateIso,
-    timeZone,
-  });
+  const extraction =
+    forcedExtraction ||
+    (await extractWhatsAppOfferSalesOperation({
+      text,
+      todayDateIso,
+      timeZone,
+    }));
 
   const updatedSession = await updateWhatsAppSession(session._id, {
     flowType:
@@ -2291,8 +2724,17 @@ async function initializeBackofficeOperationSession({
   text,
   dedupeSuffix,
   routingExtraction = null,
+  forcedExtraction = null,
 }) {
-  const extraction = await extractWhatsAppBackofficeOperation({ text });
+  const extraction = forcedExtraction || (await extractWhatsAppBackofficeOperation({ text }));
+  const accessDenied = await maybeHandleWebModuleAccessDenied({
+    session,
+    user,
+    moduleKey: resolveIntentModuleKey(extraction?.intent),
+    dedupeSuffix,
+  });
+  if (accessDenied) return accessDenied;
+
   const flowType = resolveBackofficeFlowType(extraction.intent);
 
   const updatedSession = await updateWhatsAppSession(session._id, {
@@ -2543,8 +2985,15 @@ async function advanceSessionAfterResolution({ session, user, dedupeSuffix }) {
 
 async function handleIntentSelection({ session, user, event, text }) {
   const context = getIntentSelectionContext(session);
+  const selectionFromAction = resolveIntentSelectionFromDeterministicAction({
+    context,
+    actionKey: event?.actionKey,
+    text,
+    user,
+  });
   const selection =
-    context?.selectionType === "booking_operation"
+    selectionFromAction ||
+    (context?.selectionType === "booking_operation"
       ? parseBookingOperationSelectionReply(text)
       : context?.selectionType === "offer_sales_operation"
         ? parseOfferSalesOperationSelectionReply(text)
@@ -2554,7 +3003,7 @@ async function handleIntentSelection({ session, user, event, text }) {
             ? parseBackofficeOperationSelectionReply(text)
             : context?.selectionType === "backoffice_context_switch"
               ? parseBackofficeContextSwitchReply(text)
-          : parseIntentSelectionReply(text);
+              : parseIntentSelectionReply(text));
   const pendingIntentText = String(context?.pendingIntentText || text || "").trim();
 
   if (selection === "CANCELAR") {
@@ -2613,6 +3062,10 @@ async function handleIntentSelection({ session, user, event, text }) {
         intent: "send_offer_payment_reminder",
         source_text: pendingIntentText || text,
       },
+      forcedExtraction: buildForcedOfferSalesExtraction(
+        "send_offer_payment_reminder",
+        pendingIntentText || text,
+      ),
     });
   }
 
@@ -2640,6 +3093,10 @@ async function handleIntentSelection({ session, user, event, text }) {
         intent: "cancel_offer",
         source_text: pendingIntentText || text,
       },
+      forcedExtraction: buildForcedOfferSalesExtraction(
+        "cancel_offer",
+        pendingIntentText || text,
+      ),
     });
   }
 
@@ -2680,6 +3137,10 @@ async function handleIntentSelection({ session, user, event, text }) {
         intent: "reschedule_booking",
         source_text: pendingIntentText || text,
       },
+      forcedExtraction: buildForcedBookingExtraction(
+        "reschedule_booking",
+        pendingIntentText || text,
+      ),
     });
   }
 
@@ -2707,6 +3168,10 @@ async function handleIntentSelection({ session, user, event, text }) {
         intent: "cancel_booking",
         source_text: pendingIntentText || text,
       },
+      forcedExtraction: buildForcedBookingExtraction(
+        "cancel_booking",
+        pendingIntentText || text,
+      ),
     });
   }
 
@@ -2758,6 +3223,10 @@ async function handleIntentSelection({ session, user, event, text }) {
           intent: routedIntent,
           source_text: pendingIntentText || text,
         },
+        forcedExtraction: buildForcedOfferSalesExtraction(
+          routedIntent,
+          pendingIntentText || text,
+        ),
       });
     }
 
@@ -2794,6 +3263,10 @@ async function handleIntentSelection({ session, user, event, text }) {
         intent: "create_client",
         source_text: pendingIntentText || text,
       },
+      forcedExtraction: buildForcedBackofficeExtraction(
+        "create_client",
+        pendingIntentText || text,
+      ),
     });
   }
 
@@ -2821,6 +3294,10 @@ async function handleIntentSelection({ session, user, event, text }) {
         intent: "create_product",
         source_text: pendingIntentText || text,
       },
+      forcedExtraction: buildForcedBackofficeExtraction(
+        "create_product",
+        pendingIntentText || text,
+      ),
     });
   }
 
@@ -2848,6 +3325,10 @@ async function handleIntentSelection({ session, user, event, text }) {
         intent: "update_product_price",
         source_text: pendingIntentText || text,
       },
+      forcedExtraction: buildForcedBackofficeExtraction(
+        "update_product_price",
+        pendingIntentText || text,
+      ),
     });
   }
 
@@ -2882,6 +3363,15 @@ async function handleIntentSelection({ session, user, event, text }) {
               intent: "unknown",
               source_text: pendingIntentText || text,
             },
+      forcedExtraction:
+        ["lookup_client_phone", "lookup_product"].includes(
+          String(context?.pendingIntent || "").trim(),
+        )
+          ? buildForcedBackofficeExtraction(
+              String(context?.pendingIntent || "").trim(),
+              pendingIntentText || text,
+            )
+          : null,
     });
   }
 
@@ -2925,6 +3415,10 @@ async function handleIntentSelection({ session, user, event, text }) {
           intent: routedIntent,
           source_text: pendingIntentText || text,
         },
+        forcedExtraction: buildForcedBookingExtraction(
+          routedIntent,
+          pendingIntentText || text,
+        ),
       });
     }
 
@@ -2983,6 +3477,10 @@ async function handleIntentSelection({ session, user, event, text }) {
           intent: routedIntent,
           source_text: pendingIntentText || text,
         },
+        forcedExtraction: buildForcedBackofficeExtraction(
+          routedIntent,
+          pendingIntentText || text,
+        ),
       });
     }
 
@@ -3599,6 +4097,198 @@ async function handleBackofficeActionConfirmation({
   }
 }
 
+async function dispatchInitialSessionRouting({
+  session,
+  user,
+  text,
+  messageId,
+  routingExtraction,
+  deterministicAction = null,
+}) {
+  const sessionAfterRouting = await updateWhatsAppSession(session._id, {
+    extracted: buildSessionExtracted(session?.extracted, {
+      intentRouting: routingExtraction,
+    }),
+  });
+
+  if (routingExtraction.intent === "query_daily_agenda") {
+    return runAgendaQueryForSession({
+      session: sessionAfterRouting,
+      user,
+      text,
+      dedupeSuffix: `${messageId}:agenda`,
+      routingExtraction,
+    });
+  }
+
+  if (routingExtraction.intent === "query_weekly_agenda") {
+    return runWeeklyAgendaQueryForSession({
+      session: sessionAfterRouting,
+      user,
+      text,
+      dedupeSuffix: `${messageId}:weekly-agenda`,
+      routingExtraction,
+    });
+  }
+
+  if (routingExtraction.intent === "query_next_booking") {
+    return runNextBookingQueryForSession({
+      session: sessionAfterRouting,
+      user,
+      text,
+      dedupeSuffix: `${messageId}:next-booking`,
+      routingExtraction,
+    });
+  }
+
+  if (routingExtraction.intent === "query_pending_offers") {
+    return runPendingOffersQueryForSession({
+      session: sessionAfterRouting,
+      user,
+      text,
+      dedupeSuffix: `${messageId}:pending-offers`,
+      routingExtraction,
+    });
+  }
+
+  if (
+    ["lookup_client_phone", "lookup_product"].includes(routingExtraction.intent)
+  ) {
+    return initializeBackofficeOperationSession({
+      session: sessionAfterRouting,
+      user,
+      text,
+      dedupeSuffix: `${messageId}:backoffice-lookup`,
+      routingExtraction,
+      forcedExtraction:
+        deterministicAction?.routingIntent === routingExtraction.intent
+          ? buildForcedBackofficeExtraction(routingExtraction.intent, text)
+          : null,
+    });
+  }
+
+  if (routingExtraction.intent === "ambiguous_offer_or_agenda") {
+    const intentSelection = await maybeAskForIntentSelection({
+      session: sessionAfterRouting,
+      user,
+      text,
+      dedupeSuffix: `${messageId}:intent-selection`,
+      origin: "new_session",
+    });
+    if (intentSelection) return intentSelection;
+  }
+
+  if (routingExtraction.intent === "ambiguous_offer_sales_operation") {
+    return askOfferSalesOperationSelection({
+      session: sessionAfterRouting,
+      user,
+      pendingIntentText: text,
+      dedupeSuffix: `${messageId}:offer-sales-selection`,
+    });
+  }
+
+  if (routingExtraction.intent === "ambiguous_backoffice_operation") {
+    return askBackofficeOperationSelection({
+      session: sessionAfterRouting,
+      user,
+      pendingIntentText: text,
+      dedupeSuffix: `${messageId}:backoffice-selection`,
+    });
+  }
+
+  if (routingExtraction.intent === "ambiguous_booking_operation") {
+    return askBookingOperationSelection({
+      session: sessionAfterRouting,
+      user,
+      pendingIntentText: text,
+      dedupeSuffix: `${messageId}:booking-intent-selection`,
+    });
+  }
+
+  if (
+    ["reschedule_booking", "cancel_booking"].includes(routingExtraction.intent)
+  ) {
+    return initializeBookingOperationSession({
+      session: sessionAfterRouting,
+      user,
+      text,
+      dedupeSuffix: `${messageId}:booking-operation`,
+      routingExtraction,
+      forcedExtraction:
+        deterministicAction?.routingIntent === routingExtraction.intent
+          ? buildForcedBookingExtraction(routingExtraction.intent, text)
+          : null,
+    });
+  }
+
+  if (
+    ["send_offer_payment_reminder", "cancel_offer"].includes(
+      routingExtraction.intent,
+    )
+  ) {
+    return initializeOfferSalesOperationSession({
+      session: sessionAfterRouting,
+      user,
+      text,
+      dedupeSuffix: `${messageId}:offer-sales-operation`,
+      routingExtraction,
+      forcedExtraction:
+        deterministicAction?.routingIntent === routingExtraction.intent
+          ? buildForcedOfferSalesExtraction(routingExtraction.intent, text)
+          : null,
+    });
+  }
+
+  if (
+    [
+      "create_client",
+      "create_product",
+      "update_product_price",
+      "lookup_client_phone",
+      "lookup_product",
+    ].includes(
+      routingExtraction.intent,
+    )
+  ) {
+    return initializeBackofficeOperationSession({
+      session: sessionAfterRouting,
+      user,
+      text,
+      dedupeSuffix: `${messageId}:backoffice-operation`,
+      routingExtraction,
+      forcedExtraction:
+        deterministicAction?.routingIntent === routingExtraction.intent
+          ? buildForcedBackofficeExtraction(routingExtraction.intent, text)
+          : null,
+    });
+  }
+
+  if (routingExtraction.intent !== "create_offer_send_whatsapp") {
+    const erroredSession = await markSessionError(sessionAfterRouting._id, {
+      code: "WHATSAPP_AI_UNKNOWN_INTENT",
+      message:
+        "Intencao nao reconhecida para proposta, agenda, cobranca e vendas ou backoffice.",
+    });
+
+    await replyToSession({
+      session: erroredSession,
+      user,
+      message: buildErrorMessage(),
+      dedupeSuffix: `${messageId}:unknown-intent`,
+    });
+    return { ok: true, status: "unknown_intent", session: erroredSession };
+  }
+
+  return initializeOfferSession({
+    session: sessionAfterRouting,
+    user,
+    text,
+    dedupeSuffix: `${messageId}:new-session`,
+    routingExtraction,
+    forceOfferFlow: deterministicAction?.routingIntent === "create_offer_send_whatsapp",
+  });
+}
+
 async function handleOpenSession({ session, user, event, text }) {
   const refreshedSession = await appendInboundMessageToSession(session._id, {
     sourceMessageId: event.messageId,
@@ -3613,7 +4303,33 @@ async function handleOpenSession({ session, user, event, text }) {
     return { ok: true, status: "duplicate_message" };
   }
 
+  await recordWebInboundMessageIfNeeded({
+    event,
+    session: refreshedSession,
+    user,
+    text,
+  });
+
   const dedupeSuffix = `${event.messageId}:${String(refreshedSession.state || "").toLowerCase()}`;
+
+  if (refreshedSession.state === "NEW") {
+    const { routingExtraction, deterministicAction } =
+      await resolveInitialRoutingForSession({
+        session: refreshedSession,
+        text,
+        actionKey: event?.actionKey,
+        user,
+      });
+
+    return dispatchInitialSessionRouting({
+      session: refreshedSession,
+      user,
+      text,
+      messageId: event.messageId,
+      routingExtraction,
+      deterministicAction,
+    });
+  }
 
   if (refreshedSession.state === "AWAITING_INTENT_SELECTION") {
     return handleIntentSelection({
@@ -3697,6 +4413,7 @@ async function handleOpenSession({ session, user, event, text }) {
         session: refreshedSession,
         user,
         text,
+        actionKey: event?.actionKey,
         dedupeSuffix: `${event.messageId}:offer-sales-context-switch`,
       });
       if (salesContextSwitch) return salesContextSwitch;
@@ -3705,6 +4422,7 @@ async function handleOpenSession({ session, user, event, text }) {
         session: refreshedSession,
         user,
         text,
+        actionKey: event?.actionKey,
         dedupeSuffix: `${event.messageId}:backoffice-context-switch`,
       });
       if (backofficeContextSwitch) return backofficeContextSwitch;
@@ -3713,6 +4431,7 @@ async function handleOpenSession({ session, user, event, text }) {
         session: refreshedSession,
         user,
         text,
+        actionKey: event?.actionKey,
         dedupeSuffix: `${event.messageId}:intent-selection`,
       });
       if (intentSelection) return intentSelection;
@@ -3785,6 +4504,7 @@ async function handleOpenSession({ session, user, event, text }) {
         session: refreshedSession,
         user,
         text,
+        actionKey: event?.actionKey,
         dedupeSuffix: `${event.messageId}:offer-sales-context-switch`,
       });
       if (salesContextSwitch) return salesContextSwitch;
@@ -3793,6 +4513,7 @@ async function handleOpenSession({ session, user, event, text }) {
         session: refreshedSession,
         user,
         text,
+        actionKey: event?.actionKey,
         dedupeSuffix: `${event.messageId}:backoffice-context-switch`,
       });
       if (backofficeContextSwitch) return backofficeContextSwitch;
@@ -3801,6 +4522,7 @@ async function handleOpenSession({ session, user, event, text }) {
         session: refreshedSession,
         user,
         text,
+        actionKey: event?.actionKey,
         dedupeSuffix: `${event.messageId}:intent-selection`,
       });
       if (intentSelection) return intentSelection;
@@ -3844,6 +4566,7 @@ async function handleOpenSession({ session, user, event, text }) {
         session: refreshedSession,
         user,
         text,
+        actionKey: event?.actionKey,
         dedupeSuffix: `${event.messageId}:offer-sales-context-switch`,
       });
       if (salesContextSwitch) return salesContextSwitch;
@@ -3852,6 +4575,7 @@ async function handleOpenSession({ session, user, event, text }) {
         session: refreshedSession,
         user,
         text,
+        actionKey: event?.actionKey,
         dedupeSuffix: `${event.messageId}:backoffice-context-switch`,
       });
       if (backofficeContextSwitch) return backofficeContextSwitch;
@@ -3860,6 +4584,7 @@ async function handleOpenSession({ session, user, event, text }) {
         session: refreshedSession,
         user,
         text,
+        actionKey: event?.actionKey,
         dedupeSuffix: `${event.messageId}:intent-selection`,
       });
       if (intentSelection) return intentSelection;
@@ -4032,6 +4757,7 @@ async function handleOpenSession({ session, user, event, text }) {
       session: refreshedSession,
       user,
       text,
+      actionKey: event?.actionKey,
       dedupeSuffix: `${event.messageId}:offer-sales-context-switch`,
     });
     if (salesContextSwitch) return salesContextSwitch;
@@ -4040,6 +4766,7 @@ async function handleOpenSession({ session, user, event, text }) {
       session: refreshedSession,
       user,
       text,
+      actionKey: event?.actionKey,
       dedupeSuffix: `${event.messageId}:backoffice-context-switch`,
     });
     if (backofficeContextSwitch) return backofficeContextSwitch;
@@ -4048,6 +4775,7 @@ async function handleOpenSession({ session, user, event, text }) {
       session: refreshedSession,
       user,
       text,
+      actionKey: event?.actionKey,
       dedupeSuffix: `${event.messageId}:intent-selection`,
     });
     if (intentSelection) return intentSelection;
@@ -4153,6 +4881,7 @@ async function handleOpenSession({ session, user, event, text }) {
       session: refreshedSession,
       user,
       text,
+      actionKey: event?.actionKey,
       dedupeSuffix: `${event.messageId}:offer-sales-context-switch`,
     });
     if (salesContextSwitch) return salesContextSwitch;
@@ -4161,6 +4890,7 @@ async function handleOpenSession({ session, user, event, text }) {
       session: refreshedSession,
       user,
       text,
+      actionKey: event?.actionKey,
       dedupeSuffix: `${event.messageId}:backoffice-context-switch`,
     });
     if (backofficeContextSwitch) return backofficeContextSwitch;
@@ -4169,6 +4899,7 @@ async function handleOpenSession({ session, user, event, text }) {
       session: refreshedSession,
       user,
       text,
+      actionKey: event?.actionKey,
       dedupeSuffix: `${event.messageId}:intent-selection`,
     });
     if (intentSelection) return intentSelection;
@@ -4196,12 +4927,13 @@ async function handleOpenSession({ session, user, event, text }) {
   });
 }
 
-export async function processInboundWhatsAppEvent(event) {
+export async function processInboundWhatsAppEvent(event, options = {}) {
   if (!isWhatsAppAiEnabled()) {
     return { ok: true, status: "disabled" };
   }
 
-  const inboundEventKey = buildInboundEventKey(event);
+  const isWebEvent = isWebSourceChannel(event?.sourceChannel);
+  const inboundEventKey = isWebEvent ? "" : buildInboundEventKey(event);
   if (inboundEventKey && inflightInboundEventKeys.has(inboundEventKey)) {
     return { ok: true, status: "duplicate_message" };
   }
@@ -4210,9 +4942,9 @@ export async function processInboundWhatsAppEvent(event) {
     inflightInboundEventKeys.add(inboundEventKey);
   }
 
-  const requesterPhoneDigits = normalizeWhatsAppPhoneDigits(
-    event.fromPhoneDigits || "",
-  );
+  let requesterPhoneDigits = isWebEvent
+    ? buildWebAgentRequesterKey(options?.authUser?._id || event?.requesterUserId)
+    : normalizeWhatsAppPhoneDigits(event.fromPhoneDigits || "");
   let user = null;
   let sessionForError = null;
 
@@ -4221,29 +4953,45 @@ export async function processInboundWhatsAppEvent(event) {
       return { ok: false, status: "invalid_from_phone" };
     }
 
-    const users = await User.find({
-      whatsappPhoneDigits: requesterPhoneDigits,
-      status: "active",
-    })
-      .select("_id workspaceId name email role status whatsappPhone")
-      .limit(2)
-      .lean();
+    let workspacePlan = "start";
 
-    if (users.length === 0) {
-      await replyNotLinkedRequester({ event, requesterPhoneDigits });
-      return { ok: true, status: "requester_not_linked" };
+    if (isWebEvent) {
+      const authUser =
+        options?.authUser && typeof options.authUser === "object"
+          ? options.authUser
+          : null;
+
+      if (!authUser?._id || !authUser?.workspaceId || authUser?.status !== "active") {
+        return { ok: false, status: "web_user_invalid" };
+      }
+
+      user = authUser;
+      workspacePlan = user?.workspacePlan || "start";
+    } else {
+      const users = await User.find({
+        whatsappPhoneDigits: requesterPhoneDigits,
+        status: "active",
+      })
+        .select("_id workspaceId name email role status whatsappPhone")
+        .limit(2)
+        .lean();
+
+      if (users.length === 0) {
+        await replyNotLinkedRequester({ event, requesterPhoneDigits });
+        return { ok: true, status: "requester_not_linked" };
+      }
+
+      if (users.length > 1) {
+        await replyDuplicateLinkedRequester({ event, requesterPhoneDigits });
+        return { ok: true, status: "requester_phone_ambiguous" };
+      }
+
+      user = users[0];
+      const workspace = await Workspace.findById(user.workspaceId)
+        .select("plan")
+        .lean();
+      workspacePlan = workspace?.plan || "start";
     }
-
-    if (users.length > 1) {
-      await replyDuplicateLinkedRequester({ event, requesterPhoneDigits });
-      return { ok: true, status: "requester_phone_ambiguous" };
-    }
-
-    user = users[0];
-    const workspace = await Workspace.findById(user.workspaceId)
-      .select("plan")
-      .lean();
-    const workspacePlan = workspace?.plan || "start";
 
     if (!canUseWhatsAppAiOfferCreation(workspacePlan)) {
       await closeActiveSessionsForRequester({
@@ -4251,11 +4999,15 @@ export async function processInboundWhatsAppEvent(event) {
         requesterPhoneDigits,
         state: "CANCELLED",
       });
-      await replyPlanNotAllowed({
-        event,
-        user,
-        requesterPhoneDigits,
-      });
+
+      if (!isWebEvent) {
+        await replyPlanNotAllowed({
+          event,
+          user,
+          requesterPhoneDigits,
+        });
+      }
+
       return { ok: true, status: "plan_not_allowed" };
     }
 
@@ -4296,10 +5048,11 @@ export async function processInboundWhatsAppEvent(event) {
       createdSession = await createWhatsAppSession({
         workspaceId: user.workspaceId,
         userId: user._id,
-        requesterPhoneRaw: String(event.fromPhoneDigits || ""),
+        requesterPhoneRaw: String(event.fromPhoneDigits || requesterPhoneDigits || ""),
         requesterPhoneDigits,
         requesterPushName: String(event.pushName || "").trim(),
         sourceMessageId: event.messageId,
+        sourceChannel: isWebEvent ? WEB_SOURCE_CHANNEL : "whatsapp",
         originalInputType: event.type,
         originalText: event.type === "text" ? text : "",
         transcriptText: event.type === "audio" ? text : "",
@@ -4333,165 +5086,28 @@ export async function processInboundWhatsAppEvent(event) {
     }
     sessionForError = createdSession;
 
-    const routingExtraction = await routeWhatsAppMessageIntent({ text });
-    const sessionAfterRouting = await updateWhatsAppSession(createdSession._id, {
-      extracted: buildSessionExtracted(createdSession.extracted, {
-        intentRouting: routingExtraction,
-      }),
-    });
-
-    if (routingExtraction.intent === "query_daily_agenda") {
-      return runAgendaQueryForSession({
-        session: sessionAfterRouting,
-        user,
-        text,
-        dedupeSuffix: `${event.messageId}:agenda`,
-        routingExtraction,
-      });
-    }
-
-    if (routingExtraction.intent === "query_weekly_agenda") {
-      return runWeeklyAgendaQueryForSession({
-        session: sessionAfterRouting,
-        user,
-        text,
-        dedupeSuffix: `${event.messageId}:weekly-agenda`,
-        routingExtraction,
-      });
-    }
-
-    if (routingExtraction.intent === "query_next_booking") {
-      return runNextBookingQueryForSession({
-        session: sessionAfterRouting,
-        user,
-        text,
-        dedupeSuffix: `${event.messageId}:next-booking`,
-        routingExtraction,
-      });
-    }
-
-    if (routingExtraction.intent === "query_pending_offers") {
-      return runPendingOffersQueryForSession({
-        session: sessionAfterRouting,
-        user,
-        text,
-        dedupeSuffix: `${event.messageId}:pending-offers`,
-        routingExtraction,
-      });
-    }
-
-    if (
-      ["lookup_client_phone", "lookup_product"].includes(routingExtraction.intent)
-    ) {
-      return initializeBackofficeOperationSession({
-        session: sessionAfterRouting,
-        user,
-        text,
-        dedupeSuffix: `${event.messageId}:backoffice-lookup`,
-        routingExtraction,
-      });
-    }
-
-    if (routingExtraction.intent === "ambiguous_offer_or_agenda") {
-      const intentSelection = await maybeAskForIntentSelection({
-        session: sessionAfterRouting,
-        user,
-        text,
-        dedupeSuffix: `${event.messageId}:intent-selection`,
-        origin: "new_session",
-      });
-      if (intentSelection) return intentSelection;
-    }
-
-    if (routingExtraction.intent === "ambiguous_offer_sales_operation") {
-      return askOfferSalesOperationSelection({
-        session: sessionAfterRouting,
-        user,
-        pendingIntentText: text,
-        dedupeSuffix: `${event.messageId}:offer-sales-selection`,
-      });
-    }
-
-    if (routingExtraction.intent === "ambiguous_backoffice_operation") {
-      return askBackofficeOperationSelection({
-        session: sessionAfterRouting,
-        user,
-        pendingIntentText: text,
-        dedupeSuffix: `${event.messageId}:backoffice-selection`,
-      });
-    }
-
-    if (routingExtraction.intent === "ambiguous_booking_operation") {
-      return askBookingOperationSelection({
-        session: sessionAfterRouting,
-        user,
-        pendingIntentText: text,
-        dedupeSuffix: `${event.messageId}:booking-intent-selection`,
-      });
-    }
-
-    if (
-      ["reschedule_booking", "cancel_booking"].includes(routingExtraction.intent)
-    ) {
-      return initializeBookingOperationSession({
-        session: sessionAfterRouting,
-        user,
-        text,
-        dedupeSuffix: `${event.messageId}:booking-operation`,
-        routingExtraction,
-      });
-    }
-
-    if (
-      ["send_offer_payment_reminder", "cancel_offer"].includes(
-        routingExtraction.intent,
-      )
-    ) {
-      return initializeOfferSalesOperationSession({
-        session: sessionAfterRouting,
-        user,
-        text,
-        dedupeSuffix: `${event.messageId}:offer-sales-operation`,
-        routingExtraction,
-      });
-    }
-
-    if (
-      ["create_client", "create_product", "update_product_price"].includes(
-        routingExtraction.intent,
-      )
-    ) {
-      return initializeBackofficeOperationSession({
-        session: sessionAfterRouting,
-        user,
-        text,
-        dedupeSuffix: `${event.messageId}:backoffice-operation`,
-        routingExtraction,
-      });
-    }
-
-    if (routingExtraction.intent !== "create_offer_send_whatsapp") {
-      const erroredSession = await markSessionError(sessionAfterRouting._id, {
-        code: "WHATSAPP_AI_UNKNOWN_INTENT",
-        message:
-          "Intencao nao reconhecida para proposta, agenda, cobranca e vendas ou backoffice.",
-      });
-
-      await replyToSession({
-        session: erroredSession,
-        user,
-        message: buildErrorMessage(),
-        dedupeSuffix: `${event.messageId}:unknown-intent`,
-      });
-      return { ok: true, status: "unknown_intent" };
-    }
-
-    return initializeOfferSession({
-      session: sessionAfterRouting,
+    await recordWebInboundMessageIfNeeded({
+      event,
+      session: createdSession,
       user,
       text,
-      dedupeSuffix: `${event.messageId}:new-session`,
+    });
+
+    const { routingExtraction, deterministicAction } =
+      await resolveInitialRoutingForSession({
+        session: createdSession,
+        text,
+        actionKey: event?.actionKey,
+        user,
+      });
+
+    return dispatchInitialSessionRouting({
+      session: createdSession,
+      user,
+      text,
+      messageId: event.messageId,
       routingExtraction,
+      deterministicAction,
     });
   } catch (error) {
     if (typeof user !== "undefined" && sessionForError?._id) {

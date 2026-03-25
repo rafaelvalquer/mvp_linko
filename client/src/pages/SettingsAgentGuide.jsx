@@ -96,8 +96,8 @@ export default function SettingsAgentGuide() {
   return (
     <SettingsLayout
       activeTab="account"
-      title="Guia do agente"
-      subtitle="Veja o que o agente do WhatsApp consegue fazer hoje, com exemplos reais de uso e limites do fluxo."
+      title="Guia da Lumina"
+      subtitle="Veja o que a Lumina no site e o agente do WhatsApp conseguem fazer hoje, com exemplos reais de uso e limites do fluxo."
       actions={
         <Button type="button" variant="secondary" onClick={() => navigate("/settings/account")}>
           <ArrowLeft className="h-4 w-4" />
@@ -111,17 +111,17 @@ export default function SettingsAgentGuide() {
             <div className="max-w-3xl">
               <div className="inline-flex items-center gap-2 rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-cyan-700 dark:border-cyan-400/20 dark:bg-cyan-400/10 dark:text-cyan-100">
                 <Bot className="h-4 w-4" />
-                Agente de WhatsApp
+                Lumina + WhatsApp
               </div>
               <h2 className="mt-4 text-2xl font-black tracking-tight text-slate-950 dark:text-white">
                 O que o agente faz
               </h2>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">
-                O agente entende texto e audio enviados para a Luminor, resolve
-                o contexto no seu workspace e devolve a resposta no mesmo chat.
-                Ele acelera operacoes do dia a dia, mas ainda pede confirmacao
-                quando a acao vai gerar impacto real em proposta, cobranca ou
-                agenda.
+                A Lumina conversa com voce aqui no site com um tom mais humano,
+                enquanto o agente do WhatsApp continua disponivel no canal
+                atual. Os dois usam o mesmo motor operacional do workspace e
+                ainda pedem confirmacao quando a acao vai gerar impacto real em
+                proposta, cobranca, agenda ou cadastro.
               </p>
             </div>
 
