@@ -76,6 +76,9 @@ process.env.MONGODB_URI = process.env.MONGODB_URI || "mongodb://localhost:27017/
 const { buildUserPayload, validateRegisterPayload } = await import(
   "../src/routes/auth.routes.js"
 );
+const { buildOfferPublicUrl, resolvePublicAppOrigin } = await import(
+  "../src/services/publicUrl.service.js"
+);
 const { validateInboundPayload, validateMessageAckPayload } = await import(
   "../src/routes/whatsapp-ai.routes.js"
 );
@@ -1273,6 +1276,40 @@ await check("buildDeliveryAckPatch ignores regressions", () => {
   );
 
   assert.equal(patch, null);
+});
+
+await check("public offer url canonicalizes luminorpay host to no-www", () => {
+  assert.equal(
+    resolvePublicAppOrigin("https://www.luminorpay.com.br/ofertas/123", {
+      preferPublic: true,
+    }),
+    "https://luminorpay.com.br",
+  );
+  assert.equal(
+    buildOfferPublicUrl(
+      { publicToken: "5df5b5f1720a46e083688f39dcd09dd5" },
+      "https://www.luminorpay.com.br/ofertas/123",
+      { preferPublic: true },
+    ),
+    "https://luminorpay.com.br/p/5df5b5f1720a46e083688f39dcd09dd5",
+  );
+});
+
+await check("public offer url rejects comma-separated malformed origins", () => {
+  assert.equal(
+    resolvePublicAppOrigin("https://luminorpay.com.br,https://www.luminorpay.com.br", {
+      preferPublic: true,
+    }),
+    "https://luminorpay.com.br",
+  );
+  assert.equal(
+    buildOfferPublicUrl(
+      { publicToken: "5df5b5f1720a46e083688f39dcd09dd5" },
+      "https://luminorpay.com.br,https://www.luminorpay.com.br",
+      { preferPublic: true },
+    ),
+    "https://luminorpay.com.br/p/5df5b5f1720a46e083688f39dcd09dd5",
+  );
 });
 
 if (failures > 0) {
