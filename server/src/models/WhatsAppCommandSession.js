@@ -13,6 +13,8 @@ export const WHATSAPP_COMMAND_SESSION_STATES = [
   "AWAITING_NEW_BOOKING_TIME",
   "AWAITING_BOOKING_CHANGE_CONFIRMATION",
   "AWAITING_OFFER_ACTION_CONFIRMATION",
+  "AWAITING_OFFER_APPROVAL_DECISION",
+  "AWAITING_OFFER_REJECTION_REASON",
   "AWAITING_BACKOFFICE_ACTION_CONFIRMATION",
   "PROCESSING_CREATE",
   "COMPLETED",
@@ -110,6 +112,10 @@ const CandidateOfferSchema = new mongoose.Schema(
     createdAt: { type: Date, default: null },
     expiresAt: { type: Date, default: null },
     publicToken: { type: String, default: "" },
+    paymentProofAvailable: { type: Boolean, default: false },
+    paymentProofOriginalName: { type: String, default: "" },
+    paymentProofMimeType: { type: String, default: "" },
+    paymentProofUploadedAt: { type: Date, default: null },
     displayLabel: { type: String, default: "" },
     score: { type: Number, default: 0 },
   },
@@ -155,6 +161,7 @@ const WhatsAppCommandSessionSchema = new mongoose.Schema(
         "offer_query",
         "offer_payment_reminder",
         "offer_cancel",
+        "offer_payment_approval",
         "client_create",
         "product_create",
         "product_update",
@@ -186,6 +193,7 @@ const WhatsAppCommandSessionSchema = new mongoose.Schema(
       default: null,
     },
     sentToCustomerAt: { type: Date, default: null },
+    insightGeneratedAt: { type: Date, default: null },
     lastQuestionKey: { type: String, default: "" },
     lastQuestionText: { type: String, default: "" },
     lastError: { type: ErrorSchema, default: null },
@@ -203,6 +211,7 @@ WhatsAppCommandSessionSchema.index({ userId: 1, state: 1 });
 WhatsAppCommandSessionSchema.index({ requesterPhoneDigits: 1, state: 1 });
 WhatsAppCommandSessionSchema.index({ workspaceId: 1, createdAt: -1 });
 WhatsAppCommandSessionSchema.index({ userId: 1, sourceChannel: 1, updatedAt: -1 });
+WhatsAppCommandSessionSchema.index({ userId: 1, sourceChannel: 1, insightGeneratedAt: -1 });
 
 export const WhatsAppCommandSession =
   mongoose.models.WhatsAppCommandSession ||

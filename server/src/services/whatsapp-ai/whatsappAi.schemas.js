@@ -14,6 +14,7 @@ export const WHATSAPP_AI_ROUTING_INTENTS = [
   "reschedule_booking",
   "cancel_booking",
   "query_pending_offers",
+  "query_offers_waiting_confirmation",
   "send_offer_payment_reminder",
   "cancel_offer",
   "create_client",
@@ -521,6 +522,7 @@ export function buildOfferSalesOperationResponseFormat() {
             type: "string",
             enum: [
               "query_pending_offers",
+              "query_offers_waiting_confirmation",
               "send_offer_payment_reminder",
               "cancel_offer",
               "unknown",
@@ -876,6 +878,7 @@ export function parseOfferSalesOperationExtraction(payload) {
   const normalizedIntent = normalizeRoutingIntent(value.intent);
   const allowedIntents = [
     "query_pending_offers",
+    "query_offers_waiting_confirmation",
     "send_offer_payment_reminder",
     "cancel_offer",
   ];

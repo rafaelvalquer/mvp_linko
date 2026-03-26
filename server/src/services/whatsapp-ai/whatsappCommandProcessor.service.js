@@ -23,7 +23,11 @@ import {
   listWebAgentAutomationOfferCandidates,
   resolveAutomationOfferCandidate,
 } from "../webAgentAutomation.service.js";
-import { generateLuminaInsight } from "../luminaInsight.service.js";
+import {
+  buildLuminaInsightLimitMessage,
+  generateLuminaInsight,
+  getLuminaInsightUsageStatus,
+} from "../luminaInsight.service.js";
 import {
   applyCustomerSelection,
   applyProductSelectionToItem,
@@ -69,6 +73,7 @@ import {
   buildInvalidBackofficeSelectionMessage,
   buildInvalidConfirmationMessage,
   buildInvalidIntentSelectionMessage,
+  buildInvalidOfferPaymentDecisionMessage,
   buildInvalidOfferSalesSelectionMessage,
   buildInvalidSelectionMessage,
   buildIntentDisambiguationQuestion,
@@ -79,10 +84,17 @@ import {
   buildOfferAmbiguityQuestion,
   buildOfferCancelConfirmation,
   buildOfferCancelledSuccessMessage,
+  buildOfferPaymentApprovedSuccessMessage,
+  buildOfferPaymentProofMissingMessage,
+  buildOfferPaymentProofReviewMessage,
+  buildOfferPaymentRejectedSuccessMessage,
+  buildOfferPaymentRejectionReasonQuestion,
   buildOfferSalesContextSwitchQuestion,
   buildOfferReminderConfirmation,
   buildOfferReminderResultMessage,
   buildOfferSalesOperationDisambiguationQuestion,
+  buildOffersWaitingConfirmationEmptyMessage,
+  buildOffersWaitingConfirmationSummaryMessage,
   buildInvalidOfferSalesContextSwitchMessage,
   buildPendingOffersEmptyMessage,
   buildPendingOffersSummaryMessage,
@@ -145,12 +157,17 @@ import {
 } from "./whatsappBookingOperations.service.js";
 import {
   listPendingOffers,
+  listOffersWaitingConfirmation,
   resolveOfferCandidates,
 } from "./whatsappOfferOperations.service.js";
 import { createClientForWorkspace } from "../clients/createClient.service.js";
 import { createProductForWorkspace, updateProductPriceForWorkspace } from "../products/product.service.js";
 import { sendManualPaymentReminder } from "../paymentReminder.service.js";
 import { cancelOfferByWorkspace } from "../offers/cancelOffer.service.js";
+import {
+  confirmOfferPaymentByWorkspace,
+  rejectOfferPaymentByWorkspace,
+} from "../offers/paymentApproval.service.js";
 import { isWhatsAppAiEnabled } from "./openai.client.js";
 import {
   lookupClientPhones,
@@ -173,6 +190,7 @@ function resolveIntentModuleKey(intent) {
   if (
     [
       "query_pending_offers",
+      "query_offers_waiting_confirmation",
       "query_due_today_offers",
       "query_overdue_offers",
       "query_stale_offer_followups",
@@ -530,6 +548,15 @@ function parseOfferSalesOperationSelectionReply(value) {
 
   if (
     normalized === "2" ||
+    normalized.includes("aguardando confirmacao") ||
+    normalized.includes("aprov") ||
+    normalized.includes("comprovante")
+  ) {
+    return "AGUARDANDO_CONFIRMACAO";
+  }
+
+  if (
+    normalized === "3" ||
     normalized.startsWith("cobrar") ||
     normalized.includes("lembrete")
   ) {
@@ -537,12 +564,43 @@ function parseOfferSalesOperationSelectionReply(value) {
   }
 
   if (
-    normalized === "3" ||
+    normalized === "4" ||
     normalized.startsWith("cancelar proposta") ||
     normalized.includes("cancelar proposta") ||
     normalized.includes("cancel")
   ) {
     return "CANCELAR_PROPOSTA";
+  }
+
+  return "";
+}
+
+function parseOfferApprovalDecisionReply(value) {
+  const normalized = normalizeComparableText(value);
+
+  if (
+    ["confirmar", "confirmo", "aprovar", "aprovado", "1"].includes(normalized) ||
+    normalized.includes("confirmar recibo") ||
+    normalized.includes("confirmar comprovante") ||
+    normalized.includes("aprovar recibo") ||
+    normalized.includes("aprovar comprovante")
+  ) {
+    return "CONFIRMAR";
+  }
+
+  if (
+    ["recusar", "recuso", "reprovar", "2"].includes(normalized) ||
+    normalized.includes("recusar") ||
+    normalized.includes("reprovar")
+  ) {
+    return "RECUSAR";
+  }
+
+  if (
+    ["cancelar", "cancela", "cancelado", "3"].includes(normalized) ||
+    normalized.startsWith("cancel")
+  ) {
+    return "CANCELAR";
   }
 
   return "";
@@ -691,6 +749,9 @@ function resolveIntentSelectionFromDeterministicAction({
     ) {
       return "CONSULTAR_PENDENTES";
     }
+    if (routedIntent === "query_offers_waiting_confirmation") {
+      return "AGUARDANDO_CONFIRMACAO";
+    }
     if (routedIntent === "send_offer_payment_reminder") return "COBRAR_CLIENTE";
     if (routedIntent === "cancel_offer") return "CANCELAR_PROPOSTA";
     return "";
@@ -701,6 +762,7 @@ function resolveIntentSelectionFromDeterministicAction({
     if (
       [
         "query_pending_offers",
+        "query_offers_waiting_confirmation",
         "query_due_today_offers",
         "query_overdue_offers",
         "query_stale_offer_followups",
@@ -906,6 +968,39 @@ function getSelectedOfferCandidate(session) {
   return candidate;
 }
 
+function resolveOfferSalesFlowType(intent = "") {
+  if (intent === "cancel_offer") return "offer_cancel";
+  if (intent === "query_offers_waiting_confirmation") {
+    return "offer_payment_approval";
+  }
+  return "offer_payment_reminder";
+}
+
+function resolveOfferCandidateAction(intent = "") {
+  if (intent === "cancel_offer") return "cancel";
+  if (intent === "query_offers_waiting_confirmation") {
+    return "payment_approval";
+  }
+  return "payment_reminder";
+}
+
+function buildOfferPaymentProofMeta(candidate = {}) {
+  return {
+    kind: "offer_payment_proof_review",
+    offer: {
+      offerId: String(candidate?.offerId || "").trim(),
+      customerName: String(candidate?.customerName || "").trim(),
+      title: String(candidate?.title || "").trim(),
+      totalCents: Number(candidate?.totalCents || 0) || 0,
+      paymentStatus: String(candidate?.paymentStatus || "").trim(),
+      proofOriginalName: String(candidate?.paymentProofOriginalName || "").trim(),
+      proofMimeType: String(candidate?.paymentProofMimeType || "").trim(),
+      proofUploadedAt: candidate?.paymentProofUploadedAt || null,
+      proofAvailable: candidate?.paymentProofAvailable === true,
+    },
+  };
+}
+
 function getBackofficeOperationDraft(session) {
   const draft = session?.resolved?.backofficeOperation;
   if (!draft || typeof draft !== "object" || Array.isArray(draft)) {
@@ -1039,7 +1134,13 @@ async function sendWhatsAppReply({
   });
 }
 
-async function replyToSession({ session, user, message, dedupeSuffix }) {
+async function replyToSession({
+  session,
+  user,
+  message,
+  dedupeSuffix,
+  meta = null,
+}) {
   const reply = await sendWhatsAppReply({
     workspaceId: user?.workspaceId || session?.workspaceId || null,
     session,
@@ -1050,6 +1151,7 @@ async function replyToSession({ session, user, message, dedupeSuffix }) {
       direction: "requester_reply",
       state: session?.state || null,
       questionKey: session?.lastQuestionKey || null,
+      ...(meta && typeof meta === "object" && !Array.isArray(meta) ? meta : {}),
     },
   });
 
@@ -1409,6 +1511,7 @@ async function maybeAskForOfferSalesContextSwitch({
   if (
     ![
       "query_pending_offers",
+      "query_offers_waiting_confirmation",
       "send_offer_payment_reminder",
       "cancel_offer",
       "ambiguous_offer_sales_operation",
@@ -1997,6 +2100,50 @@ async function runLuminaInsightForSession({
   });
   if (accessDenied) return accessDenied;
 
+  const insightUsage = await getLuminaInsightUsageStatus({
+    user,
+    now: new Date(),
+  });
+  if (insightUsage?.usedToday === true && Number(insightUsage?.remainingToday || 0) <= 0) {
+    const limitMessage = buildLuminaInsightLimitMessage();
+    const limitedSession = await updateWhatsAppSession(session._id, {
+      flowType: "insight_analysis",
+      state: "NEW",
+      pendingFields: [],
+      candidateCustomers: [],
+      candidateProducts: [],
+      candidateBookings: [],
+      candidateOffers: [],
+      confirmationSummaryText: "",
+      lastQuestionKey: "insight_daily_limit",
+      lastQuestionText: limitMessage,
+      extracted: buildSessionExtracted(session?.extracted, {
+        ...(routingExtraction ? { intentRouting: routingExtraction } : {}),
+      }),
+      resolved: {
+        ...stripIntentSelectionContext(session?.resolved || {}),
+        source_text: String(text || "").trim(),
+        insightDailyLimitHitAt: new Date().toISOString(),
+      },
+      completedAt: null,
+      cancelledAt: null,
+      lastError: null,
+    });
+
+    await replyToSession({
+      session: limitedSession,
+      user,
+      message: limitMessage,
+      dedupeSuffix,
+    });
+
+    return {
+      ok: true,
+      status: "insight_limit_reached",
+      session: limitedSession,
+    };
+  }
+
   const insight = await generateLuminaInsight({
     user,
     now: new Date(),
@@ -2028,6 +2175,7 @@ async function runLuminaInsightForSession({
         ? insight.analysis.suggestedActions
         : [],
     },
+    insightGeneratedAt: new Date(),
     completedAt: null,
     cancelledAt: null,
     lastError: null,
@@ -2392,6 +2540,8 @@ async function advanceOfferSalesOperationSession({ session, user, dedupeSuffix }
   const timeZone =
     String(session?.resolved?.offerSalesTimeZone || "").trim() ||
     (await getWorkspaceAgendaTimeZone(user.workspaceId));
+  const flowType = resolveOfferSalesFlowType(draft.intent);
+  const offerAction = resolveOfferCandidateAction(draft.intent);
 
   let candidate = selectedOfferCandidate;
 
@@ -2399,8 +2549,7 @@ async function advanceOfferSalesOperationSession({ session, user, dedupeSuffix }
     const candidates = await resolveOfferCandidates({
       workspaceId: user.workspaceId,
       ownerUserId: user._id || null,
-      action:
-        draft.intent === "cancel_offer" ? "cancel" : "payment_reminder",
+      action: offerAction,
       targetCustomerName: draft.target_customer_name,
       targetCreatedDayKind: draft.target_created_day_kind,
       targetCreatedDateIso: draft.target_created_date_iso,
@@ -2411,10 +2560,7 @@ async function advanceOfferSalesOperationSession({ session, user, dedupeSuffix }
 
     if (!candidates.length) {
       const completedSession = await markSessionCompleted(session._id, {
-        flowType:
-          draft.intent === "cancel_offer"
-            ? "offer_cancel"
-            : "offer_payment_reminder",
+        flowType,
         resolved: {
           ...(session?.resolved || {}),
           offerSalesOperation: draft,
@@ -2426,22 +2572,24 @@ async function advanceOfferSalesOperationSession({ session, user, dedupeSuffix }
         message:
           draft.intent === "cancel_offer"
             ? "Nao encontrei uma proposta elegivel para cancelamento."
-            : "Nao encontrei uma proposta pendente elegivel para cobranca.",
+            : draft.intent === "query_offers_waiting_confirmation"
+              ? buildOffersWaitingConfirmationEmptyMessage()
+              : "Nao encontrei uma proposta pendente elegivel para cobranca.",
         dedupeSuffix,
       });
       return { ok: true, status: "completed", session: completedSession };
     }
 
     if (candidates.length > 1) {
-      const question = buildOfferAmbiguityQuestion(
-        candidates,
-        draft.intent === "cancel_offer" ? "cancelar" : "cobrar",
-      );
+      const question =
+        draft.intent === "query_offers_waiting_confirmation"
+          ? buildOffersWaitingConfirmationSummaryMessage(candidates)
+          : buildOfferAmbiguityQuestion(
+              candidates,
+              draft.intent === "cancel_offer" ? "cancelar" : "cobrar",
+            );
       const updatedSession = await updateWhatsAppSession(session._id, {
-        flowType:
-          draft.intent === "cancel_offer"
-            ? "offer_cancel"
-            : "offer_payment_reminder",
+        flowType,
         state: "AWAITING_OFFER_SELECTION",
         lastQuestionKey: "offer_selection",
         lastQuestionText: question,
@@ -2469,14 +2617,75 @@ async function advanceOfferSalesOperationSession({ session, user, dedupeSuffix }
     candidate = candidates[0];
   }
 
+  if (draft.intent === "query_offers_waiting_confirmation") {
+    if (candidate?.paymentProofAvailable !== true) {
+      const completedSession = await markSessionCompleted(session._id, {
+        flowType,
+        resolved: {
+          ...(session?.resolved || {}),
+          offerSalesOperation: draft,
+          offerSalesTimeZone: timeZone,
+          selectedOfferCandidate: candidate,
+          offerSalesResult: {
+            offerId: candidate?.offerId || null,
+            status: "skipped",
+            reason: "PROOF_NOT_AVAILABLE",
+          },
+        },
+      });
+      await closeActiveSessionsForRequester({
+        userId: user._id,
+        requesterPhoneDigits: completedSession.requesterPhoneDigits,
+        excludeSessionId: completedSession._id,
+        state: "EXPIRED",
+      });
+      await replyToSession({
+        session: completedSession,
+        user,
+        message: buildOfferPaymentProofMissingMessage(candidate),
+        dedupeSuffix,
+      });
+      return { ok: true, status: "completed", session: completedSession };
+    }
+
+    const question = buildOfferPaymentProofReviewMessage(candidate);
+    const updatedSession = await updateWhatsAppSession(session._id, {
+      flowType,
+      state: "AWAITING_OFFER_APPROVAL_DECISION",
+      lastQuestionKey: "offer_payment_proof_review",
+      lastQuestionText: question,
+      confirmationSummaryText: question,
+      candidateOffers: [],
+      resolved: {
+        ...(session?.resolved || {}),
+        offerSalesOperation: draft,
+        offerSalesTimeZone: timeZone,
+        selectedOfferCandidate: candidate,
+      },
+    });
+
+    await replyToSession({
+      session: updatedSession,
+      user,
+      message: question,
+      dedupeSuffix,
+      meta: buildOfferPaymentProofMeta(candidate),
+    });
+
+    return {
+      ok: true,
+      status: "awaiting_offer_approval_decision",
+      session: updatedSession,
+    };
+  }
+
   const question =
     draft.intent === "cancel_offer"
       ? buildOfferCancelConfirmation(candidate)
       : buildOfferReminderConfirmation(candidate);
 
   const updatedSession = await updateWhatsAppSession(session._id, {
-    flowType:
-      draft.intent === "cancel_offer" ? "offer_cancel" : "offer_payment_reminder",
+    flowType,
     state: "AWAITING_OFFER_ACTION_CONFIRMATION",
     lastQuestionKey:
       draft.intent === "cancel_offer"
@@ -2539,12 +2748,10 @@ async function initializeOfferSalesOperationSession({
     user,
     automationContext,
   });
+  const flowType = resolveOfferSalesFlowType(extraction.intent);
 
   const updatedSession = await updateWhatsAppSession(session._id, {
-    flowType:
-      extraction.intent === "cancel_offer"
-        ? "offer_cancel"
-        : "offer_payment_reminder",
+    flowType,
     extracted: buildSessionExtracted(session?.extracted, {
       ...(routingExtraction ? { intentRouting: routingExtraction } : {}),
       offerSalesOperation: extraction,
@@ -2558,7 +2765,13 @@ async function initializeOfferSalesOperationSession({
     },
   });
 
-  if (!["send_offer_payment_reminder", "cancel_offer"].includes(extraction.intent)) {
+  if (
+    ![
+      "query_offers_waiting_confirmation",
+      "send_offer_payment_reminder",
+      "cancel_offer",
+    ].includes(extraction.intent)
+  ) {
     const erroredSession = await markSessionError(updatedSession._id, {
       code: "WHATSAPP_AI_UNKNOWN_OFFER_OPERATION",
       message: "Intencao de cobranca e vendas nao reconhecida.",
@@ -3367,6 +3580,37 @@ async function handleIntentSelection({ session, user, event, text }) {
     });
   }
 
+  if (selection === "AGUARDANDO_CONFIRMACAO") {
+    const resetSession = await updateWhatsAppSession(session._id, {
+      flowType: "offer_payment_approval",
+      state: "NEW",
+      pendingFields: [],
+      lastQuestionKey: "",
+      lastQuestionText: "",
+      candidateCustomers: [],
+      candidateProducts: [],
+      candidateBookings: [],
+      candidateOffers: [],
+      confirmationSummaryText: "",
+      resolved: stripIntentSelectionContext(session?.resolved || {}),
+    });
+
+    return initializeOfferSalesOperationSession({
+      session: resetSession,
+      user,
+      text: pendingIntentText || text,
+      dedupeSuffix: `${event.messageId}:offer-waiting-confirmation`,
+      routingExtraction: {
+        intent: "query_offers_waiting_confirmation",
+        source_text: pendingIntentText || text,
+      },
+      forcedExtraction: buildForcedOfferSalesExtraction(
+        "query_offers_waiting_confirmation",
+        pendingIntentText || text,
+      ),
+    });
+  }
+
   if (selection === "CANCELAR_PROPOSTA") {
     const resetSession = await updateWhatsAppSession(session._id, {
       flowType: "offer_cancel",
@@ -3491,12 +3735,15 @@ async function handleIntentSelection({ session, user, event, text }) {
       });
     }
 
-    if (["send_offer_payment_reminder", "cancel_offer"].includes(routedIntent)) {
+    if (
+      [
+        "query_offers_waiting_confirmation",
+        "send_offer_payment_reminder",
+        "cancel_offer",
+      ].includes(routedIntent)
+    ) {
       const resetSession = await updateWhatsAppSession(session._id, {
-        flowType:
-          routedIntent === "cancel_offer"
-            ? "offer_cancel"
-            : "offer_payment_reminder",
+        flowType: resolveOfferSalesFlowType(routedIntent),
         state: "NEW",
         pendingFields: [],
         lastQuestionKey: "",
@@ -3516,7 +3763,9 @@ async function handleIntentSelection({ session, user, event, text }) {
         dedupeSuffix:
           routedIntent === "cancel_offer"
             ? `${event.messageId}:offer-cancel`
-            : `${event.messageId}:offer-reminder`,
+            : routedIntent === "query_offers_waiting_confirmation"
+              ? `${event.messageId}:offer-waiting-confirmation`
+              : `${event.messageId}:offer-reminder`,
         routingExtraction: {
           intent: routedIntent,
           source_text: pendingIntentText || text,
@@ -4148,7 +4397,7 @@ async function handleOfferActionConfirmation({
       workspaceId: user.workspaceId,
       ownerUserId: user._id || null,
       userId: user._id || null,
-      origin: "whatsapp-ai",
+      origin: "",
     });
 
     const completedSession = await markSessionCompleted(processingSession._id, {
@@ -4210,6 +4459,297 @@ async function handleOfferActionConfirmation({
       user,
       message: buildErrorMessage(),
       dedupeSuffix: `${event.messageId}:offer-error`,
+    });
+    return { ok: true, status: "error", session: erroredSession };
+  }
+}
+
+async function handleOfferApprovalDecision({
+  session,
+  user,
+  text,
+  event,
+}) {
+  const decision = parseOfferApprovalDecisionReply(text);
+
+  if (decision === "CANCELAR") {
+    const cancelledSession = await markSessionCancelled(session._id);
+    await closeActiveSessionsForRequester({
+      userId: user._id,
+      requesterPhoneDigits: session.requesterPhoneDigits,
+      excludeSessionId: cancelledSession._id,
+      state: "EXPIRED",
+    });
+    await replyToSession({
+      session: cancelledSession,
+      user,
+      message: buildCancelledMessage(),
+      dedupeSuffix: `${event.messageId}:cancel`,
+    });
+    return { ok: true, status: "cancelled", session: cancelledSession };
+  }
+
+  if (decision === "RECUSAR") {
+    const candidate = getSelectedOfferCandidate(session);
+    const question = buildOfferPaymentRejectionReasonQuestion(candidate);
+    const updatedSession = await updateWhatsAppSession(session._id, {
+      flowType: "offer_payment_approval",
+      state: "AWAITING_OFFER_REJECTION_REASON",
+      lastQuestionKey: "offer_payment_rejection_reason",
+      lastQuestionText: question,
+      confirmationSummaryText: question,
+    });
+    await replyToSession({
+      session: updatedSession,
+      user,
+      message: question,
+      dedupeSuffix: `${event.messageId}:offer-rejection-reason`,
+    });
+    return {
+      ok: true,
+      status: "awaiting_offer_rejection_reason",
+      session: updatedSession,
+    };
+  }
+
+  if (decision !== "CONFIRMAR") {
+    await replyToSession({
+      session,
+      user,
+      message: buildInvalidOfferPaymentDecisionMessage(),
+      dedupeSuffix: `${event.messageId}:invalid-offer-approval-decision`,
+    });
+    return { ok: true, status: "awaiting_offer_approval_decision", session };
+  }
+
+  const processingSession = await updateWhatsAppSession(session._id, {
+    state: "PROCESSING_CREATE",
+  });
+  const candidate = getSelectedOfferCandidate(processingSession);
+
+  if (!candidate?.offerId) {
+    const erroredSession = await markSessionError(processingSession._id, {
+      code: "OFFER_NOT_FOUND",
+      message: "Proposta selecionada nao encontrada na sessao.",
+    });
+    await replyToSession({
+      session: erroredSession,
+      user,
+      message: buildErrorMessage(),
+      dedupeSuffix: `${event.messageId}:offer-approval-error`,
+    });
+    return { ok: true, status: "error", session: erroredSession };
+  }
+
+  try {
+    const result = await confirmOfferPaymentByWorkspace({
+      offerId: candidate.offerId,
+      workspaceId: user.workspaceId,
+      ownerUserId: user._id || null,
+      confirmedByUserId: user._id || null,
+    });
+
+    const completedSession = await markSessionCompleted(processingSession._id, {
+      flowType: "offer_payment_approval",
+      resolved: {
+        ...(processingSession.resolved || {}),
+        offerSalesResult: {
+          offerId: result.offer?._id ? String(result.offer._id) : candidate.offerId,
+          status: "CONFIRMED",
+          notifyStatus: String(result.notify?.status || "").trim(),
+        },
+      },
+    });
+    await closeActiveSessionsForRequester({
+      userId: user._id,
+      requesterPhoneDigits: processingSession.requesterPhoneDigits,
+      excludeSessionId: completedSession._id,
+      state: "EXPIRED",
+    });
+    await replyToSession({
+      session: completedSession,
+      user,
+      message: buildOfferPaymentApprovedSuccessMessage(candidate),
+      dedupeSuffix: `${event.messageId}:offer-payment-approved`,
+    });
+    return { ok: true, status: "completed", session: completedSession };
+  } catch (error) {
+    const businessConflict =
+      Number(error?.status || error?.statusCode || 0) >= 400 &&
+      Number(error?.status || error?.statusCode || 0) < 500;
+
+    if (businessConflict) {
+      const completedSession = await markSessionCompleted(processingSession._id, {
+        flowType: "offer_payment_approval",
+        resolved: {
+          ...(processingSession.resolved || {}),
+          offerSalesResult: {
+            offerId: candidate.offerId,
+            status: "skipped",
+            reason: String(error?.message || "").trim(),
+          },
+        },
+      });
+      await closeActiveSessionsForRequester({
+        userId: user._id,
+        requesterPhoneDigits: processingSession.requesterPhoneDigits,
+        excludeSessionId: completedSession._id,
+        state: "EXPIRED",
+      });
+      await replyToSession({
+        session: completedSession,
+        user,
+        message:
+          String(error?.code || "").trim() === "NO_PROOF"
+            ? buildOfferPaymentProofMissingMessage(candidate)
+            : String(error?.message || "Nao consegui concluir a aprovacao."),
+        dedupeSuffix: `${event.messageId}:offer-payment-approval-conflict`,
+      });
+      return { ok: true, status: "completed", session: completedSession };
+    }
+
+    const erroredSession = await markSessionError(processingSession._id, error);
+    await replyToSession({
+      session: erroredSession,
+      user,
+      message: buildErrorMessage(),
+      dedupeSuffix: `${event.messageId}:offer-approval-error`,
+    });
+    return { ok: true, status: "error", session: erroredSession };
+  }
+}
+
+async function handleOfferRejectionReason({
+  session,
+  user,
+  text,
+  event,
+}) {
+  const cancellation = parseCandidateSelectionReply(text);
+  if (cancellation === "CANCELAR") {
+    const cancelledSession = await markSessionCancelled(session._id);
+    await closeActiveSessionsForRequester({
+      userId: user._id,
+      requesterPhoneDigits: session.requesterPhoneDigits,
+      excludeSessionId: cancelledSession._id,
+      state: "EXPIRED",
+    });
+    await replyToSession({
+      session: cancelledSession,
+      user,
+      message: buildCancelledMessage(),
+      dedupeSuffix: `${event.messageId}:cancel`,
+    });
+    return { ok: true, status: "cancelled", session: cancelledSession };
+  }
+
+  const reason = String(text || "").trim();
+  if (!reason) {
+    await replyToSession({
+      session,
+      user,
+      message: buildOfferPaymentRejectionReasonQuestion(
+        getSelectedOfferCandidate(session),
+      ),
+      dedupeSuffix: `${event.messageId}:offer-rejection-reason-repeat`,
+    });
+    return { ok: true, status: "awaiting_offer_rejection_reason", session };
+  }
+
+  const processingSession = await updateWhatsAppSession(session._id, {
+    state: "PROCESSING_CREATE",
+  });
+  const candidate = getSelectedOfferCandidate(processingSession);
+
+  if (!candidate?.offerId) {
+    const erroredSession = await markSessionError(processingSession._id, {
+      code: "OFFER_NOT_FOUND",
+      message: "Proposta selecionada nao encontrada na sessao.",
+    });
+    await replyToSession({
+      session: erroredSession,
+      user,
+      message: buildErrorMessage(),
+      dedupeSuffix: `${event.messageId}:offer-rejection-error`,
+    });
+    return { ok: true, status: "error", session: erroredSession };
+  }
+
+  try {
+    const result = await rejectOfferPaymentByWorkspace({
+      offerId: candidate.offerId,
+      workspaceId: user.workspaceId,
+      ownerUserId: user._id || null,
+      rejectedByUserId: user._id || null,
+      reason,
+    });
+
+    const completedSession = await markSessionCompleted(processingSession._id, {
+      flowType: "offer_payment_approval",
+      resolved: {
+        ...(processingSession.resolved || {}),
+        offerSalesResult: {
+          offerId: result.offer?._id ? String(result.offer._id) : candidate.offerId,
+          status: "REJECTED",
+          reason,
+          notifyStatus: String(result.notify?.status || "").trim(),
+        },
+      },
+    });
+    await closeActiveSessionsForRequester({
+      userId: user._id,
+      requesterPhoneDigits: processingSession.requesterPhoneDigits,
+      excludeSessionId: completedSession._id,
+      state: "EXPIRED",
+    });
+    await replyToSession({
+      session: completedSession,
+      user,
+      message: buildOfferPaymentRejectedSuccessMessage(candidate),
+      dedupeSuffix: `${event.messageId}:offer-payment-rejected`,
+    });
+    return { ok: true, status: "completed", session: completedSession };
+  } catch (error) {
+    const businessConflict =
+      Number(error?.status || error?.statusCode || 0) >= 400 &&
+      Number(error?.status || error?.statusCode || 0) < 500;
+
+    if (businessConflict) {
+      const completedSession = await markSessionCompleted(processingSession._id, {
+        flowType: "offer_payment_approval",
+        resolved: {
+          ...(processingSession.resolved || {}),
+          offerSalesResult: {
+            offerId: candidate.offerId,
+            status: "skipped",
+            reason: String(error?.message || "").trim(),
+          },
+        },
+      });
+      await closeActiveSessionsForRequester({
+        userId: user._id,
+        requesterPhoneDigits: processingSession.requesterPhoneDigits,
+        excludeSessionId: completedSession._id,
+        state: "EXPIRED",
+      });
+      await replyToSession({
+        session: completedSession,
+        user,
+        message:
+          String(error?.code || "").trim() === "NO_PROOF"
+            ? buildOfferPaymentProofMissingMessage(candidate)
+            : String(error?.message || "Nao consegui concluir a recusa."),
+        dedupeSuffix: `${event.messageId}:offer-payment-rejection-conflict`,
+      });
+      return { ok: true, status: "completed", session: completedSession };
+    }
+
+    const erroredSession = await markSessionError(processingSession._id, error);
+    await replyToSession({
+      session: erroredSession,
+      user,
+      message: buildErrorMessage(),
+      dedupeSuffix: `${event.messageId}:offer-rejection-error`,
     });
     return { ok: true, status: "error", session: erroredSession };
   }
@@ -4575,7 +5115,11 @@ async function dispatchInitialSessionRouting({
   }
 
   if (
-    ["send_offer_payment_reminder", "cancel_offer"].includes(
+    [
+      "query_offers_waiting_confirmation",
+      "send_offer_payment_reminder",
+      "cancel_offer",
+    ].includes(
       routingExtraction.intent,
     )
   ) {
@@ -5257,6 +5801,24 @@ async function handleOpenSession({ session, user, event, text }) {
     });
   }
 
+  if (refreshedSession.state === "AWAITING_OFFER_APPROVAL_DECISION") {
+    return handleOfferApprovalDecision({
+      session: refreshedSession,
+      user,
+      text,
+      event,
+    });
+  }
+
+  if (refreshedSession.state === "AWAITING_OFFER_REJECTION_REASON") {
+    return handleOfferRejectionReason({
+      session: refreshedSession,
+      user,
+      text,
+      event,
+    });
+  }
+
   if (refreshedSession.state === "AWAITING_BACKOFFICE_ACTION_CONFIRMATION") {
     return handleBackofficeActionConfirmation({
       session: refreshedSession,
@@ -5406,6 +5968,7 @@ export async function processInboundWhatsAppEvent(event, options = {}) {
     : normalizeWhatsAppPhoneDigits(event.fromPhoneDigits || "");
   let user = null;
   let sessionForError = null;
+  const preferredSessionId = String(options?.preferredSessionId || "").trim();
 
   try {
     if (!requesterPhoneDigits) {
@@ -5481,6 +6044,7 @@ export async function processInboundWhatsAppEvent(event, options = {}) {
     sessionForError = await findOpenWhatsAppSession({
       userId: user._id,
       requesterPhoneDigits,
+      preferredSessionId,
     });
 
     let text = String(event.text || "").trim();
@@ -5530,6 +6094,7 @@ export async function processInboundWhatsAppEvent(event, options = {}) {
         sessionForError = await findOpenWhatsAppSession({
           userId: user._id,
           requesterPhoneDigits,
+          preferredSessionId,
         });
         if (sessionForError) {
           return handleOpenSession({

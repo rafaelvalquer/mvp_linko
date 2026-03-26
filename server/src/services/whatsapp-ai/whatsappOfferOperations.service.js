@@ -99,6 +99,15 @@ function buildOfferCandidate(offer = {}, timeZone = "America/Sao_Paulo") {
   const title = getOfferTitle(offer);
   const createdLabel = formatDate(offer?.createdAt, timeZone);
   const dueLabel = dueDate ? formatDate(dueDate, timeZone) : "";
+  const proofOriginalName = String(
+    offer?.paymentProof?.originalName || offer?.paymentProof?.filename || "",
+  ).trim();
+  const proofMimeType = String(offer?.paymentProof?.mimeType || "").trim();
+  const proofUploadedAt =
+    offer?.paymentProof?.uploadedAt ||
+    offer?.paymentProof?.createdAt ||
+    offer?.updatedAt ||
+    null;
   const labelParts = [
     String(offer?.customerName || "").trim() || "Cliente",
     title,
@@ -118,6 +127,10 @@ function buildOfferCandidate(offer = {}, timeZone = "America/Sao_Paulo") {
     createdAt: offer?.createdAt || null,
     expiresAt: dueDate || offer?.expiresAt || null,
     publicToken: String(offer?.publicToken || "").trim(),
+    paymentProofAvailable: !!offer?.paymentProof?.storage?.key,
+    paymentProofOriginalName: proofOriginalName,
+    paymentProofMimeType: proofMimeType,
+    paymentProofUploadedAt: proofUploadedAt,
     displayLabel: labelParts.join(" - "),
     score: 0,
   };
@@ -139,6 +152,20 @@ function buildCancelableOfferQuery({ workspaceId, ownerUserId = null } = {}) {
     workspaceId,
     status: { $nin: ["EXPIRED", "CANCELLED", "CANCELED", "CONFIRMED", "PAID"] },
     paymentStatus: { $nin: ["CONFIRMED", "PAID"] },
+  };
+
+  if (ownerUserId) query.ownerUserId = ownerUserId;
+  return query;
+}
+
+function buildWaitingConfirmationOfferQuery({
+  workspaceId,
+  ownerUserId = null,
+} = {}) {
+  const query = {
+    workspaceId,
+    paymentStatus: "WAITING_CONFIRMATION",
+    "paymentProof.storage.key": { $exists: true, $ne: "" },
   };
 
   if (ownerUserId) query.ownerUserId = ownerUserId;
@@ -207,6 +234,25 @@ export async function listPendingOffers({
   return docs.map((offer) => buildOfferCandidate(offer, timeZone));
 }
 
+export async function listOffersWaitingConfirmation({
+  workspaceId,
+  ownerUserId = null,
+  limit = 10,
+  timeZone = "America/Sao_Paulo",
+}) {
+  const docs = await Offer.find(
+    buildWaitingConfirmationOfferQuery({
+      workspaceId,
+      ownerUserId,
+    }),
+  )
+    .sort({ updatedAt: -1, createdAt: -1 })
+    .limit(Math.max(1, Math.min(20, Number(limit) || 10)))
+    .lean();
+
+  return docs.map((offer) => buildOfferCandidate(offer, timeZone));
+}
+
 export async function resolveOfferCandidates({
   workspaceId,
   ownerUserId = null,
@@ -221,7 +267,9 @@ export async function resolveOfferCandidates({
   const baseQuery =
     action === "cancel"
       ? buildCancelableOfferQuery({ workspaceId, ownerUserId })
-      : buildPendingOfferQuery({ workspaceId, ownerUserId });
+      : action === "payment_approval"
+        ? buildWaitingConfirmationOfferQuery({ workspaceId, ownerUserId })
+        : buildPendingOfferQuery({ workspaceId, ownerUserId });
 
   const regexes = buildRegexes(targetCustomerName);
   if (regexes.length) {
@@ -242,7 +290,11 @@ export async function resolveOfferCandidates({
   }
 
   const docs = await Offer.find(baseQuery)
-    .sort({ createdAt: -1 })
+    .sort(
+      action === "payment_approval"
+        ? { updatedAt: -1, createdAt: -1 }
+        : { createdAt: -1 },
+    )
     .limit(Math.max(limit * 4, 20))
     .lean();
 

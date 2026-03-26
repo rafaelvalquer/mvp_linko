@@ -128,11 +128,12 @@ export function buildBookingOperationDisambiguationQuestion() {
 
 export function buildOfferSalesOperationDisambiguationQuestion() {
   return [
-    "Voce quer consultar pendentes, cobrar um cliente ou cancelar uma proposta?",
+    "Voce quer consultar pendentes, revisar aguardando confirmacao, cobrar um cliente ou cancelar uma proposta?",
     "",
     "1. Consultar pendentes",
-    "2. Cobrar cliente",
-    "3. Cancelar proposta",
+    "2. Aguardando confirmacao",
+    "3. Cobrar cliente",
+    "4. Cancelar proposta",
   ].join("\n");
 }
 
@@ -342,7 +343,7 @@ export function buildInvalidBookingOperationSelectionMessage(originalQuestion) {
 
 export function buildInvalidOfferSalesSelectionMessage(originalQuestion) {
   return [
-    "Nao entendi sua escolha. Escolha uma opcao abaixo ou responda em texto com PENDENTES, COBRAR, CANCELAR, 1, 2 ou 3.",
+    "Nao entendi sua escolha. Escolha uma opcao abaixo ou responda em texto com PENDENTES, AGUARDANDO CONFIRMACAO, COBRAR, CANCELAR, 1, 2, 3 ou 4.",
     "",
     String(originalQuestion || buildOfferSalesOperationDisambiguationQuestion()).trim(),
   ]
@@ -542,6 +543,29 @@ export function buildPendingOffersSummaryMessage(offers = []) {
   return lines.join("\n").trim();
 }
 
+export function buildOffersWaitingConfirmationEmptyMessage() {
+  return "Nao encontrei propostas aguardando confirmacao com comprovante para revisar agora.";
+}
+
+export function buildOffersWaitingConfirmationSummaryMessage(offers = []) {
+  const safeOffers = Array.isArray(offers) ? offers : [];
+  const lines = [
+    `Propostas aguardando confirmacao: ${safeOffers.length}`,
+    "",
+  ];
+
+  safeOffers.forEach((offer, index) => {
+    lines.push(
+      `${index + 1}. ${String(offer?.displayLabel || "").trim() || "Proposta aguardando confirmacao"}`,
+    );
+  });
+
+  lines.push("");
+  lines.push("Escolha uma opcao abaixo ou responda em texto.");
+
+  return lines.join("\n").trim();
+}
+
 export function buildOfferAmbiguityQuestion(candidates = [], actionLabel = "essa proposta") {
   const options = candidates
     .map(
@@ -609,6 +633,62 @@ export function buildOfferCancelConfirmation(candidate = {}) {
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+export function buildOfferPaymentProofReviewMessage(candidate = {}) {
+  const proofName = String(candidate?.paymentProofOriginalName || "Comprovante enviado").trim();
+  const proofType = String(candidate?.paymentProofMimeType || "").trim();
+  const uploadedAt = formatAgendaDateTime(
+    candidate?.paymentProofUploadedAt,
+    "America/Sao_Paulo",
+  );
+
+  return [
+    "Revise este comprovante antes de decidir.",
+    "",
+    `Cliente: ${String(candidate?.customerName || "Cliente").trim()}`,
+    `Proposta: ${String(candidate?.title || "Proposta").trim()}`,
+    `Valor: ${formatMoney(candidate?.totalCents)}`,
+    "Status: aguardando confirmacao",
+    `Comprovante: ${proofName}`,
+    proofType ? `Tipo: ${proofType}` : "",
+    uploadedAt ? `Recebido em: ${uploadedAt}` : "",
+    "",
+    "Escolha uma opcao abaixo ou responda em texto.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function buildOfferPaymentRejectionReasonQuestion(candidate = {}) {
+  return [
+    `Qual o motivo da recusa do recibo de ${String(
+      candidate?.customerName || "este cliente",
+    ).trim()}?`,
+    "",
+    "Responda em texto com um motivo curto ou toque em Cancelar.",
+  ].join("\n");
+}
+
+export function buildOfferPaymentApprovedSuccessMessage(candidate = {}) {
+  return `Recibo confirmado com sucesso para ${String(
+    candidate?.customerName || "o cliente",
+  ).trim()}.`;
+}
+
+export function buildOfferPaymentRejectedSuccessMessage(candidate = {}) {
+  return `Recibo recusado com sucesso para ${String(
+    candidate?.customerName || "o cliente",
+  ).trim()}.`;
+}
+
+export function buildOfferPaymentProofMissingMessage(candidate = {}) {
+  const customerName = String(candidate?.customerName || "o cliente").trim();
+  return `Nao encontrei um comprovante valido para ${customerName}. Atualize a lista e tente novamente.`;
+}
+
+export function buildInvalidOfferPaymentDecisionMessage() {
+  return "Escolha uma opcao abaixo ou responda em texto com CONFIRMAR, RECUSAR ou CANCELAR.";
 }
 
 export function buildOfferReminderResultMessage(candidate = {}, result = {}) {

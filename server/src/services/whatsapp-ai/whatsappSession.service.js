@@ -14,6 +14,8 @@ export const ACTIVE_WHATSAPP_SESSION_STATES = [
   "AWAITING_NEW_BOOKING_TIME",
   "AWAITING_BOOKING_CHANGE_CONFIRMATION",
   "AWAITING_OFFER_ACTION_CONFIRMATION",
+  "AWAITING_OFFER_APPROVAL_DECISION",
+  "AWAITING_OFFER_REJECTION_REASON",
   "AWAITING_BACKOFFICE_ACTION_CONFIRMATION",
   "PROCESSING_CREATE",
 ];
@@ -62,7 +64,11 @@ export async function markSessionExpired(sessionId) {
   });
 }
 
-export async function findOpenWhatsAppSession({ userId, requesterPhoneDigits }) {
+export async function findOpenWhatsAppSession({
+  userId,
+  requesterPhoneDigits,
+  preferredSessionId = null,
+}) {
   const sessions = await WhatsAppCommandSession.find({
     userId,
     requesterPhoneDigits,
@@ -85,16 +91,26 @@ export async function findOpenWhatsAppSession({ userId, requesterPhoneDigits }) 
 
   if (!validSessions.length) return null;
 
+  let activeSession = validSessions[0] || null;
+  const normalizedPreferredSessionId = String(preferredSessionId || "").trim();
+  if (normalizedPreferredSessionId) {
+    const preferredSession = validSessions.find(
+      (session) => String(session?._id || "") === normalizedPreferredSessionId,
+    );
+    if (preferredSession?._id) {
+      activeSession = preferredSession;
+    }
+  }
+
   if (validSessions.length > 1) {
     await closeActiveSessionsForRequester({
       userId,
       requesterPhoneDigits,
+      excludeSessionId: activeSession?._id || null,
       state: "EXPIRED",
     });
-    return null;
   }
 
-  const activeSession = validSessions[0] || null;
   if (!activeSession) return null;
 
   const newerTerminalSession = await WhatsAppCommandSession.findOne({

@@ -8,6 +8,7 @@ const FLOW_LABELS = {
   offer_query: "Propostas",
   offer_payment_reminder: "Cobranca",
   offer_cancel: "Cancelamento de proposta",
+  offer_payment_approval: "Aprovacao de recibo",
   client_create: "Cadastro de cliente",
   product_create: "Cadastro de produto",
   product_update: "Atualizacao de produto",
@@ -216,6 +217,22 @@ const WEB_AGENT_ACTIONS = [
   }),
   buildSuggestedActionConfig({
     categoryKey: "billing",
+    key: "offer_waiting_confirmation",
+    label: "Aguardando confirmacao",
+    description: "Revisar comprovantes enviados que ainda precisam de aprovacao.",
+    value: "Quais propostas aguardam confirmacao?",
+    routingIntent: "query_offers_waiting_confirmation",
+    flowType: "offer_payment_approval",
+    moduleKey: "offers",
+    matchPhrases: [
+      "Aguardando confirmacao",
+      "Propostas aguardando confirmacao",
+      "Listar propostas para aprovacao",
+      "Comprovantes para aprovar",
+    ],
+  }),
+  buildSuggestedActionConfig({
+    categoryKey: "billing",
     key: "billing_followup_stale",
     label: "Retomar propostas sem resposta",
     description: "Localizar propostas que pedem follow-up de cobranca.",
@@ -377,8 +394,9 @@ function buildReplyControls(session = null) {
         presentation: "chips",
         options: [
           candidateReply("Pendentes", "1"),
-          candidateReply("Cobrar cliente", "2"),
-          candidateReply("Cancelar proposta", "3", "danger"),
+          candidateReply("Aguardando confirmacao", "2"),
+          candidateReply("Cobrar cliente", "3"),
+          candidateReply("Cancelar proposta", "4", "danger"),
           candidateReply("Cancelar", "CANCELAR", "danger"),
         ],
       };
@@ -434,6 +452,24 @@ function buildReplyControls(session = null) {
         candidateReply("Confirmar", "CONFIRMAR"),
         candidateReply("Cancelar", "CANCELAR", "danger"),
       ],
+    };
+  }
+
+  if (state === "AWAITING_OFFER_APPROVAL_DECISION") {
+    return {
+      presentation: "chips",
+      options: [
+        candidateReply("Confirmar recibo", "CONFIRMAR"),
+        candidateReply("Recusar recibo", "RECUSAR", "danger"),
+        candidateReply("Cancelar", "CANCELAR", "danger"),
+      ],
+    };
+  }
+
+  if (state === "AWAITING_OFFER_REJECTION_REASON") {
+    return {
+      presentation: "chips",
+      options: [candidateReply("Cancelar", "CANCELAR", "danger")],
     };
   }
 
@@ -538,6 +574,10 @@ export function serializeWebAgentMessages(items = []) {
     role: String(item?.role || "assistant"),
     inputType: String(item?.inputType || "text"),
     text: normalizeText(item?.text || ""),
+    meta:
+      item?.meta && typeof item.meta === "object" && !Array.isArray(item.meta)
+        ? item.meta
+        : null,
     createdAt: item?.createdAt || null,
   }));
 }
@@ -577,7 +617,14 @@ function canShowActionForUser(action, user = null) {
   });
 }
 
-function serializeWebAgentAction(action) {
+function serializeWebAgentAction(action, { insightUsage = null } = {}) {
+  const isInsightAction = String(action?.actionKey || "").trim() === "insight_summary";
+  const disabled =
+    isInsightAction &&
+    insightUsage?.enabled === true &&
+    insightUsage?.usedToday === true &&
+    Number(insightUsage?.remainingToday || 0) <= 0;
+
   return {
     categoryKey: action.categoryKey,
     categoryLabel: action.categoryLabel,
@@ -589,6 +636,8 @@ function serializeWebAgentAction(action) {
     flowType: action.flowType,
     moduleKey: action.moduleKey,
     destructive: action.destructive === true,
+    disabled,
+    disabledReason: disabled ? String(insightUsage?.blockedReason || "").trim() : "",
   };
 }
 
@@ -596,14 +645,14 @@ function listVisibleWebAgentActions(user = null) {
   return WEB_AGENT_ACTIONS.filter((action) => canShowActionForUser(action, user));
 }
 
-export function buildWebAgentActionMenu(user = null) {
+export function buildWebAgentActionMenu(user = null, { insightUsage = null } = {}) {
   const visibleActions = listVisibleWebAgentActions(user);
 
   return ACTION_CATEGORY_ORDER.map((categoryKey) => {
     const actions = visibleActions
       .filter((action) => action.categoryKey === categoryKey)
       .sort((left, right) => Number(left.destructive === true) - Number(right.destructive === true))
-      .map((action) => serializeWebAgentAction(action));
+      .map((action) => serializeWebAgentAction(action, { insightUsage }));
 
     if (!actions.length) return null;
 
@@ -700,7 +749,8 @@ export function buildWebAgentUiPayload(sessionOrOptions = null, maybeUser = null
 
   const session = config?.session || null;
   const user = config?.user || null;
-  const actionMenu = buildWebAgentActionMenu(user);
+  const insightUsage = config?.insightUsage || null;
+  const actionMenu = buildWebAgentActionMenu(user, { insightUsage });
   const suggestedActions = buildWebAgentSuggestedActions(user);
   const replyControls = buildReplyControls(session);
 
@@ -710,6 +760,7 @@ export function buildWebAgentUiPayload(sessionOrOptions = null, maybeUser = null
       replyControls: null,
       suggestedActions,
       actionMenu,
+      insightUsage,
       composerPlaceholder: "Fale com a Lumina sobre proposta, agenda, cobranca ou cadastro",
       headerSubtitle: "Agente operacional da sua carteira",
     };
@@ -736,8 +787,9 @@ export function buildWebAgentUiPayload(sessionOrOptions = null, maybeUser = null
     } else if (lastQuestionKey === "offer_sales_operation_selection") {
       quickReplies = [
         candidateReply("Pendentes", "1"),
-        candidateReply("Cobrar cliente", "2"),
-        candidateReply("Cancelar proposta", "3", "danger"),
+        candidateReply("Aguardando confirmacao", "2"),
+        candidateReply("Cobrar cliente", "3"),
+        candidateReply("Cancelar proposta", "4", "danger"),
         candidateReply("Cancelar", "CANCELAR", "danger"),
       ];
     } else if (lastQuestionKey === "backoffice_operation_selection") {
@@ -762,6 +814,14 @@ export function buildWebAgentUiPayload(sessionOrOptions = null, maybeUser = null
       candidateReply("Confirmar", "CONFIRMAR"),
       candidateReply("Cancelar", "CANCELAR", "danger"),
     ];
+  } else if (state === "AWAITING_OFFER_APPROVAL_DECISION" && quickReplies.length === 0) {
+    quickReplies = [
+      candidateReply("Confirmar recibo", "CONFIRMAR"),
+      candidateReply("Recusar recibo", "RECUSAR", "danger"),
+      candidateReply("Cancelar", "CANCELAR", "danger"),
+    ];
+  } else if (state === "AWAITING_OFFER_REJECTION_REASON" && quickReplies.length === 0) {
+    quickReplies = [candidateReply("Cancelar", "CANCELAR", "danger")];
   } else if (state === "AWAITING_CUSTOMER_SELECTION" && quickReplies.length === 0) {
     quickReplies = [
       ...buildSelectionReplies(session.candidateCustomers || [], { limit: 6 }),
@@ -792,6 +852,7 @@ export function buildWebAgentUiPayload(sessionOrOptions = null, maybeUser = null
     replyControls,
     suggestedActions,
     actionMenu,
+    insightUsage,
     composerPlaceholder:
       quickReplies.length > 0 || replyControls
         ? "Toque em uma acao rapida ou responda em texto"

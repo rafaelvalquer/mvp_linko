@@ -28,6 +28,10 @@ import {
 import { cancelOfferByWorkspace } from "../services/offers/cancelOffer.service.js";
 import { createOfferFromPayload } from "../services/offers/createOffer.service.js";
 import {
+  confirmOfferPaymentByWorkspace,
+  rejectOfferPaymentByWorkspace,
+} from "../services/offers/paymentApproval.service.js";
+import {
   notifyResponsibleSellerPixPaidWhatsApp,
   notifyResponsibleSellerPlatformConfirmedWhatsApp,
 } from "../services/workspaceUserWhatsApp.service.js";
@@ -745,11 +749,47 @@ async function confirmPaymentHandler(req, res) {
   return res.json({ ok: true, offer: updated, notify, email, emailConfirmed });
 }
 
+async function confirmPaymentHandlerV2(req, res) {
+  assertOffersModule(req, "offers");
+  const tenantId = req.tenantId;
+  const userId = req.user?._id;
+  const scopedOwnerUserId = getScopedOwner(req);
+  const { id } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ ok: false, error: "invalid id" });
+  }
+
+  try {
+    const result = await confirmOfferPaymentByWorkspace({
+      offerId: id,
+      workspaceId: tenantId,
+      ownerUserId: scopedOwnerUserId || null,
+      confirmedByUserId: userId || null,
+    });
+
+    return res.json({
+      ok: true,
+      offer: result.offer,
+      notify: result.notify,
+      email: result.email,
+      emailConfirmed: result.emailConfirmed,
+    });
+  } catch (error) {
+    const status = Number(error?.status || error?.statusCode || 500);
+    return res.status(status).json({
+      ok: false,
+      error: String(error?.message || "Nao consegui confirmar o pagamento."),
+      code: String(error?.code || "CONFIRM_PAYMENT_FAILED"),
+    });
+  }
+}
+
 r.post(
   "/offers/:id/confirm-payment",
   ensureAuth,
   tenantFromUser,
-  asyncHandler(confirmPaymentHandler),
+  asyncHandler(confirmPaymentHandlerV2),
 );
 
 // Alias PATCH (seu frontend pode preferir PATCH)
@@ -757,8 +797,44 @@ r.patch(
   "/offers/:id/confirm-payment",
   ensureAuth,
   tenantFromUser,
-  asyncHandler(confirmPaymentHandler),
+  asyncHandler(confirmPaymentHandlerV2),
 );
+
+async function rejectPaymentHandlerV2(req, res) {
+  assertOffersModule(req, "offers");
+  const tenantId = req.tenantId;
+  const userId = req.user?._id;
+  const scopedOwnerUserId = getScopedOwner(req);
+  const { id } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ ok: false, error: "invalid id" });
+  }
+
+  try {
+    const result = await rejectOfferPaymentByWorkspace({
+      offerId: id,
+      workspaceId: tenantId,
+      ownerUserId: scopedOwnerUserId || null,
+      rejectedByUserId: userId || null,
+      reason: String(req.body?.reason || req.body?.note || "").trim(),
+      publicUrl: String(req.body?.publicUrl || "").trim(),
+    });
+
+    return res.json({
+      ok: true,
+      offer: result.offer,
+      notify: result.notify,
+    });
+  } catch (error) {
+    const status = Number(error?.status || error?.statusCode || 500);
+    return res.status(status).json({
+      ok: false,
+      error: String(error?.message || "Nao consegui recusar o pagamento."),
+      code: String(error?.code || "REJECT_PAYMENT_FAILED"),
+    });
+  }
+}
 
 r.post(
   "/offers/:id/reject-payment",

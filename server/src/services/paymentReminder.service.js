@@ -311,7 +311,7 @@ export async function dispatchPaymentReminder({
     });
   }
 
-  const publicUrl = buildOfferPublicUrl(offer, origin);
+  const publicUrl = buildOfferPublicUrl(offer, origin, { preferPublic: true });
   if (!publicUrl) {
     throw Object.assign(
       new Error("A proposta não possui link público disponível."),

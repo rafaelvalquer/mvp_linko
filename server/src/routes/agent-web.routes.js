@@ -24,6 +24,7 @@ import {
   buildWebAgentPassiveStatus,
   scanWebAgentAutomationInbox,
 } from "../services/webAgentAutomation.service.js";
+import { getLuminaInsightUsageStatus } from "../services/luminaInsight.service.js";
 
 const r = Router();
 const WEB_SOURCE_CHANNEL = "web";
@@ -52,9 +53,11 @@ async function buildSessionResponsePayload({
   const effectiveSession = selectedSession || activeSession || null;
   const serializedActiveSession = serializeWebAgentSession(activeSession);
   const serializedSelectedSession = serializeWebAgentSession(effectiveSession);
+  const insightUsage = await getLuminaInsightUsageStatus({ user });
   const ui = buildWebAgentUiPayload({
     session: effectiveSession,
     user,
+    insightUsage,
   });
   const automationInbox = await scanWebAgentAutomationInbox({
     user,
@@ -85,6 +88,7 @@ async function buildSessionResponsePayload({
       ? ui.suggestedActions
       : [],
     actionMenu: Array.isArray(ui.actionMenu) ? ui.actionMenu : [],
+    insightUsage,
     automationInbox: Array.isArray(automationInbox) ? automationInbox : [],
     readOnly:
       !!serializedSelectedSession &&
@@ -223,6 +227,7 @@ r.post(
     assertAgentPlanAllowed(req);
 
     const actionKey = normalizeText(req.body?.actionKey || "");
+    const preferredSessionId = normalizeText(req.body?.sessionId || "");
     const explicitAction = actionKey ? getWebAgentActionByKey(actionKey, req.user) : null;
     if (actionKey && !explicitAction) {
       const err = new Error("A acao selecionada da Lumina nao esta disponivel para este usuario.");
@@ -268,6 +273,7 @@ r.post(
       },
       {
         authUser: req.user,
+        preferredSessionId,
       },
     );
 

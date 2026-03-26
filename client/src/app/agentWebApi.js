@@ -12,7 +12,18 @@ export function getLuminaSession(sessionId) {
   return api(`/agent/web/sessions/${sessionId}`);
 }
 
-export function sendLuminaMessage({ text, actionKey = "", automationContext = null }) {
+export function getLuminaOfferPaymentProof(offerId, { inline = true } = {}) {
+  const normalizedOfferId = String(offerId || "").trim();
+  const query = inline ? "?inline=1" : "";
+  return api(`/offers/${normalizedOfferId}/payment-proof${query}`);
+}
+
+export function sendLuminaMessage({
+  text,
+  actionKey = "",
+  automationContext = null,
+  sessionId = "",
+}) {
   const body = {
     text,
   };
@@ -23,6 +34,10 @@ export function sendLuminaMessage({ text, actionKey = "", automationContext = nu
 
   if (automationContext && typeof automationContext === "object") {
     body.automationContext = automationContext;
+  }
+
+  if (String(sessionId || "").trim()) {
+    body.sessionId = String(sessionId || "").trim();
   }
 
   return api("/agent/web/messages", {

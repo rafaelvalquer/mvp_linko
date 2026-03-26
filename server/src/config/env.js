@@ -36,6 +36,7 @@ export const env = {
   mongoUri: required("MONGODB_URI", process.env.MONGODB_URI || ""),
   corsOrigin: process.env.CORS_ORIGIN || "http://localhost:5173",
   frontendUrl: String(process.env.FRONTEND_URL || "").trim(),
+  publicFrontendUrl: String(process.env.PUBLIC_FRONTEND_URL || "").trim(),
   masterAdminEmails: parseEmailList(process.env.MASTER_ADMIN_EMAILS || ""),
   whatsappAiEnabled: parseBoolean(process.env.WHATSAPP_AI_ENABLED, false),
   openaiApiKey: String(process.env.OPENAI_API_KEY || "").trim(),

@@ -3,9 +3,10 @@ import { createPortal } from "react-dom";
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "framer-motion";
 import {
   Bot,
+  Eye,
+  FileText,
   History,
   LayoutGrid,
-  Lightbulb,
   Loader2,
   MessageCircleMore,
   Plus,
@@ -17,6 +18,7 @@ import {
 import { useAuth } from "../../app/AuthContext.jsx";
 import {
   getLuminaBootstrap,
+  getLuminaOfferPaymentProof,
   getLuminaPassiveStatus,
   getLuminaSession,
   sendLuminaMessage,
@@ -40,6 +42,7 @@ const INTERRUPTIBLE_OPERATIONAL_FLOW_TYPES = new Set([
   "offer_query",
   "offer_payment_reminder",
   "offer_cancel",
+  "offer_payment_approval",
   "client_create",
   "product_create",
   "product_update",
@@ -153,8 +156,217 @@ function isInterruptibleOperationalSession(session = null) {
   return INTERRUPTIBLE_OPERATIONAL_FLOW_TYPES.has(flowType);
 }
 
+function buildFilePreviewDataUrl(file = null) {
+  const mimeType = String(file?.mimeType || "").trim() || "application/octet-stream";
+  const base64 = String(file?.base64 || "").trim();
+  if (!base64) return "";
+  return `data:${mimeType};base64,${base64}`;
+}
+
+function formatCurrency(cents) {
+  const value = Number(cents);
+  if (!Number.isFinite(value)) return "R$ 0,00";
+
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(value / 100);
+}
+
+function OfferPaymentProofCard({ meta, isDark }) {
+  const offer = meta?.offer && typeof meta.offer === "object" ? meta.offer : null;
+  const offerId = String(offer?.offerId || "").trim();
+  const proofName = String(offer?.proofOriginalName || "Comprovante enviado").trim();
+  const proofMimeType = String(offer?.proofMimeType || "").trim();
+  const [expanded, setExpanded] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [previewPayload, setPreviewPayload] = useState(null);
+  const [previewError, setPreviewError] = useState("");
+
+  const previewDataUrl = useMemo(
+    () => buildFilePreviewDataUrl(previewPayload?.file || null),
+    [previewPayload],
+  );
+  const previewMimeType =
+    String(previewPayload?.file?.mimeType || proofMimeType || "").trim() ||
+    "application/octet-stream";
+  const isImagePreview = previewMimeType.startsWith("image/");
+  const isPdfPreview = previewMimeType === "application/pdf";
+
+  async function handleTogglePreview() {
+    const nextExpanded = !expanded;
+    setExpanded(nextExpanded);
+
+    if (
+      !nextExpanded ||
+      loading ||
+      previewPayload ||
+      !offerId
+    ) {
+      return;
+    }
+
+    setLoading(true);
+    setPreviewError("");
+
+    try {
+      const response = await getLuminaOfferPaymentProof(offerId, { inline: true });
+      setPreviewPayload(response);
+    } catch (error) {
+      setPreviewError(
+        error?.data?.error || error?.message || "Nao consegui abrir o comprovante agora.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (!offerId) return null;
+
+  return (
+    <div
+      className={[
+        "mt-3 rounded-[20px] border p-3",
+        isDark
+          ? "border-white/10 bg-white/5"
+          : "border-slate-200/80 bg-slate-50/90",
+      ].join(" ")}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div
+            className={[
+              "text-[10px] font-bold uppercase tracking-[0.18em]",
+              isDark ? "text-slate-400" : "text-slate-500",
+            ].join(" ")}
+          >
+            Revisao de comprovante
+          </div>
+          <div
+            className={[
+              "mt-1 text-sm font-semibold",
+              isDark ? "text-white" : "text-slate-900",
+            ].join(" ")}
+          >
+            {offer?.title || "Proposta"}
+          </div>
+        </div>
+
+        <div
+          className={[
+            "rounded-full px-2.5 py-1 text-[11px] font-semibold",
+            isDark ? "bg-amber-400/10 text-amber-200" : "bg-amber-100 text-amber-700",
+          ].join(" ")}
+        >
+          {offer?.paymentStatus || "WAITING_CONFIRMATION"}
+        </div>
+      </div>
+
+      <div
+        className={[
+          "mt-3 grid gap-2 text-xs leading-5 sm:grid-cols-2",
+          isDark ? "text-slate-300" : "text-slate-600",
+        ].join(" ")}
+      >
+        <div>
+          <span className={isDark ? "text-slate-400" : "text-slate-500"}>Cliente:</span>{" "}
+          {offer?.customerName || "Cliente"}
+        </div>
+        <div>
+          <span className={isDark ? "text-slate-400" : "text-slate-500"}>Valor:</span>{" "}
+          {formatCurrency(offer?.totalCents)}
+        </div>
+        <div className="sm:col-span-2">
+          <span className={isDark ? "text-slate-400" : "text-slate-500"}>Comprovante:</span>{" "}
+          {proofName}
+        </div>
+        {proofMimeType ? (
+          <div className="sm:col-span-2">
+            <span className={isDark ? "text-slate-400" : "text-slate-500"}>Tipo:</span>{" "}
+            {proofMimeType}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="mt-3 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={handleTogglePreview}
+          disabled={loading}
+          className={[
+            "inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition disabled:opacity-60",
+            isDark
+              ? "border-cyan-400/20 bg-cyan-400/10 text-cyan-100 hover:bg-cyan-400/15"
+              : "border-cyan-200 bg-cyan-50 text-cyan-800 hover:bg-cyan-100",
+          ].join(" ")}
+        >
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
+          {expanded ? "Ocultar comprovante" : "Ver comprovante"}
+        </button>
+      </div>
+
+      {expanded ? (
+        <div className="mt-3">
+          {loading ? (
+            <div
+              className={[
+                "flex items-center gap-2 rounded-[16px] border px-3 py-3 text-xs",
+                isDark
+                  ? "border-white/10 bg-white/5 text-slate-300"
+                  : "border-slate-200/80 bg-white text-slate-600",
+              ].join(" ")}
+            >
+              <Loader2 className="h-4 w-4 animate-spin text-cyan-400" />
+              Carregando comprovante...
+            </div>
+          ) : previewError ? (
+            <div
+              className={[
+                "rounded-[16px] border px-3 py-3 text-xs",
+                isDark
+                  ? "border-rose-400/20 bg-rose-400/10 text-rose-100"
+                  : "border-rose-200 bg-rose-50 text-rose-700",
+              ].join(" ")}
+            >
+              {previewError}
+            </div>
+          ) : previewDataUrl && isImagePreview ? (
+            <img
+              src={previewDataUrl}
+              alt={proofName}
+              className="max-h-[320px] w-full rounded-[18px] border border-slate-200/70 object-contain bg-white"
+            />
+          ) : previewDataUrl && isPdfPreview ? (
+            <iframe
+              title={`Comprovante ${proofName}`}
+              src={previewDataUrl}
+              className="h-[320px] w-full rounded-[18px] border border-slate-200/70 bg-white"
+            />
+          ) : previewDataUrl ? (
+            <div
+              className={[
+                "flex items-center gap-2 rounded-[16px] border px-3 py-3 text-xs",
+                isDark
+                  ? "border-white/10 bg-white/5 text-slate-300"
+                  : "border-slate-200/80 bg-white text-slate-600",
+              ].join(" ")}
+            >
+              <FileText className="h-4 w-4" />
+              O comprovante foi encontrado, mas esse formato nao tem preview aqui.
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function MessageBubble({ item, isDark, motionPreset }) {
   const isUser = item?.role === "user";
+  const richMeta =
+    item?.meta && typeof item.meta === "object" && !Array.isArray(item.meta)
+      ? item.meta
+      : null;
 
   return (
     <motion.div
@@ -181,6 +393,9 @@ function MessageBubble({ item, isDark, motionPreset }) {
         ].join(" ")}
       >
         <div className="whitespace-pre-wrap text-sm leading-6">{item?.text || ""}</div>
+        {richMeta?.kind === "offer_payment_proof_review" ? (
+          <OfferPaymentProofCard meta={richMeta} isDark={isDark} />
+        ) : null}
         {item?.createdAt ? (
           <div
             className={[
@@ -240,6 +455,7 @@ function OverlayControlButton({
   active = false,
   highlighted = false,
   disabled = false,
+  title = "",
   motionPreset,
 }) {
   return (
@@ -265,6 +481,7 @@ function OverlayControlButton({
         type="button"
         onClick={onClick}
         disabled={disabled}
+        title={title || undefined}
         initial="idle"
         animate="idle"
         whileHover={disabled ? undefined : "hover"}
@@ -272,7 +489,7 @@ function OverlayControlButton({
         variants={motionPreset.sendButtonVariants}
         transition={motionPreset.transitions.chip}
         className={[
-          "relative inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition disabled:opacity-60",
+          "relative inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60",
           active || highlighted
             ? isDark
               ? "border-cyan-400/30 bg-cyan-400/12 text-cyan-100"
@@ -520,7 +737,8 @@ function LuminaActionMenu({
                 key={action?.actionKey}
                 layout
                 type="button"
-                disabled={disabled}
+                title={action?.disabledReason || undefined}
+                disabled={disabled || action?.disabled}
                 onClick={() =>
                   onSelectAction?.(
                     action?.value || action?.label || "",
@@ -559,6 +777,16 @@ function LuminaActionMenu({
                     ].join(" ")}
                   >
                     {action.description}
+                  </div>
+                ) : null}
+                {action?.disabled && action?.disabledReason ? (
+                  <div
+                    className={[
+                      "mt-2 text-[11px] font-semibold leading-4",
+                      isDark ? "text-amber-200/85" : "text-amber-700",
+                    ].join(" ")}
+                  >
+                    {action.disabledReason}
                   </div>
                 ) : null}
               </motion.button>
@@ -1074,6 +1302,23 @@ export default function LuminaChatWidget() {
     }
     return [];
   }, [payload]);
+  const insightUsage =
+    payload?.insightUsage && typeof payload.insightUsage === "object"
+      ? payload.insightUsage
+      : payload?.ui?.insightUsage && typeof payload.ui.insightUsage === "object"
+        ? payload.ui.insightUsage
+        : null;
+  const insightResetsAtMs = Number(
+    insightUsage?.resetsAt ? new Date(insightUsage.resetsAt).getTime() : 0,
+  );
+  const isInsightBlockedToday =
+    insightUsage?.enabled === true &&
+    insightUsage?.usedToday === true &&
+    Number(insightUsage?.remainingToday || 0) <= 0 &&
+    (!insightResetsAtMs || insightResetsAtMs > Date.now());
+  const insightBlockedReason = String(
+    insightUsage?.blockedReason || "Insight disponivel novamente amanha.",
+  ).trim();
   const canUseInsight = useMemo(
     () =>
       canUseInsightByPermissions ||
@@ -1125,6 +1370,10 @@ export default function LuminaChatWidget() {
       !!activeSession?._id &&
       String(currentSession._id) !== String(activeSession._id)) ||
     (!!currentSession?.isTerminal && !activeSession?._id);
+  const replySessionId =
+    currentSession?._id && !currentSession?.isTerminal
+      ? String(currentSession._id)
+      : "";
   const passiveEnabled = passiveStatus?.enabled === true;
   const passiveOpportunityCount = Number(passiveStatus?.count || 0);
   const passiveTopOpportunityId = String(passiveStatus?.topOpportunity?.id || "").trim();
@@ -1479,6 +1728,17 @@ export default function LuminaChatWidget() {
     }
   }, [canUseLumina]);
 
+  useEffect(() => {
+    if (!isInsightBlockedToday || !insightResetsAtMs) return undefined;
+
+    const delay = Math.max(250, insightResetsAtMs - Date.now());
+    const timeoutId = window.setTimeout(() => {
+      void loadBootstrap();
+    }, delay);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [isInsightBlockedToday, insightResetsAtMs]);
+
   async function openLuminaFromLauncher() {
     const shouldOpenFreshPassiveSession =
       showPassiveLauncherSignal &&
@@ -1586,6 +1846,11 @@ export default function LuminaChatWidget() {
 
   async function runInsightConversation() {
     if (!insightAction || runningInsight) return;
+    if (isInsightBlockedToday) {
+      setErrorMessage(insightBlockedReason);
+      setActiveOverlay("");
+      return;
+    }
 
     setRunningInsight(true);
     setSending(true);
@@ -1623,6 +1888,11 @@ export default function LuminaChatWidget() {
 
   async function handleInsightTrigger() {
     if (!canUseInsight || !insightAction || runningInsight || sending) return;
+    if (isInsightBlockedToday) {
+      setErrorMessage(insightBlockedReason);
+      setActiveOverlay("");
+      return;
+    }
 
     let effectivePayload = payload;
 
@@ -1664,7 +1934,7 @@ export default function LuminaChatWidget() {
     const textToSend = String(customText || draft || "").trim();
     if (!textToSend || sending || bootstrapping || !canUseLumina) return;
 
-    if (isHistoricalView) {
+    if (isHistoricalView && !replySessionId) {
       setPayload((prev) => {
         if (!prev) return prev;
 
@@ -1695,6 +1965,7 @@ export default function LuminaChatWidget() {
         text: textToSend,
         actionKey,
         automationContext,
+        sessionId: replySessionId,
       });
       setPayload(response);
       void loadPassiveStatus();
@@ -2003,21 +2274,6 @@ export default function LuminaChatWidget() {
                         active={isActionsOverlayOpen}
                         highlighted={shouldHighlightActionsCta}
                         disabled={bootstrapping}
-                        motionPreset={motionPreset}
-                      />
-                    ) : null}
-
-                    {insightAction ? (
-                      <OverlayControlButton
-                        icon={runningInsight ? Loader2 : Lightbulb}
-                        iconClassName={runningInsight ? "animate-spin" : ""}
-                        label={runningInsight ? "Analisando..." : "Insight"}
-                        onClick={() => {
-                          void handleInsightTrigger();
-                        }}
-                        isDark={isDark}
-                        active={isInsightSwitchOverlayOpen}
-                        disabled={bootstrapping || sending || runningInsight}
                         motionPreset={motionPreset}
                       />
                     ) : null}
@@ -2564,9 +2820,11 @@ export default function LuminaChatWidget() {
                         isDark ? "text-slate-400" : "text-slate-500",
                       ].join(" ")}
                     >
-                      {isHistoricalView
+                      {isHistoricalView && !replySessionId
                         ? "Se voce enviar um novo comando agora, a Lumina continua pela conversa ativa sem reset brusco."
-                        : "A Lumina responde com tom mais humano aqui no site, mas continua pedindo confirmacoes explicitas antes de executar acoes."}
+                        : isHistoricalView
+                          ? "Esta conversa continua exatamente daqui se voce responder ou tocar em uma opcao."
+                          : "A Lumina responde com tom mais humano aqui no site, mas continua pedindo confirmacoes explicitas antes de executar acoes."}
                     </motion.div>
                   </motion.div>
                 </div>

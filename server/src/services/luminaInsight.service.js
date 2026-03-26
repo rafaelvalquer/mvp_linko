@@ -1,4 +1,5 @@
 import { Offer } from "../models/Offer.js";
+import { WhatsAppCommandSession } from "../models/WhatsAppCommandSession.js";
 import { buildGeneralReportsSnapshot } from "./generalReports.service.js";
 import {
   buildOfferOpportunityLine,
@@ -17,6 +18,7 @@ import {
 
 const DEFAULT_TIMEZONE = "America/Sao_Paulo";
 const DEFAULT_WINDOW_DAYS = 30;
+const DAILY_INSIGHT_LIMIT = 1;
 const OFFER_TERMINAL_STATUSES = ["EXPIRED", "CANCELLED", "CANCELED", "CONFIRMED", "PAID"];
 const PAID_SET = ["PAID", "CONFIRMED"];
 
@@ -34,6 +36,54 @@ function rangeInSaoPaulo(fromYMD, toYMD) {
   const endZero = new Date(`${String(toYMD || "").trim()}T00:00:00-03:00`);
   const end = new Date(endZero.getTime() + 24 * 60 * 60 * 1000);
   return { start, end };
+}
+
+function buildTodayInsightWindow(now = new Date(), timeZone = DEFAULT_TIMEZONE) {
+  const todayYMD = getDateIsoForTimeZone(now, timeZone);
+  return {
+    todayYMD,
+    ...rangeInSaoPaulo(todayYMD, todayYMD),
+  };
+}
+
+export function buildLuminaInsightLimitMessage() {
+  return "O Insight da Lumina ja foi usado hoje. Ele fica disponivel novamente amanha.";
+}
+
+export async function getLuminaInsightUsageStatus({
+  user,
+  now = new Date(),
+  timeZone = DEFAULT_TIMEZONE,
+} = {}) {
+  if (!user?._id) {
+    return {
+      enabled: false,
+      dailyLimit: DAILY_INSIGHT_LIMIT,
+      usedToday: false,
+      remainingToday: 0,
+      resetsAt: null,
+      blockedReason: "",
+    };
+  }
+
+  const { start, end } = buildTodayInsightWindow(now, timeZone);
+  const usedToday = !!(await WhatsAppCommandSession.exists({
+    userId: user._id,
+    sourceChannel: "web",
+    insightGeneratedAt: {
+      $gte: start,
+      $lt: end,
+    },
+  }));
+
+  return {
+    enabled: true,
+    dailyLimit: DAILY_INSIGHT_LIMIT,
+    usedToday,
+    remainingToday: usedToday ? 0 : DAILY_INSIGHT_LIMIT,
+    resetsAt: end.toISOString(),
+    blockedReason: usedToday ? buildLuminaInsightLimitMessage() : "",
+  };
 }
 
 function formatDate(value, timeZone = DEFAULT_TIMEZONE) {
