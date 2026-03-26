@@ -131,6 +131,12 @@ function buildOfferCandidate(offer = {}, timeZone = "America/Sao_Paulo") {
     paymentProofOriginalName: proofOriginalName,
     paymentProofMimeType: proofMimeType,
     paymentProofUploadedAt: proofUploadedAt,
+    customerWhatsApp: String(offer?.customerWhatsApp || "").trim(),
+    acceptedAt: offer?.acceptedAt || null,
+    confirmedAt: offer?.confirmedAt || null,
+    paidAt: offer?.paidAt || null,
+    rejectedAt: offer?.rejectedAt || null,
+    cancelledAt: offer?.cancelledAt || null,
     displayLabel: labelParts.join(" - "),
     score: 0,
   };
@@ -170,6 +176,54 @@ function buildWaitingConfirmationOfferQuery({
 
   if (ownerUserId) query.ownerUserId = ownerUserId;
   return query;
+}
+
+function buildRecentOfferQuery({ workspaceId, ownerUserId = null } = {}) {
+  const query = { workspaceId };
+  if (ownerUserId) query.ownerUserId = ownerUserId;
+  return query;
+}
+
+function buildOfferStatusQuery({ workspaceId, ownerUserId = null } = {}) {
+  const query = { workspaceId };
+  if (ownerUserId) query.ownerUserId = ownerUserId;
+  return query;
+}
+
+function resolveOfferDueDate(offer = {}) {
+  return computeOfferDueDate(offer) || offer?.expiresAt || null;
+}
+
+function buildOfferSearchQuery(regexes = []) {
+  const safeRegexes = Array.isArray(regexes) ? regexes.filter(Boolean) : [];
+  if (!safeRegexes.length) return null;
+
+  return safeRegexes.flatMap((regex) => [
+    { customerName: regex },
+    { title: regex },
+    { "items.description": regex },
+  ]);
+}
+
+function computeOfferSearchScore(offer = {}, query = "") {
+  const safeQuery = String(query || "").trim();
+  if (!safeQuery) return 0;
+
+  return Math.max(
+    computeScore(offer?.customerName, safeQuery),
+    computeScore(offer?.title, safeQuery),
+    ...(Array.isArray(offer?.items)
+      ? offer.items.map((item) => computeScore(item?.description, safeQuery))
+      : [0]),
+  );
+}
+
+function inferExpiringWindow(text = "") {
+  const normalized = normalizeComparableText(text);
+  if (!normalized) return "all";
+  if (normalized.includes("hoje")) return "today";
+  if (normalized.includes("semana")) return "week";
+  return "all";
 }
 
 function getDayOfWeek(dateISO) {
@@ -253,6 +307,102 @@ export async function listOffersWaitingConfirmation({
   return docs.map((offer) => buildOfferCandidate(offer, timeZone));
 }
 
+export async function listRecentOffers({
+  workspaceId,
+  ownerUserId = null,
+  limit = 10,
+  now = new Date(),
+  timeZone = "America/Sao_Paulo",
+}) {
+  const todayIso = getDateIsoForTimeZone(now, timeZone);
+  const todayRange = dayRangeInTZ(todayIso, timeZone);
+
+  const docs = await Offer.find({
+    ...buildRecentOfferQuery({
+      workspaceId,
+      ownerUserId,
+    }),
+    createdAt: {
+      $gte: todayRange.dayStart,
+      $lt: todayRange.dayEnd,
+    },
+  })
+    .sort({ createdAt: -1 })
+    .limit(Math.max(1, Math.min(20, Number(limit) || 10)))
+    .lean();
+
+  return docs.map((offer) => buildOfferCandidate(offer, timeZone));
+}
+
+export async function listExpiringOffers({
+  workspaceId,
+  ownerUserId = null,
+  limit = 10,
+  now = new Date(),
+  timeZone = "America/Sao_Paulo",
+  sourceText = "",
+}) {
+  const window = inferExpiringWindow(sourceText);
+  const todayIso = getDateIsoForTimeZone(now, timeZone);
+  const todayRange = dayRangeInTZ(todayIso, timeZone);
+  const weekEndIso = shiftDateIso(todayIso, 6);
+  const weekEndRange = dayRangeInTZ(weekEndIso, timeZone);
+
+  const docs = await Offer.find(
+    buildPendingOfferQuery({
+      workspaceId,
+      ownerUserId,
+    }),
+  )
+    .sort({ createdAt: -1 })
+    .limit(80)
+    .lean();
+
+  const withDueDates = docs
+    .map((offer) => ({
+      ...offer,
+      dueAt: resolveOfferDueDate(offer),
+    }))
+    .filter((offer) => {
+      const dueAt = offer?.dueAt ? new Date(offer.dueAt) : null;
+      return dueAt && !Number.isNaN(dueAt.getTime());
+    });
+
+  const dueToday = withDueDates.filter((offer) => {
+    const dueAt = new Date(offer.dueAt);
+    return dueAt >= todayRange.dayStart && dueAt < todayRange.dayEnd;
+  });
+
+  const dueThisWeek = withDueDates.filter((offer) => {
+    const dueAt = new Date(offer.dueAt);
+    return dueAt >= todayRange.dayStart && dueAt < weekEndRange.dayEnd;
+  });
+
+  const selectedDocs =
+    window === "today"
+      ? dueToday
+      : dueThisWeek;
+
+  const items = selectedDocs
+    .sort(
+      (left, right) =>
+        new Date(left.dueAt || 0).getTime() - new Date(right.dueAt || 0).getTime() ||
+        new Date(left.createdAt || 0).getTime() - new Date(right.createdAt || 0).getTime(),
+    )
+    .slice(0, Math.max(1, Math.min(20, Number(limit) || 10)))
+    .map((offer) => ({
+      ...buildOfferCandidate(offer, timeZone),
+      expiresAt: offer.dueAt || offer.expiresAt || null,
+    }));
+
+  return {
+    window,
+    dueTodayCount: dueToday.length,
+    dueThisWeekCount: dueThisWeek.length,
+    items,
+  };
+}
+
 export async function resolveOfferCandidates({
   workspaceId,
   ownerUserId = null,
@@ -269,30 +419,37 @@ export async function resolveOfferCandidates({
       ? buildCancelableOfferQuery({ workspaceId, ownerUserId })
       : action === "payment_approval"
         ? buildWaitingConfirmationOfferQuery({ workspaceId, ownerUserId })
+        : action === "status"
+          ? buildOfferStatusQuery({ workspaceId, ownerUserId })
         : buildPendingOfferQuery({ workspaceId, ownerUserId });
 
   const regexes = buildRegexes(targetCustomerName);
-  if (regexes.length) {
-    baseQuery.$or = regexes.map((regex) => ({ customerName: regex }));
+  const offerSearchQuery = buildOfferSearchQuery(regexes);
+  if (offerSearchQuery?.length) {
+    baseQuery.$or = offerSearchQuery;
   }
 
-  const createdRange = resolveCreatedAtRange({
-    targetCreatedDayKind,
-    targetCreatedDateIso,
-    now,
-    timeZone,
-  });
-  if (createdRange?.dayStart && createdRange?.dayEnd) {
-    baseQuery.createdAt = {
-      $gte: createdRange.dayStart,
-      $lt: createdRange.dayEnd,
-    };
+  if (!["status", "resend"].includes(action)) {
+    const createdRange = resolveCreatedAtRange({
+      targetCreatedDayKind,
+      targetCreatedDateIso,
+      now,
+      timeZone,
+    });
+    if (createdRange?.dayStart && createdRange?.dayEnd) {
+      baseQuery.createdAt = {
+        $gte: createdRange.dayStart,
+        $lt: createdRange.dayEnd,
+      };
+    }
   }
 
   const docs = await Offer.find(baseQuery)
     .sort(
       action === "payment_approval"
         ? { updatedAt: -1, createdAt: -1 }
+        : action === "status"
+          ? { updatedAt: -1, createdAt: -1 }
         : { createdAt: -1 },
     )
     .limit(Math.max(limit * 4, 20))
@@ -300,7 +457,7 @@ export async function resolveOfferCandidates({
 
   const candidates = docs.map((offer) => ({
     ...buildOfferCandidate(offer, timeZone),
-    score: computeScore(offer?.customerName, targetCustomerName),
+    score: computeOfferSearchScore(offer, targetCustomerName),
   }));
 
   if (!String(targetCustomerName || "").trim()) {

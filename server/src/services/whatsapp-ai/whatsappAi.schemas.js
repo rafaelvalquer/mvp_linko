@@ -8,12 +8,20 @@ export const WHATSAPP_AI_INTENTS = [
 export const WHATSAPP_AI_ROUTING_INTENTS = [
   "create_offer_send_whatsapp",
   "generate_sales_insight",
+  "query_recent_offers",
+  "query_offer_status",
+  "query_expiring_offers",
+  "resend_offer_link",
   "query_daily_agenda",
   "query_weekly_agenda",
   "query_next_booking",
   "reschedule_booking",
   "cancel_booking",
   "query_pending_offers",
+  "query_due_today_offers",
+  "query_overdue_offers",
+  "query_stale_offer_followups",
+  "query_billing_priorities",
   "query_offers_waiting_confirmation",
   "send_offer_payment_reminder",
   "cancel_offer",
@@ -22,6 +30,7 @@ export const WHATSAPP_AI_ROUTING_INTENTS = [
   "update_product_price",
   "lookup_client_phone",
   "lookup_product",
+  "ambiguous_proposal_operation",
   "ambiguous_booking_operation",
   "ambiguous_offer_or_agenda",
   "ambiguous_offer_sales_operation",
@@ -521,6 +530,10 @@ export function buildOfferSalesOperationResponseFormat() {
           intent: {
             type: "string",
             enum: [
+              "query_recent_offers",
+              "query_offer_status",
+              "query_expiring_offers",
+              "resend_offer_link",
               "query_pending_offers",
               "query_offers_waiting_confirmation",
               "send_offer_payment_reminder",
@@ -877,6 +890,10 @@ export function parseOfferSalesOperationExtraction(payload) {
 
   const normalizedIntent = normalizeRoutingIntent(value.intent);
   const allowedIntents = [
+    "query_recent_offers",
+    "query_offer_status",
+    "query_expiring_offers",
+    "resend_offer_link",
     "query_pending_offers",
     "query_offers_waiting_confirmation",
     "send_offer_payment_reminder",

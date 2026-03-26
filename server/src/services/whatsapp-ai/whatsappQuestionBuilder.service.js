@@ -59,6 +59,21 @@ function formatAgendaDateTime(value, timeZone = "America/Sao_Paulo") {
   }).format(date);
 }
 
+function formatOptionalActionDateTime(value, timeZone = "America/Sao_Paulo") {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  if (date.getTime() <= 0) return "";
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
 function resolveAgendaItemIcon(item = {}) {
   const offerTitle = String(item?.offerTitle || "").trim().toLowerCase();
   if (item?.status === "HOLD") return "📞";
@@ -123,6 +138,18 @@ export function buildBookingOperationDisambiguationQuestion() {
     "1. Consultar agenda",
     "2. Reagendar compromisso",
     "3. Cancelar compromisso",
+  ].join("\n");
+}
+
+export function buildProposalOperationDisambiguationQuestion() {
+  return [
+    "Voce quer criar uma proposta, revisar propostas de hoje, consultar status, ver expirando ou reenviar uma proposta?",
+    "",
+    "1. Criar proposta",
+    "2. Ver propostas enviadas hoje",
+    "3. Consultar status",
+    "4. Ver propostas expirando",
+    "5. Reenviar proposta",
   ].join("\n");
 }
 
@@ -341,6 +368,16 @@ export function buildInvalidBookingOperationSelectionMessage(originalQuestion) {
     .join("\n");
 }
 
+export function buildInvalidProposalOperationSelectionMessage(originalQuestion) {
+  return [
+    "Nao entendi sua escolha. Escolha uma opcao abaixo ou responda em texto com CRIAR PROPOSTA, ENVIADAS HOJE, STATUS, EXPIRANDO, REENVIAR, 1, 2, 3, 4 ou 5.",
+    "",
+    String(originalQuestion || buildProposalOperationDisambiguationQuestion()).trim(),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 export function buildInvalidOfferSalesSelectionMessage(originalQuestion) {
   return [
     "Nao entendi sua escolha. Escolha uma opcao abaixo ou responda em texto com PENDENTES, AGUARDANDO CONFIRMACAO, COBRAR, CANCELAR, 1, 2, 3 ou 4.",
@@ -543,6 +580,73 @@ export function buildPendingOffersSummaryMessage(offers = []) {
   return lines.join("\n").trim();
 }
 
+export function buildRecentOffersEmptyMessage() {
+  return "Nao encontrei propostas enviadas hoje na sua carteira.";
+}
+
+export function buildRecentOffersSummaryMessage(offers = []) {
+  const safeOffers = Array.isArray(offers) ? offers : [];
+  const lines = [
+    `Propostas enviadas hoje: ${safeOffers.length}`,
+    "",
+  ];
+
+  safeOffers.forEach((offer, index) => {
+    lines.push(
+      `${index + 1}. ${String(offer?.displayLabel || "").trim() || "Proposta enviada hoje"}`,
+    );
+  });
+
+  lines.push("");
+  lines.push("Escolha uma opcao abaixo ou responda em texto.");
+
+  return lines.join("\n").trim();
+}
+
+export function buildExpiringOffersEmptyMessage({ sourceText = "" } = {}) {
+  const normalized = String(sourceText || "").trim().toLowerCase();
+  if (normalized.includes("hoje")) {
+    return "Nao encontrei propostas expirando hoje na sua carteira.";
+  }
+  if (normalized.includes("semana")) {
+    return "Nao encontrei propostas expirando nesta semana na sua carteira.";
+  }
+  return "Nao encontrei propostas expirando hoje ou nos proximos dias na sua carteira.";
+}
+
+export function buildExpiringOffersSummaryMessage(summary = {}) {
+  const items = Array.isArray(summary?.items) ? summary.items : [];
+  const window = String(summary?.window || "all").trim();
+  const dueTodayCount = Number(summary?.dueTodayCount || 0);
+  const dueThisWeekCount = Number(summary?.dueThisWeekCount || 0);
+
+  const title =
+    window === "today"
+      ? `Propostas expirando hoje: ${dueTodayCount || items.length}`
+      : window === "week"
+        ? `Propostas expirando nesta semana: ${dueThisWeekCount || items.length}`
+        : `Propostas expirando agora: ${dueThisWeekCount || items.length}`;
+
+  const lines = [title, ""];
+
+  if (window === "all") {
+    lines.push(`Hoje: ${dueTodayCount}`);
+    lines.push(`Nos proximos 7 dias: ${dueThisWeekCount}`);
+    lines.push("");
+  }
+
+  items.forEach((offer, index) => {
+    lines.push(
+      `${index + 1}. ${String(offer?.displayLabel || "").trim() || "Proposta expirando"}`,
+    );
+  });
+
+  lines.push("");
+  lines.push("Escolha uma opcao abaixo ou responda em texto.");
+
+  return lines.join("\n").trim();
+}
+
 export function buildOffersWaitingConfirmationEmptyMessage() {
   return "Nao encontrei propostas aguardando confirmacao com comprovante para revisar agora.";
 }
@@ -595,6 +699,65 @@ function buildOfferDeadlineLine(candidate = {}, timeZone = "America/Sao_Paulo") 
   return linkLabel ? `Link expira em: ${linkLabel}` : "";
 }
 
+function resolveOfferStatusHeadline(candidate = {}) {
+  const status = String(candidate?.status || "").trim().toUpperCase();
+  const paymentStatus = String(candidate?.paymentStatus || "").trim().toUpperCase();
+
+  if (["CONFIRMED", "PAID"].includes(paymentStatus) || ["CONFIRMED", "PAID"].includes(status)) {
+    return "pagamento confirmado";
+  }
+  if (status === "CANCELLED") return "proposta cancelada";
+  if (paymentStatus === "WAITING_CONFIRMATION") {
+    return "aguardando confirmacao do recibo";
+  }
+  if (paymentStatus === "REJECTED") return "comprovante recusado";
+  if (candidate?.paymentProofAvailable === true) return "comprovante recebido";
+
+  const expiresAt = candidate?.expiresAt ? new Date(candidate.expiresAt) : null;
+  if (expiresAt && !Number.isNaN(expiresAt.getTime()) && expiresAt.getTime() <= Date.now()) {
+    return "proposta expirada";
+  }
+
+  if (candidate?.acceptedAt) return "proposta aceita e aguardando pagamento";
+  return "aguardando pagamento";
+}
+
+export function buildOfferStatusSummaryMessage(
+  candidate = {},
+  { timeZone = "America/Sao_Paulo" } = {},
+) {
+  const createdAt = formatAgendaDateTime(candidate?.createdAt, timeZone);
+  const expiresAt = formatAgendaDateTime(candidate?.expiresAt, timeZone);
+  const acceptedAt = formatOptionalActionDateTime(candidate?.acceptedAt, timeZone);
+  const proofUploadedAt = formatOptionalActionDateTime(
+    candidate?.paymentProofUploadedAt,
+    timeZone,
+  );
+  const confirmedAt = formatOptionalActionDateTime(
+    candidate?.confirmedAt || candidate?.paidAt,
+    timeZone,
+  );
+  const rejectedAt = formatOptionalActionDateTime(candidate?.rejectedAt, timeZone);
+  const cancelledAt = formatOptionalActionDateTime(candidate?.cancelledAt, timeZone);
+
+  return [
+    `Status atual: ${resolveOfferStatusHeadline(candidate)}.`,
+    "",
+    `Cliente: ${String(candidate?.customerName || "Cliente").trim()}`,
+    `Proposta: ${String(candidate?.title || "Proposta").trim()}`,
+    `Valor: ${formatMoney(candidate?.totalCents)}`,
+    createdAt ? `Criada em: ${createdAt}` : "",
+    expiresAt ? `Expira em: ${expiresAt}` : "",
+    acceptedAt ? `Cliente avancou em: ${acceptedAt}` : "",
+    proofUploadedAt ? `Comprovante recebido em: ${proofUploadedAt}` : "",
+    rejectedAt ? `Recusado em: ${rejectedAt}` : "",
+    confirmedAt ? `Confirmado em: ${confirmedAt}` : "",
+    cancelledAt ? `Cancelada em: ${cancelledAt}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 export function buildOfferReminderConfirmation(candidate = {}) {
   const createdAt =
     formatAgendaDateTime(candidate?.createdAt, "America/Sao_Paulo") || "--";
@@ -602,6 +765,26 @@ export function buildOfferReminderConfirmation(candidate = {}) {
 
   return [
     "Confirma o envio do lembrete desta proposta?",
+    "",
+    `Cliente: ${String(candidate?.customerName || "Cliente").trim()}`,
+    `Proposta: ${String(candidate?.title || "Proposta").trim()}`,
+    `Valor: ${formatMoney(candidate?.totalCents)}`,
+    `Criada em: ${createdAt}`,
+    deadlineLine,
+    "",
+    buildConfirmOrCancelHint(),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function buildOfferResendConfirmation(candidate = {}) {
+  const createdAt =
+    formatAgendaDateTime(candidate?.createdAt, "America/Sao_Paulo") || "--";
+  const deadlineLine = buildOfferDeadlineLine(candidate, "America/Sao_Paulo");
+
+  return [
+    "Confirma o reenvio desta proposta por WhatsApp?",
     "",
     `Cliente: ${String(candidate?.customerName || "Cliente").trim()}`,
     `Proposta: ${String(candidate?.title || "Proposta").trim()}`,
@@ -709,6 +892,21 @@ export function buildOfferReminderResultMessage(candidate = {}, result = {}) {
   }
 
   return `Nao consegui enviar o lembrete para ${customerName} agora.`;
+}
+
+export function buildOfferResendResultMessage(candidate = {}, result = {}) {
+  const customerName = String(candidate?.customerName || "o cliente").trim();
+  const status = String(result?.status || "").trim().toLowerCase();
+
+  if (status === "sent") {
+    return `Proposta reenviada com sucesso para ${customerName}.`;
+  }
+
+  if (status === "queued") {
+    return `Reenvio da proposta enfileirado com sucesso para ${customerName}.`;
+  }
+
+  return `Nao consegui reenviar a proposta para ${customerName} agora.`;
 }
 
 export function buildOfferCancelledSuccessMessage(candidate = {}) {

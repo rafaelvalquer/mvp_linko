@@ -6,6 +6,7 @@ const FLOW_LABELS = {
   insight_analysis: "Insight",
   offer_create: "Proposta",
   offer_query: "Propostas",
+  offer_resend: "Reenvio de proposta",
   offer_payment_reminder: "Cobranca",
   offer_cancel: "Cancelamento de proposta",
   offer_payment_approval: "Aprovacao de recibo",
@@ -117,8 +118,56 @@ const WEB_AGENT_ACTIONS = [
   }),
   buildSuggestedActionConfig({
     categoryKey: "proposal",
+    key: "offer_recent",
+    label: "Ver propostas enviadas hoje",
+    description: "Revisar as propostas criadas hoje na sua carteira.",
+    value: "Quais propostas enviei hoje?",
+    routingIntent: "query_recent_offers",
+    flowType: "offer_query",
+    moduleKey: "offers",
+    matchPhrases: ["Propostas enviadas hoje", "Quais propostas enviei hoje"],
+  }),
+  buildSuggestedActionConfig({
+    categoryKey: "proposal",
+    key: "offer_status",
+    label: "Consultar status de uma proposta",
+    description: "Encontrar uma proposta e resumir o status comercial dela.",
+    value: "Quero consultar o status de uma proposta",
+    routingIntent: "query_offer_status",
+    flowType: "offer_query",
+    moduleKey: "offers",
+    matchPhrases: ["Status de uma proposta", "Consultar status da proposta"],
+  }),
+  buildSuggestedActionConfig({
+    categoryKey: "proposal",
+    key: "offer_expiring",
+    label: "Ver propostas expirando",
+    description: "Ver propostas que expiram hoje ou nos proximos dias.",
+    value: "Quero ver propostas expirando",
+    routingIntent: "query_expiring_offers",
+    flowType: "offer_query",
+    moduleKey: "offers",
+    matchPhrases: [
+      "Propostas expirando",
+      "Quais propostas expiram hoje",
+      "Propostas expirando esta semana",
+    ],
+  }),
+  buildSuggestedActionConfig({
+    categoryKey: "proposal",
+    key: "offer_resend",
+    label: "Reenviar proposta",
+    description: "Escolher uma proposta e reenviar o link ao cliente por WhatsApp.",
+    value: "Quero reenviar uma proposta",
+    routingIntent: "resend_offer_link",
+    flowType: "offer_resend",
+    moduleKey: "offers",
+    matchPhrases: ["Reenviar proposta", "Reenviar link da proposta"],
+  }),
+  buildSuggestedActionConfig({
+    categoryKey: "proposal",
     key: "offer_create",
-    label: "Proposta",
+    label: "Criar proposta",
     description: "Criar e enviar uma nova proposta para o cliente.",
     value: "Quero criar uma proposta",
     routingIntent: "create_offer_send_whatsapp",
@@ -384,6 +433,20 @@ function buildReplyControls(session = null) {
           candidateReply("Consultar agenda", "1"),
           candidateReply("Reagendar", "2"),
           candidateReply("Cancelar compromisso", "3", "danger"),
+          candidateReply("Cancelar", "CANCELAR", "danger"),
+        ],
+      };
+    }
+
+    if (lastQuestionKey === "proposal_operation_selection") {
+      return {
+        presentation: "chips",
+        options: [
+          candidateReply("Criar proposta", "1"),
+          candidateReply("Enviadas hoje", "2"),
+          candidateReply("Consultar status", "3"),
+          candidateReply("Ver expirando", "4"),
+          candidateReply("Reenviar proposta", "5"),
           candidateReply("Cancelar", "CANCELAR", "danger"),
         ],
       };
@@ -782,6 +845,15 @@ export function buildWebAgentUiPayload(sessionOrOptions = null, maybeUser = null
         candidateReply("Consultar agenda", "1"),
         candidateReply("Reagendar", "2"),
         candidateReply("Cancelar compromisso", "3", "danger"),
+        candidateReply("Cancelar", "CANCELAR", "danger"),
+      ];
+    } else if (lastQuestionKey === "proposal_operation_selection") {
+      quickReplies = [
+        candidateReply("Criar proposta", "1"),
+        candidateReply("Enviadas hoje", "2"),
+        candidateReply("Consultar status", "3"),
+        candidateReply("Ver expirando", "4"),
+        candidateReply("Reenviar proposta", "5"),
         candidateReply("Cancelar", "CANCELAR", "danger"),
       ];
     } else if (lastQuestionKey === "offer_sales_operation_selection") {

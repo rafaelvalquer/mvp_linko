@@ -40,6 +40,7 @@ const INSIGHT_ACTION_TEXT = "Quero gerar um insight financeiro";
 const INTERRUPTIBLE_OPERATIONAL_FLOW_TYPES = new Set([
   "offer_create",
   "offer_query",
+  "offer_resend",
   "offer_payment_reminder",
   "offer_cancel",
   "offer_payment_approval",
