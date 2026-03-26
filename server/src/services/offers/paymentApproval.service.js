@@ -52,7 +52,12 @@ async function safeNotifyPaymentConfirmed(offerId) {
   }
 }
 
-async function safeNotifySellerPixPaid({ offer, booking, now }) {
+async function safeNotifySellerPixPaid({
+  offer,
+  booking,
+  now,
+  includeInternalWhatsApp = true,
+}) {
   let internalWhatsApp = null;
 
   try {
@@ -86,14 +91,23 @@ async function safeNotifySellerPixPaid({ offer, booking, now }) {
         : { status: "SENT", id: result?.id || null, to: result?.to || "" };
     }
 
-    internalWhatsApp = await notifyResponsibleSellerPixPaidWhatsApp({
-      offer,
-      booking,
-      pixId: offer?.payment?.lastPixId || null,
-      paidAt: offer?.paidAt || now,
-      paidAmountCents: offer?.paidAmountCents || null,
-      notificationContext,
-    });
+    if (includeInternalWhatsApp) {
+      internalWhatsApp = await notifyResponsibleSellerPixPaidWhatsApp({
+        offer,
+        booking,
+        pixId: offer?.payment?.lastPixId || null,
+        paidAt: offer?.paidAt || now,
+        paidAmountCents: offer?.paidAmountCents || null,
+        notificationContext,
+      });
+    } else {
+      internalWhatsApp = {
+        ok: false,
+        status: "SKIPPED",
+        reason: "MANUAL_PLATFORM_CONFIRMATION",
+        code: "MANUAL_PLATFORM_CONFIRMATION",
+      };
+    }
 
     return { ...email, internalWhatsApp };
   } catch (error) {
@@ -222,6 +236,7 @@ export async function confirmOfferPaymentByWorkspace({
       offer,
       booking,
       now: new Date(),
+      includeInternalWhatsApp: false,
     });
     const emailConfirmed = await safeNotifySellerConfirmedOnPlatform({
       offer,
@@ -296,6 +311,7 @@ export async function confirmOfferPaymentByWorkspace({
     offer: updated,
     booking,
     now,
+    includeInternalWhatsApp: false,
   });
   const emailConfirmed = await safeNotifySellerConfirmedOnPlatform({
     offer: updated,
