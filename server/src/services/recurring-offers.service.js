@@ -54,6 +54,21 @@ function normalizeStatus(value) {
   return v === "CANCELED" ? "CANCELLED" : v;
 }
 
+export function buildRecurringOfferScopeQuery({
+  tenantId,
+  userId = null,
+  recurringId = null,
+} = {}) {
+  const query = {
+    workspaceId: tenantId,
+  };
+
+  if (recurringId) query._id = recurringId;
+  if (userId) query.ownerUserId = userId;
+
+  return query;
+}
+
 function trimTrailingSlash(value) {
   return String(value || "").replace(/\/+$/g, "");
 }
@@ -913,11 +928,13 @@ async function refreshNextRunFromPatch(recurring, input, patchSet) {
 }
 
 export async function updateRecurringOffer({ recurringId, tenantId, userId, body }) {
-  const recurring = await RecurringOffer.findOne({
-    _id: recurringId,
-    workspaceId: tenantId,
-    ownerUserId: userId,
-  }).lean();
+  const recurring = await RecurringOffer.findOne(
+    buildRecurringOfferScopeQuery({
+      recurringId,
+      tenantId,
+      userId,
+    }),
+  ).lean();
 
   if (!recurring) {
     const err = new Error("Recurring offer not found");
@@ -928,7 +945,7 @@ export async function updateRecurringOffer({ recurringId, tenantId, userId, body
   const workspacePlan = await getWorkspacePlan(tenantId);
   const notificationContext = await resolveWorkspaceNotificationContext({
     workspaceId: tenantId,
-    ownerUserId: userId || null,
+    ownerUserId: recurring?.ownerUserId || null,
     workspacePlan,
   });
   const patch = buildRecurringUpdatePatch(body || {});
@@ -1043,7 +1060,10 @@ export async function listRecurringOffers({
   query = "",
   bucket = "",
 }) {
-  const q = { workspaceId: tenantId, ownerUserId: userId };
+  const q = buildRecurringOfferScopeQuery({
+    tenantId,
+    userId,
+  });
 
   const normalizedStatus = String(status || "all").trim().toLowerCase();
   if (["active", "paused", "ended", "error", "draft"].includes(normalizedStatus)) {
@@ -1093,11 +1113,13 @@ export async function listRecurringOffers({
 }
 
 export async function getRecurringOfferDetails({ recurringId, tenantId, userId }) {
-  const recurring = await RecurringOffer.findOne({
-    _id: recurringId,
-    workspaceId: tenantId,
-    ownerUserId: userId,
-  }).lean();
+  const recurring = await RecurringOffer.findOne(
+    buildRecurringOfferScopeQuery({
+      recurringId,
+      tenantId,
+      userId,
+    }),
+  ).lean();
 
   if (!recurring) {
     const err = new Error("Recurring offer not found");
@@ -1117,11 +1139,13 @@ export async function getRecurringOfferDetails({ recurringId, tenantId, userId }
 }
 
 export async function getRecurringOfferLinkedOffers({ recurringId, tenantId, userId }) {
-  const recurring = await RecurringOffer.findOne({
-    _id: recurringId,
-    workspaceId: tenantId,
-    ownerUserId: userId,
-  })
+  const recurring = await RecurringOffer.findOne(
+    buildRecurringOfferScopeQuery({
+      recurringId,
+      tenantId,
+      userId,
+    }),
+  )
     .select("_id")
     .lean();
 
@@ -1135,11 +1159,13 @@ export async function getRecurringOfferLinkedOffers({ recurringId, tenantId, use
 }
 
 export async function getRecurringOfferHistory({ recurringId, tenantId, userId }) {
-  const recurring = await RecurringOffer.findOne({
-    _id: recurringId,
-    workspaceId: tenantId,
-    ownerUserId: userId,
-  })
+  const recurring = await RecurringOffer.findOne(
+    buildRecurringOfferScopeQuery({
+      recurringId,
+      tenantId,
+      userId,
+    }),
+  )
     .select("history")
     .lean();
 
@@ -1153,11 +1179,13 @@ export async function getRecurringOfferHistory({ recurringId, tenantId, userId }
 }
 
 export async function pauseRecurringOffer({ recurringId, tenantId, userId }) {
-  const recurring = await RecurringOffer.findOne({
-    _id: recurringId,
-    workspaceId: tenantId,
-    ownerUserId: userId,
-  }).lean();
+  const recurring = await RecurringOffer.findOne(
+    buildRecurringOfferScopeQuery({
+      recurringId,
+      tenantId,
+      userId,
+    }),
+  ).lean();
 
   if (!recurring) {
     const err = new Error("Recurring offer not found");
@@ -1184,11 +1212,13 @@ export async function pauseRecurringOffer({ recurringId, tenantId, userId }) {
 }
 
 export async function resumeRecurringOffer({ recurringId, tenantId, userId }) {
-  const recurring = await RecurringOffer.findOne({
-    _id: recurringId,
-    workspaceId: tenantId,
-    ownerUserId: userId,
-  }).lean();
+  const recurring = await RecurringOffer.findOne(
+    buildRecurringOfferScopeQuery({
+      recurringId,
+      tenantId,
+      userId,
+    }),
+  ).lean();
 
   if (!recurring) {
     const err = new Error("Recurring offer not found");
@@ -1222,11 +1252,13 @@ export async function resumeRecurringOffer({ recurringId, tenantId, userId }) {
 }
 
 export async function endRecurringOffer({ recurringId, tenantId, userId }) {
-  const recurring = await RecurringOffer.findOne({
-    _id: recurringId,
-    workspaceId: tenantId,
-    ownerUserId: userId,
-  }).lean();
+  const recurring = await RecurringOffer.findOne(
+    buildRecurringOfferScopeQuery({
+      recurringId,
+      tenantId,
+      userId,
+    }),
+  ).lean();
 
   if (!recurring) {
     const err = new Error("Recurring offer not found");
@@ -1254,11 +1286,13 @@ export async function endRecurringOffer({ recurringId, tenantId, userId }) {
 }
 
 export async function duplicateRecurringOffer({ recurringId, tenantId, userId }) {
-  const recurring = await RecurringOffer.findOne({
-    _id: recurringId,
-    workspaceId: tenantId,
-    ownerUserId: userId,
-  }).lean();
+  const recurring = await RecurringOffer.findOne(
+    buildRecurringOfferScopeQuery({
+      recurringId,
+      tenantId,
+      userId,
+    }),
+  ).lean();
 
   if (!recurring) {
     const err = new Error("Recurring offer not found");
@@ -1511,11 +1545,13 @@ export async function executeRecurringOffer({
 }
 
 export async function runRecurringOfferNow({ recurringId, tenantId, userId, origin = "" }) {
-  const recurring = await RecurringOffer.findOne({
-    _id: recurringId,
-    workspaceId: tenantId,
-    ownerUserId: userId,
-  })
+  const recurring = await RecurringOffer.findOne(
+    buildRecurringOfferScopeQuery({
+      recurringId,
+      tenantId,
+      userId,
+    }),
+  )
     .select("_id")
     .lean();
 

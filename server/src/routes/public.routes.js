@@ -75,6 +75,13 @@ function isPaidStatus(st) {
   return s === "PAID" || s === "CONFIRMED";
 }
 
+function isCancelledOffer(offerRaw) {
+  return (
+    normalizeOfferStatus(offerRaw?.status) === "CANCELLED" ||
+    normalizeOfferStatus(offerRaw?.paymentStatus) === "CANCELLED"
+  );
+}
+
 function inferOfferType(offerRaw) {
   const t = String(offerRaw?.offerType || "")
     .trim()
@@ -145,6 +152,8 @@ async function expireOldHolds() {
 }
 
 function computePaymentStatus(offerRaw) {
+  if (isCancelledOffer(offerRaw)) return "CANCELLED";
+
   const explicit = normalizeOfferStatus(offerRaw?.paymentStatus);
   if (explicit) return explicit;
 
@@ -175,7 +184,7 @@ function computePublicFlow({ offerRaw, booking }) {
     expiresAt.getTime() <= Date.now();
 
   // expirado/cancelado: terminal
-  if (status === "CANCELLED" || status === "CANCELED") {
+  if (isCancelledOffer(offerRaw) || status === "CANCELLED" || status === "CANCELED") {
     return {
       step: "CANCELED",
       reason: "CANCELED",
@@ -457,6 +466,7 @@ router.get("/p/:token/summary", async (req, res, next) => {
 
     const ps = normalizeOfferStatus(offerRaw?.paymentStatus);
     const offerLocked =
+      isCancelledOffer(offerRaw) ||
       isPaidStatus(offerRaw?.status) ||
       ps === "PAID" ||
       ps === "CONFIRMED" ||
@@ -743,6 +753,15 @@ router.get("/p/:token/slots", async (req, res, next) => {
         .status(404)
         .json({ ok: false, error: "Proposta não encontrada." });
 
+    if (isCancelledOffer(offerRaw)) {
+      return res.status(410).json({
+        ok: false,
+        error: "Esta proposta foi cancelada e nao pode mais ser agendada.",
+        locked: true,
+        doneOnly: true,
+      });
+    }
+
     if (isPaidStatus(offerRaw?.status)) {
       return res.status(410).json({
         ok: false,
@@ -861,6 +880,15 @@ router.post("/p/:token/book", async (req, res, next) => {
       });
     }
 
+    if (isCancelledOffer(offerRaw)) {
+      return res.status(410).json({
+        ok: false,
+        error: "Esta proposta foi cancelada e nao pode mais ser agendada.",
+        locked: true,
+        doneOnly: true,
+      });
+    }
+
     const startAt = new Date(startRaw);
     const endAt = new Date(endRaw);
 
@@ -949,6 +977,15 @@ router.get("/p/:token/payment/details", async (req, res, next) => {
         .status(404)
         .json({ ok: false, error: "Proposta não encontrada." });
 
+    if (isCancelledOffer(offerRaw)) {
+      return res.status(410).json({
+        ok: false,
+        error: "Esta proposta foi cancelada e nao pode mais receber pagamento.",
+        locked: true,
+        doneOnly: true,
+      });
+    }
+
     const ws = await Workspace.findById(offerRaw.workspaceId)
       .select("name payoutPixKeyType payoutPixKey payoutPixKeyMasked")
       .lean();
@@ -1028,7 +1065,7 @@ router.get("/p/:token/payment/proof/status", async (req, res, next) => {
   try {
     const { token } = req.params;
     const offer = await Offer.findOne({ publicToken: token })
-      .select("paymentStatus rejectedReason confirmedAt paymentProof")
+      .select("status paymentStatus rejectedReason confirmedAt paymentProof")
       .lean();
 
     if (!offer)
@@ -1039,7 +1076,7 @@ router.get("/p/:token/payment/proof/status", async (req, res, next) => {
     noStore(res);
     return res.json({
       ok: true,
-      paymentStatus: offer.paymentStatus || "PENDING",
+      paymentStatus: computePaymentStatus(offer),
       hasProof: !!offer.paymentProof?.storage?.path,
       rejectedReason: offer.rejectedReason || null,
       confirmedAt: offer.confirmedAt || null,
@@ -1091,6 +1128,15 @@ router.post("/p/:token/payment/proof", async (req, res, next) => {
     }
 
     // ✅ trava se já estiver confirmado
+    if (isCancelledOffer(offer)) {
+      return sendPublicProofUploadError(
+        res,
+        410,
+        "OFFER_CANCELLED",
+        "Esta proposta foi cancelada e nao pode mais receber comprovante.",
+      );
+    }
+
     const ps = String(offer?.paymentStatus || "")
       .trim()
       .toUpperCase();

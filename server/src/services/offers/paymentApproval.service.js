@@ -223,7 +223,17 @@ export async function confirmOfferPaymentByWorkspace({
     workspaceId,
   });
 
+  const status = normalizeStatus(offer?.status);
   const paymentStatus = normalizeStatus(offer?.paymentStatus);
+  if (status === "CANCELLED" || paymentStatus === "CANCELLED") {
+    const err = new Error(
+      "Propostas canceladas nao podem ter o pagamento confirmado.",
+    );
+    err.status = 409;
+    err.code = "OFFER_CANCELLED";
+    throw err;
+  }
+
   const alreadyConfirmed =
     paymentStatus === "CONFIRMED" || paymentStatus === "PAID" || !!offer?.paidAt;
 
@@ -337,8 +347,18 @@ export async function rejectOfferPaymentByWorkspace({
   publicUrl = "",
 }) {
   const offer = await findScopedOffer({ offerId, workspaceId, ownerUserId });
+  const status = normalizeStatus(offer?.status);
   const paymentStatus = normalizeStatus(offer?.paymentStatus);
   const hasProof = !!offer?.paymentProof?.storage?.key;
+
+  if (status === "CANCELLED" || paymentStatus === "CANCELLED") {
+    const err = new Error(
+      "Propostas canceladas nao podem ter o comprovante analisado.",
+    );
+    err.status = 409;
+    err.code = "OFFER_CANCELLED";
+    throw err;
+  }
 
   if (!hasProof) {
     const err = new Error("Nenhum comprovante enviado para esta proposta.");

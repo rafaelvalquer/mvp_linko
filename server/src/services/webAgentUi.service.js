@@ -1,5 +1,6 @@
 import { canUseAutomations } from "../utils/planFeatures.js";
 import { canAccessWorkspaceModule } from "../utils/workspaceAccess.js";
+import { listUserAutomationTemplates } from "./userAutomations.service.js";
 
 const TERMINAL_STATES = new Set(["COMPLETED", "CANCELLED", "ERROR", "EXPIRED"]);
 
@@ -58,6 +59,15 @@ function candidateReply(label, value, variant = "default") {
     value: String(value || "").trim(),
     variant: variant === "danger" ? "danger" : "default",
   };
+}
+
+function buildAutomationTemplateReplies() {
+  return [
+    ...listUserAutomationTemplates().map((template, index) =>
+      candidateReply(template.label, String(index + 1)),
+    ),
+    candidateReply("Cancelar", "CANCELAR", "danger"),
+  ];
 }
 
 function buildSuggestedActionConfig({
@@ -506,14 +516,7 @@ function buildReplyControls(session = null) {
     return {
       presentation: "selector",
       title,
-      options: [
-        candidateReply("Minha agenda diaria", "1"),
-        candidateReply("Resumo semanal", "2"),
-        candidateReply("Pendencias de cobranca", "3"),
-        candidateReply("Aguardando confirmacao", "4"),
-        candidateReply("Prioridades do dia", "5"),
-        candidateReply("Cancelar", "CANCELAR", "danger"),
-      ],
+      options: buildAutomationTemplateReplies(),
     };
   }
 

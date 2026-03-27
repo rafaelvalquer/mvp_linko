@@ -67,6 +67,12 @@ import {
   groupPendingOfferAutomations,
 } from "../src/services/webAgentAutomation.service.js";
 import {
+  buildAutomationDraftTemplateQuestion,
+  listUserAutomationTemplates,
+  resolveAutomationTemplateSelection,
+} from "../src/services/userAutomations.service.js";
+import { renderAutomationEmailHtml } from "../src/services/userAutomationEmailLayout.service.js";
+import {
   buildDeliveryAckPatch,
   deliveryAckCodeToState,
   normalizeDeliveryState,
@@ -78,6 +84,9 @@ const { buildUserPayload, validateRegisterPayload } = await import(
 );
 const { buildOfferPublicUrl, resolvePublicAppOrigin } = await import(
   "../src/services/publicUrl.service.js"
+);
+const { buildRecurringOfferScopeQuery } = await import(
+  "../src/services/recurring-offers.service.js"
 );
 const { validateInboundPayload, validateMessageAckPayload } = await import(
   "../src/routes/whatsapp-ai.routes.js"
@@ -834,6 +843,90 @@ await check("web agent billing priorities use proposal due date instead of publi
   assert.equal(grouped.staleFollowup.length, 0);
 });
 
+await check("automation templates expose the new wave one catalog", () => {
+  const templates = listUserAutomationTemplates();
+  const keys = templates.map((item) => item.key);
+  const question = buildAutomationDraftTemplateQuestion();
+
+  assert.ok(keys.includes("next_day_agenda"));
+  assert.ok(keys.includes("offer_expiring"));
+  assert.ok(keys.includes("offer_recent"));
+  assert.ok(keys.includes("offer_stale_followup"));
+  assert.ok(keys.includes("billing_due_tomorrow"));
+  assert.ok(keys.includes("finance_daily_summary"));
+  assert.equal(
+    templates.find((item) => item.key === "daily_agenda")?.groupKey,
+    "agenda",
+  );
+  assert.equal(
+    templates.find((item) => item.key === "finance_daily_summary")?.groupKey,
+    "financeiro",
+  );
+
+  assert.match(question, /Minha agenda de amanha/);
+  assert.match(question, /Propostas expirando/);
+  assert.match(question, /Propostas enviadas hoje/);
+  assert.match(question, /Propostas sem resposta/);
+  assert.match(question, /Cobrancas de amanha/);
+  assert.match(question, /Resumo financeiro do dia/);
+});
+
+await check("resolveAutomationTemplateSelection matches new template labels", () => {
+  assert.equal(resolveAutomationTemplateSelection("Minha agenda de amanha"), "next_day_agenda");
+  assert.equal(resolveAutomationTemplateSelection("Propostas expirando"), "offer_expiring");
+  assert.equal(resolveAutomationTemplateSelection("Propostas enviadas hoje"), "offer_recent");
+  assert.equal(
+    resolveAutomationTemplateSelection("Propostas sem resposta"),
+    "offer_stale_followup",
+  );
+  assert.equal(resolveAutomationTemplateSelection("Cobrancas de amanha"), "billing_due_tomorrow");
+  assert.equal(
+    resolveAutomationTemplateSelection("Resumo financeiro do dia"),
+    "finance_daily_summary",
+  );
+});
+
+await check("automation email renderer builds professional shell with stats and sections", () => {
+  const html = renderAutomationEmailHtml({
+    accent: "cobranca",
+    categoryLabel: "Cobranca",
+    preheader: "Pendencias de cobranca da sua carteira.",
+    headline: "Pendencias de cobranca da sua carteira",
+    intro: "Separei o que merece sua atencao primeiro.",
+    summaryStats: [
+      { label: "Pendentes agora", value: "4" },
+      { label: "Atrasadas", value: "2" },
+    ],
+    highlight: {
+      eyebrow: "Mais urgente agora",
+      title: "Rafael • Orcamento",
+      body: "Ha uma proposta atrasada precisando de follow-up.",
+    },
+    sections: [
+      {
+        title: "Pendencias prioritarias",
+        items: [
+          {
+            title: "Rafael • Orcamento",
+            subtitle: "R$ 200,00",
+            meta: [
+              { label: "Status", value: "Pendente" },
+              { label: "Vencimento", value: "27/03/2026" },
+            ],
+          },
+        ],
+      },
+    ],
+    footerNote: "Esta e uma rotina automatica da Lumina.",
+  });
+
+  assert.match(html, /Lumina • Cobranca/);
+  assert.match(html, /Pendencias de cobranca da sua carteira/);
+  assert.match(html, /Pendentes agora/);
+  assert.match(html, /Rafael • Orcamento/);
+  assert.match(html, /Esta e uma rotina automatica da Lumina/);
+});
+
 await check("backoffice messages render confirmations and lookups", () => {
   const selection = buildBackofficeOperationDisambiguationQuestion();
   assert.match(selection, /1\. Cadastrar cliente/);
@@ -1309,6 +1402,31 @@ await check("public offer url rejects comma-separated malformed origins", () => 
       { preferPublic: true },
     ),
     "https://luminorpay.com.br/p/5df5b5f1720a46e083688f39dcd09dd5",
+  );
+});
+
+await check("recurring scope query omits owner filter for workspace-wide access", () => {
+  assert.deepEqual(
+    buildRecurringOfferScopeQuery({
+      tenantId: "workspace-1",
+      userId: null,
+    }),
+    {
+      workspaceId: "workspace-1",
+    },
+  );
+
+  assert.deepEqual(
+    buildRecurringOfferScopeQuery({
+      tenantId: "workspace-1",
+      recurringId: "recurring-1",
+      userId: "user-1",
+    }),
+    {
+      _id: "recurring-1",
+      workspaceId: "workspace-1",
+      ownerUserId: "user-1",
+    },
   );
 });
 

@@ -23,8 +23,10 @@ import {
   shiftDateIso,
 } from "./whatsapp-ai/whatsappAgendaQuery.service.js";
 import {
+  listExpiringOffers,
   listOffersWaitingConfirmation,
   listPendingOffers,
+  listRecentOffers,
 } from "./whatsapp-ai/whatsappOfferOperations.service.js";
 import {
   canUseAutomations,
@@ -32,6 +34,7 @@ import {
   normalizePlan,
 } from "../utils/planFeatures.js";
 import { normalizeWhatsAppPhoneDigits } from "../utils/phone.js";
+import { renderAutomationEmailHtml } from "./userAutomationEmailLayout.service.js";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 const DEFAULT_TIME = "09:00";
@@ -47,30 +50,99 @@ const USER_AUTOMATION_TEMPLATES = Object.freeze([
     label: "Minha agenda diaria",
     description: "Envia a agenda do dia no horario configurado.",
     defaultName: "Minha agenda diaria",
+    groupKey: "agenda",
+    groupLabel: "Agenda",
+    groupDescription: "Rotinas para acompanhar compromissos e organizar seu dia.",
+  },
+  {
+    key: "next_day_agenda",
+    label: "Minha agenda de amanha",
+    description: "Envia no fim do dia a agenda do dia seguinte.",
+    defaultName: "Minha agenda de amanha",
+    groupKey: "agenda",
+    groupLabel: "Agenda",
+    groupDescription: "Rotinas para acompanhar compromissos e organizar seu dia.",
   },
   {
     key: "weekly_summary",
     label: "Resumo semanal",
     description: "Envia um resumo comercial da sua semana.",
     defaultName: "Resumo semanal",
+    groupKey: "resumos",
+    groupLabel: "Resumos",
+    groupDescription: "Leituras consolidadas para revisar a operacao em poucos minutos.",
   },
   {
     key: "billing_pending",
     label: "Pendencias de cobranca",
     description: "Envia as propostas pendentes, atrasadas e follow-ups do dia.",
     defaultName: "Pendencias de cobranca",
+    groupKey: "cobranca",
+    groupLabel: "Cobranca",
+    groupDescription: "Rotinas para acompanhar pagamentos, atrasos e follow-ups.",
+  },
+  {
+    key: "billing_due_tomorrow",
+    label: "Cobrancas de amanha",
+    description: "Mostra as cobrancas que vencem amanha para acao antecipada.",
+    defaultName: "Cobrancas de amanha",
+    groupKey: "cobranca",
+    groupLabel: "Cobranca",
+    groupDescription: "Rotinas para acompanhar pagamentos, atrasos e follow-ups.",
   },
   {
     key: "waiting_confirmation",
     label: "Aguardando confirmacao",
     description: "Resume propostas com comprovante aguardando aprovacao.",
     defaultName: "Aguardando confirmacao",
+    groupKey: "cobranca",
+    groupLabel: "Cobranca",
+    groupDescription: "Rotinas para acompanhar pagamentos, atrasos e follow-ups.",
   },
   {
     key: "daily_priorities",
     label: "Prioridades do dia",
     description: "Combina agenda, cobranca e pendencias abertas em um resumo curto.",
     defaultName: "Prioridades do dia",
+    groupKey: "resumos",
+    groupLabel: "Resumos",
+    groupDescription: "Leituras consolidadas para revisar a operacao em poucos minutos.",
+  },
+  {
+    key: "offer_expiring",
+    label: "Propostas expirando",
+    description: "Resume propostas que vencem hoje ou nos proximos 7 dias.",
+    defaultName: "Propostas expirando",
+    groupKey: "propostas",
+    groupLabel: "Propostas",
+    groupDescription: "Rotinas para revisar conversao e acompanhar oportunidades comerciais.",
+  },
+  {
+    key: "offer_recent",
+    label: "Propostas enviadas hoje",
+    description: "Resume propostas criadas hoje para revisao comercial rapida.",
+    defaultName: "Propostas enviadas hoje",
+    groupKey: "propostas",
+    groupLabel: "Propostas",
+    groupDescription: "Rotinas para revisar conversao e acompanhar oportunidades comerciais.",
+  },
+  {
+    key: "offer_stale_followup",
+    label: "Propostas sem resposta",
+    description: "Lista follow-ups parados e propostas sem resposta recente.",
+    defaultName: "Propostas sem resposta",
+    groupKey: "propostas",
+    groupLabel: "Propostas",
+    groupDescription: "Rotinas para revisar conversao e acompanhar oportunidades comerciais.",
+  },
+  {
+    key: "finance_daily_summary",
+    label: "Resumo financeiro do dia",
+    description: "Resume recebido, pendente, atrasado e aguardando confirmacao no dia.",
+    defaultName: "Resumo financeiro do dia",
+    groupKey: "financeiro",
+    groupLabel: "Financeiro",
+    groupDescription: "Rotinas para acompanhar entradas, pendencias e saude financeira.",
   },
 ]);
 
@@ -105,19 +177,6 @@ function normalizeComparableText(value) {
     .toLowerCase();
 }
 
-function escapeHtml(value) {
-  return String(value || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-function nl2br(value) {
-  return escapeHtml(value).replace(/\n/g, "<br/>");
-}
-
 function formatDateTime(value, timeZone = DEFAULT_TIMEZONE) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return "";
@@ -132,6 +191,18 @@ function formatDateTime(value, timeZone = DEFAULT_TIMEZONE) {
   }).format(date);
 }
 
+function formatDate(value, timeZone = DEFAULT_TIMEZONE) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
+}
+
 function formatMoney(cents) {
   const value = Number(cents);
   if (!Number.isFinite(value)) return "R$ 0,00";
@@ -139,6 +210,117 @@ function formatMoney(cents) {
     style: "currency",
     currency: "BRL",
   }).format(value / 100);
+}
+
+function humanizeToken(value = "") {
+  const normalized = normalizeText(value).toUpperCase();
+  if (!normalized) return "";
+  const map = {
+    HOLD: "Reserva",
+    CONFIRMED: "Confirmado",
+    PAID: "Pago",
+    PENDING: "Pendente",
+    WAITING_CONFIRMATION: "Aguardando confirmacao",
+    EXPIRED: "Expirada",
+    CANCELLED: "Cancelada",
+    CANCELED: "Cancelada",
+  };
+  if (map[normalized]) return map[normalized];
+  return normalized
+    .split("_")
+    .map((part) => part.charAt(0) + part.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function buildEmailStat(label, value) {
+  const normalizedLabel = normalizeText(label);
+  const normalizedValue = normalizeText(value);
+  if (!normalizedLabel || !normalizedValue) return null;
+  return { label: normalizedLabel, value: normalizedValue };
+}
+
+function buildEmailItem({ title = "", subtitle = "", meta = [] } = {}) {
+  const normalizedTitle = normalizeText(title);
+  const normalizedSubtitle = normalizeText(subtitle);
+  const safeMeta = (Array.isArray(meta) ? meta : [])
+    .map((entry) => ({
+      label: normalizeText(entry?.label || ""),
+      value: normalizeText(entry?.value || ""),
+    }))
+    .filter((entry) => entry.label && entry.value);
+
+  if (!normalizedTitle && !normalizedSubtitle && !safeMeta.length) return null;
+  return {
+    title: normalizedTitle,
+    subtitle: normalizedSubtitle,
+    meta: safeMeta,
+  };
+}
+
+function buildAgendaEmailItems(items = []) {
+  return (Array.isArray(items) ? items : [])
+    .map((item) =>
+      buildEmailItem({
+        title: [normalizeText(item?.timeLabel || ""), normalizeText(item?.customerName || "")]
+          .filter(Boolean)
+          .join(" • "),
+        subtitle: normalizeText(item?.offerTitle || "Servico"),
+        meta: [{ label: "Status", value: humanizeToken(item?.statusLabel || item?.status) }],
+      }),
+    )
+    .filter(Boolean);
+}
+
+function buildOfferEmailItem(candidate = {}, timeZone = DEFAULT_TIMEZONE) {
+  const customerName = normalizeText(candidate?.customerName || "Cliente");
+  const title = normalizeText(candidate?.title || "Proposta");
+  const total = formatMoney(candidate?.totalCents || 0);
+  const status =
+    humanizeToken(candidate?.paymentStatus || "") || humanizeToken(candidate?.status || "");
+  const dueLabel = candidate?.expiresAt
+    ? formatDate(candidate.expiresAt, timeZone)
+    : candidate?.dueAt
+      ? formatDate(candidate.dueAt, timeZone)
+      : "";
+  const createdLabel = candidate?.createdAt ? formatDate(candidate.createdAt, timeZone) : "";
+  const proofLabel = normalizeText(candidate?.paymentProofOriginalName || "");
+  const proofAt = candidate?.paymentProofUploadedAt
+    ? formatDateTime(candidate.paymentProofUploadedAt, timeZone)
+    : "";
+
+  return buildEmailItem({
+    title: `${customerName} • ${title}`,
+    subtitle: total,
+    meta: [
+      status ? { label: "Status", value: status } : null,
+      dueLabel ? { label: "Vencimento", value: dueLabel } : null,
+      createdLabel ? { label: "Criada em", value: createdLabel } : null,
+      proofLabel ? { label: "Comprovante", value: proofLabel } : null,
+      proofAt ? { label: "Recebido em", value: proofAt } : null,
+    ].filter(Boolean),
+  });
+}
+
+function buildAutomationEmailFooter(templateKey = "") {
+  const template = getTemplateConfig(templateKey);
+  const templateLabel = normalizeText(template?.label || "Automacao");
+  return `Voce esta recebendo a rotina automatica "${templateLabel}" da Lumina para acompanhar a sua carteira.`;
+}
+
+function withAutomationEmailModel(templateKey = "", content = {}) {
+  const template = getTemplateConfig(templateKey);
+  const emailModel =
+    content?.emailModel && typeof content.emailModel === "object" ? content.emailModel : {};
+
+  return {
+    ...content,
+    emailModel: {
+      accent: normalizeText(emailModel.accent || template?.groupKey || "default"),
+      categoryLabel: normalizeText(emailModel.categoryLabel || template?.groupLabel || "Automacao"),
+      footerNote: normalizeText(emailModel.footerNote || buildAutomationEmailFooter(templateKey)),
+      ...emailModel,
+    },
+  };
 }
 
 function formatChannelLabel(channel = "") {
@@ -924,6 +1106,70 @@ async function buildWeeklySummaryContent({ user, timeZone, now }) {
   return {
     subject: "Seu resumo semanal da Lumina",
     text: lines.join("\n"),
+    emailModel: {
+      preheader: `Resumo semanal com faturamento confirmado de ${formatMoney(
+        snapshot?.summary?.paidRevenueCents || 0,
+      )}.`,
+      headline: "Seu resumo semanal da Lumina",
+      intro:
+        "Organizei os principais sinais comerciais da sua carteira nos ultimos 7 dias para voce revisar em poucos minutos.",
+      summaryStats: [
+        buildEmailStat(
+          "Faturamento confirmado",
+          formatMoney(snapshot?.summary?.paidRevenueCents || 0),
+        ),
+        buildEmailStat("Propostas pagas", String(Number(snapshot?.summary?.paidCount || 0))),
+        buildEmailStat(
+          "Ticket medio",
+          formatMoney(snapshot?.summary?.avgTicketCents || 0),
+        ),
+        buildEmailStat(
+          "Conversao",
+          `${Number(snapshot?.summary?.conversionPct || 0).toFixed(1)}%`,
+        ),
+      ].filter(Boolean),
+      highlight:
+        topClient?.customerName || topItem?.description
+          ? {
+              eyebrow: "Destaque da semana",
+              title: topClient?.customerName
+                ? `${topClient.customerName} liderou sua receita`
+                : `${topItem?.description || "Produto"} puxou mais resultado`,
+              body: [
+                topClient?.customerName
+                  ? `Receita confirmada: ${formatMoney(topClient?.paidRevenueCents || 0)}.`
+                  : "",
+                topItem?.description
+                  ? `Produto com maior tracao: ${topItem.description} (${formatMoney(
+                      topItem?.paidRevenueCents || 0,
+                    )}).`
+                  : "",
+              ]
+                .filter(Boolean)
+                .join("\n"),
+            }
+          : null,
+      sections: [
+        {
+          title: "Destaques comerciais",
+          emptyText: "Ainda nao encontrei destaques comerciais suficientes nesta semana.",
+          items: [
+            topClient?.customerName
+              ? buildEmailItem({
+                  title: `Cliente com maior receita • ${topClient.customerName}`,
+                  subtitle: formatMoney(topClient?.paidRevenueCents || 0),
+                })
+              : null,
+            topItem?.description
+              ? buildEmailItem({
+                  title: `Produto com maior tracao • ${topItem.description}`,
+                  subtitle: formatMoney(topItem?.paidRevenueCents || 0),
+                })
+              : null,
+          ].filter(Boolean),
+        },
+      ],
+    },
   };
 }
 
@@ -963,6 +1209,45 @@ async function buildBillingPendingContent({ user, timeZone, now }) {
   return {
     subject: "Pendencias de cobranca da Lumina",
     text: lines.join("\n"),
+    emailModel: {
+      preheader: `${pendingOffers.length} pendencias agora, ${overdueOffers.length} atrasadas e ${staleOffers.length} sem resposta recente.`,
+      headline: "Pendencias de cobranca da sua carteira",
+      intro:
+        "Separei o que pede acao imediata para voce acompanhar a cobranca com mais clareza ao longo do dia.",
+      summaryStats: [
+        buildEmailStat("Pendentes agora", String(pendingOffers.length)),
+        buildEmailStat("Atrasadas", String(overdueOffers.length)),
+        buildEmailStat("Sem resposta recente", String(staleOffers.length)),
+      ].filter(Boolean),
+      highlight:
+        overdueOffers[0]?.displayLabel || pendingOffers[0]?.displayLabel
+          ? {
+              eyebrow: "Mais urgente agora",
+              title:
+                overdueOffers[0]?.displayLabel ||
+                pendingOffers[0]?.displayLabel ||
+                "Ha uma cobranca prioritaria aguardando sua atencao.",
+              body:
+                overdueOffers.length > 0
+                  ? "As cobrancas atrasadas devem ser priorizadas antes dos demais follow-ups."
+                  : "Ha propostas pendentes que pedem acompanhamento ainda hoje.",
+            }
+          : null,
+      sections: [
+        {
+          title: "Pendencias prioritarias",
+          emptyText: "Nenhuma pendencia de cobranca aberta na sua carteira agora.",
+          items: pendingOffers.slice(0, 5).map((offer) => buildOfferEmailItem(offer, timeZone)),
+        },
+        {
+          title: "Follow-ups sem resposta",
+          emptyText: "Nenhum follow-up parado neste momento.",
+          items: staleOffers
+            .slice(0, 4)
+            .map((offer) => buildOfferEmailItem(offer, timeZone)),
+        },
+      ],
+    },
   };
 }
 
@@ -989,6 +1274,38 @@ async function buildWaitingConfirmationContent({ user, timeZone }) {
   return {
     subject: "Propostas aguardando confirmacao",
     text: lines.join("\n"),
+    emailModel: {
+      preheader: `${candidates.length} propostas com comprovante aguardando aprovacao.`,
+      headline: "Propostas aguardando confirmacao",
+      intro:
+        candidates.length > 0
+          ? "Encontrei comprovantes que ainda precisam da sua revisao na carteira."
+          : "No momento nao ha comprovantes pendentes de aprovacao na sua carteira.",
+      summaryStats: [buildEmailStat("Aguardando aprovacao", String(candidates.length))].filter(
+        Boolean,
+      ),
+      highlight:
+        candidates[0]?.displayLabel
+          ? {
+              eyebrow: "Primeira na fila",
+              title: candidates[0].displayLabel,
+              body:
+                candidates[0]?.paymentProofUploadedAt
+                  ? `Comprovante recebido em ${formatDateTime(
+                      candidates[0].paymentProofUploadedAt,
+                      timeZone,
+                    )}.`
+                  : "Ja existe um comprovante disponivel para revisao.",
+            }
+          : null,
+      sections: [
+        {
+          title: "Comprovantes para revisar",
+          emptyText: "Nenhum comprovante aguardando aprovacao agora.",
+          items: candidates.slice(0, 5).map((candidate) => buildOfferEmailItem(candidate, timeZone)),
+        },
+      ],
+    },
   };
 }
 
@@ -1009,6 +1326,419 @@ async function buildDailyAgendaContent({ user, timeZone, now }) {
       summary: agenda?.summary || {},
       items: agenda?.items || [],
     }),
+    emailModel: {
+      preheader: `${Number(agenda?.summary?.total || 0)} compromissos previstos para hoje.`,
+      headline: "Sua agenda do dia",
+      intro:
+        Number(agenda?.summary?.total || 0) > 0
+          ? "Aqui esta a visao da sua agenda para hoje, com os compromissos que merecem atencao."
+          : "Hoje sua agenda esta livre. A Lumina fica de olho e volta a avisar quando houver movimento.",
+      summaryStats: [
+        buildEmailStat("Compromissos", String(Number(agenda?.summary?.total || 0))),
+        buildEmailStat("Confirmados", String(Number(agenda?.summary?.confirmed || 0))),
+        buildEmailStat("Reservas", String(Number(agenda?.summary?.hold || 0))),
+      ].filter(Boolean),
+      highlight:
+        Number(agenda?.summary?.hold || 0) > 0
+          ? {
+              eyebrow: "Atencao",
+              title: `${Number(agenda?.summary?.hold || 0)} reserva(s) ainda pedem confirmacao`,
+              body:
+                "Vale acompanhar esses horarios para evitar buracos na agenda e garantir mais previsibilidade no dia.",
+            }
+          : null,
+      sections: [
+        {
+          title: "Compromissos de hoje",
+          emptyText: "Nenhum compromisso agendado para hoje.",
+          items: buildAgendaEmailItems(agenda?.items || []),
+        },
+      ],
+    },
+  };
+}
+
+async function buildNextDayAgendaContent({ user, timeZone, now }) {
+  const todayIso = getDateIsoForTimeZone(now, timeZone);
+  const tomorrowIso = shiftDateIso(todayIso, 1);
+  const agenda = await loadDailyAgendaForWorkspace({
+    workspaceId: user.workspaceId,
+    dateISO: tomorrowIso,
+    timeZone,
+  });
+
+  return {
+    subject: "Sua agenda de amanha",
+    text: buildAgendaSummaryMessage({
+      dayLabel: "amanha",
+      dateISO: agenda?.dateISO || tomorrowIso,
+      timeZone,
+      summary: agenda?.summary || {},
+      items: agenda?.items || [],
+    }),
+    emailModel: {
+      preheader: `${Number(agenda?.summary?.total || 0)} compromissos previstos para amanha.`,
+      headline: "Sua agenda de amanha",
+      intro:
+        Number(agenda?.summary?.total || 0) > 0
+          ? "Deixei a agenda de amanha pronta para voce se organizar com antecedencia."
+          : "Amanha sua agenda ainda esta livre, o que pode abrir espaco para novas oportunidades.",
+      summaryStats: [
+        buildEmailStat("Compromissos", String(Number(agenda?.summary?.total || 0))),
+        buildEmailStat("Confirmados", String(Number(agenda?.summary?.confirmed || 0))),
+        buildEmailStat("Reservas", String(Number(agenda?.summary?.hold || 0))),
+      ].filter(Boolean),
+      highlight:
+        Number(agenda?.summary?.hold || 0) > 0
+          ? {
+              eyebrow: "Planejamento",
+              title: `${Number(agenda?.summary?.hold || 0)} reserva(s) seguem em aberto para amanha`,
+              body:
+                "Voce pode revisar essas reservas antes do dia comecar para deixar a operacao mais previsivel.",
+            }
+          : null,
+      sections: [
+        {
+          title: "Compromissos de amanha",
+          emptyText: "Nenhum compromisso agendado para amanha.",
+          items: buildAgendaEmailItems(agenda?.items || []),
+        },
+      ],
+    },
+  };
+}
+
+async function buildExpiringOffersContent({ user, timeZone, now }) {
+  const expiring = await listExpiringOffers({
+    workspaceId: user.workspaceId,
+    ownerUserId: user._id,
+    limit: 8,
+    now,
+    timeZone,
+    sourceText: "esta semana",
+  });
+  const items = Array.isArray(expiring?.items) ? expiring.items : [];
+  const lines = [
+    "Propostas expirando na sua carteira:",
+    "",
+    `- Vencendo hoje: ${Number(expiring?.dueTodayCount || 0)}`,
+    `- Vencendo nos proximos 7 dias: ${Number(expiring?.dueThisWeekCount || 0)}`,
+  ];
+
+  if (items.length) {
+    lines.push("");
+    items.slice(0, 5).forEach((item, index) => {
+      lines.push(`${index + 1}. ${item.displayLabel}`);
+    });
+  } else {
+    lines.push("");
+    lines.push("Nenhuma proposta expira hoje ou nos proximos 7 dias.");
+  }
+
+  return {
+    subject: "Propostas expirando",
+    text: lines.join("\n"),
+    emailModel: {
+      preheader: `${Number(expiring?.dueTodayCount || 0)} proposta(s) vencem hoje e ${Number(
+        expiring?.dueThisWeekCount || 0,
+      )} vencem nos proximos 7 dias.`,
+      headline: "Propostas expirando",
+      intro:
+        items.length > 0
+          ? "Estas propostas pedem revisao antes de virarem perda de timing comercial."
+          : "No momento nao encontrei propostas expirando hoje ou nesta semana na sua carteira.",
+      summaryStats: [
+        buildEmailStat("Vencendo hoje", String(Number(expiring?.dueTodayCount || 0))),
+        buildEmailStat(
+          "Proximos 7 dias",
+          String(Number(expiring?.dueThisWeekCount || 0)),
+        ),
+      ].filter(Boolean),
+      highlight:
+        items[0]?.displayLabel
+          ? {
+              eyebrow: "Mais proxima do vencimento",
+              title: items[0].displayLabel,
+              body:
+                Number(expiring?.dueTodayCount || 0) > 0
+                  ? "Ha propostas expirando ainda hoje. Vale priorizar o contato imediato."
+                  : "Revise essas propostas antes que percam janela comercial nesta semana.",
+            }
+          : null,
+      sections: [
+        {
+          title: "Propostas para revisar",
+          emptyText: "Nenhuma proposta expira hoje ou nos proximos 7 dias.",
+          items: items.slice(0, 5).map((item) => buildOfferEmailItem(item, timeZone)),
+        },
+      ],
+    },
+  };
+}
+
+async function buildRecentOffersContent({ user, timeZone, now }) {
+  const recentOffers = await listRecentOffers({
+    workspaceId: user.workspaceId,
+    ownerUserId: user._id,
+    limit: 8,
+    now,
+    timeZone,
+  });
+  const lines = [`Propostas enviadas hoje: ${recentOffers.length}`];
+
+  if (recentOffers.length) {
+    lines.push("");
+    recentOffers.slice(0, 5).forEach((offer, index) => {
+      lines.push(`${index + 1}. ${offer.displayLabel}`);
+    });
+  } else {
+    lines.push("");
+    lines.push("Nenhuma proposta foi criada hoje na sua carteira.");
+  }
+
+  return {
+    subject: "Propostas enviadas hoje",
+    text: lines.join("\n"),
+    emailModel: {
+      preheader: `${recentOffers.length} proposta(s) criada(s) hoje na sua carteira.`,
+      headline: "Propostas enviadas hoje",
+      intro:
+        recentOffers.length > 0
+          ? "Aqui esta a visao das propostas geradas hoje para voce acompanhar o ritmo comercial."
+          : "Hoje ainda nao houve novas propostas criadas na sua carteira.",
+      summaryStats: [buildEmailStat("Criadas hoje", String(recentOffers.length))].filter(Boolean),
+      sections: [
+        {
+          title: "Propostas do dia",
+          emptyText: "Nenhuma proposta foi criada hoje na sua carteira.",
+          items: recentOffers.slice(0, 5).map((offer) => buildOfferEmailItem(offer, timeZone)),
+        },
+      ],
+    },
+  };
+}
+
+async function buildStaleOfferFollowupContent({ user, timeZone, now }) {
+  const staleOffers = await listWebAgentAutomationOfferCandidates({
+    user,
+    automationType: "stale_followup",
+    limit: 8,
+    now,
+  });
+  const lines = [`Propostas sem resposta recente: ${staleOffers.length}`];
+
+  if (staleOffers.length) {
+    lines.push("");
+    staleOffers.slice(0, 5).forEach((candidate, index) => {
+      lines.push(`${index + 1}. ${candidate.displayLabel}`);
+    });
+  } else {
+    lines.push("");
+    lines.push("Nenhuma proposta pede follow-up parado neste momento.");
+  }
+
+  return {
+    subject: "Propostas sem resposta",
+    text: lines.join("\n"),
+    emailModel: {
+      preheader: `${staleOffers.length} proposta(s) pedem follow-up por falta de resposta recente.`,
+      headline: "Propostas sem resposta",
+      intro:
+        staleOffers.length > 0
+          ? "Separei as oportunidades que esfriaram e podem precisar de retomada."
+          : "No momento nao ha propostas sem resposta recente na sua carteira.",
+      summaryStats: [buildEmailStat("Sem resposta recente", String(staleOffers.length))].filter(
+        Boolean,
+      ),
+      highlight:
+        staleOffers[0]?.displayLabel
+          ? {
+              eyebrow: "Retomada sugerida",
+              title: staleOffers[0].displayLabel,
+              body:
+                "Uma retomada bem feita agora pode recuperar a conversa antes que a oportunidade esfrie ainda mais.",
+            }
+          : null,
+      sections: [
+        {
+          title: "Follow-ups para retomar",
+          emptyText: "Nenhuma proposta pede follow-up parado neste momento.",
+          items: staleOffers.slice(0, 5).map((offer) => buildOfferEmailItem(offer, timeZone)),
+        },
+      ],
+    },
+  };
+}
+
+async function buildTomorrowBillingContent({ user, timeZone, now }) {
+  const todayIso = getDateIsoForTimeZone(now, timeZone);
+  const tomorrowIso = shiftDateIso(todayIso, 1);
+  const pendingOffers = await listPendingOffers({
+    workspaceId: user.workspaceId,
+    ownerUserId: user._id,
+    limit: 120,
+    timeZone,
+  });
+  const dueTomorrow = pendingOffers
+    .filter((offer) => {
+      if (!offer?.expiresAt) return false;
+      return getDateIsoForTimeZone(offer.expiresAt, timeZone) === tomorrowIso;
+    })
+    .sort(
+      (left, right) =>
+        new Date(left?.expiresAt || 0).getTime() - new Date(right?.expiresAt || 0).getTime(),
+    );
+  const lines = [
+    `Cobrancas de amanha: ${dueTomorrow.length}`,
+    "",
+    `Data de vencimento: ${formatDate(dayRangeInTZ(tomorrowIso, timeZone).dayStart, timeZone)}`,
+  ];
+
+  if (dueTomorrow.length) {
+    lines.push("");
+    dueTomorrow.slice(0, 5).forEach((offer, index) => {
+      lines.push(`${index + 1}. ${offer.displayLabel}`);
+    });
+  } else {
+    lines.push("");
+    lines.push("Nao encontrei cobrancas vencendo amanha na sua carteira.");
+  }
+
+  return {
+    subject: "Cobrancas de amanha",
+    text: lines.join("\n"),
+    emailModel: {
+      preheader: `${dueTomorrow.length} cobranca(s) vencem amanha na sua carteira.`,
+      headline: "Cobrancas de amanha",
+      intro:
+        dueTomorrow.length > 0
+          ? "Revise os vencimentos de amanha com antecedencia para organizar seus proximos contatos."
+          : "Amanha nao ha cobrancas vencendo na sua carteira.",
+      summaryStats: [
+        buildEmailStat("Vencem amanha", String(dueTomorrow.length)),
+        buildEmailStat(
+          "Data de vencimento",
+          formatDate(dayRangeInTZ(tomorrowIso, timeZone).dayStart, timeZone),
+        ),
+      ].filter(Boolean),
+      highlight:
+        dueTomorrow[0]?.displayLabel
+          ? {
+              eyebrow: "Primeira cobranca da fila",
+              title: dueTomorrow[0].displayLabel,
+              body:
+                "Antecipar essa abordagem pode ajudar a reduzir atrasos e dar mais previsibilidade ao caixa.",
+            }
+          : null,
+      sections: [
+        {
+          title: "Vencimentos de amanha",
+          emptyText: "Nao encontrei cobrancas vencendo amanha na sua carteira.",
+          items: dueTomorrow.slice(0, 5).map((offer) => buildOfferEmailItem(offer, timeZone)),
+        },
+      ],
+    },
+  };
+}
+
+async function buildDailyFinanceSummaryContent({ user, timeZone, now }) {
+  const todayIso = getDateIsoForTimeZone(now, timeZone);
+  const todayRange = dayRangeInTZ(todayIso, timeZone);
+  const [snapshot, pendingOffers, waitingConfirmation, overdueOffers] = await Promise.all([
+    buildGeneralReportsSnapshot({
+      tenantId: user.workspaceId,
+      userId: user._id,
+      start: todayRange.dayStart,
+      end: todayRange.dayEnd,
+      fromYMD: todayIso,
+      toYMD: todayIso,
+    }),
+    listPendingOffers({
+      workspaceId: user.workspaceId,
+      ownerUserId: user._id,
+      limit: 120,
+      timeZone,
+    }),
+    listOffersWaitingConfirmation({
+      workspaceId: user.workspaceId,
+      ownerUserId: user._id,
+      limit: 120,
+      timeZone,
+    }),
+    listWebAgentAutomationOfferCandidates({
+      user,
+      automationType: "overdue",
+      limit: 120,
+      now,
+    }),
+  ]);
+  const priorityCandidate =
+    overdueOffers[0] || waitingConfirmation[0] || pendingOffers[0] || null;
+  const lines = [
+    "Resumo financeiro do dia:",
+    "",
+    `- Recebido hoje: ${formatMoney(snapshot?.summary?.paidRevenueCents || 0)}`,
+    `- Pagamentos confirmados hoje: ${Number(snapshot?.summary?.paidCount || 0)}`,
+    `- Pendentes agora: ${pendingOffers.length}`,
+    `- Atrasadas: ${overdueOffers.length}`,
+    `- Aguardando confirmacao: ${waitingConfirmation.length}`,
+    `- Ticket medio confirmado: ${formatMoney(snapshot?.summary?.avgTicketCents || 0)}`,
+  ];
+
+  if (priorityCandidate?.displayLabel) {
+    lines.push("");
+    lines.push(`Ponto de atencao agora: ${priorityCandidate.displayLabel}`);
+  }
+
+  const financePriorityItems = [
+    ...overdueOffers.slice(0, 2),
+    ...waitingConfirmation.slice(0, 2),
+    ...pendingOffers.slice(0, 2),
+  ]
+    .filter(Boolean)
+    .slice(0, 5);
+
+  return {
+    subject: "Seu resumo financeiro do dia",
+    text: lines.join("\n"),
+    emailModel: {
+      preheader: `Recebido hoje: ${formatMoney(
+        snapshot?.summary?.paidRevenueCents || 0,
+      )}. Pendentes: ${pendingOffers.length}.`,
+      headline: "Seu resumo financeiro do dia",
+      intro:
+        "Organizei a leitura financeira principal do dia para voce acompanhar entradas, pendencias e o que merece atencao agora.",
+      summaryStats: [
+        buildEmailStat(
+          "Recebido hoje",
+          formatMoney(snapshot?.summary?.paidRevenueCents || 0),
+        ),
+        buildEmailStat(
+          "Pagamentos confirmados",
+          String(Number(snapshot?.summary?.paidCount || 0)),
+        ),
+        buildEmailStat("Pendentes", String(pendingOffers.length)),
+        buildEmailStat("Atrasadas", String(overdueOffers.length)),
+      ].filter(Boolean),
+      highlight:
+        priorityCandidate?.displayLabel
+          ? {
+              eyebrow: "Ponto de atencao agora",
+              title: priorityCandidate.displayLabel,
+              body:
+                waitingConfirmation.length > 0
+                  ? `${waitingConfirmation.length} proposta(s) aguardam confirmacao manual no momento.`
+                  : "Esse e o principal item que pode afetar seu ritmo financeiro agora.",
+            }
+          : null,
+      sections: [
+        {
+          title: "Pendencias financeiras prioritarias",
+          emptyText: "Nao encontrei pendencias financeiras relevantes neste momento.",
+          items: financePriorityItems.map((item) => buildOfferEmailItem(item, timeZone)),
+        },
+      ],
+    },
   };
 }
 
@@ -1061,6 +1791,39 @@ async function buildDailyPrioritiesContent({ user, timeZone, now }) {
   return {
     subject: "Suas prioridades do dia",
     text: lines.join("\n"),
+    emailModel: {
+      preheader: `${Number(agenda?.summary?.total || 0)} compromissos, ${pendingOffers.length} pendencias e ${overdueOffers.length} atrasadas hoje.`,
+      headline: "Suas prioridades do dia",
+      intro:
+        "Este digest combina agenda, cobranca e pendencias abertas para ajudar voce a decidir por onde comecar.",
+      summaryStats: [
+        buildEmailStat("Compromissos", String(Number(agenda?.summary?.total || 0))),
+        buildEmailStat("Pendentes", String(pendingOffers.length)),
+        buildEmailStat("Atrasadas", String(overdueOffers.length)),
+        buildEmailStat("Aguardando confirmacao", String(waitingConfirmation.length)),
+      ].filter(Boolean),
+      highlight: summaryMessage
+        ? {
+            eyebrow: "Leitura rapida",
+            title: "O que merece sua atencao agora",
+            body: summaryMessage,
+          }
+        : null,
+      sections: [
+        {
+          title: "Agenda do dia",
+          emptyText: "Nenhum compromisso agendado para hoje.",
+          items: buildAgendaEmailItems((agenda?.items || []).slice(0, 4)),
+        },
+        {
+          title: "Pendencias de cobranca",
+          emptyText: "Nenhuma pendencia de cobranca relevante agora.",
+          items: [...overdueOffers.slice(0, 2), ...pendingOffers.slice(0, 3)]
+            .slice(0, 5)
+            .map((item) => buildOfferEmailItem(item, timeZone)),
+        },
+      ],
+    },
   };
 }
 
@@ -1072,23 +1835,80 @@ async function buildAutomationContent({
   const timeZone = normalizeText(automation?.timeZone || "") || DEFAULT_TIMEZONE;
 
   if (automation?.templateKey === "daily_agenda") {
-    return buildDailyAgendaContent({ user, timeZone, now });
+    return withAutomationEmailModel(
+      automation?.templateKey,
+      await buildDailyAgendaContent({ user, timeZone, now }),
+    );
+  }
+
+  if (automation?.templateKey === "next_day_agenda") {
+    return withAutomationEmailModel(
+      automation?.templateKey,
+      await buildNextDayAgendaContent({ user, timeZone, now }),
+    );
   }
 
   if (automation?.templateKey === "weekly_summary") {
-    return buildWeeklySummaryContent({ user, timeZone, now });
+    return withAutomationEmailModel(
+      automation?.templateKey,
+      await buildWeeklySummaryContent({ user, timeZone, now }),
+    );
   }
 
   if (automation?.templateKey === "billing_pending") {
-    return buildBillingPendingContent({ user, timeZone, now });
+    return withAutomationEmailModel(
+      automation?.templateKey,
+      await buildBillingPendingContent({ user, timeZone, now }),
+    );
+  }
+
+  if (automation?.templateKey === "billing_due_tomorrow") {
+    return withAutomationEmailModel(
+      automation?.templateKey,
+      await buildTomorrowBillingContent({ user, timeZone, now }),
+    );
   }
 
   if (automation?.templateKey === "waiting_confirmation") {
-    return buildWaitingConfirmationContent({ user, timeZone });
+    return withAutomationEmailModel(
+      automation?.templateKey,
+      await buildWaitingConfirmationContent({ user, timeZone }),
+    );
   }
 
   if (automation?.templateKey === "daily_priorities") {
-    return buildDailyPrioritiesContent({ user, timeZone, now });
+    return withAutomationEmailModel(
+      automation?.templateKey,
+      await buildDailyPrioritiesContent({ user, timeZone, now }),
+    );
+  }
+
+  if (automation?.templateKey === "offer_expiring") {
+    return withAutomationEmailModel(
+      automation?.templateKey,
+      await buildExpiringOffersContent({ user, timeZone, now }),
+    );
+  }
+
+  if (automation?.templateKey === "offer_recent") {
+    return withAutomationEmailModel(
+      automation?.templateKey,
+      await buildRecentOffersContent({ user, timeZone, now }),
+    );
+  }
+
+  if (automation?.templateKey === "offer_stale_followup") {
+    return withAutomationEmailModel(
+      automation?.templateKey,
+      await buildStaleOfferFollowupContent({ user, timeZone, now }),
+    );
+  }
+
+  if (automation?.templateKey === "finance_daily_summary") {
+    return withAutomationEmailModel(
+      automation?.templateKey,
+      await buildDailyFinanceSummaryContent({ user, timeZone, now }),
+    );
   }
 
   const weeklyAgenda = await loadWeeklyAgendaForWorkspace({
@@ -1098,7 +1918,7 @@ async function buildAutomationContent({
     timeZone,
   });
 
-  return {
+  return withAutomationEmailModel(automation?.templateKey, {
     subject: "Atualizacao automatica da Lumina",
     text: buildWeeklyAgendaMessage({
       startDateISO: weeklyAgenda?.startDateISO || "",
@@ -1106,7 +1926,22 @@ async function buildAutomationContent({
       days: weeklyAgenda?.days || [],
       timeZone,
     }),
-  };
+    emailModel: {
+      preheader: "Atualizacao automatica da Lumina com a visao da sua carteira.",
+      headline: "Atualizacao automatica da Lumina",
+      intro:
+        "A Lumina organizou uma leitura rapida da sua carteira para voce acompanhar os principais movimentos.",
+      emptyState: {
+        title: "Resumo disponivel em texto",
+        body: buildWeeklyAgendaMessage({
+          startDateISO: weeklyAgenda?.startDateISO || "",
+          endDateISO: weeklyAgenda?.endDateISO || "",
+          days: weeklyAgenda?.days || [],
+          timeZone,
+        }),
+      },
+    },
+  });
 }
 
 async function sendAutomationThroughChannels({
@@ -1132,9 +1967,17 @@ async function sendAutomationThroughChannels({
   });
 
   const results = [];
-  const html = `<div style="font-family:Arial,sans-serif;line-height:1.6;">${nl2br(
-    content.text || "",
-  )}</div>`;
+  const html =
+    content?.emailModel && typeof content.emailModel === "object"
+      ? renderAutomationEmailHtml(content.emailModel)
+      : renderAutomationEmailHtml({
+          headline: content.subject || "Atualizacao da Lumina",
+          intro: "",
+          emptyState: {
+            title: "Resumo da automacao",
+            body: content.text || "",
+          },
+        });
 
   if (automation.channel === "whatsapp" || automation.channel === "both") {
     const whatsappEnvAvailable =

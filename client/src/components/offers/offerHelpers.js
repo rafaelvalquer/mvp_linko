@@ -18,19 +18,42 @@ export function getAmountCents(o) {
   return Number(o?.totalCents ?? o?.amountCents ?? 0) || 0;
 }
 
+export function isCancelledOffer(o) {
+  return (
+    norm(o?.status) === "CANCELLED" || norm(o?.paymentStatus) === "CANCELLED"
+  );
+}
+
+export function isExpiredOffer(o) {
+  return (
+    norm(o?.status) === "EXPIRED" || norm(o?.paymentStatus) === "EXPIRED"
+  );
+}
+
+export function isPaidOffer(o) {
+  return (
+    ["PAID", "CONFIRMED"].includes(norm(o?.paymentStatus)) ||
+    ["PAID", "CONFIRMED"].includes(norm(o?.status))
+  );
+}
+
+export function isPendingPaymentOffer(o) {
+  const pay = norm(o?.paymentStatus);
+  if (isCancelledOffer(o) || isExpiredOffer(o) || isPaidOffer(o)) return false;
+  return pay === "PENDING" || !pay;
+}
+
 export function getPaymentLabel(o) {
   const pay = norm(o?.paymentStatus);
   const flow = norm(o?.status || "PUBLIC");
-  if (flow === "CANCELLED") {
+  if (isCancelledOffer(o)) {
     return { tone: "CANCELLED", text: "Cancelado", code: "CANCELLED" };
   }
-  if (flow === "EXPIRED") {
+  if (isExpiredOffer(o)) {
     return { tone: "EXPIRED", text: "Expirado", code: "EXPIRED" };
   }
-  const paid =
-    ["PAID", "CONFIRMED"].includes(pay) || ["PAID", "CONFIRMED"].includes(flow);
-
-  if (paid) return { tone: "PAID", text: "Pago (confirmado)", code: "PAID" };
+  if (isPaidOffer(o))
+    return { tone: "PAID", text: "Pago (confirmado)", code: "PAID" };
   if (pay === "WAITING_CONFIRMATION")
     return {
       tone: "PENDING",
@@ -43,7 +66,7 @@ export function getPaymentLabel(o) {
       text: "Comprovante recusado",
       code: "REJECTED",
     };
-  if (pay === "PENDING" || !pay)
+  if (isPendingPaymentOffer(o))
     return { tone: "PENDING", text: "Aguardando pagamento", code: "PENDING" };
 
   const map = {

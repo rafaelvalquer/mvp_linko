@@ -44,6 +44,29 @@ const STATUS_FILTERS = [
   { value: "error", label: "Com erro" },
 ];
 
+const FILTER_EMPTY_STATE = {
+  all: {
+    title: "Nenhuma automacao criada ainda",
+    description:
+      "Monte sua primeira rotina pelo painel manual ao lado e a Lumina cuida do agendamento.",
+  },
+  active: {
+    title: "Nenhuma automacao ativa agora",
+    description:
+      "As rotinas ativas vao aparecer aqui com proxima execucao e acoes rapidas.",
+  },
+  paused: {
+    title: "Nenhuma automacao pausada",
+    description:
+      "Quando voce pausar uma rotina, ela fica agrupada aqui para retomada manual.",
+  },
+  error: {
+    title: "Nenhuma automacao com erro",
+    description:
+      "As automacoes que falharem aparecem aqui para revisao e retomada.",
+  },
+};
+
 function formatDateTime(value) {
   if (!value) return "-";
   const date = new Date(value);
@@ -80,45 +103,346 @@ function statusLabel(value) {
   return "Com erro";
 }
 
+function templateSurfaceClass(key = "") {
+  const normalizedKey = String(key || "").trim().toLowerCase();
+
+  if (normalizedKey.includes("agenda")) {
+    return "border-sky-200 bg-sky-50/80 text-sky-700";
+  }
+  if (normalizedKey.includes("offer") || normalizedKey.includes("proposta")) {
+    return "border-fuchsia-200 bg-fuchsia-50/80 text-fuchsia-700";
+  }
+  if (normalizedKey.includes("billing") || normalizedKey.includes("cobranca")) {
+    return "border-amber-200 bg-amber-50/80 text-amber-800";
+  }
+  if (normalizedKey.includes("confirmation")) {
+    return "border-violet-200 bg-violet-50/80 text-violet-700";
+  }
+  if (normalizedKey.includes("finance")) {
+    return "border-emerald-200 bg-emerald-50/80 text-emerald-700";
+  }
+  if (normalizedKey.includes("summary") || normalizedKey.includes("resumo")) {
+    return "border-indigo-200 bg-indigo-50/80 text-indigo-700";
+  }
+  if (normalizedKey.includes("priority")) {
+    return "border-emerald-200 bg-emerald-50/80 text-emerald-700";
+  }
+
+  return "border-slate-200 bg-slate-50 text-slate-700";
+}
+
 function StatCard({ title, value, subtitle }) {
   return (
-    <Card>
-      <CardBody className="space-y-1">
-        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+    <Card className="overflow-hidden">
+      <CardBody className="space-y-2">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
           {title}
         </div>
-        <div className="text-2xl font-black text-slate-950">{value}</div>
-        <div className="text-sm text-slate-500">{subtitle}</div>
+        <div className="text-3xl font-black tracking-tight text-slate-950">{value}</div>
+        <div className="text-sm leading-6 text-slate-500">{subtitle}</div>
       </CardBody>
     </Card>
   );
 }
 
-function InfoLine({ label, value }) {
-  return (
-    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-      <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-        {label}
-      </span>
-      <span className="text-sm text-slate-700">{value}</span>
-    </div>
-  );
-}
-
-function FilterButton({ active, onClick, children }) {
+function FilterButton({ active, count, onClick, children }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={[
-        "rounded-2xl border px-3 py-2 text-sm font-semibold transition",
+        "inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-semibold transition",
         active
           ? "border-sky-300 bg-[linear-gradient(135deg,rgba(37,99,235,0.12),rgba(20,184,166,0.16))] text-slate-950 shadow-[0_16px_30px_-26px_rgba(37,99,235,0.45)]"
           : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-950",
       ].join(" ")}
     >
-      {children}
+      <span>{children}</span>
+      <span
+        className={[
+          "inline-flex min-w-7 items-center justify-center rounded-full px-2 py-0.5 text-xs font-bold",
+          active ? "bg-white/80 text-slate-950" : "bg-slate-100 text-slate-600",
+        ].join(" ")}
+      >
+        {count}
+      </span>
     </button>
+  );
+}
+
+function InfoTile({ label, value, strong = false }) {
+  return (
+    <div className="rounded-[22px] border border-slate-200/80 bg-white px-4 py-3 shadow-[0_14px_28px_-24px_rgba(15,23,42,0.18)]">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+        {label}
+      </div>
+      <div className={`mt-2 text-sm ${strong ? "font-semibold text-slate-950" : "text-slate-700"}`}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function ChannelPill({ value }) {
+  const label = formatChannelLabel(value);
+  const toneClass =
+    value === "both"
+      ? "border-violet-200 bg-violet-50 text-violet-700"
+      : value === "email"
+        ? "border-amber-200 bg-amber-50 text-amber-700"
+        : "border-emerald-200 bg-emerald-50 text-emerald-700";
+
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass}`}>
+      {label}
+    </span>
+  );
+}
+
+function ChevronIcon({ expanded }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={`transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}
+      aria-hidden="true"
+    >
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
+function TemplatePreview({ template, channel, frequency, timeOfDay, dayOfWeek }) {
+  return (
+    <div className="rounded-[22px] border border-slate-200 bg-slate-50/80 p-4">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+        Resumo da rotina
+      </div>
+
+      <div className="mt-3">
+        <div className="text-base font-semibold text-slate-950">
+          {template?.label || "Escolha um template para continuar"}
+        </div>
+        <div className="mt-1 text-sm leading-6 text-slate-600">
+          {template?.description ||
+            "A Lumina prepara a rotina com os dados da sua carteira e agenda o envio."}
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            Canal
+          </div>
+          <div className="mt-2">
+            <ChannelPill value={channel} />
+          </div>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            Horario
+          </div>
+          <div className="mt-2 text-sm font-semibold text-slate-950">{timeOfDay || "-"}</div>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            Frequencia
+          </div>
+          <div className="mt-2 text-sm font-semibold text-slate-950">
+            {formatFrequencyLabel(frequency, dayOfWeek)}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AutomationCard({ item, busy, expanded, onAction, onToggle }) {
+  const lastHistory = Array.isArray(item.history) ? item.history[0] : null;
+  const showResult = !item.lastError?.message && lastHistory?.message;
+  const compactSchedule = `${formatChannelLabel(item.channel)} | ${formatFrequencyLabel(item.frequency, item.dayOfWeek)}`;
+  const accordionId = `automation-panel-${item.id}`;
+
+  return (
+    <div
+      className={[
+        "overflow-hidden rounded-[28px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(244,247,251,0.92))] shadow-[0_22px_48px_-34px_rgba(15,23,42,0.18)] transition",
+        expanded ? "border-slate-300/90" : "",
+        busy && expanded
+          ? "border-sky-200 shadow-[0_24px_52px_-34px_rgba(37,99,235,0.28)]"
+          : "",
+      ].join(" ")}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        aria-controls={accordionId}
+        className="flex w-full flex-col gap-4 px-5 py-4 text-left transition hover:bg-white/50 sm:px-6"
+      >
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0 space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${templateSurfaceClass(item.templateKey || item.templateLabel)}`}
+              >
+                {item.templateLabel}
+              </span>
+              <Badge tone={statusTone(item.status)}>{statusLabel(item.status)}</Badge>
+              {item.lastError?.message ? (
+                <span className="inline-flex rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-700">
+                  Requer revisao
+                </span>
+              ) : null}
+            </div>
+
+            <div className="space-y-1">
+              <div className="text-lg font-black tracking-tight text-slate-950 sm:text-xl">
+                {item.name}
+              </div>
+              <div className="text-sm text-slate-600">{compactSchedule}</div>
+              {item.lastError?.message ? (
+                <div className="text-xs leading-5 text-red-600">
+                  Falha recente detectada. Expanda para revisar os detalhes.
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="flex items-start gap-3 lg:items-center">
+            <div className="min-w-0 rounded-[22px] border border-slate-200 bg-slate-50/90 px-4 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                Proxima execucao
+              </div>
+              <div className="mt-2 text-sm font-semibold text-slate-950">
+                {formatDateTime(item.nextRunAt)}
+              </div>
+              <div className="mt-1 text-xs text-slate-500">Canal e frequencia prontos para leitura rapida.</div>
+            </div>
+
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 shadow-[0_14px_28px_-24px_rgba(15,23,42,0.18)]">
+              <ChevronIcon expanded={expanded} />
+            </div>
+          </div>
+        </div>
+      </button>
+
+      <div
+        id={accordionId}
+        className={`grid transition-[grid-template-rows] duration-300 ease-out ${expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <div className="border-t border-slate-200/80 px-5 pb-5 pt-4 sm:px-6">
+            <div className="flex flex-col gap-5 xl:grid xl:grid-cols-[minmax(0,1fr)_240px] xl:items-start">
+              <div className="space-y-5">
+                <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+                  <InfoTile label="Canal" value={<ChannelPill value={item.channel} />} />
+                  <InfoTile label="Horario" value={item.timeOfDay || "-"} strong />
+                  <InfoTile
+                    label="Frequencia"
+                    value={formatFrequencyLabel(item.frequency, item.dayOfWeek)}
+                    strong
+                  />
+                  <InfoTile label="Ultima execucao" value={formatDateTime(item.lastRunAt)} />
+                  <InfoTile label="Execucoes" value={`${Number(item.runCount || 0)} no total`} strong />
+                  <InfoTile label="Status" value={statusLabel(item.status)} strong />
+                </div>
+
+                {item.lastError?.message ? (
+                  <div className="rounded-[22px] border border-red-200 bg-red-50 px-4 py-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-red-600">
+                      Ultimo erro
+                    </div>
+                    <div className="mt-2 text-sm leading-6 text-red-700">{item.lastError.message}</div>
+                  </div>
+                ) : null}
+
+                {showResult ? (
+                  <div className="rounded-[22px] border border-slate-200 bg-slate-50/90 px-4 py-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      Ultimo resultado
+                    </div>
+                    <div className="mt-2 text-sm leading-6 text-slate-700">{lastHistory.message}</div>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="rounded-[24px] border border-slate-200 bg-white/90 p-4 shadow-[0_18px_32px_-28px_rgba(15,23,42,0.16)]">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Acoes manuais
+                </div>
+                <div className="mt-3 space-y-2">
+                  <Button
+                    size="sm"
+                    className="w-full"
+                    disabled={busy}
+                    onClick={() => onAction(item.id, "run")}
+                  >
+                    {busy ? "Executando..." : "Executar agora"}
+                  </Button>
+
+                  {item.status === "active" ? (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="w-full"
+                      disabled={busy}
+                      onClick={() => onAction(item.id, "pause")}
+                    >
+                      Pausar automacao
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="w-full"
+                      disabled={busy}
+                      onClick={() => onAction(item.id, "resume")}
+                    >
+                      Retomar automacao
+                    </Button>
+                  )}
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full"
+                    disabled={busy}
+                    onClick={() => onAction(item.id, "duplicate")}
+                  >
+                    Duplicar
+                  </Button>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    className="w-full"
+                    disabled={busy}
+                    onClick={() => onAction(item.id, "delete")}
+                  >
+                    Excluir
+                  </Button>
+                </div>
+
+                <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-500">
+                  {busy
+                    ? "A Lumina esta concluindo essa acao neste item."
+                    : "Abra a rotina quando quiser pausar, executar ou revisar o ultimo resultado."}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -131,6 +455,8 @@ export default function AutomationsPage() {
   const [error, setError] = useState("");
   const [flash, setFlash] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [expandedAutomationId, setExpandedAutomationId] = useState("");
+  const [selectedTemplateGroupKey, setSelectedTemplateGroupKey] = useState("");
   const [dashboard, setDashboard] = useState(null);
   const [form, setForm] = useState({
     templateKey: "",
@@ -167,6 +493,25 @@ export default function AutomationsPage() {
 
   const items = Array.isArray(dashboard?.items) ? dashboard.items : [];
   const templates = Array.isArray(dashboard?.templates) ? dashboard.templates : [];
+  const templateGroups = useMemo(() => {
+    const groups = new Map();
+
+    templates.forEach((template) => {
+      const groupKey = String(template?.groupKey || "resumos").trim() || "resumos";
+      if (!groups.has(groupKey)) {
+        groups.set(groupKey, {
+          key: groupKey,
+          label: template?.groupLabel || "Templates",
+          description: template?.groupDescription || "",
+          items: [],
+        });
+      }
+
+      groups.get(groupKey).items.push(template);
+    });
+
+    return Array.from(groups.values()).filter((group) => group.items.length > 0);
+  }, [templates]);
   const planSummary = dashboard?.planSummary || null;
   const activeCount = Number(dashboard?.activeCount || 0);
   const activeLimit = Number(planSummary?.activeLimit || 0);
@@ -177,16 +522,89 @@ export default function AutomationsPage() {
     () => templates.find((item) => item.key === form.templateKey) || null,
     [templates, form.templateKey],
   );
+  const selectedTemplateGroup = useMemo(
+    () =>
+      templateGroups.find((group) => group.key === selectedTemplateGroupKey) ||
+      templateGroups[0] ||
+      null,
+    [templateGroups, selectedTemplateGroupKey],
+  );
+  const visibleTemplates = selectedTemplateGroup?.items || [];
+  const filterCounts = useMemo(
+    () => ({
+      all: items.length,
+      active: items.filter((item) => item.status === "active").length,
+      paused: items.filter((item) => item.status === "paused").length,
+      error: items.filter((item) => item.status === "error").length,
+    }),
+    [items],
+  );
   const visibleItems = useMemo(() => {
     if (statusFilter === "all") return items;
     return items.filter((item) => item.status === statusFilter);
   }, [items, statusFilter]);
+  const emptyState = FILTER_EMPTY_STATE[statusFilter] || FILTER_EMPTY_STATE.all;
+
+  useEffect(() => {
+    if (!templateGroups.length) {
+      if (selectedTemplateGroupKey) setSelectedTemplateGroupKey("");
+      return;
+    }
+
+    const templateGroupKey = selectedTemplate?.groupKey || templateGroups[0]?.key || "";
+    if (templateGroupKey && templateGroupKey !== selectedTemplateGroupKey) {
+      setSelectedTemplateGroupKey(templateGroupKey);
+    }
+  }, [templateGroups, selectedTemplate, selectedTemplateGroupKey]);
+
+  useEffect(() => {
+    if (!selectedTemplateGroup?.items?.length) return;
+    const selectedInsideGroup = selectedTemplateGroup.items.some(
+      (template) => template.key === form.templateKey,
+    );
+    if (selectedInsideGroup) return;
+
+    setForm((current) => ({
+      ...current,
+      templateKey: selectedTemplateGroup.items[0]?.key || "",
+    }));
+  }, [selectedTemplateGroup, form.templateKey]);
+
+  useEffect(() => {
+    if (!expandedAutomationId) return;
+    const stillVisible = visibleItems.some((item) => item.id === expandedAutomationId);
+    if (!stillVisible) {
+      setExpandedAutomationId("");
+    }
+  }, [expandedAutomationId, visibleItems]);
 
   function focusCreateCard() {
     createCardRef.current?.scrollIntoView({
       behavior: "smooth",
       block: "start",
     });
+  }
+
+  function handleTemplateGroupSelect(groupKey) {
+    const group = templateGroups.find((item) => item.key === groupKey);
+    if (!group?.key) return;
+    setSelectedTemplateGroupKey(group.key);
+    setForm((current) => ({
+      ...current,
+      templateKey: group.items.some((template) => template.key === current.templateKey)
+        ? current.templateKey
+        : group.items[0]?.key || "",
+    }));
+  }
+
+  function handleTemplateSelect(templateKey) {
+    const template = templates.find((item) => item.key === templateKey);
+    if (!template?.key) return;
+    setSelectedTemplateGroupKey(template.groupKey || "");
+    setForm((current) => ({
+      ...current,
+      templateKey: template.key,
+    }));
   }
 
   async function handleCreate(event) {
@@ -249,8 +667,8 @@ export default function AutomationsPage() {
       <div className="space-y-6">
         <PageHeader
           eyebrow="Lumina"
-          title="Automações"
-          subtitle="Crie rotinas pessoais para receber agenda, resumo semanal e pendencias direto por WhatsApp, e-mail ou ambos."
+          title="Automacoes"
+          subtitle="Central manual para revisar, executar e ajustar suas rotinas pessoais sem depender do chat."
           actions={
             <div className="flex flex-wrap gap-2">
               <Button
@@ -281,62 +699,91 @@ export default function AutomationsPage() {
           <StatCard
             title="Plano"
             value={String(perms?.plan || workspace?.plan || "start").toUpperCase()}
-            subtitle="Automações pessoais liberadas nos planos pagos."
+            subtitle="Rotinas pessoais liberadas nos planos pagos, com entregas por WhatsApp e e-mail."
           />
           <StatCard
             title="Ativas"
             value={`${activeCount}/${activeLimit || 0}`}
-            subtitle="Quantidade de automacoes em execucao agora."
+            subtitle="Quantidade de automacoes em execucao dentro do limite atual do seu plano."
           />
           <StatCard
             title="Espaco livre"
             value={String(remainingSlots)}
-            subtitle="Novas automacoes que ainda cabem no seu plano."
+            subtitle="Novas automacoes que ainda cabem antes de atingir o limite de rotinas ativas."
           />
           <StatCard
-            title="Historico"
-            value={`${Number(planSummary?.historyDays || 0)} dias`}
-            subtitle="Retencao de execucoes conforme o seu plano."
-          />
-          <StatCard
-            title="Pausadas"
+            title="Pausadas e com erro"
             value={String(pausedCount + errorCount)}
-            subtitle="Itens que pedem retomada ou revisao manual."
+            subtitle="Itens que podem pedir retomada, revisao rapida ou nova execucao manual."
           />
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[380px,minmax(0,1fr)]">
-          <Card>
+          <Card className="overflow-hidden">
             <div ref={createCardRef}>
               <CardHeader
                 title="Criacao manual"
-                subtitle="Escolha o template, o canal e o horario. A Lumina agenda o resto."
+                subtitle="Escolha a categoria, selecione a rotina e ajuste o envio em poucos passos."
               />
             </div>
-            <CardBody>
+            <CardBody className="space-y-5">
               <form className="space-y-4" onSubmit={handleCreate}>
-                <label className="block space-y-1">
-                  <span className="text-sm font-semibold text-slate-700">Template</span>
-                  <select
-                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-sky-300"
-                    value={form.templateKey}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        templateKey: event.target.value,
-                      }))
-                    }
-                  >
-                    {templates.map((item) => (
-                      <option key={item.key} value={item.key}>
-                        {item.label}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="text-xs text-slate-500">
-                    {selectedTemplate?.description || "Selecione um template para esta rotina."}
-                  </span>
-                </label>
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <div className="text-sm font-semibold text-slate-700">Template</div>
+                    <div className="text-xs leading-5 text-slate-500">
+                      Escolha a categoria e depois a rotina que voce quer automatizar.
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="block space-y-1">
+                      <span className="text-sm font-semibold text-slate-700">Categoria</span>
+                      <select
+                        className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-sky-300"
+                        value={selectedTemplateGroup?.key || ""}
+                        onChange={(event) => handleTemplateGroupSelect(event.target.value)}
+                      >
+                        {templateGroups.map((group) => (
+                          <option key={group.key} value={group.key}>
+                            {group.label}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="text-xs leading-5 text-slate-500">
+                        {selectedTemplateGroup?.description ||
+                          "Escolha uma funcionalidade para ver as rotinas disponiveis."}
+                      </span>
+                    </label>
+
+                    <label className="block space-y-1">
+                      <span className="text-sm font-semibold text-slate-700">Template</span>
+                      <select
+                        className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-sky-300"
+                        value={form.templateKey}
+                        onChange={(event) => handleTemplateSelect(event.target.value)}
+                      >
+                        {visibleTemplates.map((template) => (
+                          <option key={template.key} value={template.key}>
+                            {template.label}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="text-xs leading-5 text-slate-500">
+                        {selectedTemplate?.description ||
+                          "Escolha uma rotina para continuar a configuracao."}
+                      </span>
+                    </label>
+                  </div>
+
+                  <TemplatePreview
+                    template={selectedTemplate}
+                    channel={form.channel}
+                    frequency={form.frequency}
+                    timeOfDay={form.timeOfDay}
+                    dayOfWeek={form.dayOfWeek}
+                  />
+                </div>
 
                 <label className="block space-y-1">
                   <span className="text-sm font-semibold text-slate-700">Canal</span>
@@ -417,7 +864,7 @@ export default function AutomationsPage() {
                   </label>
                 ) : null}
 
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                <div className="rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
                   A automacao usa por padrao o seu proprio WhatsApp e e-mail cadastrados.
                 </div>
 
@@ -437,18 +884,19 @@ export default function AutomationsPage() {
             </CardBody>
           </Card>
 
-          <Card>
+          <Card className="overflow-hidden">
             <CardHeader
               title="Painel manual"
-              subtitle="Acompanhe as rotinas ativas, execute manualmente ou ajuste o status sem abrir a Lumina."
+              subtitle="Veja o status de cada rotina, encontre horario e frequencia em segundos e aja daqui quando precisar."
               right={<Badge tone="PUBLIC">{items.length} itens</Badge>}
             />
-            <CardBody className="space-y-4">
+            <CardBody className="space-y-5">
               <div className="flex flex-wrap gap-2">
                 {STATUS_FILTERS.map((filter) => (
                   <FilterButton
                     key={filter.value}
                     active={statusFilter === filter.value}
+                    count={filterCounts[filter.value] || 0}
                     onClick={() => setStatusFilter(filter.value)}
                   >
                     {filter.label}
@@ -457,126 +905,31 @@ export default function AutomationsPage() {
               </div>
 
               {loading ? (
-                <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
+                <div className="rounded-[24px] border border-dashed border-slate-200 px-4 py-12 text-center text-sm text-slate-500">
                   Carregando automacoes...
                 </div>
               ) : null}
 
               {!loading && visibleItems.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center">
-                  <div className="text-base font-semibold text-slate-900">
-                    Nenhuma automacao nesse filtro
-                  </div>
-                  <div className="mt-2 text-sm text-slate-500">
-                    Ajuste os filtros acima ou crie uma nova automacao pelo painel ao lado.
-                  </div>
+                <div className="rounded-[24px] border border-dashed border-slate-200 bg-slate-50/70 px-5 py-12 text-center">
+                  <div className="text-base font-semibold text-slate-900">{emptyState.title}</div>
+                  <div className="mt-2 text-sm leading-6 text-slate-500">{emptyState.description}</div>
                 </div>
               ) : null}
 
               {!loading
-                ? visibleItems.map((item) => {
-                    const lastHistory = Array.isArray(item.history) ? item.history[0] : null;
-                    const busy = actingId === item.id;
-
-                    return (
-                      <div
-                        key={item.id}
-                        className="rounded-[24px] border border-slate-200 bg-white/80 p-4 shadow-[0_18px_36px_-28px_rgba(15,23,42,0.14)]"
-                      >
-                        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-                          <div className="space-y-3">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <div className="text-lg font-bold text-slate-950">
-                                {item.name}
-                              </div>
-                              <Badge tone={statusTone(item.status)}>
-                                {statusLabel(item.status)}
-                              </Badge>
-                              <Badge tone="PUBLIC">{item.templateLabel}</Badge>
-                            </div>
-
-                            <div className="grid gap-2 sm:grid-cols-2">
-                              <InfoLine label="Canal" value={formatChannelLabel(item.channel)} />
-                              <InfoLine
-                                label="Frequencia"
-                                value={formatFrequencyLabel(item.frequency, item.dayOfWeek)}
-                              />
-                              <InfoLine label="Horario" value={item.timeOfDay || "-"} />
-                              <InfoLine label="Proxima execucao" value={formatDateTime(item.nextRunAt)} />
-                              <InfoLine label="Ultima execucao" value={formatDateTime(item.lastRunAt)} />
-                              <InfoLine
-                                label="Execucoes"
-                                value={`${Number(item.runCount || 0)} total`}
-                              />
-                            </div>
-
-                            {item.lastError?.message ? (
-                              <div className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                                Ultimo erro: {item.lastError.message}
-                              </div>
-                            ) : null}
-
-                            {lastHistory?.message ? (
-                              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                                Ultimo resultado: {lastHistory.message}
-                              </div>
-                            ) : null}
-                          </div>
-
-                          <div className="flex flex-wrap gap-2 xl:max-w-[280px] xl:justify-end">
-                            {item.status === "active" ? (
-                              <Button
-                                variant="secondary"
-                                size="sm"
-                                disabled={busy}
-                                onClick={() => handleAction(item.id, "pause")}
-                              >
-                                Pausar
-                              </Button>
-                            ) : null}
-
-                            {item.status !== "active" ? (
-                              <Button
-                                variant="secondary"
-                                size="sm"
-                                disabled={busy}
-                                onClick={() => handleAction(item.id, "resume")}
-                              >
-                                Retomar
-                              </Button>
-                            ) : null}
-
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              disabled={busy}
-                              onClick={() => handleAction(item.id, "run")}
-                            >
-                              Executar agora
-                            </Button>
-
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={busy}
-                              onClick={() => handleAction(item.id, "duplicate")}
-                            >
-                              Duplicar
-                            </Button>
-
-                            <Button
-                              variant="danger"
-                              size="sm"
-                              disabled={busy}
-                              onClick={() => handleAction(item.id, "delete")}
-                            >
-                              Excluir
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
+                ? visibleItems.map((item) => (
+                    <AutomationCard
+                      key={item.id}
+                      item={item}
+                      busy={actingId === item.id}
+                      expanded={expandedAutomationId === item.id}
+                      onToggle={() =>
+                        setExpandedAutomationId((current) => (current === item.id ? "" : item.id))
+                      }
+                      onAction={handleAction}
+                    />
+                  ))
                 : null}
             </CardBody>
           </Card>

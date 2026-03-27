@@ -91,9 +91,23 @@ export async function cancelOfferByWorkspace({
     throw err;
   }
 
-  if (status === "CANCELLED") {
+  if (status === "CANCELLED" || paymentStatus === "CANCELLED") {
+    if (status !== "CANCELLED" || paymentStatus !== "CANCELLED") {
+      await Offer.updateOne(
+        { _id: offer._id },
+        {
+          $set: {
+            status: "CANCELLED",
+            paymentStatus: "CANCELLED",
+          },
+        },
+        { strict: false },
+      );
+    }
+
+    const updatedOffer = (await Offer.findById(offer._id).lean()) || offer;
     return {
-      offer,
+      offer: updatedOffer,
       cancelledBookingsCount: 0,
       notify: {
         ok: false,
@@ -109,6 +123,7 @@ export async function cancelOfferByWorkspace({
     {
       $set: {
         status: "CANCELLED",
+        paymentStatus: "CANCELLED",
         cancelledAt: actionAt,
         cancelledByUserId: cancelledByUserId || null,
         cancelReason: String(reason || "").trim() || null,

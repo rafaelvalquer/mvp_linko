@@ -22,6 +22,9 @@ import {
   fmtBRLFromCents,
   getAmountCents,
   getPaymentLabel,
+  isCancelledOffer,
+  isPaidOffer,
+  isPendingPaymentOffer,
 } from "../components/offers/offerHelpers.js";
 
 function PulseGlowBadge({ children, isDark }) {
@@ -201,13 +204,15 @@ export default function Offers() {
         : (items || []).filter((o) => {
             const pay = norm(o?.paymentStatus);
             const flow = norm(o?.status || "PUBLIC");
-            const paid =
-              ["PAID", "CONFIRMED"].includes(pay) ||
-              ["PAID", "CONFIRMED"].includes(flow);
 
-            if (filter === "PAID") return paid;
-            if (["PENDING", "WAITING_CONFIRMATION", "REJECTED"].includes(filter)) {
-              return pay === filter;
+            if (filter === "PAID") return isPaidOffer(o);
+            if (filter === "PENDING") return isPendingPaymentOffer(o);
+            if (filter === "CANCELLED") return isCancelledOffer(o);
+            if (filter === "WAITING_CONFIRMATION") {
+              return !isCancelledOffer(o) && pay === "WAITING_CONFIRMATION";
+            }
+            if (filter === "REJECTED") {
+              return !isCancelledOffer(o) && pay === "REJECTED";
             }
 
             return flow === filter;
@@ -440,10 +445,7 @@ export default function Offers() {
                       const pay = getPaymentLabel(o);
                       const publicUrl = `/p/${o.publicToken}`;
                       const copied = copiedId === o._id;
-                      const flowStatus = norm(o?.status || "PUBLIC");
-                      const isPendingAlert =
-                        pay?.code === "PENDING" &&
-                        !["CANCELLED", "EXPIRED"].includes(flowStatus);
+                      const isPendingAlert = isPendingPaymentOffer(o);
                       const isWaitingConfirmation =
                         pay?.code === "WAITING_CONFIRMATION";
                       const isRecurring =
