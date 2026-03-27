@@ -18,6 +18,7 @@ import clientsRoutes from "./routes/clients.routes.js";
 import settingsRoutes from "./routes/settings.routes.js";
 import reportsRoutes from "./routes/reports.routes.js";
 import offerRemindersRoutes from "./routes/offer-reminders.routes.js";
+import userAutomationsRoutes from "./routes/user-automations.routes.js";
 
 import billingStripeRoutes from "./routes/billing.stripe.routes.js";
 import webhooksStripeRoutes from "./routes/webhooks.stripe.routes.js";
@@ -26,6 +27,7 @@ import adminRoutes from "./routes/admin.routes.js";
 import { startBookingRemindersRunner } from "./services/booking-reminders.runner.js";
 import { startRecurringOffersRunner } from "./services/recurring-offers.runner.js";
 import { startPaymentRemindersRunner } from "./services/payment-reminders.runner.js";
+import { startUserAutomationsRunner } from "./services/user-automations.runner.js";
 import { startWhatsAppOutboxRunner } from "./services/whatsappOutbox.runner.js";
 
 import path from "path";
@@ -112,6 +114,7 @@ export function createApp() {
   app.use("/api", settingsRoutes);
   app.use("/api", analyticsRoutes);
   app.use("/api", reportsRoutes);
+  app.use("/api", userAutomationsRoutes);
   app.use("/api", billingStripeRoutes);
   app.use("/api", adminRoutes);
 
@@ -120,6 +123,7 @@ export function createApp() {
   });
   startBookingRemindersRunner({ origin: publicOrigin });
   startPaymentRemindersRunner({ origin: publicOrigin });
+  startUserAutomationsRunner();
   startWhatsAppOutboxRunner();
 
   app.use("/api", offerRemindersRoutes);

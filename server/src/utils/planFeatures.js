@@ -9,6 +9,7 @@ export function normalizePlan(value) {
 export function getPlanFeatureMatrix(value) {
   const plan = normalizePlan(value);
   const recurring = ["pro", "business", "enterprise"].includes(plan);
+  const automations = ["pro", "business", "enterprise"].includes(plan);
   const whatsappAccountPhone = [
     "pro",
     "business",
@@ -46,6 +47,7 @@ export function getPlanFeatureMatrix(value) {
   return {
     plan,
     recurring,
+    automations,
     whatsappAccountPhone,
     whatsappAiOfferCreation,
     whatsappPaymentStatus,
@@ -60,6 +62,10 @@ export function getPlanFeatureMatrix(value) {
 
 export function canUseRecurring(value) {
   return getPlanFeatureMatrix(value).recurring;
+}
+
+export function canUseAutomations(value) {
+  return getPlanFeatureMatrix(value).automations;
 }
 
 export function canUseWhatsAppAccountPhone(value) {
@@ -100,6 +106,48 @@ export function canUseOfferPaymentReminderWhatsApp(value) {
 
 export function canUsePaymentReminderWhatsApp(value) {
   return getPlanFeatureMatrix(value).whatsappPaymentReminders;
+}
+
+export function getAutomationPlanLimits(value) {
+  const plan = normalizePlan(value);
+
+  if (plan === "enterprise") {
+    return {
+      plan,
+      activeLimit: 30,
+      recipientsPerChannel: 10,
+      historyDays: 180,
+      allowedFrequencies: ["daily", "weekly"],
+    };
+  }
+
+  if (plan === "business") {
+    return {
+      plan,
+      activeLimit: 10,
+      recipientsPerChannel: 3,
+      historyDays: 60,
+      allowedFrequencies: ["daily", "weekly"],
+    };
+  }
+
+  if (plan === "pro") {
+    return {
+      plan,
+      activeLimit: 3,
+      recipientsPerChannel: 1,
+      historyDays: 15,
+      allowedFrequencies: ["daily", "weekly"],
+    };
+  }
+
+  return {
+    plan,
+    activeLimit: 0,
+    recipientsPerChannel: 0,
+    historyDays: 0,
+    allowedFrequencies: [],
+  };
 }
 
 export function recurringFeatureError() {

@@ -8,6 +8,13 @@ export const WHATSAPP_AI_INTENTS = [
 export const WHATSAPP_AI_ROUTING_INTENTS = [
   "create_offer_send_whatsapp",
   "generate_sales_insight",
+  "automation_list",
+  "automation_create",
+  "automation_pause",
+  "automation_resume",
+  "automation_run_now",
+  "automation_duplicate",
+  "automation_delete",
   "query_recent_offers",
   "query_offer_status",
   "query_expiring_offers",

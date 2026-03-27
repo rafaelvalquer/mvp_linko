@@ -4,6 +4,14 @@ export const WHATSAPP_COMMAND_SESSION_STATES = [
   "NEW",
   "AWAITING_INTENT_SELECTION",
   "COLLECTING_FIELDS",
+  "AWAITING_AUTOMATION_TEMPLATE_SELECTION",
+  "AWAITING_AUTOMATION_CHANNEL_SELECTION",
+  "AWAITING_AUTOMATION_FREQUENCY_SELECTION",
+  "AWAITING_AUTOMATION_WEEKDAY_SELECTION",
+  "AWAITING_AUTOMATION_TIME_INPUT",
+  "AWAITING_AUTOMATION_SELECTION",
+  "AWAITING_AUTOMATION_ACTION_SELECTION",
+  "AWAITING_AUTOMATION_CONFIRMATION",
   "AWAITING_CUSTOMER_SELECTION",
   "AWAITING_PRODUCT_SELECTION",
   "AWAITING_BOOKING_SELECTION",
@@ -128,6 +136,29 @@ const CandidateOfferSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const CandidateAutomationSchema = new mongoose.Schema(
+  {
+    automationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "UserAutomation",
+      default: null,
+    },
+    name: { type: String, default: "" },
+    templateKey: { type: String, default: "" },
+    templateLabel: { type: String, default: "" },
+    channel: { type: String, default: "" },
+    frequency: { type: String, default: "" },
+    dayOfWeek: { type: String, default: "" },
+    timeOfDay: { type: String, default: "" },
+    status: { type: String, default: "" },
+    nextRunAt: { type: Date, default: null },
+    lastRunAt: { type: Date, default: null },
+    displayLabel: { type: String, default: "" },
+    score: { type: Number, default: 0 },
+  },
+  { _id: false },
+);
+
 const WhatsAppCommandSessionSchema = new mongoose.Schema(
   {
     workspaceId: {
@@ -163,6 +194,7 @@ const WhatsAppCommandSessionSchema = new mongoose.Schema(
       type: String,
       enum: [
         "insight_analysis",
+        "automation_manage",
         "offer_create",
         "offer_query",
         "offer_resend",
@@ -193,6 +225,7 @@ const WhatsAppCommandSessionSchema = new mongoose.Schema(
     candidateProducts: { type: [CandidateProductSchema], default: [] },
     candidateBookings: { type: [CandidateBookingSchema], default: [] },
     candidateOffers: { type: [CandidateOfferSchema], default: [] },
+    candidateAutomations: { type: [CandidateAutomationSchema], default: [] },
     confirmationSummaryText: { type: String, default: "" },
     createdOfferId: {
       type: mongoose.Schema.Types.ObjectId,

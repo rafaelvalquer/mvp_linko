@@ -9,6 +9,7 @@ export function normalizePlan(value) {
 export function getPlanFeatureMatrix(value) {
   const plan = normalizePlan(value);
   const recurring = ["pro", "business", "enterprise"].includes(plan);
+  const automations = ["pro", "business", "enterprise"].includes(plan);
   const whatsappAccountPhone = [
     "pro",
     "business",
@@ -46,6 +47,7 @@ export function getPlanFeatureMatrix(value) {
   return {
     plan,
     recurring,
+    automations,
     whatsappAccountPhone,
     whatsappAiOfferCreation,
     whatsappPaymentStatus,
@@ -60,6 +62,10 @@ export function getPlanFeatureMatrix(value) {
 
 export function canUseRecurring(value) {
   return getPlanFeatureMatrix(value).recurring;
+}
+
+export function canUseAutomations(value) {
+  return getPlanFeatureMatrix(value).automations;
 }
 
 export function canUseWhatsAppAccountPhone(value) {

@@ -5,7 +5,10 @@ import {
   normalizeDestinationPhoneN11,
   normalizeWhatsAppPhoneDigits,
 } from "../../utils/phone.js";
-import { canUseWhatsAppAiOfferCreation } from "../../utils/planFeatures.js";
+import {
+  canUseAutomations,
+  canUseWhatsAppAiOfferCreation,
+} from "../../utils/planFeatures.js";
 import { assertWorkspaceModuleAccess } from "../../utils/workspaceAccess.js";
 import { queueOrSendWhatsApp } from "../whatsappOutbox.service.js";
 import {
@@ -28,6 +31,30 @@ import {
   generateLuminaInsight,
   getLuminaInsightUsageStatus,
 } from "../luminaInsight.service.js";
+import {
+  buildAutomationActionConfirmation,
+  buildAutomationActionQuestion,
+  buildAutomationCandidate,
+  buildAutomationCreateConfirmation,
+  buildAutomationDraftChannelQuestion,
+  buildAutomationDraftFrequencyQuestion,
+  buildAutomationDraftTemplateQuestion,
+  buildAutomationDraftTimeQuestion,
+  buildAutomationDraftWeekDayQuestion,
+  buildAutomationListMessage,
+  buildAutomationResultMessage,
+  buildAutomationSummaryMessage,
+  createUserAutomation,
+  deleteUserAutomation,
+  duplicateUserAutomation,
+  listUserAutomations,
+  parseDailyTimeInput,
+  pauseUserAutomation,
+  resolveAutomationActionSelection,
+  resolveAutomationTemplateSelection,
+  resumeUserAutomation,
+  runUserAutomationNow,
+} from "../userAutomations.service.js";
 import {
   applyCustomerSelection,
   applyProductSelectionToItem,
@@ -416,6 +443,7 @@ async function maybeRearmWebSessionForNextInput(session) {
     candidateProducts: [],
     candidateBookings: [],
     candidateOffers: [],
+    candidateAutomations: [],
     confirmationSummaryText: "",
     lastQuestionKey: "",
     lastQuestionText: "",
@@ -1050,6 +1078,109 @@ function getSelectedOfferCandidate(session) {
   return candidate;
 }
 
+function getAutomationManagementDraft(session) {
+  const draft = session?.resolved?.automationManagement;
+  if (!draft || typeof draft !== "object" || Array.isArray(draft)) {
+    return {
+      intent: "",
+      templateKey: "",
+      channel: "",
+      frequency: "",
+      dayOfWeek: "",
+      timeOfDay: "",
+      selectedAction: "",
+      source_text: "",
+    };
+  }
+
+  return {
+    intent: "",
+    templateKey: "",
+    channel: "",
+    frequency: "",
+    dayOfWeek: "",
+    timeOfDay: "",
+    selectedAction: "",
+    source_text: "",
+    ...draft,
+  };
+}
+
+function getSelectedAutomationCandidate(session) {
+  const candidate = session?.resolved?.selectedAutomationCandidate;
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+    return null;
+  }
+  return candidate;
+}
+
+function resolveAutomationChannelSelection(value = "") {
+  const normalized = normalizeComparableText(value);
+  if (["1", "whatsapp", "zap"].includes(normalized)) return "whatsapp";
+  if (["2", "email", "e-mail", "mail"].includes(normalized)) return "email";
+  if (["3", "ambos", "both", "todos"].includes(normalized)) return "both";
+  return "";
+}
+
+function resolveAutomationFrequencySelection(value = "") {
+  const normalized = normalizeComparableText(value);
+  if (["1", "diaria", "diario", "todo dia", "daily"].includes(normalized)) {
+    return "daily";
+  }
+  if (["2", "semanal", "semana", "weekly"].includes(normalized)) {
+    return "weekly";
+  }
+  return "";
+}
+
+function resolveAutomationWeekDaySelection(value = "") {
+  const normalized = normalizeComparableText(value);
+  const aliases = {
+    "1": "monday",
+    monday: "monday",
+    segunda: "monday",
+    "segunda-feira": "monday",
+    "2": "tuesday",
+    tuesday: "tuesday",
+    terca: "tuesday",
+    "terca-feira": "tuesday",
+    "terça": "tuesday",
+    "terça-feira": "tuesday",
+    "3": "wednesday",
+    wednesday: "wednesday",
+    quarta: "wednesday",
+    "quarta-feira": "wednesday",
+    "4": "thursday",
+    thursday: "thursday",
+    quinta: "thursday",
+    "quinta-feira": "thursday",
+    "5": "friday",
+    friday: "friday",
+    sexta: "friday",
+    "sexta-feira": "friday",
+    "6": "saturday",
+    saturday: "saturday",
+    sabado: "saturday",
+    "sábado": "saturday",
+    "7": "sunday",
+    sunday: "sunday",
+    domingo: "sunday",
+  };
+
+  return aliases[normalized] || "";
+}
+
+function resolveAutomationDirectAction(intent = "") {
+  const actionMap = {
+    automation_pause: "pause",
+    automation_resume: "resume",
+    automation_run_now: "run_now",
+    automation_duplicate: "duplicate",
+    automation_delete: "delete",
+  };
+  return actionMap[String(intent || "").trim()] || "";
+}
+
 function resolveOfferSalesFlowType(intent = "") {
   if (intent === "resend_offer_link") return "offer_resend";
   if (intent === "cancel_offer") return "offer_cancel";
@@ -1325,6 +1456,7 @@ async function askSessionQuestion({
   candidateProducts = [],
   candidateBookings = [],
   candidateOffers = [],
+  candidateAutomations = [],
   confirmationSummaryText = "",
   dedupeSuffix,
   resolved,
@@ -1338,6 +1470,7 @@ async function askSessionQuestion({
     candidateProducts,
     candidateBookings,
     candidateOffers,
+    candidateAutomations,
     confirmationSummaryText,
     resolved,
   });
@@ -1631,6 +1764,399 @@ async function askBackofficeOperationSelection({
     status: "awaiting_intent_selection",
     session: updatedSession,
   };
+}
+
+function buildAutomationsPlanRequiredMessage() {
+  return "As automacoes da Lumina ficam disponiveis apenas nos planos Pro, Business e Enterprise.";
+}
+
+function buildAutomationEmptyMessage(intent = "") {
+  const normalizedIntent = String(intent || "").trim();
+  if (normalizedIntent === "automation_pause") {
+    return "Nao encontrei automacoes ativas para pausar.";
+  }
+  if (normalizedIntent === "automation_resume") {
+    return "Nao encontrei automacoes pausadas para retomar.";
+  }
+  if (normalizedIntent === "automation_run_now") {
+    return "Nao encontrei automacoes disponiveis para executar agora.";
+  }
+  if (normalizedIntent === "automation_duplicate") {
+    return "Nao encontrei automacoes para duplicar.";
+  }
+  if (normalizedIntent === "automation_delete") {
+    return "Nao encontrei automacoes para excluir.";
+  }
+  return "Voce ainda nao tem automacoes cadastradas.";
+}
+
+function listAutomationStatusesForIntent(intent = "") {
+  const normalizedIntent = String(intent || "").trim();
+  if (normalizedIntent === "automation_pause") {
+    return ["active", "error"];
+  }
+  if (normalizedIntent === "automation_resume") {
+    return ["paused"];
+  }
+  return [];
+}
+
+async function completeAutomationSessionAndReply({
+  session,
+  user,
+  message,
+  dedupeSuffix,
+  resolved = null,
+}) {
+  const completedSession = await markSessionCompleted(session._id, {
+    flowType: "automation_manage",
+    extracted: buildSessionExtracted(session?.extracted, {
+      automationManagement: getAutomationManagementDraft(session),
+    }),
+    resolved:
+      resolved && typeof resolved === "object" && !Array.isArray(resolved)
+        ? resolved
+        : {
+            ...(stripIntentSelectionContext(session?.resolved || {})),
+            automationManagement: getAutomationManagementDraft(session),
+          },
+  });
+  await closeActiveSessionsForRequester({
+    userId: user._id,
+    requesterPhoneDigits: completedSession.requesterPhoneDigits,
+    excludeSessionId: completedSession._id,
+    state: "EXPIRED",
+  });
+  await replyToSession({
+    session: completedSession,
+    user,
+    message,
+    dedupeSuffix,
+  });
+  return completedSession;
+}
+
+async function askAutomationActionQuestion({
+  session,
+  user,
+  candidate,
+  dedupeSuffix,
+}) {
+  const question = buildAutomationActionQuestion(candidate);
+  const updatedSession = await updateWhatsAppSession(session._id, {
+    flowType: "automation_manage",
+    state: "AWAITING_AUTOMATION_ACTION_SELECTION",
+    pendingFields: [],
+    lastQuestionKey: "automation_action_selection",
+    lastQuestionText: question,
+    candidateAutomations: [],
+    confirmationSummaryText: "",
+    resolved: {
+      ...(session?.resolved || {}),
+      automationManagement: getAutomationManagementDraft(session),
+      selectedAutomationCandidate: candidate,
+    },
+  });
+
+  await replyToSession({
+    session: updatedSession,
+    user,
+    message: question,
+    dedupeSuffix,
+  });
+
+  return updatedSession;
+}
+
+async function askAutomationConfirmationQuestion({
+  session,
+  user,
+  action,
+  candidate = null,
+  dedupeSuffix,
+}) {
+  const draft = getAutomationManagementDraft(session);
+  const question =
+    action === "create"
+      ? buildAutomationCreateConfirmation({
+          templateKey: draft.templateKey,
+          channel: draft.channel,
+          frequency: draft.frequency,
+          dayOfWeek: draft.dayOfWeek,
+          timeOfDay: draft.timeOfDay,
+        })
+      : buildAutomationActionConfirmation({
+          automation: candidate,
+          action,
+        });
+
+  const updatedSession = await updateWhatsAppSession(session._id, {
+    flowType: "automation_manage",
+    state: "AWAITING_AUTOMATION_CONFIRMATION",
+    pendingFields: [],
+    lastQuestionKey: "automation_confirmation",
+    lastQuestionText: question,
+    candidateAutomations: [],
+    confirmationSummaryText: question,
+    resolved: {
+      ...(session?.resolved || {}),
+      automationManagement: {
+        ...draft,
+        selectedAction: action,
+      },
+      ...(candidate ? { selectedAutomationCandidate: candidate } : {}),
+    },
+  });
+
+  await replyToSession({
+    session: updatedSession,
+    user,
+    message: question,
+    dedupeSuffix,
+  });
+
+  return updatedSession;
+}
+
+async function initializeAutomationManagementSession({
+  session,
+  user,
+  text,
+  dedupeSuffix,
+  routingExtraction = null,
+}) {
+  if (!canUseAutomations(user?.workspacePlan || "start")) {
+    const completedSession = await completeAutomationSessionAndReply({
+      session,
+      user,
+      message: buildAutomationsPlanRequiredMessage(),
+      dedupeSuffix,
+      resolved: {
+        ...(stripIntentSelectionContext(session?.resolved || {})),
+        source_text: String(text || "").trim(),
+      },
+    });
+    return { ok: true, status: "completed", session: completedSession };
+  }
+
+  const intent = String(routingExtraction?.intent || "").trim();
+  const baseDraft = getAutomationManagementDraft(session);
+  const nextDraft = {
+    ...baseDraft,
+    intent,
+    source_text: String(text || "").trim(),
+  };
+
+  if (intent === "automation_create") {
+    const updatedSession = await askSessionQuestion({
+      session,
+      user,
+      state: "AWAITING_AUTOMATION_TEMPLATE_SELECTION",
+      pendingFields: [],
+      lastQuestionKey: "automation_template_selection",
+      lastQuestionText: buildAutomationDraftTemplateQuestion(),
+      candidateCustomers: [],
+      candidateProducts: [],
+      candidateBookings: [],
+      candidateOffers: [],
+      candidateAutomations: [],
+      confirmationSummaryText: "",
+      dedupeSuffix,
+      resolved: {
+        ...(stripIntentSelectionContext(session?.resolved || {})),
+        source_text: String(text || "").trim(),
+        automationManagement: nextDraft,
+        selectedAutomationCandidate: null,
+      },
+    });
+
+    return {
+      ok: true,
+      status: "awaiting_automation_template_selection",
+      session: updatedSession,
+    };
+  }
+
+  const automations = await listUserAutomations({
+    userId: user._id,
+    workspaceId: user.workspaceId,
+    statuses: listAutomationStatusesForIntent(intent),
+    limit: 30,
+  });
+
+  if (!automations.length) {
+    const completedSession = await completeAutomationSessionAndReply({
+      session,
+      user,
+      message: buildAutomationEmptyMessage(intent),
+      dedupeSuffix,
+      resolved: {
+        ...(stripIntentSelectionContext(session?.resolved || {})),
+        source_text: String(text || "").trim(),
+        automationManagement: nextDraft,
+        selectedAutomationCandidate: null,
+      },
+    });
+    return { ok: true, status: "completed", session: completedSession };
+  }
+
+  const candidateAutomations = automations.map((automation) =>
+    buildAutomationCandidate(automation),
+  );
+  const directAction = resolveAutomationDirectAction(intent);
+
+  const baseResolved = {
+    ...(stripIntentSelectionContext(session?.resolved || {})),
+    source_text: String(text || "").trim(),
+    automationManagement: nextDraft,
+    selectedAutomationCandidate: null,
+  };
+
+  if (candidateAutomations.length === 1) {
+    const updatedSession = await updateWhatsAppSession(session._id, {
+      flowType: "automation_manage",
+      resolved: {
+        ...baseResolved,
+        selectedAutomationCandidate: candidateAutomations[0],
+      },
+      candidateAutomations: [],
+    });
+
+    if (directAction) {
+      const confirmationSession = await askAutomationConfirmationQuestion({
+        session: updatedSession,
+        user,
+        action: directAction,
+        candidate: candidateAutomations[0],
+        dedupeSuffix,
+      });
+      return {
+        ok: true,
+        status: "awaiting_automation_confirmation",
+        session: confirmationSession,
+      };
+    }
+
+    const actionSession = await askAutomationActionQuestion({
+      session: updatedSession,
+      user,
+      candidate: candidateAutomations[0],
+      dedupeSuffix,
+    });
+    return {
+      ok: true,
+      status: "awaiting_automation_action_selection",
+      session: actionSession,
+    };
+  }
+
+  const updatedSession = await askSessionQuestion({
+    session,
+    user,
+    state: "AWAITING_AUTOMATION_SELECTION",
+    pendingFields: [],
+    lastQuestionKey: "automation_selection",
+    lastQuestionText: buildAutomationListMessage(automations, {
+      emptyText: buildAutomationEmptyMessage(intent),
+    }),
+    candidateCustomers: [],
+    candidateProducts: [],
+    candidateBookings: [],
+    candidateOffers: [],
+    candidateAutomations,
+    confirmationSummaryText: "",
+    dedupeSuffix,
+    resolved: baseResolved,
+  });
+
+  return {
+    ok: true,
+    status: "awaiting_automation_selection",
+    session: updatedSession,
+  };
+}
+
+async function performAutomationManagementAction({
+  session,
+  user,
+}) {
+  const draft = getAutomationManagementDraft(session);
+  const selectedCandidate = getSelectedAutomationCandidate(session);
+  const selectedAction = String(draft?.selectedAction || "").trim();
+
+  if (!selectedAction) {
+    const error = new Error("Nao consegui identificar a acao da automacao.");
+    error.code = "AUTOMATION_ACTION_REQUIRED";
+    throw error;
+  }
+
+  if (selectedAction === "create") {
+    const automation = await createUserAutomation({
+      user,
+      templateKey: draft.templateKey,
+      channel: draft.channel,
+      frequency: draft.frequency,
+      dayOfWeek: draft.dayOfWeek,
+      timeOfDay: draft.timeOfDay,
+    });
+    return {
+      action: "create",
+      automation,
+      execution: null,
+    };
+  }
+
+  const automationId = String(selectedCandidate?.automationId || "").trim();
+  if (!automationId) {
+    const error = new Error("Nao encontrei a automacao selecionada.");
+    error.code = "AUTOMATION_SELECTION_REQUIRED";
+    throw error;
+  }
+
+  if (selectedAction === "pause") {
+    return {
+      action: "pause",
+      automation: await pauseUserAutomation({ automationId, user }),
+      execution: null,
+    };
+  }
+
+  if (selectedAction === "resume") {
+    return {
+      action: "resume",
+      automation: await resumeUserAutomation({ automationId, user }),
+      execution: null,
+    };
+  }
+
+  if (selectedAction === "duplicate") {
+    return {
+      action: "duplicate",
+      automation: await duplicateUserAutomation({ automationId, user }),
+      execution: null,
+    };
+  }
+
+  if (selectedAction === "delete") {
+    return {
+      action: "delete",
+      automation: await deleteUserAutomation({ automationId, user }),
+      execution: null,
+    };
+  }
+
+  if (selectedAction === "run_now") {
+    const result = await runUserAutomationNow({ automationId, user });
+    return {
+      action: "run_now",
+      automation: result?.automation || null,
+      execution: result?.execution || null,
+    };
+  }
+
+  const error = new Error("Acao de automacao nao suportada.");
+  error.code = "AUTOMATION_ACTION_UNSUPPORTED";
+  throw error;
 }
 
 async function maybeAskForOfferSalesContextSwitch({
@@ -5603,6 +6129,26 @@ async function dispatchInitialSessionRouting({
   }
 
   if (
+    [
+      "automation_list",
+      "automation_create",
+      "automation_pause",
+      "automation_resume",
+      "automation_run_now",
+      "automation_duplicate",
+      "automation_delete",
+    ].includes(routingExtraction.intent)
+  ) {
+    return initializeAutomationManagementSession({
+      session: sessionAfterRouting,
+      user,
+      text,
+      dedupeSuffix: `${messageId}:automation-manage`,
+      routingExtraction,
+    });
+  }
+
+  if (
     ["lookup_client_phone", "lookup_product"].includes(routingExtraction.intent)
   ) {
     return initializeBackofficeOperationSession({
@@ -5736,7 +6282,7 @@ async function dispatchInitialSessionRouting({
     const erroredSession = await markSessionError(sessionAfterRouting._id, {
       code: "WHATSAPP_AI_UNKNOWN_INTENT",
       message:
-        "Intencao nao reconhecida para proposta, agenda, cobranca e vendas ou backoffice.",
+        "Intencao nao reconhecida para proposta, agenda, cobranca, automacoes ou backoffice.",
     });
 
     await replyToSession({
@@ -5808,6 +6354,506 @@ async function handleOpenSession({ session, user, event, text }) {
       event,
       text,
     });
+  }
+
+  if (refreshedSession.state === "AWAITING_AUTOMATION_TEMPLATE_SELECTION") {
+    const selection = parseCandidateSelectionReply(text);
+    if (selection === "CANCELAR") {
+      const cancelledSession = await cancelSessionAndReply({
+        session: refreshedSession,
+        user,
+        dedupeSuffix: `${event.messageId}:cancel`,
+      });
+      return { ok: true, status: "cancelled", session: cancelledSession };
+    }
+
+    const templateKey = resolveAutomationTemplateSelection(text);
+    if (!templateKey) {
+      await replyToSession({
+        session: refreshedSession,
+        user,
+        message: buildInvalidSelectionMessage(refreshedSession.lastQuestionText),
+        dedupeSuffix,
+      });
+      return {
+        ok: true,
+        status: "awaiting_automation_template_selection",
+        session: refreshedSession,
+      };
+    }
+
+    const updatedSession = await askSessionQuestion({
+      session: refreshedSession,
+      user,
+      state: "AWAITING_AUTOMATION_CHANNEL_SELECTION",
+      pendingFields: [],
+      lastQuestionKey: "automation_channel_selection",
+      lastQuestionText: buildAutomationDraftChannelQuestion(),
+      candidateCustomers: [],
+      candidateProducts: [],
+      candidateBookings: [],
+      candidateOffers: [],
+      candidateAutomations: [],
+      confirmationSummaryText: "",
+      dedupeSuffix,
+      resolved: {
+        ...(refreshedSession.resolved || {}),
+        automationManagement: {
+          ...getAutomationManagementDraft(refreshedSession),
+          templateKey,
+          selectedAction: "create",
+          source_text: String(text || "").trim(),
+        },
+      },
+    });
+
+    return {
+      ok: true,
+      status: "awaiting_automation_channel_selection",
+      session: updatedSession,
+    };
+  }
+
+  if (refreshedSession.state === "AWAITING_AUTOMATION_CHANNEL_SELECTION") {
+    const selection = parseCandidateSelectionReply(text);
+    if (selection === "CANCELAR") {
+      const cancelledSession = await cancelSessionAndReply({
+        session: refreshedSession,
+        user,
+        dedupeSuffix: `${event.messageId}:cancel`,
+      });
+      return { ok: true, status: "cancelled", session: cancelledSession };
+    }
+
+    const channel = resolveAutomationChannelSelection(text);
+    if (!channel) {
+      await replyToSession({
+        session: refreshedSession,
+        user,
+        message: buildInvalidSelectionMessage(refreshedSession.lastQuestionText),
+        dedupeSuffix,
+      });
+      return {
+        ok: true,
+        status: "awaiting_automation_channel_selection",
+        session: refreshedSession,
+      };
+    }
+
+    const updatedSession = await askSessionQuestion({
+      session: refreshedSession,
+      user,
+      state: "AWAITING_AUTOMATION_FREQUENCY_SELECTION",
+      pendingFields: [],
+      lastQuestionKey: "automation_frequency_selection",
+      lastQuestionText: buildAutomationDraftFrequencyQuestion(),
+      candidateCustomers: [],
+      candidateProducts: [],
+      candidateBookings: [],
+      candidateOffers: [],
+      candidateAutomations: [],
+      confirmationSummaryText: "",
+      dedupeSuffix,
+      resolved: {
+        ...(refreshedSession.resolved || {}),
+        automationManagement: {
+          ...getAutomationManagementDraft(refreshedSession),
+          channel,
+        },
+      },
+    });
+
+    return {
+      ok: true,
+      status: "awaiting_automation_frequency_selection",
+      session: updatedSession,
+    };
+  }
+
+  if (refreshedSession.state === "AWAITING_AUTOMATION_FREQUENCY_SELECTION") {
+    const selection = parseCandidateSelectionReply(text);
+    if (selection === "CANCELAR") {
+      const cancelledSession = await cancelSessionAndReply({
+        session: refreshedSession,
+        user,
+        dedupeSuffix: `${event.messageId}:cancel`,
+      });
+      return { ok: true, status: "cancelled", session: cancelledSession };
+    }
+
+    const frequency = resolveAutomationFrequencySelection(text);
+    if (!frequency) {
+      await replyToSession({
+        session: refreshedSession,
+        user,
+        message: buildInvalidSelectionMessage(refreshedSession.lastQuestionText),
+        dedupeSuffix,
+      });
+      return {
+        ok: true,
+        status: "awaiting_automation_frequency_selection",
+        session: refreshedSession,
+      };
+    }
+
+    if (frequency === "weekly") {
+      const updatedSession = await askSessionQuestion({
+        session: refreshedSession,
+        user,
+        state: "AWAITING_AUTOMATION_WEEKDAY_SELECTION",
+        pendingFields: [],
+        lastQuestionKey: "automation_weekday_selection",
+        lastQuestionText: buildAutomationDraftWeekDayQuestion(),
+        candidateCustomers: [],
+        candidateProducts: [],
+        candidateBookings: [],
+        candidateOffers: [],
+        candidateAutomations: [],
+        confirmationSummaryText: "",
+        dedupeSuffix,
+        resolved: {
+          ...(refreshedSession.resolved || {}),
+          automationManagement: {
+            ...getAutomationManagementDraft(refreshedSession),
+            frequency,
+            dayOfWeek: "",
+          },
+        },
+      });
+
+      return {
+        ok: true,
+        status: "awaiting_automation_weekday_selection",
+        session: updatedSession,
+      };
+    }
+
+    const updatedSession = await askSessionQuestion({
+      session: refreshedSession,
+      user,
+      state: "AWAITING_AUTOMATION_TIME_INPUT",
+      pendingFields: [],
+      lastQuestionKey: "automation_time_of_day",
+      lastQuestionText: buildAutomationDraftTimeQuestion(),
+      candidateCustomers: [],
+      candidateProducts: [],
+      candidateBookings: [],
+      candidateOffers: [],
+      candidateAutomations: [],
+      confirmationSummaryText: "",
+      dedupeSuffix,
+      resolved: {
+        ...(refreshedSession.resolved || {}),
+        automationManagement: {
+          ...getAutomationManagementDraft(refreshedSession),
+          frequency,
+          dayOfWeek: "",
+        },
+      },
+    });
+
+    return {
+      ok: true,
+      status: "awaiting_automation_time_input",
+      session: updatedSession,
+    };
+  }
+
+  if (refreshedSession.state === "AWAITING_AUTOMATION_WEEKDAY_SELECTION") {
+    const selection = parseCandidateSelectionReply(text);
+    if (selection === "CANCELAR") {
+      const cancelledSession = await cancelSessionAndReply({
+        session: refreshedSession,
+        user,
+        dedupeSuffix: `${event.messageId}:cancel`,
+      });
+      return { ok: true, status: "cancelled", session: cancelledSession };
+    }
+
+    const dayOfWeek = resolveAutomationWeekDaySelection(text);
+    if (!dayOfWeek) {
+      await replyToSession({
+        session: refreshedSession,
+        user,
+        message: buildInvalidSelectionMessage(refreshedSession.lastQuestionText),
+        dedupeSuffix,
+      });
+      return {
+        ok: true,
+        status: "awaiting_automation_weekday_selection",
+        session: refreshedSession,
+      };
+    }
+
+    const updatedSession = await askSessionQuestion({
+      session: refreshedSession,
+      user,
+      state: "AWAITING_AUTOMATION_TIME_INPUT",
+      pendingFields: [],
+      lastQuestionKey: "automation_time_of_day",
+      lastQuestionText: buildAutomationDraftTimeQuestion(),
+      candidateCustomers: [],
+      candidateProducts: [],
+      candidateBookings: [],
+      candidateOffers: [],
+      candidateAutomations: [],
+      confirmationSummaryText: "",
+      dedupeSuffix,
+      resolved: {
+        ...(refreshedSession.resolved || {}),
+        automationManagement: {
+          ...getAutomationManagementDraft(refreshedSession),
+          frequency: "weekly",
+          dayOfWeek,
+        },
+      },
+    });
+
+    return {
+      ok: true,
+      status: "awaiting_automation_time_input",
+      session: updatedSession,
+    };
+  }
+
+  if (refreshedSession.state === "AWAITING_AUTOMATION_TIME_INPUT") {
+    const selection = parseCandidateSelectionReply(text);
+    if (selection === "CANCELAR") {
+      const cancelledSession = await cancelSessionAndReply({
+        session: refreshedSession,
+        user,
+        dedupeSuffix: `${event.messageId}:cancel`,
+      });
+      return { ok: true, status: "cancelled", session: cancelledSession };
+    }
+
+    const timeOfDay = parseDailyTimeInput(text);
+    if (!timeOfDay) {
+      await replyToSession({
+        session: refreshedSession,
+        user,
+        message: "Nao consegui ler esse horario. Use HH:MM, por exemplo 09:00.",
+        dedupeSuffix,
+      });
+      return {
+        ok: true,
+        status: "awaiting_automation_time_input",
+        session: refreshedSession,
+      };
+    }
+
+    const updatedSession = await updateWhatsAppSession(refreshedSession._id, {
+      resolved: {
+        ...(refreshedSession.resolved || {}),
+        automationManagement: {
+          ...getAutomationManagementDraft(refreshedSession),
+          timeOfDay,
+          selectedAction: "create",
+        },
+      },
+    });
+
+    const confirmationSession = await askAutomationConfirmationQuestion({
+      session: updatedSession,
+      user,
+      action: "create",
+      dedupeSuffix,
+    });
+
+    return {
+      ok: true,
+      status: "awaiting_automation_confirmation",
+      session: confirmationSession,
+    };
+  }
+
+  if (refreshedSession.state === "AWAITING_AUTOMATION_SELECTION") {
+    const selection = parseCandidateSelectionReply(text);
+    if (selection === "CANCELAR") {
+      const cancelledSession = await cancelSessionAndReply({
+        session: refreshedSession,
+        user,
+        dedupeSuffix: `${event.messageId}:cancel`,
+      });
+      return { ok: true, status: "cancelled", session: cancelledSession };
+    }
+
+    const selected = pickCandidateByOrdinal(
+      text,
+      refreshedSession.candidateAutomations || [],
+    );
+    if (!selected) {
+      await replyToSession({
+        session: refreshedSession,
+        user,
+        message: buildInvalidSelectionMessage(refreshedSession.lastQuestionText),
+        dedupeSuffix,
+      });
+      return { ok: true, status: "awaiting_automation_selection", session: refreshedSession };
+    }
+
+    const updatedSession = await updateWhatsAppSession(refreshedSession._id, {
+      candidateAutomations: [],
+      resolved: {
+        ...(refreshedSession.resolved || {}),
+        selectedAutomationCandidate: selected,
+      },
+    });
+    const directAction = resolveAutomationDirectAction(
+      getAutomationManagementDraft(updatedSession).intent,
+    );
+
+    if (directAction) {
+      const confirmationSession = await askAutomationConfirmationQuestion({
+        session: updatedSession,
+        user,
+        action: directAction,
+        candidate: selected,
+        dedupeSuffix,
+      });
+      return {
+        ok: true,
+        status: "awaiting_automation_confirmation",
+        session: confirmationSession,
+      };
+    }
+
+    const actionSession = await askAutomationActionQuestion({
+      session: updatedSession,
+      user,
+      candidate: selected,
+      dedupeSuffix,
+    });
+    return {
+      ok: true,
+      status: "awaiting_automation_action_selection",
+      session: actionSession,
+    };
+  }
+
+  if (refreshedSession.state === "AWAITING_AUTOMATION_ACTION_SELECTION") {
+    const selection = parseCandidateSelectionReply(text);
+    if (selection === "CANCELAR") {
+      const cancelledSession = await cancelSessionAndReply({
+        session: refreshedSession,
+        user,
+        dedupeSuffix: `${event.messageId}:cancel`,
+      });
+      return { ok: true, status: "cancelled", session: cancelledSession };
+    }
+
+    const selectedCandidate = getSelectedAutomationCandidate(refreshedSession);
+    const selectedAction = resolveAutomationActionSelection(text, selectedCandidate);
+    if (!selectedAction || selectedAction === "cancel") {
+      if (selectedAction === "cancel") {
+        const cancelledSession = await cancelSessionAndReply({
+          session: refreshedSession,
+          user,
+          dedupeSuffix: `${event.messageId}:cancel`,
+        });
+        return { ok: true, status: "cancelled", session: cancelledSession };
+      }
+
+      await replyToSession({
+        session: refreshedSession,
+        user,
+        message: buildInvalidSelectionMessage(refreshedSession.lastQuestionText),
+        dedupeSuffix,
+      });
+      return {
+        ok: true,
+        status: "awaiting_automation_action_selection",
+        session: refreshedSession,
+      };
+    }
+
+    const confirmationSession = await askAutomationConfirmationQuestion({
+      session: refreshedSession,
+      user,
+      action: selectedAction,
+      candidate: selectedCandidate,
+      dedupeSuffix,
+    });
+
+    return {
+      ok: true,
+      status: "awaiting_automation_confirmation",
+      session: confirmationSession,
+    };
+  }
+
+  if (refreshedSession.state === "AWAITING_AUTOMATION_CONFIRMATION") {
+    const confirmation = parseConfirmationReply(text);
+
+    if (confirmation === "CANCELAR") {
+      const cancelledSession = await cancelSessionAndReply({
+        session: refreshedSession,
+        user,
+        dedupeSuffix: `${event.messageId}:cancel`,
+      });
+      return { ok: true, status: "cancelled", session: cancelledSession };
+    }
+
+    if (confirmation !== "CONFIRMAR") {
+      await replyToSession({
+        session: refreshedSession,
+        user,
+        message: buildInvalidConfirmationMessage(),
+        dedupeSuffix,
+      });
+      return {
+        ok: true,
+        status: "awaiting_automation_confirmation",
+        session: refreshedSession,
+      };
+    }
+
+    try {
+      const result = await performAutomationManagementAction({
+        session: refreshedSession,
+        user,
+      });
+      const resultAutomation = result?.automation || getSelectedAutomationCandidate(refreshedSession);
+      const completedSession = await completeAutomationSessionAndReply({
+        session: refreshedSession,
+        user,
+        message: buildAutomationResultMessage({
+          action: result?.action || "",
+          automation: resultAutomation,
+          execution: result?.execution || null,
+        }),
+        dedupeSuffix,
+        resolved: {
+          ...(stripIntentSelectionContext(refreshedSession?.resolved || {})),
+          source_text: String(
+            getAutomationManagementDraft(refreshedSession).source_text ||
+              refreshedSession?.lastUserMessageText ||
+              "",
+          ).trim(),
+          automationManagement: {
+            ...getAutomationManagementDraft(refreshedSession),
+            selectedAction: String(result?.action || "").trim(),
+          },
+          selectedAutomationCandidate: resultAutomation
+            ? buildAutomationCandidate(resultAutomation)
+            : null,
+          automationExecution: result?.execution || null,
+        },
+      });
+      return { ok: true, status: "completed", session: completedSession };
+    } catch (error) {
+      await replyToSession({
+        session: refreshedSession,
+        user,
+        message: String(error?.message || "Nao consegui concluir essa automacao agora."),
+        dedupeSuffix,
+      });
+      return {
+        ok: true,
+        status: "awaiting_automation_confirmation",
+        session: refreshedSession,
+      };
+    }
   }
 
   if (refreshedSession.state === "AWAITING_CUSTOMER_SELECTION") {

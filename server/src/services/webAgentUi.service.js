@@ -1,9 +1,11 @@
+import { canUseAutomations } from "../utils/planFeatures.js";
 import { canAccessWorkspaceModule } from "../utils/workspaceAccess.js";
 
 const TERMINAL_STATES = new Set(["COMPLETED", "CANCELLED", "ERROR", "EXPIRED"]);
 
 const FLOW_LABELS = {
   insight_analysis: "Insight",
+  automation_manage: "Automacoes",
   offer_create: "Proposta",
   offer_query: "Propostas",
   offer_resend: "Reenvio de proposta",
@@ -94,10 +96,18 @@ function buildSuggestedActionConfig({
   };
 }
 
-const ACTION_CATEGORY_ORDER = ["insight", "proposal", "agenda", "billing", "registry"];
+const ACTION_CATEGORY_ORDER = [
+  "insight",
+  "automations",
+  "proposal",
+  "agenda",
+  "billing",
+  "registry",
+];
 
 const ACTION_CATEGORY_LABELS = Object.freeze({
   insight: "Insight",
+  automations: "Automacoes",
   proposal: "Proposta",
   agenda: "Agenda",
   billing: "Cobranca",
@@ -115,6 +125,84 @@ const WEB_AGENT_ACTIONS = [
     flowType: "insight_analysis",
     moduleKey: "reports",
     matchPhrases: ["Gerar insight financeiro", "Insight financeiro", "Insight comercial"],
+  }),
+  buildSuggestedActionConfig({
+    categoryKey: "automations",
+    key: "automation_list",
+    label: "Minhas automacoes",
+    description: "Listar suas automacoes pessoais e escolher uma para agir.",
+    value: "Quero ver minhas automacoes",
+    routingIntent: "automation_list",
+    flowType: "automation_manage",
+    moduleKey: "",
+    matchPhrases: ["Minhas automacoes", "Listar automacoes", "Ver automacoes"],
+  }),
+  buildSuggestedActionConfig({
+    categoryKey: "automations",
+    key: "automation_create",
+    label: "Criar automacao",
+    description: "Criar uma automacao guiada para WhatsApp, e-mail ou ambos.",
+    value: "Quero criar uma automacao",
+    routingIntent: "automation_create",
+    flowType: "automation_manage",
+    moduleKey: "",
+    matchPhrases: ["Criar automacao", "Nova automacao", "Configurar automacao"],
+  }),
+  buildSuggestedActionConfig({
+    categoryKey: "automations",
+    key: "automation_pause",
+    label: "Pausar automacao",
+    description: "Escolher uma automacao ativa para pausar.",
+    value: "Quero pausar uma automacao",
+    routingIntent: "automation_pause",
+    flowType: "automation_manage",
+    moduleKey: "",
+    matchPhrases: ["Pausar automacao", "Parar automacao"],
+  }),
+  buildSuggestedActionConfig({
+    categoryKey: "automations",
+    key: "automation_resume",
+    label: "Retomar automacao",
+    description: "Retomar uma automacao pausada e recalcular o proximo envio.",
+    value: "Quero retomar uma automacao",
+    routingIntent: "automation_resume",
+    flowType: "automation_manage",
+    moduleKey: "",
+    matchPhrases: ["Retomar automacao", "Reativar automacao"],
+  }),
+  buildSuggestedActionConfig({
+    categoryKey: "automations",
+    key: "automation_run_now",
+    label: "Executar agora",
+    description: "Disparar uma automacao manualmente sem mudar o proximo agendamento.",
+    value: "Quero executar uma automacao agora",
+    routingIntent: "automation_run_now",
+    flowType: "automation_manage",
+    moduleKey: "",
+    matchPhrases: ["Executar automacao agora", "Rodar automacao agora"],
+  }),
+  buildSuggestedActionConfig({
+    categoryKey: "automations",
+    key: "automation_duplicate",
+    label: "Duplicar automacao",
+    description: "Duplicar uma automacao existente para acelerar uma nova configuracao.",
+    value: "Quero duplicar uma automacao",
+    routingIntent: "automation_duplicate",
+    flowType: "automation_manage",
+    moduleKey: "",
+    matchPhrases: ["Duplicar automacao", "Copiar automacao"],
+  }),
+  buildSuggestedActionConfig({
+    categoryKey: "automations",
+    key: "automation_delete",
+    label: "Excluir automacao",
+    description: "Excluir definitivamente uma automacao pessoal.",
+    value: "Quero excluir uma automacao",
+    routingIntent: "automation_delete",
+    flowType: "automation_manage",
+    moduleKey: "",
+    destructive: true,
+    matchPhrases: ["Excluir automacao", "Apagar automacao", "Remover automacao"],
   }),
   buildSuggestedActionConfig({
     categoryKey: "proposal",
@@ -414,6 +502,105 @@ function buildReplyControls(session = null) {
       .trim(),
   );
 
+  if (state === "AWAITING_AUTOMATION_TEMPLATE_SELECTION") {
+    return {
+      presentation: "selector",
+      title,
+      options: [
+        candidateReply("Minha agenda diaria", "1"),
+        candidateReply("Resumo semanal", "2"),
+        candidateReply("Pendencias de cobranca", "3"),
+        candidateReply("Aguardando confirmacao", "4"),
+        candidateReply("Prioridades do dia", "5"),
+        candidateReply("Cancelar", "CANCELAR", "danger"),
+      ],
+    };
+  }
+
+  if (state === "AWAITING_AUTOMATION_CHANNEL_SELECTION") {
+    return {
+      presentation: "chips",
+      options: [
+        candidateReply("WhatsApp", "1"),
+        candidateReply("E-mail", "2"),
+        candidateReply("Ambos", "3"),
+        candidateReply("Cancelar", "CANCELAR", "danger"),
+      ],
+    };
+  }
+
+  if (state === "AWAITING_AUTOMATION_FREQUENCY_SELECTION") {
+    return {
+      presentation: "chips",
+      options: [
+        candidateReply("Diaria", "1"),
+        candidateReply("Semanal", "2"),
+        candidateReply("Cancelar", "CANCELAR", "danger"),
+      ],
+    };
+  }
+
+  if (state === "AWAITING_AUTOMATION_WEEKDAY_SELECTION") {
+    return {
+      presentation: "selector",
+      title,
+      options: [
+        candidateReply("Segunda-feira", "1"),
+        candidateReply("Terca-feira", "2"),
+        candidateReply("Quarta-feira", "3"),
+        candidateReply("Quinta-feira", "4"),
+        candidateReply("Sexta-feira", "5"),
+        candidateReply("Sabado", "6"),
+        candidateReply("Domingo", "7"),
+        candidateReply("Cancelar", "CANCELAR", "danger"),
+      ],
+    };
+  }
+
+  if (state === "AWAITING_AUTOMATION_SELECTION") {
+    return {
+      presentation: "selector",
+      title,
+      options: [
+        ...buildSelectionReplies(session.candidateAutomations || []),
+        candidateReply("Cancelar", "CANCELAR", "danger"),
+      ],
+    };
+  }
+
+  if (state === "AWAITING_AUTOMATION_ACTION_SELECTION") {
+    const selectedStatus = normalizeComparableText(
+      session?.resolved?.selectedAutomationCandidate?.status ||
+        session?.resolved?.selectedAutomation?.status ||
+        "",
+    );
+    const primaryAction =
+      selectedStatus === "paused"
+        ? candidateReply("Retomar", "RETOMAR")
+        : candidateReply("Pausar", "PAUSAR");
+
+    return {
+      presentation: "chips",
+      options: [
+        primaryAction,
+        candidateReply("Executar agora", "EXECUTAR"),
+        candidateReply("Duplicar", "DUPLICAR"),
+        candidateReply("Excluir", "EXCLUIR", "danger"),
+        candidateReply("Cancelar", "CANCELAR", "danger"),
+      ],
+    };
+  }
+
+  if (state === "AWAITING_AUTOMATION_CONFIRMATION") {
+    return {
+      presentation: "chips",
+      options: [
+        candidateReply("Confirmar", "CONFIRMAR"),
+        candidateReply("Cancelar", "CANCELAR", "danger"),
+      ],
+    };
+  }
+
   if (state === "AWAITING_INTENT_SELECTION") {
     if (lastQuestionKey === "intent_selection") {
       return {
@@ -651,7 +838,7 @@ export function buildLuminaWelcomeMessage(userName = "") {
 
   return [
     `${salutation} Eu sou a Lumina.`,
-    "Posso te ajudar com proposta, agenda, cobranca e cadastros da sua carteira aqui no site.",
+    "Posso te ajudar com proposta, agenda, cobranca, cadastros e automacoes pessoais da sua carteira aqui no site.",
     "Se quiser, me diga a tarefa em linguagem natural ou toque em uma das acoes rapidas abaixo.",
   ].join(" ");
 }
@@ -671,6 +858,9 @@ export function buildWebModuleAccessDeniedMessage(moduleKey = "") {
 }
 
 function canShowActionForUser(action, user = null) {
+  if (String(action?.categoryKey || "").trim() === "automations") {
+    return canUseAutomations(user?.workspacePlan || "start");
+  }
   if (!action?.moduleKey || !user) return true;
   return canAccessWorkspaceModule({
     user,
@@ -824,7 +1014,8 @@ export function buildWebAgentUiPayload(sessionOrOptions = null, maybeUser = null
       suggestedActions,
       actionMenu,
       insightUsage,
-      composerPlaceholder: "Fale com a Lumina sobre proposta, agenda, cobranca ou cadastro",
+      composerPlaceholder:
+        "Fale com a Lumina sobre proposta, agenda, cobranca, cadastro ou automacoes",
       headerSubtitle: "Agente operacional da sua carteira",
     };
   }
@@ -833,7 +1024,20 @@ export function buildWebAgentUiPayload(sessionOrOptions = null, maybeUser = null
   const lastQuestionKey = String(session.lastQuestionKey || "").trim();
   let quickReplies = Array.isArray(replyControls?.options) ? replyControls.options : [];
 
-  if (state === "AWAITING_INTENT_SELECTION" && quickReplies.length === 0) {
+  if (
+    [
+      "AWAITING_AUTOMATION_TEMPLATE_SELECTION",
+      "AWAITING_AUTOMATION_CHANNEL_SELECTION",
+      "AWAITING_AUTOMATION_FREQUENCY_SELECTION",
+      "AWAITING_AUTOMATION_WEEKDAY_SELECTION",
+      "AWAITING_AUTOMATION_SELECTION",
+      "AWAITING_AUTOMATION_ACTION_SELECTION",
+      "AWAITING_AUTOMATION_CONFIRMATION",
+    ].includes(state)
+    && quickReplies.length === 0
+  ) {
+    quickReplies = Array.isArray(replyControls?.options) ? replyControls.options : [];
+  } else if (state === "AWAITING_INTENT_SELECTION" && quickReplies.length === 0) {
     if (lastQuestionKey === "intent_selection") {
       quickReplies = [
         candidateReply("Proposta", "1"),

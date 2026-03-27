@@ -8,7 +8,10 @@ import {
   getEffectivePixKeyMasked,
   guardOfferCreation,
 } from "../../utils/guardOfferCreation.js";
-import { canUseRecurringPlan } from "../../utils/planFeatures.js";
+import {
+  canUseAutomations,
+  canUseRecurringPlan,
+} from "../../utils/planFeatures.js";
 import useThemeToggle from "../../app/useThemeToggle.js";
 import brandLogo from "../../assets/brand.png";
 import { hasWorkspaceModuleAccess } from "../../utils/workspacePermissions.js";
@@ -124,6 +127,30 @@ const Icons = {
   ),
 
   Reports: () => <FileText size={18} className="text-current" />,
+
+  Automations: () => (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 3v4" />
+      <path d="M12 17v4" />
+      <path d="m4.93 4.93 2.83 2.83" />
+      <path d="m16.24 16.24 2.83 2.83" />
+      <path d="M3 12h4" />
+      <path d="M17 12h4" />
+      <path d="m4.93 19.07 2.83-2.83" />
+      <path d="m16.24 7.76 2.83-2.83" />
+      <circle cx="12" cy="12" r="4" />
+    </svg>
+  ),
 
   Store: () => (
     <svg
@@ -506,6 +533,9 @@ export default function Sidebar({
   const canUseRecurringFeatures = canUseRecurringPlan(
     perms?.plan || workspace?.plan || "start",
   );
+  const canAccessAutomations = canUseAutomations(
+    perms?.plan || workspace?.plan || "start",
+  );
   const canManagePixAccount = perms?.canManagePixAccount === true;
   const canAccessDashboard = hasWorkspaceModuleAccess(perms, "dashboard");
   const canAccessOffers = hasWorkspaceModuleAccess(perms, "offers");
@@ -787,6 +817,18 @@ export default function Sidebar({
               </div>
             </div>
           </div> : null}
+
+          {canAccessAutomations ? (
+            <SidebarItem
+              to="/automations"
+              icon={Icons.Automations}
+              collapsed={collapsed}
+              isDark={isDark}
+              onNavigate={onNavigate}
+            >
+              Automacoes
+            </SidebarItem>
+          ) : null}
 
           {perms.store && (canAccessProducts || canAccessClients) ? (
             <div className="pt-1">

@@ -15,6 +15,7 @@ import RequireAuth from "../components/auth/RequireAuth.jsx";
 import RequireModuleAccess from "../components/auth/RequireModuleAccess.jsx";
 import RequireMasterAdmin from "../components/auth/RequireMasterAdmin.jsx";
 import RequireRecurringPlan from "../components/auth/RequireRecurringPlan.jsx";
+import RequireAutomationPlan from "../components/auth/RequireAutomationPlan.jsx";
 import RequireWorkspaceOwner from "../components/auth/RequireWorkspaceOwner.jsx";
 import Products from "../pages/Products.jsx";
 import ProductDetails from "../pages/ProductDetails.jsx";
@@ -42,6 +43,7 @@ import BillingCancel from "../pages/BillingCancel.jsx";
 // ✅ NOVO: Relatórios
 import Reports from "../pages/ReportsDashboard.jsx";
 import RecurringReportsPage from "../pages/RecurringReportsPage.jsx";
+import AutomationsPage from "../pages/AutomationsPage.jsx";
 import { useAuth } from "./AuthContext.jsx";
 import { getFirstAccessibleWorkspaceRoute } from "../utils/workspacePermissions.js";
 
@@ -201,6 +203,16 @@ export const router = createBrowserRouter(
                   <RecurringReportsPage />
                 </RequireRecurringPlan>
               </RequireModuleAccess>
+            </RequireAuth>
+          ),
+        },
+        {
+          path: "/automations",
+          element: (
+            <RequireAuth>
+              <RequireAutomationPlan redirectTo="/dashboard">
+                <AutomationsPage />
+              </RequireAutomationPlan>
             </RequireAuth>
           ),
         },
