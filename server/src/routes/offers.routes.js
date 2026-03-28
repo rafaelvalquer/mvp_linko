@@ -31,6 +31,7 @@ import {
   confirmOfferPaymentByWorkspace,
   rejectOfferPaymentByWorkspace,
 } from "../services/offers/paymentApproval.service.js";
+import { completeOfferFulfillmentByWorkspace } from "../services/offers/offerFeedback.service.js";
 import {
   notifyResponsibleSellerPixPaidWhatsApp,
   notifyResponsibleSellerPlatformConfirmedWhatsApp,
@@ -956,6 +957,49 @@ r.patch(
         ok: false,
         error: String(error?.message || "Falha ao cancelar proposta."),
         code: String(error?.code || "CANCEL_OFFER_FAILED"),
+      });
+    }
+  }),
+);
+
+r.post(
+  "/offers/:id/fulfillment/complete",
+  ensureAuth,
+  tenantFromUser,
+  asyncHandler(async (req, res) => {
+    assertOffersModule(req, "offers");
+    const tenantId = req.tenantId;
+    const userId = req.user?._id || null;
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ ok: false, error: "invalid id" });
+    }
+
+    try {
+      const result = await completeOfferFulfillmentByWorkspace({
+        offerId: id,
+        workspaceId: tenantId,
+        ownerUserId: getScopedOwner(req) || null,
+        completedByUserId: userId,
+        sendFeedbackRequest: req.body?.sendFeedbackRequest === true,
+        channel: String(req.body?.channel || "whatsapp").trim(),
+        origin: String(req.body?.origin || "").trim(),
+      });
+
+      return res.json({
+        ok: true,
+        offer: result.offer,
+        dispatch: result.dispatch,
+      });
+    } catch (error) {
+      const status = Number(error?.status || error?.statusCode || 500);
+      return res.status(status).json({
+        ok: false,
+        error: String(
+          error?.message || "Nao consegui concluir o atendimento da proposta.",
+        ),
+        code: String(error?.code || "OFFER_FULFILLMENT_FAILED"),
       });
     }
   }),

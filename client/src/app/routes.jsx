@@ -28,6 +28,7 @@ import PublicPixPayment from "../pages/PublicPixPayment.jsx";
 import PublicBookingManage from "../pages/PublicBookingManage.jsx";
 import PublicOfferCancelled from "../pages/PublicOfferCancelled.jsx";
 import PublicOfferDone from "../pages/PublicOfferDone.jsx";
+import PublicOfferFeedback from "../pages/PublicOfferFeedback.jsx";
 import PublicPaidGuard from "../pages/PublicPaidGuard.jsx";
 import SettingsAccount from "../pages/SettingsAccount.jsx";
 import SettingsAgentGuide from "../pages/SettingsAgentGuide.jsx";
@@ -361,6 +362,7 @@ export const router = createBrowserRouter(
         { path: "/p/:token/manage", element: <PublicBookingManage /> },
 
         { path: "/p/:token/done", element: <PublicOfferDone /> },
+        { path: "/p/:token/feedback", element: <PublicOfferFeedback /> },
       ],
     },
   ],

@@ -41,6 +41,43 @@ const PaymentRemindersSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const OfferFulfillmentSchema = new mongoose.Schema(
+  {
+    completedAt: { type: Date, default: null },
+    completedByUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    label: { type: String, default: null },
+  },
+  { _id: false },
+);
+
+const OfferFeedbackRequestSchema = new mongoose.Schema(
+  {
+    sentAt: { type: Date, default: null },
+    channel: { type: String, enum: ["whatsapp", "email"], default: null },
+    sentByUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    lastMessageId: { type: String, default: null },
+  },
+  { _id: false },
+);
+
+const OfferFeedbackSchema = new mongoose.Schema(
+  {
+    respondedAt: { type: Date, default: null },
+    rating: { type: Number, default: null, min: 1, max: 5 },
+    comment: { type: String, default: null },
+    contactRequested: { type: Boolean, default: false },
+  },
+  { _id: false },
+);
+
 const OfferSchema = new mongoose.Schema(
   {
     workspaceId: {
@@ -152,6 +189,12 @@ const OfferSchema = new mongoose.Schema(
     // ✅ comprovante de pagamento (manual)
     paymentProof: { type: PaymentProofSchema, default: null },
     paymentReminders: { type: PaymentRemindersSchema, default: () => ({}) },
+    fulfillment: { type: OfferFulfillmentSchema, default: () => ({}) },
+    feedbackRequest: {
+      type: OfferFeedbackRequestSchema,
+      default: () => ({}),
+    },
+    feedback: { type: OfferFeedbackSchema, default: () => ({}) },
 
     // ✅ confirmação manual (pelo dono do workspace)
     confirmedAt: { type: Date, default: null },

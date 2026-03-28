@@ -257,10 +257,81 @@ function SectionTabButton({ active, children, onClick }) {
   );
 }
 
+function feedbackStatusSummary(offer) {
+  const rating = Number(offer?.feedback?.rating);
+  if (offer?.feedback?.respondedAt && Number.isFinite(rating) && rating > 0) {
+    return {
+      code: "RESPONDED",
+      tone: "CONFIRMED",
+      text: `Avaliacao respondida: ${rating}/5`,
+    };
+  }
+  if (offer?.feedbackRequest?.sentAt) {
+    return {
+      code: "SENT",
+      tone: "ACCEPTED",
+      text: "Avaliacao enviada",
+    };
+  }
+  return {
+    code: "PENDING",
+    tone: "PUBLIC",
+    text: "Nao concluido",
+  };
+}
+
+function fulfillmentPrimaryLabel(offer) {
+  const status = feedbackStatusSummary(offer);
+  if (status.code === "RESPONDED") return "Ver avaliacao";
+  if (offer?.fulfillment?.completedAt) return "Reenviar avaliacao";
+  return String(offer?.offerType || "").toLowerCase() === "product"
+    ? "Pedido entregue"
+    : "Concluir atendimento";
+}
+
+function fulfillmentDialogTitle(offer) {
+  return String(offer?.offerType || "").toLowerCase() === "product"
+    ? "Marcar pedido como entregue"
+    : "Marcar atendimento como concluido";
+}
+
+function buildFeedbackLink(offer) {
+  const publicUrl = buildPublicUrl(offer);
+  return publicUrl ? `${publicUrl}/feedback` : "";
+}
+
+function buildFeedbackPreview(offer, channel) {
+  const feedbackUrl = buildFeedbackLink(offer);
+  const label =
+    String(offer?.offerType || "").toLowerCase() === "product"
+      ? "pedido"
+      : "atendimento";
+  const name = String(offer?.customerName || "").trim().split(/\s+/)[0] || "";
+
+  if (String(channel || "").toLowerCase() === "email") {
+    return [
+      name ? `Assunto para ${name}` : "Assunto para cliente",
+      `Obrigado pela experiencia com ${offer?.title || "sua proposta"}`,
+      "",
+      `Seu ${label} foi finalizado por aqui e queremos ouvir sua opiniao.`,
+      `Link da avaliacao: ${feedbackUrl || "link indisponivel"}`,
+    ].join("\n");
+  }
+
+  return [
+    name ? `Oi, ${name}!` : "Oi!",
+    "",
+    `Obrigada por confiar na gente. Seu ${label} foi finalizado por aqui.`,
+    "Se puder, queria te pedir uma avaliacao rapida:",
+    feedbackUrl || "link indisponivel",
+  ].join("\n");
+}
+
 export default function OfferDetailsModal({
   open,
   onClose,
   offer,
+  initialAction = "",
   onOfferUpdated,
   copyLink,
   copiedId,
@@ -279,6 +350,10 @@ export default function OfferDetailsModal({
   const [proofMime, setProofMime] = useState("");
 
   const [actionBusy, setActionBusy] = useState(false);
+  const [fulfillmentOpen, setFulfillmentOpen] = useState(false);
+  const [fulfillmentApplied, setFulfillmentApplied] = useState(false);
+  const [sendFeedbackRequest, setSendFeedbackRequest] = useState(true);
+  const [fulfillmentChannel, setFulfillmentChannel] = useState("whatsapp");
 
   const [rejectBoxOpen, setRejectBoxOpen] = useState(false);
   const [rejectText, setRejectText] = useState("");
@@ -311,6 +386,10 @@ export default function OfferDetailsModal({
     setProofMime("");
 
     setActionBusy(false);
+    setFulfillmentOpen(false);
+    setFulfillmentApplied(false);
+    setSendFeedbackRequest(true);
+    setFulfillmentChannel("whatsapp");
 
     setRejectBoxOpen(false);
     setRejectText("");
@@ -412,6 +491,24 @@ export default function OfferDetailsModal({
       alive = false;
     };
   }, [open, offerId, offer, fetchDetails, resetTransient]);
+
+  useEffect(() => {
+    if (!open || !active) return;
+    const defaultChannel = String(active?.customerWhatsApp || "").trim()
+      ? "whatsapp"
+      : String(active?.customerEmail || "").trim()
+        ? "email"
+        : "whatsapp";
+    setFulfillmentChannel(defaultChannel);
+  }, [open, active]);
+
+  useEffect(() => {
+    if (!open || !active || fulfillmentApplied) return;
+    if (initialAction === "fulfillment") {
+      setFulfillmentOpen(true);
+      setFulfillmentApplied(true);
+    }
+  }, [open, active, initialAction, fulfillmentApplied]);
 
   const refreshActive = useCallback(async () => {
     if (!offerId) return;
@@ -786,6 +883,74 @@ export default function OfferDetailsModal({
     }
   }, [offerId, onOfferUpdated, loadReminderHistory]);
 
+  const hasCustomerWhatsApp = !!String(active?.customerWhatsApp || "").trim();
+  const hasCustomerEmail = !!String(active?.customerEmail || "").trim();
+  const canSendFeedbackRequest = hasCustomerWhatsApp || hasCustomerEmail;
+  const availableFeedbackChannels = useMemo(() => {
+    const items = [];
+    if (hasCustomerWhatsApp) items.push("whatsapp");
+    if (hasCustomerEmail) items.push("email");
+    return items;
+  }, [hasCustomerWhatsApp, hasCustomerEmail]);
+  const selectedFeedbackChannel = availableFeedbackChannels.includes(
+    fulfillmentChannel,
+  )
+    ? fulfillmentChannel
+    : availableFeedbackChannels[0] || "whatsapp";
+
+  const completeFulfillment = useCallback(
+    async (sendRequest) => {
+      if (!offerId) return;
+      try {
+        setActionBusy(true);
+        setModalFlash(null);
+
+        const payload = {
+          sendFeedbackRequest: sendRequest === true,
+          channel: selectedFeedbackChannel,
+          origin: window.location.origin,
+        };
+
+        const data = await api(`/offers/${offerId}/fulfillment/complete`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+
+        const updated = data?.offer || null;
+        if (updated?._id) {
+          setActive((prev) => ({ ...(prev || {}), ...(updated || {}) }));
+          if (typeof onOfferUpdated === "function") onOfferUpdated(updated);
+        }
+
+        setFulfillmentOpen(false);
+        setModalFlash({
+          kind: "success",
+          text:
+            sendRequest && data?.dispatch?.channel
+              ? `Conclusao registrada e pedido de avaliacao enviado via ${data.dispatch.channel === "email" ? "e-mail" : "WhatsApp"}.`
+              : "Conclusao registrada com sucesso.",
+        });
+
+        await refreshActive();
+      } catch (error) {
+        setModalFlash({
+          kind: "error",
+          text:
+            error?.message ||
+            "Nao consegui concluir o atendimento desta proposta.",
+        });
+      } finally {
+        setActionBusy(false);
+      }
+    },
+    [
+      offerId,
+      onOfferUpdated,
+      refreshActive,
+      selectedFeedbackChannel,
+    ],
+  );
+
   const activePay = useMemo(() => getPaymentLabel(active), [active]);
   const activeFlow = norm(active?.status);
   const activeHasProof = !!active?.paymentProof?.storage?.key;
@@ -796,6 +961,23 @@ export default function OfferDetailsModal({
   const canModerateProof =
     activeHasProof && activeWaiting && !activePaid && !activeCancelled;
   const reminderGuard = useMemo(() => canSendReminder(active), [active]);
+  const feedbackStatus = useMemo(() => feedbackStatusSummary(active), [active]);
+  const feedbackLink = useMemo(() => buildFeedbackLink(active), [active]);
+  const fulfillmentLabel = useMemo(
+    () =>
+      String(active?.offerType || "").toLowerCase() === "product"
+        ? "Pedido entregue"
+        : "Atendimento concluido",
+    [active],
+  );
+  const feedbackPrimaryLabel = useMemo(
+    () => fulfillmentPrimaryLabel(active),
+    [active],
+  );
+  const feedbackPreview = useMemo(
+    () => buildFeedbackPreview(active, selectedFeedbackChannel),
+    [active, selectedFeedbackChannel],
+  );
 
   const title = active?.customerName
     ? `Detalhes • ${active.customerName}`
@@ -818,7 +1000,8 @@ export default function OfferDetailsModal({
   }, [active, reminderSettings]);
 
   return (
-    <Modal
+    <>
+      <Modal
       open={open}
       onClose={() => onClose?.()}
       title={title}
@@ -850,7 +1033,7 @@ export default function OfferDetailsModal({
           </div>
         </div>
       }
-    >
+      >
       {modalFlash?.text ? (
         <div className="mb-4">
           <AlertInline kind={modalFlash.kind}>{modalFlash.text}</AlertInline>
@@ -1047,7 +1230,73 @@ export default function OfferDetailsModal({
                           </div>
                         ) : (
                           <>
-                            <div className="mt-2 text-xs text-zinc-500">
+                            {activePaid ? (
+                              <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Badge tone={feedbackStatus.tone}>
+                                    {feedbackStatus.text}
+                                  </Badge>
+                                  {active?.fulfillment?.completedAt ? (
+                                    <span className="text-xs font-medium text-emerald-800">
+                                      {fulfillmentLabel} em{" "}
+                                      {fmtDT(active.fulfillment.completedAt)}
+                                    </span>
+                                  ) : null}
+                                </div>
+
+                                {active?.feedback?.respondedAt ? (
+                                  <div className="mt-3 rounded-xl border border-emerald-200 bg-white p-3 text-sm text-zinc-700">
+                                    <div className="font-semibold text-zinc-900">
+                                      Comentario do cliente
+                                    </div>
+                                    <div className="mt-1 text-xs text-zinc-500">
+                                      Respondido em {fmtDT(active.feedback.respondedAt)}
+                                    </div>
+                                    {active?.feedback?.comment ? (
+                                      <div className="mt-2 whitespace-pre-line text-sm text-zinc-700">
+                                        {active.feedback.comment}
+                                      </div>
+                                    ) : (
+                                      <div className="mt-2 text-sm text-zinc-500">
+                                        O cliente enviou apenas a nota, sem comentario adicional.
+                                      </div>
+                                    )}
+                                    {active?.feedback?.contactRequested ? (
+                                      <div className="mt-2 text-xs font-semibold text-amber-700">
+                                        Cliente pediu contato de retorno.
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                ) : null}
+
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  <Button
+                                    disabled={actionBusy}
+                                    onClick={() => {
+                                      if (feedbackStatus.code === "RESPONDED" && feedbackLink) {
+                                        window.open(
+                                          feedbackLink,
+                                          "_blank",
+                                          "noopener,noreferrer",
+                                        );
+                                        return;
+                                      }
+                                      setFulfillmentOpen(true);
+                                    }}
+                                  >
+                                    {feedbackPrimaryLabel}
+                                  </Button>
+                                </div>
+
+                                {!canSendFeedbackRequest ? (
+                                  <div className="mt-2 text-xs text-zinc-500">
+                                    Essa proposta pode ser concluida, mas nao ha WhatsApp nem e-mail valido para enviar a avaliacao.
+                                  </div>
+                                ) : null}
+                              </div>
+                            ) : null}
+
+                            <div className="mt-3 text-xs text-zinc-500">
                               Cancela a proposta, preserva o historico e bloqueia
                               o fluxo no link publico.
                             </div>
@@ -1435,6 +1684,124 @@ export default function OfferDetailsModal({
           </div>
         </div>
       )}
-    </Modal>
+      </Modal>
+
+      <Modal
+        open={fulfillmentOpen && open && !!active}
+        onClose={() => setFulfillmentOpen(false)}
+        title={fulfillmentDialogTitle(active)}
+        footer={
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+            <Button
+              variant="ghost"
+              disabled={actionBusy}
+              onClick={() => setFulfillmentOpen(false)}
+            >
+              Fechar
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={actionBusy}
+              onClick={() => completeFulfillment(false)}
+            >
+              {actionBusy ? "Salvando..." : "So marcar como concluido"}
+            </Button>
+            <Button
+              disabled={actionBusy || (sendFeedbackRequest && !canSendFeedbackRequest)}
+              onClick={() => completeFulfillment(sendFeedbackRequest)}
+            >
+              {actionBusy
+                ? "Enviando..."
+                : sendFeedbackRequest
+                  ? "Concluir e enviar avaliacao"
+                  : "Confirmar conclusao"}
+            </Button>
+          </div>
+        }
+      >
+        {!active ? null : (
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">
+                Resumo da proposta
+              </div>
+              <div className="mt-2 text-base font-semibold text-zinc-900">
+                {active?.title || "Proposta"}
+              </div>
+              <div className="mt-1 text-sm text-zinc-600">
+                Cliente: {active?.customerName || "—"}
+              </div>
+              <div className="mt-1 text-sm text-zinc-600">
+                Valor: {fmtBRLFromCents(getAmountCents(active))}
+              </div>
+            </div>
+
+            <label className="flex items-start gap-3 rounded-2xl border border-zinc-200 bg-white p-4">
+              <input
+                type="checkbox"
+                className="mt-1 rounded border-zinc-300 text-emerald-600 focus:ring-emerald-500"
+                checked={sendFeedbackRequest}
+                onChange={(e) => setSendFeedbackRequest(e.target.checked)}
+                disabled={!canSendFeedbackRequest || actionBusy}
+              />
+              <div>
+                <div className="text-sm font-semibold text-zinc-900">
+                  Enviar agradecimento e solicitar avaliacao
+                </div>
+                <div className="mt-1 text-xs text-zinc-500">
+                  O cliente recebe uma mensagem curta com o link publico da pesquisa de satisfacao.
+                </div>
+                {!canSendFeedbackRequest ? (
+                  <div className="mt-2 text-xs font-medium text-amber-700">
+                    Esta proposta nao possui WhatsApp nem e-mail valido para envio.
+                  </div>
+                ) : null}
+              </div>
+            </label>
+
+            {sendFeedbackRequest ? (
+              <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">
+                  Canal do envio
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button
+                    variant={
+                      selectedFeedbackChannel === "whatsapp"
+                        ? "primary"
+                        : "secondary"
+                    }
+                    disabled={!hasCustomerWhatsApp || actionBusy}
+                    onClick={() => setFulfillmentChannel("whatsapp")}
+                  >
+                    WhatsApp
+                  </Button>
+                  <Button
+                    variant={
+                      selectedFeedbackChannel === "email"
+                        ? "primary"
+                        : "secondary"
+                    }
+                    disabled={!hasCustomerEmail || actionBusy}
+                    onClick={() => setFulfillmentChannel("email")}
+                  >
+                    E-mail
+                  </Button>
+                </div>
+
+                <div className="mt-3 rounded-2xl border border-zinc-200 bg-zinc-50 p-3">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">
+                    Preview da mensagem
+                  </div>
+                  <div className="mt-2 whitespace-pre-line text-sm text-zinc-700">
+                    {feedbackPreview}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        )}
+      </Modal>
+    </>
   );
 }

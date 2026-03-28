@@ -73,6 +73,24 @@ function buildOffersQuery({ scope, ownerUserId }) {
   return params.toString();
 }
 
+function getFulfillmentCtaLabel(offer) {
+  const rating = Number(offer?.feedback?.rating);
+  if (offer?.feedback?.respondedAt && Number.isFinite(rating) && rating > 0) {
+    return "Ver avaliacao";
+  }
+  if (offer?.fulfillment?.completedAt) {
+    return "Reenviar avaliacao";
+  }
+  return String(offer?.offerType || "").toLowerCase() === "product"
+    ? "Pedido entregue"
+    : "Concluir atendimento";
+}
+
+function hasFeedbackResponse(offer) {
+  const rating = Number(offer?.feedback?.rating);
+  return !!offer?.feedback?.respondedAt && Number.isFinite(rating) && rating > 0;
+}
+
 export default function Offers() {
   const { isDark } = useThemeToggle();
   const { perms, user } = useAuth();
@@ -96,6 +114,7 @@ export default function Offers() {
 
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsOffer, setDetailsOffer] = useState(null);
+  const [detailsIntent, setDetailsIntent] = useState("");
 
   const selectClass = isDark
     ? "h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-slate-100 outline-none transition focus:border-cyan-400/40"
@@ -272,8 +291,9 @@ export default function Offers() {
     }
   }, []);
 
-  const openDetails = useCallback((offer) => {
+  const openDetails = useCallback((offer, intent = "") => {
     setDetailsOffer(offer || null);
+    setDetailsIntent(intent || "");
     setDetailsOpen(true);
   }, []);
 
@@ -453,6 +473,7 @@ export default function Offers() {
                       const responsibleName =
                         o?.responsibleUser?.name || "Sem responsavel";
                       const isMine = sameId(o?.ownerUserId, ownerUserId);
+                      const canRunFulfillmentCta = isPaidOffer(o);
 
                       return (
                         <tr key={o._id} className={tableRowClass}>
@@ -525,6 +546,26 @@ export default function Offers() {
                           </td>
                           <td className="px-5 py-4 text-right">
                             <div className="flex items-center justify-end gap-2">
+                              {canRunFulfillmentCta ? (
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => {
+                                    if (hasFeedbackResponse(o) && o?.publicToken) {
+                                      window.open(
+                                        `/p/${o.publicToken}/feedback`,
+                                        "_blank",
+                                        "noopener,noreferrer",
+                                      );
+                                      return;
+                                    }
+                                    openDetails(o, "fulfillment");
+                                  }}
+                                >
+                                  {getFulfillmentCtaLabel(o)}
+                                </Button>
+                              ) : null}
+
                               <Button
                                 variant={copied ? "primary" : "secondary"}
                                 size="sm"
@@ -563,8 +604,10 @@ export default function Offers() {
           onClose={() => {
             setDetailsOpen(false);
             setDetailsOffer(null);
+            setDetailsIntent("");
           }}
           offer={detailsOffer}
+          initialAction={detailsIntent}
           onOfferUpdated={patchOfferInList}
           copyLink={copyLink}
           copiedId={copiedId}

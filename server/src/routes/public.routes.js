@@ -19,6 +19,10 @@ import {
   listPublicBookingManageSlots,
   reschedulePublicBooking,
 } from "../services/publicBookingSelfService.service.js";
+import {
+  buildOfferFeedbackPublicState,
+  submitPublicOfferFeedback,
+} from "../services/offers/offerFeedback.service.js";
 
 import * as WorkspaceModule from "../models/Workspace.js";
 import { buildPixBrCode } from "../services/pixEmv.js";
@@ -1328,6 +1332,59 @@ router.post("/p/:token/payment/proof", async (req, res, next) => {
     });
   } catch (e) {
     next(e);
+  }
+});
+
+router.get("/p/:token/feedback", async (req, res, next) => {
+  try {
+    const { token } = req.params;
+    if (!token) {
+      return res.status(400).json({ ok: false, error: "Token invalido." });
+    }
+
+    const offer = await findOfferByPublicToken(token, { withTenant: true });
+    if (!offer) {
+      return res
+        .status(404)
+        .json({ ok: false, error: "Proposta nao encontrada." });
+    }
+
+    noStore(res);
+    return res.json({
+      ok: true,
+      feedback: buildOfferFeedbackPublicState(offer),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/p/:token/feedback", async (req, res, next) => {
+  try {
+    const { token } = req.params;
+    if (!token) {
+      return res.status(400).json({ ok: false, error: "Token invalido." });
+    }
+
+    const updated = await submitPublicOfferFeedback({
+      token,
+      rating: req.body?.rating,
+      comment: req.body?.comment,
+      contactRequested: req.body?.contactRequested === true,
+    });
+
+    noStore(res);
+    return res.json({
+      ok: true,
+      feedback: buildOfferFeedbackPublicState(updated),
+    });
+  } catch (error) {
+    const status = Number(error?.status || error?.statusCode || 500);
+    return res.status(status).json({
+      ok: false,
+      error: String(error?.message || "Nao consegui registrar sua avaliacao."),
+      code: String(error?.code || "PUBLIC_FEEDBACK_SUBMIT_FAILED"),
+    });
   }
 });
 /**

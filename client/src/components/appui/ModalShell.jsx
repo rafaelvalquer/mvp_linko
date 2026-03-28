@@ -1,6 +1,9 @@
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
 
+let modalScrollLockCount = 0;
+let previousBodyOverflow = "";
+
 export default function ModalShell({
   open,
   onClose,
@@ -13,8 +16,11 @@ export default function ModalShell({
   useEffect(() => {
     if (!open) return undefined;
 
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    if (modalScrollLockCount === 0) {
+      previousBodyOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+    }
+    modalScrollLockCount += 1;
 
     function handleKeyDown(event) {
       if (event.key === "Escape" && !locked) onClose?.();
@@ -23,7 +29,10 @@ export default function ModalShell({
     window.addEventListener("keydown", handleKeyDown);
 
     return () => {
-      document.body.style.overflow = previousOverflow;
+      modalScrollLockCount = Math.max(0, modalScrollLockCount - 1);
+      if (modalScrollLockCount === 0) {
+        document.body.style.overflow = previousBodyOverflow;
+      }
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [open, onClose, locked]);
