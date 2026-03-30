@@ -180,13 +180,14 @@ export default function Shell({ children, topbarAction = null }) {
           setIsDark={setIsDark}
           contextualAction={topbarAction}
           onOpenMyWhatsApp={myWhatsAppModalActions.openMyWhatsAppModal}
+          layout="mobile"
         />
         <MobileMenuButton
           isDark={isDark}
           onClick={() => setMobileSidebarOpen(true)}
         />
 
-        <div className="relative flex w-full">
+        <div className="relative flex w-full md:min-h-screen">
           <aside
             className={[
               "hidden md:block md:shrink-0",
@@ -194,7 +195,7 @@ export default function Shell({ children, topbarAction = null }) {
               sidebarExpanded ? "md:w-[288px]" : "md:w-[104px]",
             ].join(" ")}
           >
-            <div className="sticky top-[68px] h-[calc(100vh-68px)] overflow-y-auto p-4">
+            <div className="sticky top-0 h-screen overflow-y-auto p-4 pr-0">
               <Sidebar
                 collapsed={!sidebarExpanded}
                 onToggle={() => setSidebarExpanded((previous) => !previous)}
@@ -202,19 +203,29 @@ export default function Shell({ children, topbarAction = null }) {
             </div>
           </aside>
 
-          <main className="min-w-0 flex-1 pb-8">
-            <div className="px-4 pb-6 pt-[80px] sm:px-5 lg:px-6">
-              <div
-                className={[
-                  "min-h-[calc(100vh-104px)] rounded-[30px] border p-4 backdrop-blur-xl transition-colors sm:p-5 lg:p-6",
-                  isDark
-                    ? "border-white/10 bg-[linear-gradient(180deg,rgba(12,19,34,0.94),rgba(6,12,24,0.9))] shadow-[0_22px_72px_-52px_rgba(15,23,42,0.8)]"
-                    : "border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(243,246,250,0.9))] shadow-[0_22px_72px_-56px_rgba(15,23,42,0.16)]",
-                ].join(" ")}
-              >
-                <div className="space-y-6">
-                  <BillingInlineNotice isDark={isDark} />
-                  {children}
+          <main className="min-w-0 flex-1 pb-8 md:flex md:min-h-screen md:flex-col md:pb-0">
+            <div className="px-4 pb-6 pt-[80px] sm:px-5 md:flex md:min-h-screen md:flex-col md:px-4 md:pb-4 md:pt-4 lg:px-6">
+              <Topbar
+                isDark={isDark}
+                setIsDark={setIsDark}
+                contextualAction={topbarAction}
+                onOpenMyWhatsApp={myWhatsAppModalActions.openMyWhatsAppModal}
+                layout="desktop"
+              />
+
+              <div className="md:mt-4 md:flex-1">
+                <div
+                  className={[
+                    "min-h-[calc(100vh-104px)] rounded-[30px] border p-4 backdrop-blur-xl transition-colors sm:p-5 lg:p-6 md:min-h-full",
+                    isDark
+                      ? "border-white/10 bg-[linear-gradient(180deg,rgba(12,19,34,0.94),rgba(6,12,24,0.9))] shadow-[0_22px_72px_-52px_rgba(15,23,42,0.8)]"
+                      : "border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(243,246,250,0.9))] shadow-[0_22px_72px_-56px_rgba(15,23,42,0.16)]",
+                  ].join(" ")}
+                >
+                  <div className="space-y-6">
+                    <BillingInlineNotice isDark={isDark} />
+                    {children}
+                  </div>
                 </div>
               </div>
             </div>

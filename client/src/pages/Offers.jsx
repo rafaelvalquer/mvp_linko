@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../app/api.js";
 import { listWorkspaceUsers } from "../app/authApi.js";
 import { useAuth } from "../app/AuthContext.jsx";
@@ -25,6 +25,14 @@ import {
   isCancelledOffer,
   isPaidOffer,
   isPendingPaymentOffer,
+  hasFeedbackResponse,
+  buildFeedbackUrl,
+  getOfferCxStatusSummary,
+  getOfferCxAlertBadges,
+  getOfferFulfillmentCtaLabel,
+  isOfferCriticalFeedback,
+  matchesOfferCxFilter,
+  normalizeOfferCxFilter,
 } from "../components/offers/offerHelpers.js";
 
 function PulseGlowBadge({ children, isDark }) {
@@ -73,25 +81,8 @@ function buildOffersQuery({ scope, ownerUserId }) {
   return params.toString();
 }
 
-function getFulfillmentCtaLabel(offer) {
-  const rating = Number(offer?.feedback?.rating);
-  if (offer?.feedback?.respondedAt && Number.isFinite(rating) && rating > 0) {
-    return "Ver avaliacao";
-  }
-  if (offer?.fulfillment?.completedAt) {
-    return "Reenviar avaliacao";
-  }
-  return String(offer?.offerType || "").toLowerCase() === "product"
-    ? "Pedido entregue"
-    : "Concluir atendimento";
-}
-
-function hasFeedbackResponse(offer) {
-  const rating = Number(offer?.feedback?.rating);
-  return !!offer?.feedback?.respondedAt && Number.isFinite(rating) && rating > 0;
-}
-
 export default function Offers() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { isDark } = useThemeToggle();
   const { perms, user } = useAuth();
   const isOwnerTeamView =
@@ -110,6 +101,9 @@ export default function Offers() {
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("ALL");
   const [originFilter, setOriginFilter] = useState("ALL");
+  const [cxFilter, setCxFilter] = useState(() =>
+    normalizeOfferCxFilter(searchParams.get("cxFilter")),
+  );
   const [copiedId, setCopiedId] = useState(null);
 
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -151,6 +145,21 @@ export default function Offers() {
     appliedScope === "workspace"
       ? `Equipe: ${selectedTeamMemberName}`
       : "Minha carteira";
+
+  useEffect(() => {
+    const nextFilter = normalizeOfferCxFilter(searchParams.get("cxFilter"));
+    setCxFilter((prev) => (prev === nextFilter ? prev : nextFilter));
+  }, [searchParams]);
+
+  useEffect(() => {
+    const currentParam = normalizeOfferCxFilter(searchParams.get("cxFilter"));
+    if (currentParam === cxFilter) return;
+
+    const nextParams = new URLSearchParams(searchParams);
+    if (cxFilter === "ALL") nextParams.delete("cxFilter");
+    else nextParams.set("cxFilter", cxFilter);
+    setSearchParams(nextParams, { replace: true });
+  }, [cxFilter, searchParams, setSearchParams]);
 
   const patchOfferInList = useCallback((updated) => {
     if (!updated?._id) return;
@@ -214,7 +223,7 @@ export default function Offers() {
     loadWorkspaceTeam();
   }, [loadWorkspaceTeam]);
 
-  const filtered = useMemo(() => {
+  const filteredBase = useMemo(() => {
     const query = q.trim().toLowerCase();
 
     let base =
@@ -262,6 +271,10 @@ export default function Offers() {
     });
   }, [items, q, filter, originFilter]);
 
+  const filtered = useMemo(() => {
+    return filteredBase.filter((offer) => matchesOfferCxFilter(offer, cxFilter));
+  }, [filteredBase, cxFilter]);
+
   const worklistSummary = useMemo(() => {
     return filtered.reduce(
       (acc, offer) => {
@@ -276,6 +289,25 @@ export default function Offers() {
       { total: filtered.length, pending: 0, waiting: 0, paid: 0 },
     );
   }, [filtered]);
+
+  const cxSummary = useMemo(() => {
+    return filteredBase.reduce(
+      (acc, offer) => {
+        const cxStatus = getOfferCxStatusSummary(offer);
+        if (cxStatus?.code === "NOT_COMPLETED") acc.notCompleted += 1;
+        if (cxStatus?.code === "FEEDBACK_SENT") acc.feedbackSent += 1;
+        if (cxStatus?.code === "FEEDBACK_RESPONDED") acc.feedbackResponded += 1;
+        if (isOfferCriticalFeedback(offer)) acc.critical += 1;
+        return acc;
+      },
+      {
+        notCompleted: 0,
+        feedbackSent: 0,
+        feedbackResponded: 0,
+        critical: 0,
+      },
+    );
+  }, [filteredBase]);
 
   const copyLink = useCallback(async (offer) => {
     const token = offer?.publicToken;
@@ -368,6 +400,10 @@ export default function Offers() {
               <Badge tone="ACCEPTED">{worklistSummary.pending} pendentes</Badge>
               <Badge tone="PUBLIC">{worklistSummary.waiting} em analise</Badge>
               <Badge tone="PAID">{worklistSummary.paid} pagas</Badge>
+              <Badge tone="PUBLIC">{cxSummary.notCompleted} nao concluidas</Badge>
+              <Badge tone="ACCEPTED">{cxSummary.feedbackSent} avaliacao enviada</Badge>
+              <Badge tone="CONFIRMED">{cxSummary.feedbackResponded} respondidas</Badge>
+              <Badge tone="CANCELLED">{cxSummary.critical} criticas</Badge>
             </>
           }
         >
@@ -396,6 +432,19 @@ export default function Offers() {
               <option value="ALL">Todas as origens</option>
               <option value="MANUAL">Avulsas</option>
               <option value="RECURRING">Recorrentes</option>
+            </select>
+
+            <select
+              className={selectClass}
+              value={cxFilter}
+              onChange={(e) => setCxFilter(e.target.value)}
+            >
+              <option value="ALL">CX: todos</option>
+              <option value="NOT_COMPLETED">CX: Nao concluido</option>
+              <option value="FEEDBACK_SENT">CX: Avaliacao enviada</option>
+              <option value="FEEDBACK_RESPONDED">CX: Avaliacao respondida</option>
+              <option value="LOW_RATING">CX: Nota baixa</option>
+              <option value="CONTACT_REQUESTED">CX: Pediu contato</option>
             </select>
 
             <div className="w-full md:w-[360px]">
@@ -463,6 +512,8 @@ export default function Offers() {
                   <tbody className={isDark ? "divide-y divide-white/10" : "divide-y divide-zinc-100"}>
                     {filtered.map((o) => {
                       const pay = getPaymentLabel(o);
+                      const cxStatus = getOfferCxStatusSummary(o);
+                      const cxAlertBadges = getOfferCxAlertBadges(o);
                       const publicUrl = `/p/${o.publicToken}`;
                       const copied = copiedId === o._id;
                       const isPendingAlert = isPendingPaymentOffer(o);
@@ -524,7 +575,7 @@ export default function Offers() {
                             {fmtBRLFromCents(getAmountCents(o))}
                           </td>
                           <td className="px-5 py-4 pr-4">
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                               {isPendingAlert ? (
                                 <span className={isDark ? "inline-flex items-center rounded-full border border-amber-400/20 bg-amber-400/10 px-2.5 py-1 text-[11px] font-bold text-amber-200" : "inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700"}>
                                   Aguardando pagamento
@@ -536,6 +587,16 @@ export default function Offers() {
                               ) : (
                                 <Badge tone={pay.tone}>{pay.text}</Badge>
                               )}
+
+                              {cxStatus ? (
+                                <Badge tone={cxStatus.tone}>{cxStatus.text}</Badge>
+                              ) : null}
+
+                              {cxAlertBadges.map((badge) => (
+                                <Badge key={`${o._id}-${badge.code}`} tone={badge.tone}>
+                                  {badge.text}
+                                </Badge>
+                              ))}
 
                               {o?.notifyWhatsAppOnPaid ? (
                                 <span className={isDark ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-[10px] font-bold text-emerald-200" : "rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700"}>
@@ -551,9 +612,10 @@ export default function Offers() {
                                   variant="secondary"
                                   size="sm"
                                   onClick={() => {
-                                    if (hasFeedbackResponse(o) && o?.publicToken) {
+                                    const feedbackUrl = buildFeedbackUrl(o);
+                                    if (hasFeedbackResponse(o) && feedbackUrl) {
                                       window.open(
-                                        `/p/${o.publicToken}/feedback`,
+                                        feedbackUrl,
                                         "_blank",
                                         "noopener,noreferrer",
                                       );
@@ -562,7 +624,7 @@ export default function Offers() {
                                     openDetails(o, "fulfillment");
                                   }}
                                 >
-                                  {getFulfillmentCtaLabel(o)}
+                                  {getOfferFulfillmentCtaLabel(o)}
                                 </Button>
                               ) : null}
 

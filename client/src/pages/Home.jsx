@@ -17,6 +17,7 @@ import {
   Link2,
   Lock,
   Menu,
+  MessageCircle,
   Moon,
   MousePointer2,
   QrCode,
@@ -42,6 +43,10 @@ const NAV_LINKS = [
   { name: "Planos", href: "#planos" },
   { name: "FAQ", href: "#faq" },
 ];
+
+const LUMINORPAY_WHATSAPP_DISPLAY = "(11) 92595-7940";
+const LUMINORPAY_WHATSAPP_URL =
+  "https://wa.me/5511925957940?text=Ola%2C%20vim%20pelo%20site%20da%20LuminorPay%20e%20quero%20saber%20mais.";
 
 const HERO_METRICS = [
   {
@@ -591,6 +596,41 @@ export default function Home() {
                     )}
                   >
                     Ver planos
+                  </a>
+                </div>
+
+                <div
+                  className={cx(
+                    "mt-5 flex flex-col gap-4 rounded-[28px] p-4 sm:flex-row sm:items-center sm:justify-between",
+                    ui.glass,
+                  )}
+                >
+                  <div>
+                    <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-[rgb(var(--accent))]">
+                      Fale com a LuminorPay
+                    </div>
+                    <div className="mt-1 text-sm font-semibold text-[rgb(var(--text))] sm:text-base">
+                      Atendimento comercial direto no WhatsApp
+                    </div>
+                    <div className={cx("mt-1 text-sm", ui.mutedText)}>
+                      Tire duvidas, conheca o produto e veja como aplicar na sua
+                      operacao.
+                    </div>
+                  </div>
+
+                  <a
+                    href={LUMINORPAY_WHATSAPP_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={cx(
+                      "inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-bold text-white transition-transform hover:-translate-y-0.5 sm:text-base",
+                      "bg-[linear-gradient(135deg,rgb(var(--accent-2)),rgb(var(--accent)))] shadow-[0_24px_50px_-24px_rgb(var(--accent-2)/0.78)]",
+                      ui.focusRing,
+                    )}
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                    {LUMINORPAY_WHATSAPP_DISPLAY}
+                    <ArrowRight className="h-4 w-4" />
                   </a>
                 </div>
 
@@ -1319,6 +1359,21 @@ export default function Home() {
             (c) {new Date().getFullYear()} LuminorPay. Todos os direitos
             reservados.
           </div>
+
+          <a
+            href={LUMINORPAY_WHATSAPP_URL}
+            target="_blank"
+            rel="noreferrer"
+            className={cx(
+              "inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold text-[rgb(var(--text))] transition-colors hover:bg-[rgb(var(--surface)/0.82)]",
+              ui.softPanel,
+              ui.focusRing,
+            )}
+          >
+            <MessageCircle className="h-4 w-4" />
+            WhatsApp: {LUMINORPAY_WHATSAPP_DISPLAY}
+            <ArrowRight className="h-4 w-4" />
+          </a>
         </div>
       </footer>
 

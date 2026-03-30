@@ -12,6 +12,12 @@ import {
   fmtBRLFromCents,
   getAmountCents,
   getPaymentLabel,
+  getOfferCxStatusSummary,
+  getOfferFulfillmentCtaLabel,
+  getOfferFulfillmentDialogTitle,
+  getOfferFulfillmentLabel,
+  buildFeedbackUrl,
+  buildFeedbackPreview,
   fmtDT,
   buildPublicUrl,
   safeFileName,
@@ -255,76 +261,6 @@ function SectionTabButton({ active, children, onClick }) {
       {children}
     </button>
   );
-}
-
-function feedbackStatusSummary(offer) {
-  const rating = Number(offer?.feedback?.rating);
-  if (offer?.feedback?.respondedAt && Number.isFinite(rating) && rating > 0) {
-    return {
-      code: "RESPONDED",
-      tone: "CONFIRMED",
-      text: `Avaliacao respondida: ${rating}/5`,
-    };
-  }
-  if (offer?.feedbackRequest?.sentAt) {
-    return {
-      code: "SENT",
-      tone: "ACCEPTED",
-      text: "Avaliacao enviada",
-    };
-  }
-  return {
-    code: "PENDING",
-    tone: "PUBLIC",
-    text: "Nao concluido",
-  };
-}
-
-function fulfillmentPrimaryLabel(offer) {
-  const status = feedbackStatusSummary(offer);
-  if (status.code === "RESPONDED") return "Ver avaliacao";
-  if (offer?.fulfillment?.completedAt) return "Reenviar avaliacao";
-  return String(offer?.offerType || "").toLowerCase() === "product"
-    ? "Pedido entregue"
-    : "Concluir atendimento";
-}
-
-function fulfillmentDialogTitle(offer) {
-  return String(offer?.offerType || "").toLowerCase() === "product"
-    ? "Marcar pedido como entregue"
-    : "Marcar atendimento como concluido";
-}
-
-function buildFeedbackLink(offer) {
-  const publicUrl = buildPublicUrl(offer);
-  return publicUrl ? `${publicUrl}/feedback` : "";
-}
-
-function buildFeedbackPreview(offer, channel) {
-  const feedbackUrl = buildFeedbackLink(offer);
-  const label =
-    String(offer?.offerType || "").toLowerCase() === "product"
-      ? "pedido"
-      : "atendimento";
-  const name = String(offer?.customerName || "").trim().split(/\s+/)[0] || "";
-
-  if (String(channel || "").toLowerCase() === "email") {
-    return [
-      name ? `Assunto para ${name}` : "Assunto para cliente",
-      `Obrigado pela experiencia com ${offer?.title || "sua proposta"}`,
-      "",
-      `Seu ${label} foi finalizado por aqui e queremos ouvir sua opiniao.`,
-      `Link da avaliacao: ${feedbackUrl || "link indisponivel"}`,
-    ].join("\n");
-  }
-
-  return [
-    name ? `Oi, ${name}!` : "Oi!",
-    "",
-    `Obrigada por confiar na gente. Seu ${label} foi finalizado por aqui.`,
-    "Se puder, queria te pedir uma avaliacao rapida:",
-    feedbackUrl || "link indisponivel",
-  ].join("\n");
 }
 
 export default function OfferDetailsModal({
@@ -961,17 +897,22 @@ export default function OfferDetailsModal({
   const canModerateProof =
     activeHasProof && activeWaiting && !activePaid && !activeCancelled;
   const reminderGuard = useMemo(() => canSendReminder(active), [active]);
-  const feedbackStatus = useMemo(() => feedbackStatusSummary(active), [active]);
-  const feedbackLink = useMemo(() => buildFeedbackLink(active), [active]);
-  const fulfillmentLabel = useMemo(
+  const feedbackStatus = useMemo(
     () =>
-      String(active?.offerType || "").toLowerCase() === "product"
-        ? "Pedido entregue"
-        : "Atendimento concluido",
+      getOfferCxStatusSummary(active) || {
+        code: "FULFILLMENT_COMPLETED",
+        tone: "DRAFT",
+        text: "Concluido sem avaliacao",
+      },
+    [active],
+  );
+  const feedbackLink = useMemo(() => buildFeedbackUrl(active), [active]);
+  const fulfillmentLabel = useMemo(
+    () => getOfferFulfillmentLabel(active),
     [active],
   );
   const feedbackPrimaryLabel = useMemo(
-    () => fulfillmentPrimaryLabel(active),
+    () => getOfferFulfillmentCtaLabel(active),
     [active],
   );
   const feedbackPreview = useMemo(
@@ -1273,7 +1214,11 @@ export default function OfferDetailsModal({
                                   <Button
                                     disabled={actionBusy}
                                     onClick={() => {
-                                      if (feedbackStatus.code === "RESPONDED" && feedbackLink) {
+                                      if (
+                                        feedbackStatus.code ===
+                                          "FEEDBACK_RESPONDED" &&
+                                        feedbackLink
+                                      ) {
                                         window.open(
                                           feedbackLink,
                                           "_blank",
@@ -1689,7 +1634,7 @@ export default function OfferDetailsModal({
       <Modal
         open={fulfillmentOpen && open && !!active}
         onClose={() => setFulfillmentOpen(false)}
-        title={fulfillmentDialogTitle(active)}
+        title={getOfferFulfillmentDialogTitle(active)}
         footer={
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
             <Button

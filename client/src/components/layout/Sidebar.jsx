@@ -551,10 +551,14 @@ export default function Sidebar({
     <>
       <div
         className={[
-          "flex min-h-full flex-col rounded-[32px] border p-3 backdrop-blur-2xl transition-all duration-300",
+          "flex h-full flex-col rounded-[32px] border p-3 backdrop-blur-2xl transition-all duration-300",
           isDark
-            ? "border-white/10 bg-[linear-gradient(180deg,rgba(8,15,30,0.98),rgba(6,12,24,0.94))] shadow-[0_24px_80px_-42px_rgba(15,23,42,0.92)]"
-            : "border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(241,245,249,0.9))] shadow-[0_24px_80px_-42px_rgba(15,23,42,0.18)]",
+            ? mobile
+              ? "border-white/10 bg-[linear-gradient(180deg,rgba(8,15,30,0.98),rgba(6,12,24,0.94))] shadow-[0_24px_80px_-42px_rgba(15,23,42,0.92)]"
+              : "border-white/10 bg-[linear-gradient(180deg,rgba(8,15,30,0.98),rgba(6,12,24,0.95))] shadow-[0_20px_60px_-48px_rgba(15,23,42,0.88)]"
+            : mobile
+              ? "border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(241,245,249,0.9))] shadow-[0_24px_80px_-42px_rgba(15,23,42,0.18)]"
+              : "border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.97),rgba(241,245,249,0.92))] shadow-[0_20px_56px_-46px_rgba(15,23,42,0.16)]",
           collapsed ? "items-center" : "items-stretch",
         ].join(" ")}
       >
@@ -562,7 +566,7 @@ export default function Sidebar({
           className={[
             "pb-3",
             collapsed
-              ? "flex justify-center px-0"
+              ? "flex flex-col items-center gap-2 px-0"
               : "flex items-center justify-between gap-3 px-2",
           ].join(" ")}
         >
@@ -601,7 +605,22 @@ export default function Sidebar({
                 </div>
               </div>
             </div>
-          ) : null}
+          ) : (
+            <div
+              className={[
+                "flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border bg-[linear-gradient(135deg,#2563eb,#14b8a6)] text-white shadow-[0_18px_40px_-22px_rgba(37,99,235,0.75)]",
+                isDark ? "border-white/10" : "border-slate-200/80",
+              ].join(" ")}
+              title="LuminorPay"
+            >
+              <img
+                src={brandLogo}
+                alt="LuminorPay"
+                className="h-8 w-8 rounded-xl object-contain"
+                draggable={false}
+              />
+            </div>
+          )}
 
           <button
             type="button"

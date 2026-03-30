@@ -34,6 +34,14 @@ import {
   fmtBRLFromCents,
   getAmountCents,
   getPaymentLabel,
+  getOfferFeedbackRating,
+  hasFeedbackResponse,
+  isOfferCriticalFeedback,
+  isOfferLowRating,
+  hasOfferContactRequested,
+  buildFeedbackUrl,
+  getOfferCxStatusSummary,
+  getOfferCxAlertBadges,
 } from "../components/offers/offerHelpers.js";
 import {
   getEffectivePixKeyMasked,
@@ -41,6 +49,7 @@ import {
   hasPixAccountConfigured,
 } from "../utils/guardOfferCreation.js";
 import { canUseRecurringPlan } from "../utils/planFeatures.js";
+import { hasWorkspaceModuleAccess } from "../utils/workspacePermissions.js";
 
 const Icons = {
   Refresh: () => (
@@ -398,6 +407,7 @@ export default function Dashboard() {
 
   const { signOut, user, workspace, loadingMe, refreshWorkspace, perms } = useAuth();
   const hasRecurringPlan = canUseRecurringPlan(workspace?.plan);
+  const canAccessReports = hasWorkspaceModuleAccess(perms, "reports");
   const canManagePixAccount = perms?.canManagePixAccount === true;
   const isOwnerTeamDashboard =
     perms?.isWorkspaceOwner === true && perms?.isWorkspaceTeamPlan === true;
@@ -864,6 +874,58 @@ export default function Dashboard() {
     activeRecurringIds,
   ]);
 
+  const cxSnapshot = useMemo(() => {
+    const now = new Date();
+    const windowEnd = startOfDay(now);
+    windowEnd.setDate(windowEnd.getDate() + 1);
+
+    const windowStart = new Date(windowEnd);
+    windowStart.setDate(windowStart.getDate() - 30);
+
+    const respondedOffers = offers.filter((offer) => {
+      const respondedAt = offer?.feedback?.respondedAt;
+      return (
+        getOfferFeedbackRating(offer) !== null &&
+        respondedAt &&
+        inRange(respondedAt, windowStart, windowEnd)
+      );
+    });
+
+    const respondedCount = respondedOffers.length;
+    const averageRating =
+      respondedCount > 0
+        ? respondedOffers.reduce(
+            (acc, offer) => acc + (getOfferFeedbackRating(offer) || 0),
+            0,
+          ) / respondedCount
+        : 0;
+
+    const criticalItems = respondedOffers
+      .filter((offer) => isOfferCriticalFeedback(offer))
+      .sort((a, b) => {
+        const contactDelta =
+          Number(hasOfferContactRequested(b)) -
+          Number(hasOfferContactRequested(a));
+        if (contactDelta !== 0) return contactDelta;
+
+        const ratingDelta =
+          (getOfferFeedbackRating(a) || 99) - (getOfferFeedbackRating(b) || 99);
+        if (ratingDelta !== 0) return ratingDelta;
+
+        return (
+          new Date(b?.feedback?.respondedAt || 0).getTime() -
+          new Date(a?.feedback?.respondedAt || 0).getTime()
+        );
+      });
+
+    return {
+      averageRating,
+      respondedCount,
+      criticalCount: criticalItems.length,
+      criticalItems: criticalItems.slice(0, 5),
+    };
+  }, [offers]);
+
   const waitingOffers = useMemo(() => {
     return offers
       .filter((o) => normStatus(o?.paymentStatus) === "WAITING_CONFIRMATION")
@@ -894,6 +956,13 @@ export default function Dashboard() {
 
   const whatsNewCount = whatsNewItems.length;
   const canOpenWhatsNew = whatsNewCount > 0 && !whatsNewLoading;
+  const cxAverageLabel = useMemo(() => {
+    if (!cxSnapshot.respondedCount) return "--";
+    return cxSnapshot.averageRating.toLocaleString("pt-BR", {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+    });
+  }, [cxSnapshot]);
 
   const topbarAction = (
     <button
@@ -1208,6 +1277,109 @@ export default function Dashboard() {
           />
         </section>
 
+        <Card className="overflow-hidden">
+          <CardBody className="space-y-5 p-5">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div
+                  className={[
+                    "text-[11px] font-bold uppercase tracking-[0.18em]",
+                    isDark ? "text-slate-400" : "text-slate-500",
+                  ].join(" ")}
+                >
+                  CX recente
+                </div>
+                <div
+                  className={[
+                    "mt-1 text-lg font-semibold",
+                    isDark ? "text-white" : "text-slate-950",
+                  ].join(" ")}
+                >
+                  Feedback dos ultimos 30 dias
+                </div>
+                <p
+                  className={[
+                    "mt-1 text-sm",
+                    isDark ? "text-slate-400" : "text-slate-500",
+                  ].join(" ")}
+                >
+                  Visibilidade rapida para acompanhar a experiencia do cliente
+                  sem sair da rotina.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Link to="/offers?cxFilter=LOW_RATING">
+                  <Button variant="secondary">Abrir nota baixa</Button>
+                </Link>
+                {canAccessReports ? (
+                  <Link to="/reports/feedback">
+                    <Button>Ver satisfacao</Button>
+                  </Link>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-3">
+              {[
+                {
+                  label: "Nota media",
+                  value: cxAverageLabel,
+                  subtitle: "avaliacoes respondidas",
+                  tone: "text-emerald-600 dark:text-emerald-300",
+                },
+                {
+                  label: "Avaliacoes respondidas",
+                  value: String(cxSnapshot.respondedCount),
+                  subtitle: "retorno recebido no periodo",
+                  tone: "text-sky-600 dark:text-sky-300",
+                },
+                {
+                  label: "Casos criticos",
+                  value: String(cxSnapshot.criticalCount),
+                  subtitle: "nota baixa ou pedido de contato",
+                  tone: "text-amber-600 dark:text-amber-300",
+                },
+              ].map((item) => (
+                <div
+                  key={item.label}
+                  className={[
+                    "rounded-2xl border px-4 py-4",
+                    isDark
+                      ? "border-white/10 bg-white/5"
+                      : "border-slate-200/80 bg-slate-50/80",
+                  ].join(" ")}
+                >
+                  <div
+                    className={[
+                      "text-[11px] font-bold uppercase tracking-[0.16em]",
+                      isDark ? "text-slate-400" : "text-slate-500",
+                    ].join(" ")}
+                  >
+                    {item.label}
+                  </div>
+                  <div
+                    className={[
+                      "mt-2 text-3xl font-black tracking-[-0.04em]",
+                      item.tone,
+                    ].join(" ")}
+                  >
+                    {loading ? "..." : item.value}
+                  </div>
+                  <div
+                    className={[
+                      "mt-1 text-xs",
+                      isDark ? "text-slate-400" : "text-slate-500",
+                    ].join(" ")}
+                  >
+                    {item.subtitle}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardBody>
+        </Card>
+
         <AnalyticsSection
           offers={offers}
           scope={appliedScope}
@@ -1247,6 +1419,8 @@ export default function Dashboard() {
                   <div className={isDark ? "divide-y divide-white/10" : "divide-y divide-slate-100"}>
                     {kpis.last5.map((o) => {
                       const pay = getPaymentLabel(o);
+                      const cxStatus = getOfferCxStatusSummary(o);
+                      const cxAlertBadges = getOfferCxAlertBadges(o);
                       const publicUrl = `/p/${o.publicToken}`;
                       const copied = copiedId === o._id;
 
@@ -1271,6 +1445,21 @@ export default function Dashboard() {
                                 >
                                   {pay.text}
                                 </Badge>
+                                {cxStatus ? (
+                                  <Badge tone={cxStatus.tone} size="xs" className="shrink-0">
+                                    {cxStatus.text}
+                                  </Badge>
+                                ) : null}
+                                {cxAlertBadges.map((badge) => (
+                                  <Badge
+                                    key={`${o._id}-${badge.code}`}
+                                    tone={badge.tone}
+                                    size="xs"
+                                    className="shrink-0"
+                                  >
+                                    {badge.text}
+                                  </Badge>
+                                ))}
                                 {o?.notifyWhatsAppOnPaid ? (
                                   <span className={isDark ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-[10px] font-bold text-emerald-200" : "rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700"}>
                                     WA ON
@@ -1445,6 +1634,152 @@ export default function Dashboard() {
                       )}
                     </div>
                   ))
+                )}
+              </CardBody>
+            </Card>
+
+            <Card>
+              <CardHeader
+                title="Atencao em avaliacoes"
+                subtitle="Casos criticos recebidos nos ultimos 30 dias"
+                right={
+                  canAccessReports ? (
+                    <Link
+                      to="/reports/feedback"
+                      className="text-[11px] font-bold uppercase tracking-[0.18em] text-amber-700 hover:underline"
+                    >
+                      VER SATISFACAO
+                    </Link>
+                  ) : (
+                    <Link
+                      to="/offers?cxFilter=LOW_RATING"
+                      className="text-[11px] font-bold uppercase tracking-[0.18em] text-amber-700 hover:underline"
+                    >
+                      VER PROPOSTAS
+                    </Link>
+                  )
+                }
+              />
+              <CardBody className="space-y-3">
+                {loading ? (
+                  <Skeleton className="h-32 w-full rounded-xl" />
+                ) : cxSnapshot.criticalItems.length === 0 ? (
+                  <div className="py-4 text-center">
+                    <p
+                      className={
+                        isDark
+                          ? "text-xs font-medium text-slate-500"
+                          : "text-xs font-medium text-slate-400"
+                      }
+                    >
+                      Nenhum caso critico recente em avaliacao
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    {cxSnapshot.criticalItems.map((offer) => {
+                      const rating = getOfferFeedbackRating(offer);
+                      const feedbackUrl = buildFeedbackUrl(offer);
+
+                      return (
+                        <div
+                          key={offer._id}
+                          className={[
+                            "rounded-2xl border px-4 py-3",
+                            isDark
+                              ? "border-white/10 bg-white/5"
+                              : "border-slate-200/80 bg-slate-50/80",
+                          ].join(" ")}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div
+                                className={
+                                  isDark
+                                    ? "truncate text-sm font-semibold text-white"
+                                    : "truncate text-sm font-semibold text-slate-900"
+                                }
+                              >
+                                {offer.customerName || "Cliente"}
+                              </div>
+                              <div
+                                className={
+                                  isDark
+                                    ? "mt-1 line-clamp-1 text-[11px] text-slate-400"
+                                    : "mt-1 line-clamp-1 text-[11px] text-slate-500"
+                                }
+                              >
+                                {offer.title || "Proposta"} •{" "}
+                                {fmtDateTimeBR(offer?.feedback?.respondedAt)}
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap justify-end gap-2">
+                              {rating !== null ? (
+                                <Badge tone={isOfferLowRating(offer) ? "CANCELLED" : "CONFIRMED"}>
+                                  {rating}/5
+                                </Badge>
+                              ) : null}
+                              {hasOfferContactRequested(offer) ? (
+                                <Badge tone="ACCEPTED">Pediu contato</Badge>
+                              ) : null}
+                            </div>
+                          </div>
+
+                          {offer?.feedback?.comment ? (
+                            <div
+                              className={
+                                isDark
+                                  ? "mt-3 line-clamp-3 text-xs text-slate-300"
+                                  : "mt-3 line-clamp-3 text-xs text-slate-600"
+                              }
+                            >
+                              {offer.feedback.comment}
+                            </div>
+                          ) : null}
+
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => openDetails(offer)}
+                            >
+                              Abrir proposta
+                            </Button>
+
+                            {hasFeedbackResponse(offer) && feedbackUrl ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  window.open(
+                                    feedbackUrl,
+                                    "_blank",
+                                    "noopener,noreferrer",
+                                  )
+                                }
+                              >
+                                Ver avaliacao
+                              </Button>
+                            ) : null}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <Link to="/offers?cxFilter=LOW_RATING">
+                        <Button variant="secondary" size="sm">
+                          Nota baixa
+                        </Button>
+                      </Link>
+                      <Link to="/offers?cxFilter=CONTACT_REQUESTED">
+                        <Button variant="secondary" size="sm">
+                          Pediu contato
+                        </Button>
+                      </Link>
+                    </div>
+                  </>
                 )}
               </CardBody>
             </Card>

@@ -62,6 +62,7 @@ export default function Topbar({
   setIsDark,
   contextualAction = null,
   onOpenMyWhatsApp = null,
+  layout = "mobile",
 }) {
   const { user, workspace, loadingBilling, subscriptionStatus, signOut } =
     useAuth();
@@ -79,6 +80,7 @@ export default function Topbar({
   const needsAttention = normalized !== "active";
   const isPastDue = normalized === "past_due";
   const hasWhatsAppConfigured = String(user?.whatsappPhone || "").trim().length > 0;
+  const isMobileLayout = layout === "mobile";
 
   function handleLogout() {
     signOut?.();
@@ -103,57 +105,58 @@ export default function Topbar({
   return (
     <div
       className={[
-        "fixed inset-x-0 top-0 z-40 border-b backdrop-blur-2xl",
+        "border backdrop-blur-2xl",
         isDark
           ? "border-white/10 bg-[rgba(6,11,24,0.88)]"
           : "border-slate-200/80 bg-[rgba(255,255,255,0.82)]",
+        isMobileLayout
+          ? "fixed inset-x-0 top-0 z-40 border-x-0 border-t-0 md:hidden"
+          : "hidden overflow-hidden rounded-[28px] shadow-[0_22px_72px_-50px_rgba(15,23,42,0.28)] md:block md:sticky md:top-4 md:z-30",
       ].join(" ")}
     >
-      <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-4 px-4 py-2.5 sm:px-5 lg:px-6">
-        <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-          <Link
-            to={user ? "/dashboard" : "/"}
-            className="flex items-center gap-3"
-            aria-label="Ir para o dashboard"
-          >
-            <div
-              className={[
-                "flex h-11 w-11 items-center justify-center rounded-2xl border bg-[linear-gradient(135deg,#2563eb,#14b8a6)] shadow-[0_18px_40px_-20px_rgba(37,99,235,0.7)] sm:h-[42px] sm:w-[42px]",
-                isDark ? "border-white/10" : "border-slate-200/80",
-              ].join(" ")}
+      <div
+        className={[
+          "flex items-center justify-between gap-4 px-4 py-2.5 sm:px-5 lg:px-6",
+          isMobileLayout ? "mx-auto max-w-[1500px]" : "",
+        ].join(" ")}
+      >
+        <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
+          {isMobileLayout ? (
+            <Link
+              to={user ? "/dashboard" : "/"}
+              className="flex items-center gap-3"
+              aria-label="Ir para o dashboard"
             >
-              <img
-                src={brandLogo}
-                alt="Logo da marca"
-                className="h-8 w-8 rounded-xl object-contain"
-                loading="eager"
-                draggable={false}
-              />
-            </div>
+              <div
+                className={[
+                  "flex h-11 w-11 items-center justify-center rounded-2xl border bg-[linear-gradient(135deg,#2563eb,#14b8a6)] shadow-[0_18px_40px_-20px_rgba(37,99,235,0.7)] sm:h-[42px] sm:w-[42px]",
+                  isDark ? "border-white/10" : "border-slate-200/80",
+                ].join(" ")}
+              >
+                <img
+                  src={brandLogo}
+                  alt="Logo da marca"
+                  className="h-8 w-8 rounded-xl object-contain"
+                  loading="eager"
+                  draggable={false}
+                />
+              </div>
 
-            <div className="min-w-0">
-              <div
-                className={[
-                  "truncate text-[15px] font-black tracking-tight",
-                  isDark ? "text-white" : "text-slate-950",
-                ].join(" ")}
-              >
-                {title}
+              <div className="min-w-0">
+                <div
+                  className={[
+                    "truncate text-[15px] font-black tracking-tight",
+                    isDark ? "text-white" : "text-slate-950",
+                  ].join(" ")}
+                >
+                  {title}
+                </div>
               </div>
-              <div
-                className={[
-                  "hidden text-[11px] font-semibold uppercase tracking-[0.18em] sm:block",
-                  "leading-none",
-                  isDark ? "text-slate-400" : "text-slate-500",
-                ].join(" ")}
-              >
-                Propostas, agenda e Pix no mesmo fluxo
-              </div>
-            </div>
-          </Link>
+            </Link>
+          ) : null}
         </div>
 
-        <div className="flex items-center gap-2 sm:gap-3">
+        <div className="ml-auto flex items-center gap-2 sm:gap-3">
           <div className="hidden xl:block">
             <StatusBadge status={subscriptionStatus} loading={loadingBilling} />
           </div>
