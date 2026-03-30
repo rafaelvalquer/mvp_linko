@@ -132,6 +132,7 @@ export default function ReportsDashboard() {
   const [workspaceUsers, setWorkspaceUsers] = useState([]);
   const [teamUsersBusy, setTeamUsersBusy] = useState(false);
   const [summary, setSummary] = useState(null);
+  const [feedbackSummary, setFeedbackSummary] = useState(null);
   const [revenueDaily, setRevenueDaily] = useState([]);
   const [createdVsPaidDaily, setCreatedVsPaidDaily] = useState([]);
   const [topClients, setTopClients] = useState([]);
@@ -209,6 +210,7 @@ export default function ReportsDashboard() {
         ]);
 
       setSummary(summaryRes?.summary || null);
+      setFeedbackSummary(summaryRes?.feedbackSummary || null);
       setRevenueDaily(
         (revenueRes?.items || []).map((item) => ({
           ...item,
@@ -323,8 +325,19 @@ export default function ReportsDashboard() {
     };
   }, [summary]);
 
+  const feedbackKpis = useMemo(() => {
+    const current = feedbackSummary || {};
+    return {
+      averageRating: Number(current.averageRating || 0),
+      responsesCount: Number(current.responsesCount || 0),
+      lowRatingsCount: Number(current.lowRatingsCount || 0),
+      contactRequestedCount: Number(current.contactRequestedCount || 0),
+    };
+  }, [feedbackSummary]);
+
   const hasData =
     Number(kpis.createdCount || 0) > 0 ||
+    Number(feedbackKpis.responsesCount || 0) > 0 ||
     revenueDaily.length > 0 ||
     createdVsPaidDaily.length > 0 ||
     topClients.length > 0 ||
@@ -342,6 +355,9 @@ export default function ReportsDashboard() {
             <>
               <Link to="/reports/recurring">
                 <Button variant="secondary">Relatórios de recorrência</Button>
+              </Link>
+              <Link to="/reports/feedback">
+                <Button variant="secondary">Satisfação</Button>
               </Link>
               <Button variant="secondary" onClick={() => load()} disabled={applying}>
                 {applying ? "Atualizando..." : "Atualizar"}
@@ -464,6 +480,26 @@ export default function ReportsDashboard() {
           <MetricCard title="Ticket medio" subtitle="Receita por venda paga" value={money(kpis.avgTicketCents)} loading={loading} />
           <MetricCard title="Conversao" subtitle="Pagas sobre emitidas" value={`${Number(kpis.conversionPct || 0).toFixed(1)}%`} loading={loading} />
         </div>
+
+        <Card>
+          <CardHeader
+            title="Resumo de satisfação"
+            subtitle="Uma leitura rápida de CX para acompanhar como os clientes estão avaliando a experiência."
+            right={
+              <Link to="/reports/feedback">
+                <Button variant="secondary">Abrir satisfação</Button>
+              </Link>
+            }
+          />
+          <CardBody>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <MetricCard title="Nota média" subtitle="Avaliação média recebida" value={`${feedbackKpis.averageRating.toFixed(1)}/5`} loading={loading} />
+              <MetricCard title="Avaliações respondidas" subtitle="Clientes que responderam a pesquisa" value={String(feedbackKpis.responsesCount || 0)} loading={loading} />
+              <MetricCard title="Notas baixas (1-3)" subtitle="Casos que merecem atenção" value={String(feedbackKpis.lowRatingsCount || 0)} loading={loading} />
+              <MetricCard title="Clientes pedindo contato" subtitle="Pedidos explícitos de retorno" value={String(feedbackKpis.contactRequestedCount || 0)} loading={loading} />
+            </div>
+          </CardBody>
+        </Card>
 
         {!hasData && !loading ? (
           <EmptyState title="Sem dados no periodo" description="Ajuste os filtros ou aguarde novas transacoes para visualizar os relatorios." />

@@ -43,6 +43,7 @@ import BillingCancel from "../pages/BillingCancel.jsx";
 
 // ✅ NOVO: Relatórios
 import Reports from "../pages/ReportsDashboard.jsx";
+import FeedbackReportsPage from "../pages/FeedbackReportsPage.jsx";
 import RecurringReportsPage from "../pages/RecurringReportsPage.jsx";
 import AutomationsPage from "../pages/AutomationsPage.jsx";
 import { useAuth } from "./AuthContext.jsx";
@@ -191,6 +192,16 @@ export const router = createBrowserRouter(
             <RequireAuth>
               <RequireModuleAccess moduleKey="reports">
                 <Reports />
+              </RequireModuleAccess>
+            </RequireAuth>
+          ),
+        },
+        {
+          path: "/reports/feedback",
+          element: (
+            <RequireAuth>
+              <RequireModuleAccess moduleKey="reports">
+                <FeedbackReportsPage />
               </RequireModuleAccess>
             </RequireAuth>
           ),

@@ -4,6 +4,10 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { ensureAuth, tenantFromUser } from "../middleware/auth.js";
 import { Offer } from "../models/Offer.js";
 import { User } from "../models/User.js";
+import {
+  buildFeedbackReportsDashboard,
+  buildFeedbackSummary,
+} from "../services/feedbackReports.service.js";
 import { buildGeneralReportsSnapshot } from "../services/generalReports.service.js";
 import {
   buildGeneralReportPdfBuffer,
@@ -295,6 +299,44 @@ r.get(
 );
 
 r.get(
+  "/reports/feedback/dashboard",
+  asyncHandler(async (req, res) => {
+    const fromYMD = parseYMD(req.query.from);
+    const toYMD = parseYMD(req.query.to);
+    const type = String(req.query.type || "all");
+
+    if (!fromYMD || !toYMD) {
+      return res
+        .status(400)
+        .json({ ok: false, error: "Parametros from/to invalidos" });
+    }
+
+    const { start, end } = rangeInSaoPaulo(fromYMD, toYMD);
+    const days = daysBetween(start, end);
+    if (days > MAX_DAYS + 1) {
+      return res.status(400).json({
+        ok: false,
+        error: `Periodo maximo excedido (${MAX_DAYS} dias)`,
+      });
+    }
+
+    const { scopeInfo } = await buildTenantScope(req);
+
+    const dashboard = await buildFeedbackReportsDashboard({
+      tenantId: req.tenantId,
+      userId: scopeInfo.ownerUserId || null,
+      fromYMD,
+      toYMD,
+      type,
+      start,
+      end,
+    });
+
+    res.json({ ok: true, scope: scopeInfo.appliedScope, ...dashboard });
+  }),
+);
+
+r.get(
   "/reports/summary",
   asyncHandler(async (req, res) => {
     const fromYMD = parseYMD(req.query.from);
@@ -372,7 +414,16 @@ r.get(
       },
     ];
 
-    const out = await Offer.aggregate(pipeline).allowDiskUse(true);
+    const [out, feedbackSummary] = await Promise.all([
+      Offer.aggregate(pipeline).allowDiskUse(true),
+      buildFeedbackSummary({
+        tenantId: req.tenantId,
+        userId: scopeInfo.ownerUserId || null,
+        start,
+        end,
+        type,
+      }),
+    ]);
     const s = out?.[0] || {
       paidRevenueCents: 0,
       paidCount: 0,
@@ -384,7 +435,13 @@ r.get(
     // onlyPaid afeta apenas tabelas/exports no front; KPIs seguem o filtro do endpoint (pagos sempre calculados por isPaid)
     // createdCount sempre é "emitidas" (createdAt range). paidCount/revenue sempre pagos no range.
     // Se o usuário selecionar "Todos", ele vai enxergar transações adicionais na tabela (endpoint /transactions).
-    res.json({ ok: true, scope: scopeInfo.appliedScope, summary: s, onlyPaid });
+    res.json({
+      ok: true,
+      scope: scopeInfo.appliedScope,
+      summary: s,
+      feedbackSummary,
+      onlyPaid,
+    });
   }),
 );
 

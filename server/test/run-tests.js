@@ -77,6 +77,10 @@ import {
   deliveryAckCodeToState,
   normalizeDeliveryState,
 } from "../src/services/whatsappDelivery.service.js";
+import {
+  buildFeedbackReportBaseMatch,
+  fillFeedbackDistribution,
+} from "../src/services/feedbackReports.service.js";
 
 process.env.MONGODB_URI = process.env.MONGODB_URI || "mongodb://localhost:27017/test";
 const { buildUserPayload, validateRegisterPayload } = await import(
@@ -1427,6 +1431,50 @@ await check("recurring scope query omits owner filter for workspace-wide access"
       workspaceId: "workspace-1",
       ownerUserId: "user-1",
     },
+  );
+});
+
+await check("feedback report scope omits owner filter for workspace-wide access", () => {
+  assert.deepEqual(
+    buildFeedbackReportBaseMatch({
+      tenantId: "workspace-1",
+      userId: null,
+      type: "all",
+    }),
+    {
+      workspaceId: "workspace-1",
+      "feedback.rating": { $gte: 1, $lte: 5 },
+    },
+  );
+
+  assert.deepEqual(
+    buildFeedbackReportBaseMatch({
+      tenantId: "workspace-1",
+      userId: "user-1",
+      type: "service",
+    }),
+    {
+      workspaceId: "workspace-1",
+      ownerUserId: "user-1",
+      offerType: "service",
+      "feedback.rating": { $gte: 1, $lte: 5 },
+    },
+  );
+});
+
+await check("feedback distribution always returns buckets from 1 to 5", () => {
+  assert.deepEqual(
+    fillFeedbackDistribution([
+      { rating: 5, count: 8 },
+      { rating: 2, count: 1 },
+    ]),
+    [
+      { rating: 1, count: 0 },
+      { rating: 2, count: 1 },
+      { rating: 3, count: 0 },
+      { rating: 4, count: 0 },
+      { rating: 5, count: 8 },
+    ],
   );
 });
 
