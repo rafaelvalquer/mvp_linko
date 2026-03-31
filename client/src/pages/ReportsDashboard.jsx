@@ -23,6 +23,7 @@ import Skeleton from "../components/appui/Skeleton.jsx";
 import EmptyState from "../components/appui/EmptyState.jsx";
 import Badge from "../components/appui/Badge.jsx";
 import { downloadReportFile } from "../utils/reportDownloads.js";
+import useThemeToggle from "../app/useThemeToggle.js";
 
 function pad2(value) {
   return String(value).padStart(2, "0");
@@ -103,16 +104,23 @@ function DarkTooltip({ active, payload, label, formatter, labelFormatter }) {
 
 function MetricCard({ title, subtitle, value, loading }) {
   return (
-    <Card>
+    <Card variant="quiet" className="overflow-hidden">
       <CardHeader title={title} subtitle={subtitle} />
       <CardBody>
-        {loading ? <Skeleton className="h-8 w-32" /> : <div className="text-2xl font-bold text-zinc-900">{value}</div>}
+        {loading ? (
+          <Skeleton className="h-8 w-32" />
+        ) : (
+          <div className="text-2xl font-black tracking-[-0.03em] text-slate-950 dark:text-white">
+            {value}
+          </div>
+        )}
       </CardBody>
     </Card>
   );
 }
 
 export default function ReportsDashboard() {
+  const { isDark } = useThemeToggle();
   const { perms, user } = useAuth();
   const isOwnerTeamView =
     perms?.isWorkspaceOwner === true && perms?.isWorkspaceTeamPlan === true;
@@ -343,6 +351,14 @@ export default function ReportsDashboard() {
     topClients.length > 0 ||
     topItems.length > 0 ||
     transactions.length > 0;
+  const fieldClass = "app-field w-full rounded-2xl px-3 py-2";
+  const axisColor = isDark ? "#94a3b8" : "#64748b";
+  const gridColor = isDark
+    ? "rgba(148,163,184,0.18)"
+    : "rgba(148,163,184,0.24)";
+  const revenueLineColor = isDark ? "#2dd4bf" : "#0f766e";
+  const createdBarColor = isDark ? "#60a5fa" : "#2563eb";
+  const paidBarColor = isDark ? "#34d399" : "#0f766e";
 
   return (
     <Shell>
@@ -413,13 +429,17 @@ export default function ReportsDashboard() {
                     ))}
                   </select>
                 ) : null}
-                <Badge tone="neutral">{scopeSummaryLabel}</Badge>
+                <Badge tone="NEUTRAL">{scopeSummaryLabel}</Badge>
               </div>
             </CardBody>
           </Card>
         ) : null}
 
-        {error ? <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div> : null}
+        {error ? (
+          <div className="surface-quiet rounded-2xl border border-rose-200/80 p-4 text-sm text-rose-700 dark:border-rose-400/20 dark:text-rose-200">
+            {error}
+          </div>
+        ) : null}
 
         <Card>
           <CardHeader title="Filtros" subtitle="Defina periodo, tipo e escopo do painel." />
@@ -432,27 +452,27 @@ export default function ReportsDashboard() {
             </div>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
               <div className="md:col-span-3">
-                <label className="mb-1 block text-xs font-semibold text-zinc-600">Tipo</label>
-                <select value={type} onChange={(e) => setType(e.target.value)} className="w-full rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-emerald-200">
+                <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Tipo</label>
+                <select value={type} onChange={(e) => setType(e.target.value)} className={fieldClass}>
                   <option value="all">Todos</option>
                   <option value="service">Servicos</option>
                   <option value="product">Produtos</option>
                 </select>
               </div>
               <div className="md:col-span-3">
-                <label className="mb-1 block text-xs font-semibold text-zinc-600">Escopo</label>
-                <select value={onlyPaid ? "paid" : "all"} onChange={(e) => setOnlyPaid(e.target.value === "paid")} className="w-full rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-emerald-200">
+                <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Escopo</label>
+                <select value={onlyPaid ? "paid" : "all"} onChange={(e) => setOnlyPaid(e.target.value === "paid")} className={fieldClass}>
                   <option value="paid">Somente pagos</option>
                   <option value="all">Todos os status</option>
                 </select>
               </div>
               <div className="md:col-span-2">
-                <label className="mb-1 block text-xs font-semibold text-zinc-600">De</label>
-                <input type="date" value={from} onChange={(e) => { setPreset("custom"); setFrom(e.target.value); }} className="w-full rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-emerald-200" />
+                <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">De</label>
+                <input type="date" value={from} onChange={(e) => { setPreset("custom"); setFrom(e.target.value); }} className={fieldClass} />
               </div>
               <div className="md:col-span-2">
-                <label className="mb-1 block text-xs font-semibold text-zinc-600">Ate</label>
-                <input type="date" value={to} onChange={(e) => { setPreset("custom"); setTo(e.target.value); }} className="w-full rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-emerald-200" />
+                <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Ate</label>
+                <input type="date" value={to} onChange={(e) => { setPreset("custom"); setTo(e.target.value); }} className={fieldClass} />
               </div>
               <div className="md:col-span-2 md:flex md:items-end">
                 <Button className="w-full" onClick={() => load()} disabled={applying}>
@@ -463,14 +483,14 @@ export default function ReportsDashboard() {
           </CardBody>
         </Card>
 
-        <Card>
-          <CardBody className="flex flex-wrap items-center gap-2 text-sm text-zinc-600">
+        <Card variant="quiet">
+          <CardBody className="flex flex-wrap items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
             <span>
-              Periodo: <strong className="text-zinc-900">{from}</strong> ate <strong className="text-zinc-900">{to}</strong>
+              Periodo: <strong className="text-slate-900 dark:text-white">{from}</strong> ate <strong className="text-slate-900 dark:text-white">{to}</strong>
             </span>
-            <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1">Tipo: {type === "all" ? "Todos" : type === "service" ? "Servicos" : "Produtos"}</span>
-            <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1">{onlyPaid ? "Painel filtrado por pagamentos" : "Painel com todos os status"}</span>
-            <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1">Emitidas: {Number(kpis.createdCount || 0)}</span>
+            <span className="rounded-full border border-slate-200/80 bg-slate-50 px-3 py-1 dark:border-white/10 dark:bg-white/5">Tipo: {type === "all" ? "Todos" : type === "service" ? "Servicos" : "Produtos"}</span>
+            <span className="rounded-full border border-slate-200/80 bg-slate-50 px-3 py-1 dark:border-white/10 dark:bg-white/5">{onlyPaid ? "Painel filtrado por pagamentos" : "Painel com todos os status"}</span>
+            <span className="rounded-full border border-slate-200/80 bg-slate-50 px-3 py-1 dark:border-white/10 dark:bg-white/5">Emitidas: {Number(kpis.createdCount || 0)}</span>
           </CardBody>
         </Card>
 
@@ -515,11 +535,11 @@ export default function ReportsDashboard() {
                     ) : (
                       <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                         <LineChart data={revenueDaily}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(220,14%,16%)" />
-                          <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
-                          <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} width={50} tickFormatter={(value) => `${Math.round(Number(value || 0) / 100)}`} />
+                          <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                          <XAxis dataKey="label" tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} />
+                          <YAxis tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} width={50} tickFormatter={(value) => `${Math.round(Number(value || 0) / 100)}`} />
                           <Tooltip content={<DarkTooltip labelFormatter={(label) => `Dia ${label}`} formatter={(value) => money(value)} />} />
-                          <Line type="monotone" dataKey="paidRevenueCents" name="Receita paga" stroke="#14b8a6" strokeWidth={2.5} dot={{ r: 2 }} activeDot={{ r: 4 }} />
+                          <Line type="monotone" dataKey="paidRevenueCents" name="Receita paga" stroke={revenueLineColor} strokeWidth={2.5} dot={{ r: 2 }} activeDot={{ r: 4 }} />
                         </LineChart>
                       </ResponsiveContainer>
                     )}
@@ -536,13 +556,13 @@ export default function ReportsDashboard() {
                     ) : (
                       <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                         <BarChart data={createdVsPaidDaily}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(220,14%,16%)" />
-                          <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
-                          <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} width={35} />
+                          <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                          <XAxis dataKey="label" tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} />
+                          <YAxis tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} width={35} />
                           <Tooltip content={<DarkTooltip labelFormatter={(label) => `Dia ${label}`} formatter={(value) => `${value}`} />} />
-                          <Legend wrapperStyle={{ fontSize: 12 }} />
-                          <Bar dataKey="createdCount" name="Criadas" fill="#94a3b8" radius={[8, 8, 0, 0]} />
-                          <Bar dataKey="paidCount" name="Pagas" fill="#22c55e" radius={[8, 8, 0, 0]} />
+                          <Legend wrapperStyle={{ fontSize: 12, color: axisColor }} />
+                          <Bar dataKey="createdCount" name="Criadas" fill={createdBarColor} radius={[8, 8, 0, 0]} />
+                          <Bar dataKey="paidCount" name="Pagas" fill={paidBarColor} radius={[8, 8, 0, 0]} />
                         </BarChart>
                       </ResponsiveContainer>
                     )}

@@ -110,14 +110,12 @@ export default function Offers() {
   const [detailsOffer, setDetailsOffer] = useState(null);
   const [detailsIntent, setDetailsIntent] = useState("");
 
-  const selectClass = isDark
-    ? "h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-slate-100 outline-none transition focus:border-cyan-400/40"
-    : "h-10 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-sky-300";
+  const selectClass = "app-field h-10 rounded-xl px-3";
   const tableHeadClass = isDark
-    ? "text-[11px] uppercase tracking-wider text-slate-400"
-    : "text-[11px] uppercase tracking-wider text-zinc-400";
-  const tableBorderClass = isDark ? "border-white/10" : "border-zinc-100";
-  const tableRowClass = isDark ? "hover:bg-white/5" : "hover:bg-zinc-50/50";
+    ? "bg-white/[0.03] text-[11px] uppercase tracking-[0.18em] text-slate-400"
+    : "bg-slate-50/80 text-[11px] uppercase tracking-[0.18em] text-slate-500";
+  const tableBorderClass = isDark ? "border-white/10" : "border-slate-200/80";
+  const tableRowClass = isDark ? "hover:bg-white/5" : "hover:bg-slate-50/80";
 
   const effectiveScopeTab = isOwnerTeamView ? scopeTab : "mine";
   const appliedScope =
@@ -381,7 +379,7 @@ export default function Offers() {
                   </select>
                 ) : null}
 
-                <Badge tone="neutral">{scopeSummaryLabel}</Badge>
+                <Badge tone="NEUTRAL">{scopeSummaryLabel}</Badge>
               </div>
             </CardBody>
           </Card>
@@ -395,8 +393,8 @@ export default function Offers() {
           }
           summary={
             <>
-              <Badge tone="DRAFT">{scopeSummaryLabel}</Badge>
-              <Badge tone="DRAFT">{worklistSummary.total} visiveis</Badge>
+              <Badge tone="NEUTRAL">{scopeSummaryLabel}</Badge>
+              <Badge tone="NEUTRAL">{worklistSummary.total} visiveis</Badge>
               <Badge tone="ACCEPTED">{worklistSummary.pending} pendentes</Badge>
               <Badge tone="PUBLIC">{worklistSummary.waiting} em analise</Badge>
               <Badge tone="PAID">{worklistSummary.paid} pagas</Badge>
@@ -466,7 +464,7 @@ export default function Offers() {
           <CardHeader
             title="Lista operacional"
             subtitle="Cliente, valor e status em primeiro plano para agir mais rapido."
-            right={<Badge tone="DRAFT">{items.length} total</Badge>}
+            right={<Badge tone="NEUTRAL">{items.length} total</Badge>}
           />
           <CardBody className="p-0">
             {loading ? (
@@ -509,7 +507,7 @@ export default function Offers() {
                       <th className={`border-b px-5 py-3 text-right ${tableBorderClass}`}>Acoes</th>
                     </tr>
                   </thead>
-                  <tbody className={isDark ? "divide-y divide-white/10" : "divide-y divide-zinc-100"}>
+                  <tbody className={isDark ? "divide-y divide-white/10" : "divide-y divide-slate-200/70"}>
                     {filtered.map((o) => {
                       const pay = getPaymentLabel(o);
                       const cxStatus = getOfferCxStatusSummary(o);
@@ -529,27 +527,27 @@ export default function Offers() {
                       return (
                         <tr key={o._id} className={tableRowClass}>
                           <td className="px-5 py-4 pr-4">
-                            <div className={isDark ? "font-semibold text-white" : "font-semibold text-zinc-900"}>
+                            <div className={isDark ? "font-semibold text-white" : "font-semibold text-slate-900"}>
                               {o.customerName || "-"}
                             </div>
-                            <div className={isDark ? "text-xs text-slate-400" : "text-xs text-zinc-500"}>
+                            <div className={isDark ? "text-xs text-slate-400" : "text-xs text-slate-500"}>
                               {o.customerWhatsApp || "-"}
                             </div>
                           </td>
                           <td className="px-5 py-4 pr-4">
-                            <div className={isDark ? "flex flex-wrap items-center gap-2 text-white" : "flex flex-wrap items-center gap-2 text-zinc-900"}>
+                            <div className={isDark ? "flex flex-wrap items-center gap-2 text-white" : "flex flex-wrap items-center gap-2 text-slate-900"}>
                               <span>{o.title || "Proposta"}</span>
                               {isRecurring ? (
                                 <span className={isDark ? "inline-flex items-center rounded-full border border-indigo-400/20 bg-indigo-400/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-200" : "inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-700"}>
                                   Recorrente
                                 </span>
                               ) : (
-                                <span className={isDark ? "inline-flex items-center rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-300" : "inline-flex items-center rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-zinc-600"}>
+                                <span className={isDark ? "inline-flex items-center rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-300" : "inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600"}>
                                   Avulsa
                                 </span>
                               )}
                             </div>
-                            <div className={isDark ? "line-clamp-1 text-xs text-slate-400" : "line-clamp-1 text-xs text-zinc-500"}>
+                            <div className={isDark ? "line-clamp-1 text-xs text-slate-400" : "line-clamp-1 text-xs text-slate-500"}>
                               {o.description || ""}
                             </div>
                             {isRecurring && o?.recurringOfferId ? (
@@ -563,15 +561,15 @@ export default function Offers() {
                           </td>
                           {showResponsibleColumn ? (
                             <td className="px-5 py-4 pr-4">
-                              <div className={isDark ? "text-sm font-semibold text-white" : "text-sm font-semibold text-zinc-900"}>
+                              <div className={isDark ? "text-sm font-semibold text-white" : "text-sm font-semibold text-slate-900"}>
                                 {responsibleName}
                               </div>
-                              <div className={isDark ? "text-xs text-slate-400" : "text-xs text-zinc-500"}>
+                              <div className={isDark ? "text-xs text-slate-400" : "text-xs text-slate-500"}>
                                 {isMine ? "Sua carteira" : "Carteira da equipe"}
                               </div>
                             </td>
                           ) : null}
-                          <td className={isDark ? "px-5 py-4 pr-4 font-semibold tabular-nums text-white" : "px-5 py-4 pr-4 font-semibold tabular-nums text-zinc-900"}>
+                          <td className={isDark ? "px-5 py-4 pr-4 font-semibold tabular-nums text-white" : "px-5 py-4 pr-4 font-semibold tabular-nums text-slate-900"}>
                             {fmtBRLFromCents(getAmountCents(o))}
                           </td>
                           <td className="px-5 py-4 pr-4">

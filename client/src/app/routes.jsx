@@ -37,9 +37,9 @@ import SettingsNotifications from "../pages/SettingsNotifications.jsx";
 import SettingsTeam from "../pages/SettingsTeam.jsx";
 
 // ✅ billing
-import BillingPlans from "../pages/BillingPlans.jsx";
-import BillingSuccess from "../pages/BillingSuccess.jsx";
-import BillingCancel from "../pages/BillingCancel.jsx";
+import BillingPlans from "../pages/BillingPlansV2.jsx";
+import BillingSuccess from "../pages/BillingSuccessV2.jsx";
+import BillingCancel from "../pages/BillingCancelV2.jsx";
 
 // ✅ NOVO: Relatórios
 import Reports from "../pages/ReportsDashboard.jsx";

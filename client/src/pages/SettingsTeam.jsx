@@ -165,7 +165,7 @@ function ProfileComparisonCard({ profile, selected, onSelect }) {
         "rounded-[28px] border p-5 text-left transition-all",
         selected
           ? "border-cyan-300 bg-[linear-gradient(135deg,rgba(219,234,254,0.96),rgba(204,251,241,0.7))] shadow-[0_20px_44px_-28px_rgba(37,99,235,0.28)] dark:border-cyan-400/30 dark:bg-[linear-gradient(135deg,rgba(37,99,235,0.2),rgba(20,184,166,0.12))]"
-          : "border-slate-200/80 bg-white/80 hover:border-slate-300 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:hover:border-cyan-400/15 dark:hover:bg-white/8",
+          : "surface-quiet hover:border-slate-300 hover:bg-slate-50 dark:hover:border-cyan-400/15 dark:hover:bg-white/8",
       ].join(" ")}
     >
       <div className="flex items-start justify-between gap-3">
@@ -208,6 +208,7 @@ export default function SettingsTeam() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [err, setErr] = useState("");
   const [okMsg, setOkMsg] = useState("");
+  const fieldClass = "app-field w-full px-4 py-3";
 
   const canUseTeam = perms?.isWorkspaceTeamPlan === true;
   const profileMap = useMemo(
@@ -353,19 +354,19 @@ export default function SettingsTeam() {
       subtitle="O dono do workspace controla usuarios, acessos e a visao individual da operacao. Clientes e produtos ficam compartilhados no catalogo do workspace."
     >
       {err ? (
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-100">
+        <div className="surface-quiet rounded-2xl border border-rose-200/80 p-4 text-sm text-rose-700 dark:border-rose-400/20 dark:text-rose-200">
           {err}
         </div>
       ) : null}
 
       {okMsg ? (
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-100">
+        <div className="surface-quiet rounded-2xl border border-emerald-200/80 p-4 text-sm text-emerald-700 dark:border-emerald-400/20 dark:text-emerald-200">
           {okMsg}
         </div>
       ) : null}
 
       {!canUseTeam ? (
-        <Card>
+        <Card variant="quiet">
           <CardHeader
             title="Equipe indisponivel"
             subtitle="Gestao multiusuario fica disponivel a partir dos planos Business e Enterprise. Quando ativa, clientes e produtos passam a ser compartilhados no workspace."
@@ -373,7 +374,7 @@ export default function SettingsTeam() {
         </Card>
       ) : (
         <>
-          <Card>
+          <Card variant="quiet">
             <CardHeader
               title="Dono do workspace"
               subtitle="Esse usuario responde pela assinatura, pelos recursos do workspace e pela visao consolidada da operacao."
@@ -398,7 +399,7 @@ export default function SettingsTeam() {
             </CardBody>
           </Card>
 
-          <Card>
+          <Card variant="elevated">
             <CardHeader
               title="Novo usuario"
               subtitle="Escolha um perfil com clareza visual e ajuste os modulos se precisar personalizar. Clientes e produtos sao compartilhados para quem tiver acesso a esses modulos."
@@ -418,7 +419,7 @@ export default function SettingsTeam() {
                 ))}
               </div>
 
-              <div className="rounded-[28px] border border-slate-200/80 bg-white/80 p-5 dark:border-white/10 dark:bg-white/5">
+              <div className="surface-secondary rounded-[28px] p-5">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div>
                     <div className="text-sm font-semibold text-slate-950 dark:text-white">
@@ -504,7 +505,7 @@ export default function SettingsTeam() {
                     <select
                       value={form.profile}
                       onChange={(event) => handleCreateProfileChange(event.target.value)}
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-cyan-400 dark:border-white/10 dark:bg-slate-950 dark:text-white"
+                      className={fieldClass}
                     >
                       {(Array.isArray(profileCatalog) && profileCatalog.length
                         ? profileCatalog
@@ -518,7 +519,7 @@ export default function SettingsTeam() {
                   </div>
                 </div>
 
-                <div className="rounded-[28px] border border-slate-200/80 bg-slate-50/80 p-4 dark:border-white/10 dark:bg-white/4">
+                <div className="surface-secondary rounded-[28px] p-4">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <div className="text-sm font-semibold text-slate-950 dark:text-white">
@@ -572,7 +573,7 @@ export default function SettingsTeam() {
             </CardBody>
           </Card>
 
-          <Card>
+          <Card variant="quiet">
             <CardHeader
               title="Usuarios e performance"
               subtitle="Ofertas, agenda e relatorios seguem com carteira individual. Clientes e produtos ficam compartilhados no workspace."
@@ -626,7 +627,7 @@ export default function SettingsTeam() {
                         </div>
 
                         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                          <div className="rounded-2xl bg-white/70 px-4 py-3 dark:bg-white/5">
+                          <div className="surface-quiet rounded-2xl px-4 py-3">
                             <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                               Propostas
                             </div>
@@ -634,7 +635,7 @@ export default function SettingsTeam() {
                               {item.performance?.offersCreated || 0}
                             </div>
                           </div>
-                          <div className="rounded-2xl bg-white/70 px-4 py-3 dark:bg-white/5">
+                          <div className="surface-quiet rounded-2xl px-4 py-3">
                             <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                               Conversao
                             </div>
@@ -642,7 +643,7 @@ export default function SettingsTeam() {
                               {Number(item.performance?.conversionPct || 0).toFixed(2)}%
                             </div>
                           </div>
-                          <div className="rounded-2xl bg-white/70 px-4 py-3 dark:bg-white/5">
+                          <div className="surface-quiet rounded-2xl px-4 py-3">
                             <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                               Receita
                             </div>
@@ -650,7 +651,7 @@ export default function SettingsTeam() {
                               {formatCurrency(item.performance?.paidRevenueCents || 0)}
                             </div>
                           </div>
-                          <div className="rounded-2xl bg-white/70 px-4 py-3 dark:bg-white/5">
+                          <div className="surface-quiet rounded-2xl px-4 py-3">
                             <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                               Agenda
                             </div>
@@ -661,7 +662,7 @@ export default function SettingsTeam() {
                         </div>
                       </div>
 
-                      <div className="mt-4 rounded-[28px] border border-slate-200/80 bg-white/80 p-5 dark:border-white/10 dark:bg-white/5">
+                      <div className="surface-secondary mt-4 rounded-[28px] p-5">
                         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                           <div>
                             <div className="text-sm font-semibold text-slate-950 dark:text-white">
@@ -715,7 +716,7 @@ export default function SettingsTeam() {
                                 permissions: getProfileDefaults(event.target.value),
                               })
                             }
-                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-cyan-400 dark:border-white/10 dark:bg-slate-950 dark:text-white"
+                            className={fieldClass}
                             disabled={savingId === item._id}
                           >
                             {(Array.isArray(profileCatalog) && profileCatalog.length
@@ -729,7 +730,7 @@ export default function SettingsTeam() {
                           </select>
                         </div>
 
-                        <div className="rounded-[28px] border border-slate-200/80 bg-slate-50/80 p-4 dark:border-white/10 dark:bg-white/4">
+                        <div className="surface-secondary rounded-[28px] p-4">
                           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                             <div>
                               <div className="text-sm font-semibold text-slate-950 dark:text-white">

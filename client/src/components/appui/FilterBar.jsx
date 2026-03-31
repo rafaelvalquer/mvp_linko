@@ -10,7 +10,7 @@ export default function FilterBar({
 
   return (
     <div
-      className={`surface-secondary px-4 py-4 sm:px-5 ${className} ${
+      className={`surface-secondary px-4 py-4 shadow-[0_18px_40px_-34px_rgba(15,23,42,0.12)] sm:px-5 ${className} ${
         isDark ? "text-slate-100" : "text-slate-900"
       }`}
     >

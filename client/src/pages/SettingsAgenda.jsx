@@ -111,6 +111,7 @@ function uniqTimes(list) {
 function SlotPicker({ value, onChange, disabled, step = 60 }) {
   const [customTime, setCustomTime] = useState("");
   const selected = uniqTimes(value);
+  const fieldClass = "app-field w-full";
 
   const toggle = (t) => {
     const next = selected.includes(t)
@@ -133,13 +134,13 @@ function SlotPicker({ value, onChange, disabled, step = 60 }) {
             key={t}
             type="button"
             disabled={disabled}
-            onClick={() => toggle(t)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-              selected.includes(t)
-                ? "bg-indigo-600 border-indigo-600 text-white"
-                : "bg-white text-zinc-600 hover:bg-zinc-50"
-            }`}
-          >
+              onClick={() => toggle(t)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                selected.includes(t)
+                  ? "border-sky-300 bg-[linear-gradient(135deg,rgba(37,99,235,0.12),rgba(20,184,166,0.16))] text-slate-950 dark:border-sky-400/25 dark:bg-[linear-gradient(135deg,rgba(37,99,235,0.2),rgba(20,184,166,0.14))] dark:text-white"
+                  : "surface-quiet text-slate-600 hover:border-slate-300 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
+              }`}
+            >
             {t}
           </button>
         ))}
@@ -148,7 +149,7 @@ function SlotPicker({ value, onChange, disabled, step = 60 }) {
         <div className="w-full sm:w-32">
           <Input
             type="time"
-            className="w-full"
+            className={fieldClass}
             value={customTime}
             onChange={(e) => setCustomTime(e.target.value)}
             disabled={disabled}
@@ -167,12 +168,12 @@ function SlotPicker({ value, onChange, disabled, step = 60 }) {
           >
             + Adicionar
           </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            className="w-full text-red-600 sm:w-auto"
-            onClick={() => onChange([])}
-          >
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full text-rose-600 dark:text-rose-200 sm:w-auto"
+              onClick={() => onChange([])}
+            >
             Limpar tudo
           </Button>
         </div>
@@ -195,6 +196,7 @@ export default function SettingsAgenda() {
   const [previewDate, setPreviewDate] = useState("");
 
   const agenda = settings?.agenda || {};
+  const fieldClass = "app-field w-full";
 
   const load = async () => {
     try {
@@ -363,18 +365,18 @@ export default function SettingsAgenda() {
       <div className="space-y-6 pb-24">
         {/* FEEDBACK */}
         {err && (
-          <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl whitespace-pre-line text-sm">
+          <div className="surface-quiet rounded-2xl border border-rose-200/80 p-4 text-sm text-rose-700 whitespace-pre-line dark:border-rose-400/20 dark:text-rose-200">
             {err}
           </div>
         )}
         {okMsg && (
-          <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl text-sm">
+          <div className="surface-quiet rounded-2xl border border-emerald-200/80 p-4 text-sm text-emerald-700 dark:border-emerald-400/20 dark:text-emerald-200">
             {okMsg}
           </div>
         )}
 
         {/* 0. SIMULATOR (PREVIEW) */}
-        <Card className="bg-indigo-50/50 border-indigo-100">
+        <Card variant="quiet">
           <CardHeader
             title="👁️ Prévia da Agenda"
             subtitle="Veja como o cliente enxergará sua disponibilidade em uma data específica."
@@ -384,26 +386,27 @@ export default function SettingsAgenda() {
               <div className="w-48">
                 <Input
                   type="date"
+                  className={fieldClass}
                   value={previewDate}
                   onChange={(e) => setPreviewDate(e.target.value)}
                 />
               </div>
               {!previewDate && (
-                <span className="text-sm text-zinc-500 italic">
+                <span className="text-sm italic text-slate-500 dark:text-slate-300">
                   Selecione uma data para testar suas regras...
                 </span>
               )}
               {simulatedSlots && (
                 <div className="flex flex-wrap gap-2">
                   {simulatedSlots.status === "closed" ? (
-                    <span className="text-sm font-medium text-red-600">
+                    <span className="text-sm font-medium text-rose-600 dark:text-rose-200">
                       Indisponível: {simulatedSlots.reason}
                     </span>
                   ) : (
                     simulatedSlots.slots.map((s) => (
                       <span
                         key={s}
-                        className="px-2 py-1 bg-white border border-indigo-200 text-indigo-700 text-xs font-bold rounded shadow-sm"
+                          className="surface-quiet rounded-xl px-2 py-1 text-xs font-bold text-slate-700 dark:text-slate-200"
                       >
                         {s}
                       </span>
@@ -424,11 +427,11 @@ export default function SettingsAgenda() {
           <CardBody className="space-y-6">
             <div className="grid sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-bold uppercase text-zinc-500 mb-1">
+                <label className="mb-1 block text-xs font-bold uppercase text-slate-500 dark:text-slate-400">
                   Fuso Horário
                 </label>
                 <select
-                  className="w-full rounded-lg border-zinc-200 text-sm p-2"
+                  className={fieldClass}
                   value={agenda.timezone}
                   onChange={(e) => patchAgenda({ timezone: e.target.value })}
                 >
@@ -440,11 +443,11 @@ export default function SettingsAgenda() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-bold uppercase text-zinc-500 mb-1">
+                <label className="mb-1 block text-xs font-bold uppercase text-slate-500 dark:text-slate-400">
                   Duração do Slot (Intervalo)
                 </label>
                 <select
-                  className="w-full rounded-lg border-zinc-200 text-sm p-2"
+                  className={fieldClass}
                   value={agenda.slotMinutes}
                   onChange={(e) =>
                     patchAgenda({ slotMinutes: Number(e.target.value) })
@@ -456,16 +459,16 @@ export default function SettingsAgenda() {
                     </option>
                   ))}
                 </select>
-                <p className="mt-1 text-xs text-zinc-400 italic">
+                <p className="mt-1 text-xs italic text-slate-500 dark:text-slate-300">
                   O "passo" entre cada horário disponível na agenda pública.
                 </p>
               </div>
               <div>
-                <label className="block text-xs font-bold uppercase text-zinc-500 mb-1">
+                <label className="mb-1 block text-xs font-bold uppercase text-slate-500 dark:text-slate-400">
                   Prazo maximo para reagendamento
                 </label>
                 <select
-                  className="w-full rounded-lg border-zinc-200 text-sm p-2"
+                  className={fieldClass}
                   value={agenda.selfServiceMinimumNoticeMinutes ?? 1440}
                   onChange={(e) =>
                     patchAgenda({
@@ -479,7 +482,7 @@ export default function SettingsAgenda() {
                     </option>
                   ))}
                 </select>
-                <p className="mt-1 text-xs text-zinc-400 italic">
+                <p className="mt-1 text-xs italic text-slate-500 dark:text-slate-300">
                   Define ate quanto tempo antes o cliente pode reagendar ou
                   cancelar pelo link publico.
                 </p>
@@ -489,10 +492,10 @@ export default function SettingsAgenda() {
             <div className="border-t pt-4">
               <div className="flex flex-wrap justify-between items-start gap-3 mb-3">
                 <div>
-                  <label className="text-sm font-bold text-zinc-700">
+                  <label className="text-sm font-bold text-slate-700 dark:text-white">
                     Horários padrão disponíveis
                   </label>
-                  <p className="mt-1 text-xs text-zinc-500">
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">
                     Esses horários serão usados como base da sua agenda quando
                     não houver regras específicas para o dia.
                   </p>
@@ -567,12 +570,16 @@ export default function SettingsAgenda() {
               return (
                 <div
                   key={day}
-                  className={`p-4 rounded-xl border transition-colors ${rule.open ? "bg-white border-zinc-200" : "bg-zinc-50 border-transparent opacity-60"}`}
+                  className={`rounded-2xl border p-4 transition-colors ${
+                    rule.open
+                      ? "surface-quiet"
+                      : "border-slate-200/60 bg-slate-50/70 opacity-75 dark:border-white/10 dark:bg-white/5"
+                  }`}
                 >
                   <div className="flex flex-col gap-4">
                     <div className="flex flex-wrap items-center gap-4">
                       <div className="w-24">
-                        <span className="font-bold text-zinc-800">
+                        <span className="font-bold text-slate-800 dark:text-white">
                           {DAY_LABEL[day]}
                         </span>
                       </div>
@@ -595,7 +602,7 @@ export default function SettingsAgenda() {
                             patchAgenda({ weeklyRules: nextRules });
                           }}
                         />
-                        <span className="text-sm">
+                        <span className="text-sm text-slate-700 dark:text-slate-200">
                           {rule.open ? "Aberto" : "Fechado"}
                         </span>
                       </label>
@@ -605,7 +612,7 @@ export default function SettingsAgenda() {
                       <div className="w-full space-y-3">
                         <div className="w-full sm:max-w-xs">
                           <select
-                            className="w-full rounded-lg border-zinc-200 p-2 text-sm"
+                            className={fieldClass}
                             onChange={(e) => {
                               const preset = PRESETS.find(
                                 (p) => p.value === e.target.value,
@@ -672,9 +679,10 @@ export default function SettingsAgenda() {
                 + Adicionar Data
               </Button>
               {(agenda.dateBlocks || []).map((b, i) => (
-                <div key={i} className="flex gap-2 items-start border-b pb-2">
+                <div key={i} className="surface-quiet flex gap-2 items-start rounded-2xl p-3">
                   <Input
                     type="date"
+                    className={fieldClass}
                     value={b.date}
                     onChange={(e) => {
                       const next = [...agenda.dateBlocks];
@@ -683,6 +691,7 @@ export default function SettingsAgenda() {
                     }}
                   />
                   <Input
+                    className={fieldClass}
                     placeholder="Motivo"
                     value={b.reason}
                     onChange={(e) => {
@@ -693,7 +702,7 @@ export default function SettingsAgenda() {
                   />
                   <Button
                     variant="ghost"
-                    className="text-red-500"
+                    className="text-rose-600 dark:text-rose-200"
                     onClick={() => {
                       const next = agenda.dateBlocks.filter(
                         (_, idx) => idx !== i,
@@ -729,9 +738,10 @@ export default function SettingsAgenda() {
                 + Adicionar Feriado
               </Button>
               {(agenda.holidays || []).map((h, i) => (
-                <div key={i} className="flex gap-2 items-start border-b pb-2">
+                <div key={i} className="surface-quiet flex gap-2 items-start rounded-2xl p-3">
                   <Input
                     type="date"
+                    className={fieldClass}
                     value={h.date}
                     onChange={(e) => {
                       const next = [...agenda.holidays];
@@ -740,6 +750,7 @@ export default function SettingsAgenda() {
                     }}
                   />
                   <Input
+                    className={fieldClass}
                     placeholder="Nome"
                     value={h.name}
                     onChange={(e) => {
@@ -750,7 +761,7 @@ export default function SettingsAgenda() {
                   />
                   <Button
                     variant="ghost"
-                    className="text-red-500"
+                    className="text-rose-600 dark:text-rose-200"
                     onClick={() => {
                       const next = agenda.holidays.filter(
                         (_, idx) => idx !== i,
@@ -788,14 +799,11 @@ export default function SettingsAgenda() {
             </Button>
 
             {(agenda.dateOverrides || []).map((o, i) => (
-              <div
-                key={i}
-                className="p-4 rounded-xl border border-zinc-200 bg-zinc-50/30"
-              >
+              <div key={i} className="surface-quiet rounded-2xl p-4">
                 <div className="flex flex-wrap gap-4 items-center mb-4">
                   <Input
                     type="date"
-                    className="w-48"
+                    className={`${fieldClass} w-48`}
                     value={o.date}
                     onChange={(e) => {
                       const next = [...agenda.dateOverrides];
@@ -813,12 +821,12 @@ export default function SettingsAgenda() {
                         patchAgenda({ dateOverrides: next });
                       }}
                     />
-                    <span>Marcar como Fechado</span>
+                    <span className="text-slate-700 dark:text-slate-200">Marcar como Fechado</span>
                   </label>
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="ml-auto text-red-500"
+                    className="ml-auto text-rose-600 dark:text-rose-200"
                     onClick={() => {
                       const next = agenda.dateOverrides.filter(
                         (_, idx) => idx !== i,

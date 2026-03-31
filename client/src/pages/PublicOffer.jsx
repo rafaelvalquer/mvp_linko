@@ -239,34 +239,34 @@ function NextSteps({ offerType, depositEnabled }) {
       offerType === "service"
         ? {
             tone: "blue",
-            icon: "🗓️",
-            title: "Escolha um horário",
-            desc: "Selecione um horário disponível para agendar.",
+            icon: "3",
+            title: "Escolha um horario",
+            desc: "Selecione um horario disponivel para agendar.",
           }
         : {
             tone: "violet",
-            icon: "📦",
-            title: "Receba instruções",
-            desc: "Você recebe as instruções de produção/entrega (se aplicável).",
+            icon: "3",
+            title: "Receba instrucoes",
+            desc: "Voce recebe as instrucoes de producao ou entrega, quando aplicavel.",
           };
 
     return [
       {
         tone: "emerald",
-        icon: "🧾",
+        icon: "1",
         title: "Revise a proposta",
         desc: "Confira detalhes e valores acima.",
       },
       {
         tone: "amber",
-        icon: "✅",
+        icon: "2",
         title: "Confirme o aceite",
-        desc: "Aprove e siga para a próxima etapa.",
+        desc: "Aprove e siga para a proxima etapa.",
       },
       step3,
       {
         tone: "rose",
-        icon: "⚡",
+        icon: "4",
         title: "Pague via Pix",
         desc: depositEnabled
           ? "Pague o sinal (ou conforme combinado) e finalize."
@@ -850,7 +850,7 @@ export default function PublicOffer() {
           <div className="flex items-center gap-3">
               <img
                 src={brand}
-                alt="Luminor Pay"
+                alt="LuminorPay"
                 className={cls(
                   "h-11 w-11 rounded-2xl object-contain p-1.5",
                   isDark
@@ -873,9 +873,9 @@ export default function PublicOffer() {
                   isDark ? "text-slate-400" : "text-slate-500",
                 )}
               >
-                Proposta •{" "}
-                {view.offerType === "product" ? "Produto" : "Serviço"} • Link
-                público
+                Proposta |{" "}
+                {view.offerType === "product" ? "Produto" : "Servico"} | Link
+                publico
               </div>
             </div>
           </div>
@@ -985,8 +985,8 @@ export default function PublicOffer() {
                 {descriptionPreview
                   ? descriptionPreview
                   : view.offerType === "product"
-                    ? "Confira os itens, os termos e o investimento final antes de seguir para o pagamento."
-                    : "Confira o escopo, as condicoes do atendimento e siga para a etapa de aceite, agenda e pagamento."}
+                    ? "Confira os itens, os termos e o investimento final antes de seguir com o aceite e o pagamento."
+                    : "Confira o escopo, as condicoes do atendimento e siga com aceite, agenda e pagamento no mesmo fluxo."}
               </div>
 
             </div>
@@ -1090,7 +1090,7 @@ export default function PublicOffer() {
             <JourneyStat
               label="Seguranca"
               value="Link oficial"
-              hint="Pagamento protegido dentro do fluxo da proposta."
+              hint="Aceite e pagamento protegidos dentro do fluxo da proposta."
               tone="emerald"
             />
           </div>
@@ -1099,11 +1099,11 @@ export default function PublicOffer() {
         {/* Detalhamento */}
         {view.offerType === "service" ? (
           <SectionCard
-            title="Resumo do serviço 🧾"
+            title="Resumo do servico"
             subtitle={
               hasAnyConditions
-                ? "Detalhes e condições do atendimento."
-                : "Detalhes e observações."
+                ? "Detalhes e condicoes do atendimento."
+                : "Detalhes e observacoes."
             }
           >
             {isNonEmpty(description) ? (
@@ -1209,12 +1209,12 @@ export default function PublicOffer() {
           </SectionCard>
         ) : (
           <SectionCard
-            title="Itens do orçamento 🧾"
-            subtitle="Confira os itens, quantidades e valores."
+            title="Itens do orcamento"
+            subtitle="Confira itens, quantidades e valores antes de seguir."
           >
             {!view.items.length ? (
               <div className="text-sm text-zinc-600">
-                Nenhum item informado neste orçamento.
+                Nenhum item informado neste orcamento.
               </div>
             ) : (
               <>
@@ -1329,8 +1329,8 @@ export default function PublicOffer() {
 
         {/* Total (e extras, se existirem) */}
         <SectionCard
-          title="Total 🧾"
-          subtitle="Subtotal/Desconto/Frete só aparecem se foram definidos."
+          title="Resumo financeiro"
+          subtitle="Subtotal, desconto e frete so aparecem quando foram definidos."
         >
           <div className="space-y-2 text-sm">
             {Number.isFinite(view.subtotalCents) ? (
@@ -1372,7 +1372,7 @@ export default function PublicOffer() {
             <div className="mt-4 rounded-2xl border bg-amber-50 p-4">
               <div className="text-sm font-semibold text-zinc-900">Sinal</div>
               <div className="mt-1 text-sm text-zinc-700">
-                Você paga agora{" "}
+                Voce paga agora{" "}
                 <span className="font-semibold text-zinc-900">
                   {fmtBRL(view.depositCents)}
                 </span>{" "}
@@ -1385,7 +1385,7 @@ export default function PublicOffer() {
                 </span>
                 {view.offerType === "service"
                   ? " (no dia do atendimento, conforme combinado)."
-                  : " (na finalização, conforme combinado)."}
+                  : " (na finalizacao, conforme combinado)."}
               </div>
             </div>
           ) : null}
@@ -1398,7 +1398,7 @@ export default function PublicOffer() {
           isNonEmpty(view.conditions.warrantyText) ||
           isNonEmpty(view.conditions.notesText)) ? (
           <SectionCard
-            title="Condições e termos"
+            title="Condicoes e termos"
             subtitle="Somente o que foi definido para esta proposta."
           >
             <div className="space-y-3 text-sm text-zinc-800">
@@ -1436,7 +1436,7 @@ export default function PublicOffer() {
               {isNonEmpty(view.conditions.notesText) ? (
                 <div className="rounded-xl border bg-zinc-50 p-3">
                   <div className="text-xs font-semibold text-zinc-600">
-                    Observações/condições
+                    Observacoes e condicoes
                   </div>
                   <div className="mt-1 whitespace-pre-wrap">
                     {safeLines(view.conditions.notesText)}
@@ -1462,7 +1462,7 @@ export default function PublicOffer() {
               isDark ? "text-white" : "text-slate-950",
             )}
           >
-            Confirmar e aceitar
+            Confirmar esta proposta
           </div>
           <div
             className={cls(
@@ -1470,7 +1470,7 @@ export default function PublicOffer() {
               isDark ? "text-slate-300" : "text-zinc-600",
             )}
           >
-            Antes de continuar, marque os itens abaixo.
+            Antes de continuar, revise e confirme os pontos abaixo.
           </div>
 
           <div className="mt-4 space-y-3">
@@ -1497,11 +1497,11 @@ export default function PublicOffer() {
               />
               <div>
                 <div className={cls("text-sm font-semibold", isDark ? "text-white" : "text-zinc-900")}>
-                  Li e concordo com as condições (quando aplicável).
+                  Li e concordo com as condicoes descritas para esta proposta.
                 </div>
                 <div className={cls("text-xs", isDark ? "text-slate-300" : "text-zinc-600")}>
-                  Você está aceitando o que foi descrito acima para esta
-                  proposta.
+                  Voce esta seguindo com o aceite do que foi descrito acima para
+                  esta proposta.
                 </div>
               </div>
             </label>
@@ -1530,11 +1530,11 @@ export default function PublicOffer() {
                 />
                 <div>
                   <div className={cls("text-sm font-semibold", isDark ? "text-white" : "text-zinc-900")}>
-                    Entendo que o sinal é de {fmtBRL(view.depositCents)} (
+                    Entendo que o sinal e de {fmtBRL(view.depositCents)} (
                     {view.depositPct}%).
                   </div>
                   <div className={cls("text-xs", isDark ? "text-slate-300" : "text-zinc-700")}>
-                    O sinal serve para confirmar o compromisso e iniciar o
+                    O sinal confirma o compromisso e inicia esta etapa do
                     processo.
                   </div>
                 </div>
@@ -1549,8 +1549,8 @@ export default function PublicOffer() {
                   : "border-slate-200/80 bg-white/85 text-zinc-600",
               )}
             >
-              Este link é exclusivo para esta proposta. Se você recebeu por
-              engano, não prossiga.
+              Este link e exclusivo desta proposta. Se voce recebeu por engano,
+              nao prossiga.
             </div>
 
             {ctaError ? (
@@ -1577,7 +1577,7 @@ export default function PublicOffer() {
               disabled={!ctaEnabled || busy}
               className="justify-between gap-3 rounded-2xl px-5"
             >
-              {busy ? "Processando…" : view.ctaLabel}
+              {busy ? "Processando..." : view.ctaLabel}
               <ArrowRight className="h-4 w-4" />
             </Button>
           </div>

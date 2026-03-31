@@ -472,7 +472,7 @@ export default function PublicSchedule() {
           <div className={heroCard}>
             <div className="relative space-y-5">
               <div className="flex items-center gap-3">
-                <img src={brand} alt="Luminor Pay" className="h-10 w-10 rounded-2xl object-cover" />
+                <img src={brand} alt="LuminorPay" className="h-10 w-10 rounded-2xl object-cover" />
                 <div>
                   <p className={cls("text-xs font-semibold uppercase tracking-[0.28em]", isDark ? "text-sky-200/80" : "text-sky-700/80")}>
                     Agendamento
@@ -521,7 +521,7 @@ export default function PublicSchedule() {
           <div className="relative space-y-5">
             <div className="flex items-start justify-between gap-4">
               <div className="flex min-w-0 items-center gap-3">
-                <img src={brand} alt="Luminor Pay" className="h-11 w-11 rounded-2xl object-cover shadow-sm" />
+                <img src={brand} alt="LuminorPay" className="h-11 w-11 rounded-2xl object-cover shadow-sm" />
                 <div className="min-w-0">
                   <p
                     className={cls(

@@ -1,9 +1,9 @@
 import { NavLink } from "react-router-dom";
 import PageHeader from "../appui/PageHeader.jsx";
+import Badge from "../appui/Badge.jsx";
 import Card, { CardBody } from "../appui/Card.jsx";
 import Shell from "../layout/Shell.jsx";
 import { useAuth } from "../../app/AuthContext.jsx";
-import useThemeToggle from "../../app/useThemeToggle.js";
 
 const TABS = [
   {
@@ -48,7 +48,6 @@ export default function SettingsLayout({
   children,
 }) {
   const { workspace, perms, user } = useAuth();
-  const { isDark } = useThemeToggle();
   const plan =
     perms?.plan || workspace?.plan || user?.plan || user?.workspace?.plan || "start";
   const visibleTabs = TABS.filter((tab) => {
@@ -69,22 +68,13 @@ export default function SettingsLayout({
           }
           actions={
             <div className="flex flex-wrap items-center gap-2">
-              <span
-                className={[
-                  "inline-flex items-center rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-[0.18em]",
-                  isDark
-                    ? "border-cyan-400/20 bg-cyan-400/10 text-cyan-100"
-                    : "border-cyan-200 bg-cyan-50 text-cyan-700",
-                ].join(" ")}
-              >
-                Plano {formatPlanLabel(plan)}
-              </span>
+              <Badge tone="NEUTRAL">Plano {formatPlanLabel(plan)}</Badge>
               {actions}
             </div>
           }
         />
 
-        <Card>
+        <Card variant="quiet">
           <CardBody className="space-y-3 p-3">
             <div
               className={[
@@ -105,12 +95,8 @@ export default function SettingsLayout({
                     className={[
                       "rounded-[24px] border px-4 py-3 transition-all",
                       active
-                        ? isDark
-                          ? "border-cyan-400/25 bg-[linear-gradient(135deg,rgba(37,99,235,0.26),rgba(20,184,166,0.2))] text-white shadow-[0_20px_44px_-28px_rgba(37,99,235,0.65)]"
-                          : "border-cyan-200 bg-[linear-gradient(135deg,rgba(219,234,254,0.96),rgba(204,251,241,0.7))] text-slate-950 shadow-[0_20px_44px_-28px_rgba(37,99,235,0.28)]"
-                        : isDark
-                          ? "border-white/10 bg-white/5 text-slate-200 hover:border-cyan-400/20 hover:bg-white/8"
-                          : "border-slate-200/80 bg-white/80 text-slate-700 hover:border-slate-300 hover:bg-slate-50",
+                        ? "border-sky-300 bg-[linear-gradient(135deg,rgba(37,99,235,0.12),rgba(20,184,166,0.16))] text-slate-950 shadow-[0_20px_44px_-28px_rgba(37,99,235,0.3)] dark:border-sky-400/25 dark:bg-[linear-gradient(135deg,rgba(37,99,235,0.2),rgba(20,184,166,0.14))] dark:text-white"
+                        : "surface-quiet text-slate-700 hover:border-slate-300 hover:text-slate-950 dark:text-slate-200 dark:hover:border-white/15 dark:hover:text-white",
                     ].join(" ")}
                   >
                     <div className="text-sm font-bold">{tab.label}</div>
@@ -118,12 +104,8 @@ export default function SettingsLayout({
                       className={[
                         "mt-1 text-xs leading-5",
                         active
-                          ? isDark
-                            ? "text-slate-200"
-                            : "text-slate-600"
-                          : isDark
-                            ? "text-slate-400"
-                            : "text-slate-500",
+                          ? "text-slate-600 dark:text-slate-200"
+                          : "text-slate-500 dark:text-slate-400",
                       ].join(" ")}
                     >
                       {tab.description}

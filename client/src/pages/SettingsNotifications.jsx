@@ -148,7 +148,7 @@ function ToggleRow({
   children = null,
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 dark:border-white/10 dark:bg-white/5">
+    <div className="surface-quiet rounded-2xl p-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <div className="text-sm font-semibold text-slate-950 dark:text-white">
@@ -189,7 +189,7 @@ function ToggleRow({
 
 function ChannelStatusCard({ title, subtitle, capability, children }) {
   return (
-    <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 dark:border-white/10 dark:bg-white/5">
+    <div className="surface-quiet rounded-2xl p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-sm font-semibold text-slate-950 dark:text-white">
@@ -412,18 +412,18 @@ export default function SettingsNotifications() {
       }
     >
       {err ? (
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-100">
+        <div className="surface-quiet rounded-2xl border border-rose-200/80 p-4 text-sm text-rose-700 dark:border-rose-400/20 dark:text-rose-200">
           {err}
         </div>
       ) : null}
 
       {okMsg ? (
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-100">
+        <div className="surface-quiet rounded-2xl border border-emerald-200/80 p-4 text-sm text-emerald-700 dark:border-emerald-400/20 dark:text-emerald-200">
           {okMsg}
         </div>
       ) : null}
 
-      <Card>
+      <Card variant="quiet">
         <CardHeader
           title="Status do ambiente"
           subtitle="Mostra se os canais estão configurados no ambiente e o motivo quando algo ainda está indisponível."
@@ -451,7 +451,7 @@ export default function SettingsNotifications() {
         </CardBody>
       </Card>
 
-      <Card>
+      <Card variant="elevated">
         <CardHeader
           title="Preferências do workspace"
           subtitle="Essas preferências funcionam como chave mestre do workspace e alimentam os defaults das novas propostas e recorrências."
@@ -676,10 +676,7 @@ export default function SettingsNotifications() {
                   );
 
                   return (
-                    <div
-                      key={item.key}
-                      className="surface-subtle rounded-2xl p-4"
-                    >
+                    <div key={item.key} className="surface-quiet rounded-2xl p-4">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <div className="text-sm font-semibold text-slate-950 dark:text-white">
@@ -765,7 +762,7 @@ export default function SettingsNotifications() {
         </CardBody>
       </Card>
 
-      <Card>
+      <Card variant="quiet">
         <CardHeader
           title="Recursos por plano e roadmap"
           subtitle="A matriz abaixo é a fonte oficial de notificações no v1."
@@ -813,7 +810,7 @@ export default function SettingsNotifications() {
                     "rounded-2xl border p-4",
                     active
                       ? "border-cyan-200 bg-cyan-50/80 shadow-[0_18px_42px_-28px_rgba(6,182,212,0.35)] dark:border-cyan-400/20 dark:bg-cyan-400/10"
-                      : "border-slate-200/80 bg-white/80 dark:border-white/10 dark:bg-white/5",
+                      : "surface-quiet",
                   ].join(" ")}
                 >
                   <div className="flex items-center justify-between gap-2">
@@ -838,7 +835,7 @@ export default function SettingsNotifications() {
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 dark:border-white/10 dark:bg-white/5">
+            <div className="surface-quiet rounded-2xl p-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-sm font-semibold text-slate-950 dark:text-white">
                   Roadmap visível no v1
@@ -853,7 +850,7 @@ export default function SettingsNotifications() {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 dark:border-white/10 dark:bg-white/5">
+            <div className="surface-quiet rounded-2xl p-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-sm font-semibold text-slate-950 dark:text-white">
                   Precedência oficial

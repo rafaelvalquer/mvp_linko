@@ -129,7 +129,7 @@ export default function PublicOfferCancelled() {
     >
       <div className="mx-auto flex max-w-3xl flex-col gap-6">
         <div className="flex items-center justify-center pt-2">
-          <img src={brand} alt="Luminor Pay" className="h-10 w-auto sm:h-12" />
+          <img src={brand} alt="LuminorPay" className="h-10 w-auto sm:h-12" />
         </div>
 
         <SurfaceCard>
@@ -226,7 +226,7 @@ export default function PublicOfferCancelled() {
               <InfoRow
                 icon={Building2}
                 label="Emissor"
-                value={sellerName || "Luminor Pay"}
+                value={sellerName || "LuminorPay"}
               />
               <InfoRow
                 icon={Wallet}

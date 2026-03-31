@@ -136,7 +136,7 @@ export default function PublicOfferFeedback() {
             <div className="flex items-center gap-3">
               <img
                 src={brand}
-                alt="Luminor Pay"
+                alt="LuminorPay"
                 className="h-11 w-11 rounded-2xl object-cover shadow-sm"
               />
               <div>
@@ -162,7 +162,7 @@ export default function PublicOfferFeedback() {
             >
               {alreadyResponded
                 ? "Sua resposta ja foi registrada por aqui. Obrigado por dedicar esse tempo."
-                : "Sua opiniao ajuda a melhorar a experiencia dos proximos atendimentos. A avaliacao leva menos de 1 minuto."}
+                : "Sua opiniao ajuda a melhorar a experiencia dos proximos atendimentos. A avaliacao leva menos de 1 minuto e nao gera nova oferta nesta etapa."}
             </div>
           </div>
         </section>
@@ -303,7 +303,7 @@ export default function PublicOfferFeedback() {
                     </div>
                     <textarea
                       className="mt-3 min-h-[140px] w-full rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none focus:border-sky-300"
-                      placeholder="Se quiser, conte rapidinho como foi sua experiencia."
+                      placeholder="Se quiser, conte rapidinho como foi sua experiencia para nos ajudar a melhorar."
                       value={comment}
                       onChange={(event) => setComment(event.target.value)}
                     />
@@ -324,7 +324,7 @@ export default function PublicOfferFeedback() {
                           Quero que entrem em contato comigo
                         </div>
                         <div className="mt-1 text-xs text-slate-500">
-                          Se algo nao saiu como esperado, podemos voltar para entender melhor.
+                          Se algo nao saiu como esperado, podemos voltar para entender melhor o que aconteceu.
                         </div>
                       </div>
                     </label>

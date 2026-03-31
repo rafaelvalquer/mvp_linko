@@ -45,9 +45,9 @@ function AuthBrand() {
 
 function AuthShell({ children }) {
   const highlights = [
-    "Entre pelo celular e acompanhe propostas, pagamentos e agenda sem complicacao.",
-    "Veja o que foi enviado, pago e confirmado em um so lugar.",
-    "Continue seu atendimento com mais organizacao e menos mensagem solta.",
+    "Acompanhe propostas, Pix e agenda no mesmo fluxo, com leitura clara no celular e no computador.",
+    "Veja o que foi enviado, pago e confirmado sem perder o contexto de cada cliente.",
+    "Continue seu atendimento com mais seguranca e menos retrabalho entre mensagens soltas.",
   ];
 
   return (
@@ -82,11 +82,12 @@ function AuthShell({ children }) {
                   Entrar
                 </div>
                 <h1 className="mt-4 text-4xl font-black tracking-tight text-white">
-                  Acesse sua conta e continue suas vendas.
+                  Entre e continue seu fluxo com confianca.
                 </h1>
                 <p className="mt-5 text-base leading-7 text-slate-300">
-                  Entre para acompanhar propostas, pagamentos e agenda com uma
-                  tela simples, clara e pronta para o dia a dia do seu negocio.
+                  Acesse sua conta para acompanhar propostas, confirmacoes de
+                  pagamento e agenda com uma experiencia clara para o dia a dia
+                  do seu negocio.
                 </p>
               </div>
 
@@ -106,11 +107,11 @@ function AuthShell({ children }) {
             <div className="grid gap-4 xl:grid-cols-2">
               <div className="rounded-[26px] border border-cyan-400/15 bg-cyan-400/10 p-5">
                 <div className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-200">
-                  Acesso rapido
+                  Fluxo continuo
                 </div>
-                <div className="mt-3 text-3xl font-black">1 toque</div>
+                <div className="mt-3 text-3xl font-black">Sem atrito</div>
                 <p className="mt-2 text-sm leading-6 text-slate-200">
-                  Interface pensada para abrir bem no celular e no computador.
+                  O mesmo workspace funciona bem no celular e no computador.
                 </p>
               </div>
 
@@ -120,10 +121,10 @@ function AuthShell({ children }) {
                 </div>
                 <div className="mt-3 flex items-center gap-2 text-lg font-bold text-white">
                   <ShieldCheck className="h-5 w-5 text-emerald-300" />
-                  Conta protegida
+                  Acesso protegido
                 </div>
                 <p className="mt-2 text-sm leading-6 text-slate-300">
-                  Entre e siga seu fluxo com seguranca e confirmacoes claras.
+                  Entre e siga seu fluxo com contexto, historico e confirmacoes claras.
                 </p>
               </div>
             </div>
@@ -138,11 +139,11 @@ function AuthShell({ children }) {
                     Entrar
                   </div>
                   <h1 className="mt-3 text-3xl font-black tracking-tight text-white">
-                    Continue suas vendas de onde parou.
+                    Continue seu atendimento de onde parou.
                   </h1>
                   <p className="mt-3 text-sm leading-6 text-slate-300">
-                    Acesse sua conta para acompanhar propostas, Pix e agenda com
-                    conforto no celular.
+                    Entre com seguranca para acompanhar propostas, Pix e agenda
+                    com conforto no celular.
                   </p>
                 </div>
               </div>
@@ -341,7 +342,7 @@ export default function Login() {
       <AuthShell>
         <AuthCard
           title="Entrar"
-          subtitle="Acesse sua conta para acompanhar atendimentos, pagamentos e o andamento das suas propostas."
+          subtitle="Acesse sua conta para acompanhar clientes, pagamentos e o andamento das suas propostas sem perder contexto."
           footer={
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
               Nao tem conta?{" "}
@@ -405,8 +406,8 @@ export default function Login() {
               </div>
             </div>
             <div className="rounded-2xl border border-sky-100 bg-sky-50/80 px-4 py-3 text-sm leading-6 text-slate-600">
-              Entre para acessar seu workspace e continuar o fluxo de propostas,
-              Pix e agenda do seu negocio.
+              Entre para abrir seu workspace com seguranca e continuar o fluxo
+              de propostas, Pix e agenda do seu negocio.
             </div>
 
             <SubmitButton loading={loading} />

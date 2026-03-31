@@ -58,48 +58,54 @@ const STATUS_META = {
   PENDING: {
     label: "Aguardando pagamento",
     tone: "amber",
-    summary: "Pague o valor exato abaixo e envie o comprovante para confirmar.",
+    summary:
+      "Pague o valor exato mostrado nesta tela e envie o comprovante por aqui para concluir com seguranca.",
     uploadTitle: "Enviar comprovante",
-    uploadSubtitle: "Anexe o comprovante logo apos o Pix para liberar a confirmacao.",
+    uploadSubtitle:
+      "Anexe o comprovante logo apos o Pix para liberar a validacao final do pagamento.",
   },
   WAITING_PROOF: {
     label: "Aguardando pagamento",
     tone: "amber",
-    summary: "Use o QR Code ou o copia e cola e envie o comprovante em seguida.",
+    summary:
+      "Use o QR Code ou o copia e cola desta pagina e envie o comprovante em seguida.",
     uploadTitle: "Enviar comprovante",
-    uploadSubtitle: "Anexe o comprovante logo apos o Pix para liberar a confirmacao.",
+    uploadSubtitle:
+      "Anexe o comprovante logo apos o Pix para liberar a validacao final do pagamento.",
   },
   WAITING_CONFIRMATION: {
     label: "Comprovante enviado",
     tone: "blue",
-    summary: "Seu comprovante foi recebido e esta em analise.",
+    summary:
+      "Seu comprovante foi recebido e esta passando pela etapa final de validacao.",
     uploadTitle: "Comprovante em analise",
     uploadSubtitle:
-      "Nao precisa reenviar agora. Assim que o pagamento for confirmado, seguimos automaticamente.",
+      "Nao precisa reenviar agora. Assim que a confirmacao terminar, seguimos automaticamente.",
   },
   REJECTED: {
     label: "Comprovante recusado",
     tone: "red",
-    summary: "Envie um novo comprovante legivel para concluir o pagamento.",
+    summary:
+      "Envie um novo comprovante legivel para retomar a confirmacao do pagamento.",
     uploadTitle: "Reenviar comprovante",
     uploadSubtitle:
-      "O arquivo anterior nao foi validado. Envie um novo comprovante para continuar.",
+      "O arquivo anterior nao foi validado. Envie um novo comprovante para continuar com seguranca.",
   },
   CONFIRMED: {
     label: "Pagamento confirmado",
     tone: "emerald",
-    summary: "Pagamento confirmado com sucesso.",
+    summary: "Pagamento confirmado com sucesso e registrado nesta proposta.",
     uploadTitle: "Pagamento confirmado",
     uploadSubtitle:
-      "Recebemos seu pagamento. O processo sera concluido automaticamente.",
+      "Recebemos seu pagamento. Esta etapa ja foi concluida com seguranca.",
   },
   PAID: {
     label: "Pagamento confirmado",
     tone: "emerald",
-    summary: "Pagamento confirmado com sucesso.",
+    summary: "Pagamento confirmado com sucesso e registrado nesta proposta.",
     uploadTitle: "Pagamento confirmado",
     uploadSubtitle:
-      "Recebemos seu pagamento. O processo sera concluido automaticamente.",
+      "Recebemos seu pagamento. Esta etapa ja foi concluida com seguranca.",
   },
 };
 
@@ -999,7 +1005,11 @@ export default function PublicPixPayment() {
           <div className="relative">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
-                <img src={brand} alt="brand" className="h-12 w-12 rounded-2xl" />
+                <img
+                  src={brand}
+                  alt="LuminorPay"
+                  className="h-12 w-12 rounded-2xl"
+                />
                 <div>
                   <div
                     className={cls(
@@ -1010,7 +1020,7 @@ export default function PublicPixPayment() {
                     Pagamento via Pix
                   </div>
                   <div className="text-lg font-black tracking-[-0.03em]">
-                    Finalize seu pagamento
+                    Finalize seu pagamento com seguranca
                   </div>
                 </div>
               </div>
@@ -1026,7 +1036,7 @@ export default function PublicPixPayment() {
 
                 <div className="space-y-3">
                   <h1 className="text-3xl font-black tracking-[-0.04em] sm:text-4xl">
-                    Use o Pix e envie o comprovante para concluir.
+                    Pague por Pix e envie o comprovante por aqui.
                   </h1>
                   <p
                     className={cls(
@@ -1098,7 +1108,7 @@ export default function PublicPixPayment() {
                       Confirmacao
                     </div>
                     <div className="mt-2 text-sm font-semibold leading-6">
-                      Envie o comprovante apos o pagamento
+                      Valor e comprovante validados nesta pagina
                     </div>
                   </div>
                 </div>
@@ -1125,8 +1135,8 @@ export default function PublicPixPayment() {
                   <div className="mt-4 grid gap-3 sm:grid-cols-3">
                     {[
                       "Abra o app do seu banco e escolha pagar com Pix.",
-                      "Use o QR Code ou o codigo copia e cola com o valor exato.",
-                      "Envie o comprovante abaixo para concluir a validacao.",
+                      "Use o QR Code ou o copia e cola exatamente com o valor exibido nesta tela.",
+                      "Envie o comprovante abaixo para concluir a validacao do pagamento.",
                     ].map((item) => (
                       <div
                         key={item}
@@ -1172,7 +1182,7 @@ export default function PublicPixPayment() {
                         isDark ? "text-slate-300" : "text-slate-600",
                       )}
                     >
-                      Escaneie o codigo abaixo ou copie os dados do Pix.
+                      Escaneie o codigo abaixo ou use o copia e cola desta mesma proposta.
                     </div>
                   </div>
                 </div>
@@ -1208,7 +1218,7 @@ export default function PublicPixPayment() {
                       isDark ? "text-slate-400" : "text-slate-500",
                     )}
                   >
-                    Confira sempre se o valor e o recebedor correspondem aos dados desta tela.
+                    Confirme sempre se o valor e o recebedor correspondem exatamente aos dados desta tela.
                     {lastStatusRefreshAt ? ` Atualizado as ${new Date(lastStatusRefreshAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}.` : ""}
                   </div>
                 </div>
@@ -1445,7 +1455,7 @@ export default function PublicPixPayment() {
                     />
                     <div>
                       <div className="text-sm font-semibold">
-                        Revisao manual do comprovante
+                        Validacao do comprovante
                       </div>
                       <div
                         className={cls(
@@ -1453,8 +1463,8 @@ export default function PublicPixPayment() {
                           isDark ? "text-slate-300" : "text-slate-600",
                         )}
                       >
-                        Envie um arquivo legivel. Se houver recusas, voce podera
-                        reenviar por esta mesma pagina.
+                        Envie um arquivo legivel. Se houver qualquer problema,
+                        voce podera reenviar por esta mesma pagina.
                       </div>
                     </div>
                   </div>
@@ -1476,7 +1486,7 @@ export default function PublicPixPayment() {
                       <span>
                         {status === "REJECTED"
                           ? "O ultimo comprovante foi recusado. Confira o arquivo e envie novamente."
-                          : "Depois do envio, a confirmacao pode levar alguns instantes."}
+                          : "Depois do envio, a confirmacao pode levar alguns instantes. Se preferir, acompanhe o status por esta mesma pagina."}
                       </span>
                     </div>
                   </div>

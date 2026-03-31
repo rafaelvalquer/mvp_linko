@@ -140,9 +140,9 @@ function AuthBrand() {
 
 function AuthShell({ children, password }) {
   const steps = [
-    "Crie sua conta com nome, e-mail e senha.",
-    "Confirme o codigo enviado para o e-mail.",
-    "Comece a montar propostas e receber no Pix.",
+    "Crie sua conta com nome, e-mail e senha segura.",
+    "Confirme o codigo enviado para liberar o acesso ao workspace.",
+    "Comece a organizar propostas, Pix e agenda no mesmo fluxo.",
   ];
 
   return (
@@ -165,11 +165,11 @@ function AuthShell({ children, password }) {
                   Criar conta
                 </div>
                 <h1 className="mt-4 text-4xl font-black tracking-tight text-white">
-                  Comece com uma conta simples e pronta para vender.
+                  Comece com uma conta clara, segura e pronta para vender.
                 </h1>
                 <p className="mt-5 text-base leading-7 text-slate-300">
                   Crie seu acesso, confirme o e-mail e organize propostas,
-                  pagamentos e agenda na mesma plataforma.
+                  pagamentos e agenda na mesma plataforma desde o primeiro dia.
                 </p>
               </div>
 
@@ -198,7 +198,7 @@ function AuthShell({ children, password }) {
                     Criar conta
                   </div>
                   <h1 className="mt-3 text-3xl font-black tracking-tight text-white">
-                    Crie sua conta e comece a organizar suas vendas.
+                    Crie sua conta e entre no fluxo certo desde o inicio.
                   </h1>
                   <p className="mt-3 text-sm leading-6 text-slate-300">
                     Cadastro claro, rapido e confortavel para preencher no celular.
@@ -513,7 +513,7 @@ export default function Register() {
       <AuthShell password={values.password}>
         <AuthCard
           title="Criar conta"
-          subtitle="Preencha seus dados para abrir seu workspace e confirmar o cadastro por e-mail."
+          subtitle="Preencha seus dados para abrir seu workspace com confirmacao por e-mail e mais seguranca."
           footer={
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
               Ja tem conta?{" "}
@@ -574,7 +574,7 @@ export default function Register() {
               autoComplete="tel"
               inputMode="tel"
               placeholder="11 99999-8888"
-              hint="Use esse numero para liberar os comandos por WhatsApp depois."
+              hint="Use esse numero para liberar comandos e avisos por WhatsApp depois."
               error={getVisibleError("whatsappPhone")}
               disabled={loading}
               icon={Smartphone}
@@ -600,8 +600,8 @@ export default function Register() {
             </div>
 
             <div className="rounded-2xl border border-sky-100 bg-sky-50/80 px-4 py-3 text-sm leading-6 text-slate-600">
-              Ao continuar, enviaremos um codigo de confirmacao para seu e-mail
-              antes de concluir a criacao da conta.
+              Ao continuar, enviaremos um codigo de confirmacao para validar seu
+              e-mail antes de liberar a criacao da conta.
             </div>
 
             <SubmitButton loading={loading} disabled={!canSubmit} />

@@ -236,14 +236,14 @@ function StatCard({
   return (
     <div
       className={[
-        "relative overflow-hidden rounded-[28px] border p-5",
+        "app-kpi-card relative overflow-hidden p-5",
         highlight
           ? isDark
-            ? "border-cyan-400/20 bg-[linear-gradient(135deg,rgba(8,47,73,0.42),rgba(6,78,59,0.34))] shadow-[0_22px_60px_-42px_rgba(15,23,42,0.7)]"
-            : "border-cyan-200/80 bg-[linear-gradient(135deg,rgba(239,246,255,0.98),rgba(236,253,245,0.92))] shadow-[0_22px_60px_-42px_rgba(15,23,42,0.35)]"
+            ? "border-cyan-400/24 bg-[linear-gradient(135deg,rgba(8,47,73,0.34),rgba(6,78,59,0.22))] shadow-[0_24px_52px_-40px_rgba(2,6,23,0.72)]"
+            : "border-sky-200 bg-[linear-gradient(135deg,rgba(239,246,255,0.98),rgba(240,253,250,0.94))] shadow-[0_20px_42px_-34px_rgba(15,23,42,0.18)]"
           : isDark
-            ? "border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(9,15,28,0.82))] shadow-[0_22px_60px_-42px_rgba(15,23,42,0.7)]"
-            : "border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(244,247,252,0.92))] shadow-[0_22px_60px_-42px_rgba(15,23,42,0.35)]",
+            ? "border-white/8 bg-[linear-gradient(180deg,rgba(15,23,42,0.82),rgba(9,15,28,0.76))]"
+            : "border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(246,249,252,0.94))]",
       ].join(" ")}
       style={{ animationDelay: `${index * 60}ms` }}
     >
@@ -338,9 +338,9 @@ function WhatsAppSetupBanner({ isDark }) {
   return (
     <div
       className={[
-        "rounded-[24px] border p-4 shadow-[0_20px_40px_-28px_rgba(37,99,235,0.28)]",
+        "app-strip p-4",
         isDark
-          ? "border-cyan-400/20 bg-[linear-gradient(135deg,rgba(8,47,73,0.3),rgba(15,23,42,0.22))] text-cyan-50"
+          ? "border-cyan-400/20 bg-[linear-gradient(135deg,rgba(8,47,73,0.28),rgba(15,23,42,0.2))] text-cyan-50"
           : "border-cyan-200/80 bg-[linear-gradient(135deg,#ecfeff,#eff6ff)] text-slate-800",
       ].join(" ")}
     >
@@ -1343,12 +1343,7 @@ export default function Dashboard() {
               ].map((item) => (
                 <div
                   key={item.label}
-                  className={[
-                    "rounded-2xl border px-4 py-4",
-                    isDark
-                      ? "border-white/10 bg-white/5"
-                      : "border-slate-200/80 bg-slate-50/80",
-                  ].join(" ")}
+                  className="app-kpi-card px-4 py-4"
                 >
                   <div
                     className={[

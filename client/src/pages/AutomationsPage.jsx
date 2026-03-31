@@ -5,6 +5,7 @@ import PageHeader from "../components/appui/PageHeader.jsx";
 import Card, { CardBody, CardHeader } from "../components/appui/Card.jsx";
 import Button from "../components/appui/Button.jsx";
 import Badge from "../components/appui/Badge.jsx";
+import EmptyState from "../components/appui/EmptyState.jsx";
 import {
   createUserAutomation,
   deleteUserAutomation,
@@ -107,41 +108,41 @@ function templateSurfaceClass(key = "") {
   const normalizedKey = String(key || "").trim().toLowerCase();
 
   if (normalizedKey.includes("agenda")) {
-    return "border-sky-200 bg-sky-50/80 text-sky-700";
+    return "border-sky-200 bg-sky-50/80 text-sky-700 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-200";
   }
   if (normalizedKey.includes("offer") || normalizedKey.includes("proposta")) {
-    return "border-fuchsia-200 bg-fuchsia-50/80 text-fuchsia-700";
+    return "border-fuchsia-200 bg-fuchsia-50/80 text-fuchsia-700 dark:border-fuchsia-400/20 dark:bg-fuchsia-400/10 dark:text-fuchsia-200";
   }
   if (normalizedKey.includes("billing") || normalizedKey.includes("cobranca")) {
-    return "border-amber-200 bg-amber-50/80 text-amber-800";
+    return "border-amber-200 bg-amber-50/80 text-amber-800 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200";
   }
   if (normalizedKey.includes("confirmation")) {
-    return "border-violet-200 bg-violet-50/80 text-violet-700";
+    return "border-violet-200 bg-violet-50/80 text-violet-700 dark:border-violet-400/20 dark:bg-violet-400/10 dark:text-violet-200";
   }
   if (normalizedKey.includes("finance")) {
-    return "border-emerald-200 bg-emerald-50/80 text-emerald-700";
+    return "border-emerald-200 bg-emerald-50/80 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200";
   }
   if (normalizedKey.includes("summary") || normalizedKey.includes("resumo")) {
-    return "border-indigo-200 bg-indigo-50/80 text-indigo-700";
+    return "border-indigo-200 bg-indigo-50/80 text-indigo-700 dark:border-indigo-400/20 dark:bg-indigo-400/10 dark:text-indigo-200";
   }
   if (normalizedKey.includes("priority")) {
-    return "border-emerald-200 bg-emerald-50/80 text-emerald-700";
+    return "border-emerald-200 bg-emerald-50/80 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200";
   }
 
-  return "border-slate-200 bg-slate-50 text-slate-700";
+  return "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-400/20 dark:bg-slate-900/60 dark:text-slate-100";
 }
 
 function StatCard({ title, value, subtitle }) {
   return (
-    <Card className="overflow-hidden">
-      <CardBody className="space-y-2">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+    <div className="app-kpi-card overflow-hidden">
+      <div className="space-y-2">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
           {title}
         </div>
-        <div className="text-3xl font-black tracking-tight text-slate-950">{value}</div>
-        <div className="text-sm leading-6 text-slate-500">{subtitle}</div>
-      </CardBody>
-    </Card>
+        <div className="text-3xl font-black tracking-tight text-slate-950 dark:text-white">{value}</div>
+        <div className="text-sm leading-6 text-slate-500 dark:text-slate-300">{subtitle}</div>
+      </div>
+    </div>
   );
 }
 
@@ -153,15 +154,17 @@ function FilterButton({ active, count, onClick, children }) {
       className={[
         "inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-semibold transition",
         active
-          ? "border-sky-300 bg-[linear-gradient(135deg,rgba(37,99,235,0.12),rgba(20,184,166,0.16))] text-slate-950 shadow-[0_16px_30px_-26px_rgba(37,99,235,0.45)]"
-          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-950",
+          ? "border-sky-300 bg-[linear-gradient(135deg,rgba(37,99,235,0.12),rgba(20,184,166,0.16))] text-slate-950 shadow-[0_16px_30px_-26px_rgba(37,99,235,0.45)] dark:border-sky-400/25 dark:bg-[linear-gradient(135deg,rgba(37,99,235,0.22),rgba(20,184,166,0.16))] dark:text-white"
+          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-950 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-white/15 dark:hover:text-white",
       ].join(" ")}
     >
       <span>{children}</span>
       <span
         className={[
           "inline-flex min-w-7 items-center justify-center rounded-full px-2 py-0.5 text-xs font-bold",
-          active ? "bg-white/80 text-slate-950" : "bg-slate-100 text-slate-600",
+          active
+            ? "bg-white/80 text-slate-950 dark:bg-white/12 dark:text-white"
+            : "bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-slate-300",
         ].join(" ")}
       >
         {count}
@@ -172,11 +175,17 @@ function FilterButton({ active, count, onClick, children }) {
 
 function InfoTile({ label, value, strong = false }) {
   return (
-    <div className="rounded-[22px] border border-slate-200/80 bg-white px-4 py-3 shadow-[0_14px_28px_-24px_rgba(15,23,42,0.18)]">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+    <div className="surface-quiet rounded-[22px] px-4 py-3">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
         {label}
       </div>
-      <div className={`mt-2 text-sm ${strong ? "font-semibold text-slate-950" : "text-slate-700"}`}>
+      <div
+        className={`mt-2 text-sm ${
+          strong
+            ? "font-semibold text-slate-950 dark:text-white"
+            : "text-slate-700 dark:text-slate-200"
+        }`}
+      >
         {value}
       </div>
     </div>
@@ -187,10 +196,10 @@ function ChannelPill({ value }) {
   const label = formatChannelLabel(value);
   const toneClass =
     value === "both"
-      ? "border-violet-200 bg-violet-50 text-violet-700"
+      ? "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-400/20 dark:bg-violet-400/10 dark:text-violet-200"
       : value === "email"
-        ? "border-amber-200 bg-amber-50 text-amber-700"
-        : "border-emerald-200 bg-emerald-50 text-emerald-700";
+        ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200"
+        : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200";
 
   return (
     <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass}`}>
@@ -221,41 +230,41 @@ function ChevronIcon({ expanded }) {
 
 function TemplatePreview({ template, channel, frequency, timeOfDay, dayOfWeek }) {
   return (
-    <div className="rounded-[22px] border border-slate-200 bg-slate-50/80 p-4">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+    <div className="surface-secondary rounded-[24px] p-4">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
         Resumo da rotina
       </div>
 
       <div className="mt-3">
-        <div className="text-base font-semibold text-slate-950">
+        <div className="text-base font-semibold text-slate-950 dark:text-white">
           {template?.label || "Escolha um template para continuar"}
         </div>
-        <div className="mt-1 text-sm leading-6 text-slate-600">
+        <div className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
           {template?.description ||
             "A Lumina prepara a rotina com os dados da sua carteira e agenda o envio."}
         </div>
       </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
-        <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+        <div className="surface-quiet rounded-2xl px-3 py-3">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
             Canal
           </div>
           <div className="mt-2">
             <ChannelPill value={channel} />
           </div>
         </div>
-        <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+        <div className="surface-quiet rounded-2xl px-3 py-3">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
             Horario
           </div>
-          <div className="mt-2 text-sm font-semibold text-slate-950">{timeOfDay || "-"}</div>
+          <div className="mt-2 text-sm font-semibold text-slate-950 dark:text-white">{timeOfDay || "-"}</div>
         </div>
-        <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+        <div className="surface-quiet rounded-2xl px-3 py-3">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
             Frequencia
           </div>
-          <div className="mt-2 text-sm font-semibold text-slate-950">
+          <div className="mt-2 text-sm font-semibold text-slate-950 dark:text-white">
             {formatFrequencyLabel(frequency, dayOfWeek)}
           </div>
         </div>
@@ -270,22 +279,22 @@ function AutomationCard({ item, busy, expanded, onAction, onToggle }) {
   const compactSchedule = `${formatChannelLabel(item.channel)} | ${formatFrequencyLabel(item.frequency, item.dayOfWeek)}`;
   const accordionId = `automation-panel-${item.id}`;
 
-  return (
-    <div
-      className={[
-        "overflow-hidden rounded-[28px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(244,247,251,0.92))] shadow-[0_22px_48px_-34px_rgba(15,23,42,0.18)] transition",
-        expanded ? "border-slate-300/90" : "",
-        busy && expanded
-          ? "border-sky-200 shadow-[0_24px_52px_-34px_rgba(37,99,235,0.28)]"
-          : "",
-      ].join(" ")}
+    return (
+      <div
+        className={[
+          "surface-panel overflow-hidden rounded-[28px] transition",
+          expanded ? "border-slate-300/90 dark:border-white/15" : "",
+          busy && expanded
+            ? "border-sky-200 shadow-[0_24px_52px_-34px_rgba(37,99,235,0.28)] dark:border-sky-400/25"
+            : "",
+        ].join(" ")}
     >
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={expanded}
         aria-controls={accordionId}
-        className="flex w-full flex-col gap-4 px-5 py-4 text-left transition hover:bg-white/50 sm:px-6"
+        className="flex w-full flex-col gap-4 px-5 py-4 text-left transition hover:bg-white/40 dark:hover:bg-white/4 sm:px-6"
       >
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0 space-y-3">
@@ -297,40 +306,40 @@ function AutomationCard({ item, busy, expanded, onAction, onToggle }) {
               </span>
               <Badge tone={statusTone(item.status)}>{statusLabel(item.status)}</Badge>
               {item.lastError?.message ? (
-                <span className="inline-flex rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-700">
-                  Requer revisao
-                </span>
+                  <span className="inline-flex rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-700 dark:border-rose-400/20 dark:bg-rose-400/10 dark:text-rose-200">
+                    Requer revisao
+                  </span>
               ) : null}
             </div>
 
             <div className="space-y-1">
-              <div className="text-lg font-black tracking-tight text-slate-950 sm:text-xl">
-                {item.name}
-              </div>
-              <div className="text-sm text-slate-600">{compactSchedule}</div>
-              {item.lastError?.message ? (
-                <div className="text-xs leading-5 text-red-600">
-                  Falha recente detectada. Expanda para revisar os detalhes.
+                <div className="text-lg font-black tracking-tight text-slate-950 dark:text-white sm:text-xl">
+                  {item.name}
                 </div>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="flex items-start gap-3 lg:items-center">
-            <div className="min-w-0 rounded-[22px] border border-slate-200 bg-slate-50/90 px-4 py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Proxima execucao
+                <div className="text-sm text-slate-600 dark:text-slate-300">{compactSchedule}</div>
+                {item.lastError?.message ? (
+                  <div className="text-xs leading-5 text-rose-600 dark:text-rose-200">
+                    Falha recente detectada. Expanda para revisar os detalhes.
+                  </div>
+                ) : null}
               </div>
-              <div className="mt-2 text-sm font-semibold text-slate-950">
-                {formatDateTime(item.nextRunAt)}
-              </div>
-              <div className="mt-1 text-xs text-slate-500">Canal e frequencia prontos para leitura rapida.</div>
             </div>
 
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 shadow-[0_14px_28px_-24px_rgba(15,23,42,0.18)]">
-              <ChevronIcon expanded={expanded} />
+            <div className="flex items-start gap-3 lg:items-center">
+              <div className="surface-quiet min-w-0 rounded-[22px] px-4 py-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                  Proxima execucao
+                </div>
+                <div className="mt-2 text-sm font-semibold text-slate-950 dark:text-white">
+                  {formatDateTime(item.nextRunAt)}
+                </div>
+                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Canal e frequencia prontos para leitura rapida.</div>
+              </div>
+
+              <div className="surface-quiet flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-slate-500 dark:text-slate-300">
+                <ChevronIcon expanded={expanded} />
+              </div>
             </div>
-          </div>
         </div>
       </button>
 
@@ -339,7 +348,7 @@ function AutomationCard({ item, busy, expanded, onAction, onToggle }) {
         className={`grid transition-[grid-template-rows] duration-300 ease-out ${expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
       >
         <div className="min-h-0 overflow-hidden">
-          <div className="border-t border-slate-200/80 px-5 pb-5 pt-4 sm:px-6">
+          <div className="border-t border-slate-200/80 px-5 pb-5 pt-4 dark:border-white/10 sm:px-6">
             <div className="flex flex-col gap-5 xl:grid xl:grid-cols-[minmax(0,1fr)_240px] xl:items-start">
               <div className="space-y-5">
                 <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
@@ -356,26 +365,26 @@ function AutomationCard({ item, busy, expanded, onAction, onToggle }) {
                 </div>
 
                 {item.lastError?.message ? (
-                  <div className="rounded-[22px] border border-red-200 bg-red-50 px-4 py-3">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-red-600">
+                  <div className="surface-quiet rounded-[22px] border border-rose-200/80 px-4 py-3 text-rose-700 dark:border-rose-400/20 dark:text-rose-200">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-600 dark:text-rose-200">
                       Ultimo erro
                     </div>
-                    <div className="mt-2 text-sm leading-6 text-red-700">{item.lastError.message}</div>
+                    <div className="mt-2 text-sm leading-6">{item.lastError.message}</div>
                   </div>
                 ) : null}
 
                 {showResult ? (
-                  <div className="rounded-[22px] border border-slate-200 bg-slate-50/90 px-4 py-3">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  <div className="surface-quiet rounded-[22px] px-4 py-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                       Ultimo resultado
                     </div>
-                    <div className="mt-2 text-sm leading-6 text-slate-700">{lastHistory.message}</div>
+                    <div className="mt-2 text-sm leading-6 text-slate-700 dark:text-slate-200">{lastHistory.message}</div>
                   </div>
                 ) : null}
               </div>
 
-              <div className="rounded-[24px] border border-slate-200 bg-white/90 p-4 shadow-[0_18px_32px_-28px_rgba(15,23,42,0.16)]">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+              <div className="surface-secondary rounded-[24px] p-4">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                   Acoes manuais
                 </div>
                 <div className="mt-3 space-y-2">
@@ -432,7 +441,7 @@ function AutomationCard({ item, busy, expanded, onAction, onToggle }) {
                   </Button>
                 </div>
 
-                <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-500">
+                <div className="surface-quiet mt-4 rounded-2xl px-3 py-2 text-xs leading-5 text-slate-500 dark:text-slate-300">
                   {busy
                     ? "A Lumina esta concluindo essa acao neste item."
                     : "Abra a rotina quando quiser pausar, executar ou revisar o ultimo resultado."}
@@ -465,6 +474,7 @@ export default function AutomationsPage() {
     dayOfWeek: "monday",
     timeOfDay: "09:00",
   });
+  const fieldClass = "app-field h-11 w-full px-3";
 
   async function loadDashboard({ keepFlash = true } = {}) {
     if (!keepFlash) setFlash("");
@@ -684,13 +694,13 @@ export default function AutomationsPage() {
         />
 
         {error ? (
-          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="surface-quiet rounded-2xl border border-rose-200/80 px-4 py-3 text-sm text-rose-700 dark:border-rose-400/20 dark:text-rose-200">
             {error}
           </div>
         ) : null}
 
         {flash ? (
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          <div className="surface-quiet rounded-2xl border border-emerald-200/80 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-400/20 dark:text-emerald-200">
             {flash}
           </div>
         ) : null}
@@ -719,7 +729,7 @@ export default function AutomationsPage() {
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[380px,minmax(0,1fr)]">
-          <Card className="overflow-hidden">
+          <Card variant="elevated" className="overflow-hidden">
             <div ref={createCardRef}>
               <CardHeader
                 title="Criacao manual"
@@ -730,17 +740,17 @@ export default function AutomationsPage() {
               <form className="space-y-4" onSubmit={handleCreate}>
                 <div className="space-y-3">
                   <div className="space-y-1">
-                    <div className="text-sm font-semibold text-slate-700">Template</div>
-                    <div className="text-xs leading-5 text-slate-500">
+                    <div className="text-sm font-semibold text-slate-700 dark:text-white">Template</div>
+                    <div className="text-xs leading-5 text-slate-500 dark:text-slate-300">
                       Escolha a categoria e depois a rotina que voce quer automatizar.
                     </div>
                   </div>
 
                   <div className="grid gap-4 sm:grid-cols-2">
                     <label className="block space-y-1">
-                      <span className="text-sm font-semibold text-slate-700">Categoria</span>
+                      <span className="text-sm font-semibold text-slate-700 dark:text-white">Categoria</span>
                       <select
-                        className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-sky-300"
+                        className={fieldClass}
                         value={selectedTemplateGroup?.key || ""}
                         onChange={(event) => handleTemplateGroupSelect(event.target.value)}
                       >
@@ -750,16 +760,16 @@ export default function AutomationsPage() {
                           </option>
                         ))}
                       </select>
-                      <span className="text-xs leading-5 text-slate-500">
+                      <span className="text-xs leading-5 text-slate-500 dark:text-slate-300">
                         {selectedTemplateGroup?.description ||
                           "Escolha uma funcionalidade para ver as rotinas disponiveis."}
                       </span>
                     </label>
 
                     <label className="block space-y-1">
-                      <span className="text-sm font-semibold text-slate-700">Template</span>
+                      <span className="text-sm font-semibold text-slate-700 dark:text-white">Template</span>
                       <select
-                        className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-sky-300"
+                        className={fieldClass}
                         value={form.templateKey}
                         onChange={(event) => handleTemplateSelect(event.target.value)}
                       >
@@ -769,7 +779,7 @@ export default function AutomationsPage() {
                           </option>
                         ))}
                       </select>
-                      <span className="text-xs leading-5 text-slate-500">
+                      <span className="text-xs leading-5 text-slate-500 dark:text-slate-300">
                         {selectedTemplate?.description ||
                           "Escolha uma rotina para continuar a configuracao."}
                       </span>
@@ -786,9 +796,9 @@ export default function AutomationsPage() {
                 </div>
 
                 <label className="block space-y-1">
-                  <span className="text-sm font-semibold text-slate-700">Canal</span>
+                  <span className="text-sm font-semibold text-slate-700 dark:text-white">Canal</span>
                   <select
-                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-sky-300"
+                    className={fieldClass}
                     value={form.channel}
                     onChange={(event) =>
                       setForm((current) => ({
@@ -807,9 +817,9 @@ export default function AutomationsPage() {
 
                 <div className="grid gap-4 sm:grid-cols-2">
                   <label className="block space-y-1">
-                    <span className="text-sm font-semibold text-slate-700">Frequencia</span>
+                    <span className="text-sm font-semibold text-slate-700 dark:text-white">Frequencia</span>
                     <select
-                      className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-sky-300"
+                      className={fieldClass}
                       value={form.frequency}
                       onChange={(event) =>
                         setForm((current) => ({
@@ -827,10 +837,10 @@ export default function AutomationsPage() {
                   </label>
 
                   <label className="block space-y-1">
-                    <span className="text-sm font-semibold text-slate-700">Horario</span>
+                    <span className="text-sm font-semibold text-slate-700 dark:text-white">Horario</span>
                     <input
                       type="time"
-                      className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-sky-300"
+                      className={fieldClass}
                       value={form.timeOfDay}
                       onChange={(event) =>
                         setForm((current) => ({
@@ -844,9 +854,9 @@ export default function AutomationsPage() {
 
                 {form.frequency === "weekly" ? (
                   <label className="block space-y-1">
-                    <span className="text-sm font-semibold text-slate-700">Dia da semana</span>
+                    <span className="text-sm font-semibold text-slate-700 dark:text-white">Dia da semana</span>
                     <select
-                      className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-sky-300"
+                      className={fieldClass}
                       value={form.dayOfWeek}
                       onChange={(event) =>
                         setForm((current) => ({
@@ -864,7 +874,7 @@ export default function AutomationsPage() {
                   </label>
                 ) : null}
 
-                <div className="rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
+                <div className="surface-quiet rounded-[22px] px-4 py-3 text-sm leading-6 text-slate-600 dark:text-slate-300">
                   A automacao usa por padrao o seu proprio WhatsApp e e-mail cadastrados.
                 </div>
 
@@ -884,11 +894,11 @@ export default function AutomationsPage() {
             </CardBody>
           </Card>
 
-          <Card className="overflow-hidden">
+          <Card variant="quiet" className="overflow-hidden">
             <CardHeader
               title="Painel manual"
               subtitle="Veja o status de cada rotina, encontre horario e frequencia em segundos e aja daqui quando precisar."
-              right={<Badge tone="PUBLIC">{items.length} itens</Badge>}
+              right={<Badge tone="NEUTRAL">{items.length} itens</Badge>}
             />
             <CardBody className="space-y-5">
               <div className="flex flex-wrap gap-2">
@@ -905,16 +915,18 @@ export default function AutomationsPage() {
               </div>
 
               {loading ? (
-                <div className="rounded-[24px] border border-dashed border-slate-200 px-4 py-12 text-center text-sm text-slate-500">
+                <div className="surface-quiet rounded-[24px] border border-dashed px-4 py-12 text-center text-sm text-slate-500 dark:text-slate-300">
                   Carregando automacoes...
                 </div>
               ) : null}
 
               {!loading && visibleItems.length === 0 ? (
-                <div className="rounded-[24px] border border-dashed border-slate-200 bg-slate-50/70 px-5 py-12 text-center">
-                  <div className="text-base font-semibold text-slate-900">{emptyState.title}</div>
-                  <div className="mt-2 text-sm leading-6 text-slate-500">{emptyState.description}</div>
-                </div>
+                <EmptyState
+                  title={emptyState.title}
+                  description={emptyState.description}
+                  ctaLabel="Nova automacao"
+                  onCta={focusCreateCard}
+                />
               ) : null}
 
               {!loading

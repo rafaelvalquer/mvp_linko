@@ -461,7 +461,7 @@ export default function PublicBookingManage() {
           <div className={heroCard}>
             <div className="relative space-y-5">
               <div className="flex items-center gap-3">
-                <img src={brand} alt="Luminor Pay" className="h-11 w-11 rounded-2xl object-cover" />
+                <img src={brand} alt="LuminorPay" className="h-11 w-11 rounded-2xl object-cover" />
                 <div>
                   <p className={cls("text-xs font-semibold uppercase tracking-[0.28em]", isDark ? "text-sky-200/80" : "text-sky-700/80")}>
                     Gerenciar agendamento
@@ -523,7 +523,7 @@ export default function PublicBookingManage() {
           <div className="relative space-y-5">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="flex min-w-0 items-center gap-3">
-                <img src={brand} alt="Luminor Pay" className="h-11 w-11 rounded-2xl object-cover shadow-sm" />
+                <img src={brand} alt="LuminorPay" className="h-11 w-11 rounded-2xl object-cover shadow-sm" />
                 <div className="min-w-0">
                   <p className={cls("text-[11px] font-semibold uppercase tracking-[0.28em]", isDark ? "text-sky-200/80" : "text-sky-700/80")}>Autoatendimento</p>
                   <h1 className="truncate text-2xl font-semibold sm:text-3xl">Gerencie seu agendamento</h1>

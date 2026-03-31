@@ -21,6 +21,7 @@ import Button from "../components/appui/Button.jsx";
 import Skeleton from "../components/appui/Skeleton.jsx";
 import EmptyState from "../components/appui/EmptyState.jsx";
 import Badge from "../components/appui/Badge.jsx";
+import useThemeToggle from "../app/useThemeToggle.js";
 
 function pad2(value) {
   return String(value).padStart(2, "0");
@@ -122,13 +123,13 @@ function DarkTooltip({ active, payload, label, labelFormatter }) {
 
 function MetricCard({ title, subtitle, value, loading }) {
   return (
-    <Card>
+    <Card variant="quiet" className="overflow-hidden">
       <CardHeader title={title} subtitle={subtitle} />
       <CardBody>
         {loading ? (
           <Skeleton className="h-8 w-32" />
         ) : (
-          <div className="text-2xl font-bold text-zinc-900">{value}</div>
+          <div className="text-2xl font-black tracking-[-0.03em] text-slate-950 dark:text-white">{value}</div>
         )}
       </CardBody>
     </Card>
@@ -136,6 +137,7 @@ function MetricCard({ title, subtitle, value, loading }) {
 }
 
 function FeedbackItem({ item, compact = false }) {
+  const { isDark } = useThemeToggle();
   const comment = String(item?.comment || "").trim();
   const typeLabel =
     String(item?.offerType || "").trim().toLowerCase() === "product"
@@ -143,13 +145,13 @@ function FeedbackItem({ item, compact = false }) {
       : "Servico";
 
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-white/90 p-4 shadow-[0_16px_36px_-30px_rgba(15,23,42,0.24)]">
+    <div className="surface-quiet rounded-2xl p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-sm font-semibold text-zinc-900">
+          <div className={`text-sm font-semibold ${isDark ? "text-white" : "text-slate-900"}`}>
             {item?.customerName || "Cliente"}
           </div>
-          <div className="mt-1 text-xs text-zinc-500">
+          <div className={`mt-1 text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}>
             {item?.title || "Proposta"} • {typeLabel}
           </div>
         </div>
@@ -162,12 +164,12 @@ function FeedbackItem({ item, compact = false }) {
         </div>
       </div>
 
-      <div className="mt-3 text-xs text-zinc-500">
+      <div className={`mt-3 text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}>
         Respondida em {formatDateTime(item?.respondedAt)}
       </div>
 
       {!compact ? (
-        <div className="mt-3 text-sm leading-6 text-zinc-700">
+        <div className={`mt-3 text-sm leading-6 ${isDark ? "text-slate-200" : "text-slate-700"}`}>
           {comment || "Sem comentario registrado nesta avaliacao."}
         </div>
       ) : null}
@@ -176,6 +178,7 @@ function FeedbackItem({ item, compact = false }) {
 }
 
 export default function FeedbackReportsPage() {
+  const { isDark } = useThemeToggle();
   const { perms, user } = useAuth();
   const isOwnerTeamView =
     perms?.isWorkspaceOwner === true && perms?.isWorkspaceTeamPlan === true;
@@ -315,6 +318,13 @@ export default function FeedbackReportsPage() {
     Number(summary.responsesCount || 0) > 0 ||
     responses.length > 0 ||
     actionRequired.length > 0;
+  const fieldClass = "app-field w-full rounded-2xl px-3 py-2";
+  const axisColor = isDark ? "#94a3b8" : "#64748b";
+  const gridColor = isDark
+    ? "rgba(148,163,184,0.18)"
+    : "rgba(148,163,184,0.24)";
+  const distributionBarColor = isDark ? "#38bdf8" : "#2563eb";
+  const trendLineColor = isDark ? "#2dd4bf" : "#0f766e";
 
   return (
     <Shell>
@@ -367,7 +377,7 @@ export default function FeedbackReportsPage() {
                     value={teamOwnerFilter}
                     onChange={(e) => setTeamOwnerFilter(e.target.value)}
                     disabled={teamUsersBusy}
-                    className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-emerald-200 sm:w-[240px]"
+                    className={`sm:w-[240px] ${fieldClass}`}
                   >
                     <option value="all">Toda a equipe</option>
                     <option value="me">Somente eu</option>
@@ -378,19 +388,19 @@ export default function FeedbackReportsPage() {
                     ))}
                   </select>
                 ) : null}
-                <Badge tone="neutral">{scopeSummaryLabel}</Badge>
+                <Badge tone="NEUTRAL">{scopeSummaryLabel}</Badge>
               </div>
             </CardBody>
           </Card>
         ) : null}
 
         {error ? (
-          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <div className="surface-quiet rounded-2xl border border-rose-200/80 p-4 text-sm text-rose-700 dark:border-rose-400/20 dark:text-rose-200">
             {error}
           </div>
         ) : null}
 
-        <Card>
+        <Card variant="quiet">
           <CardHeader
             title="Filtros"
             subtitle="Defina período e tipo para acompanhar a percepção do cliente."
@@ -431,7 +441,7 @@ export default function FeedbackReportsPage() {
                 <select
                   value={type}
                   onChange={(e) => setType(e.target.value)}
-                  className="w-full rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                  className={fieldClass}
                 >
                   <option value="all">Todos</option>
                   <option value="service">Serviços</option>
@@ -449,7 +459,7 @@ export default function FeedbackReportsPage() {
                     setPreset("custom");
                     setFrom(e.target.value);
                   }}
-                  className="w-full rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                  className={fieldClass}
                 />
               </div>
               <div className="md:col-span-3">
@@ -463,7 +473,7 @@ export default function FeedbackReportsPage() {
                     setPreset("custom");
                     setTo(e.target.value);
                   }}
-                  className="w-full rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                  className={fieldClass}
                 />
               </div>
               <div className="md:col-span-2 md:flex md:items-end">
@@ -476,15 +486,15 @@ export default function FeedbackReportsPage() {
         </Card>
 
         <Card>
-          <CardBody className="flex flex-wrap items-center gap-2 text-sm text-zinc-600">
+          <CardBody className="flex flex-wrap items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
             <span>
-              Período: <strong className="text-zinc-900">{from}</strong> até{" "}
-              <strong className="text-zinc-900">{to}</strong>
+              Período: <strong className="text-slate-900 dark:text-white">{from}</strong> até{" "}
+              <strong className="text-slate-900 dark:text-white">{to}</strong>
             </span>
-            <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1">
+            <span className="rounded-full border border-slate-200/80 bg-slate-50 px-3 py-1 dark:border-white/10 dark:bg-white/5">
               Tipo: {type === "all" ? "Todos" : type === "service" ? "Serviços" : "Produtos"}
             </span>
-            <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1">
+            <span className="rounded-full border border-slate-200/80 bg-slate-50 px-3 py-1 dark:border-white/10 dark:bg-white/5">
               Respostas: {Number(summary.responsesCount || 0)}
             </span>
           </CardBody>
@@ -527,10 +537,10 @@ export default function FeedbackReportsPage() {
           <Card className="sm:col-span-2 xl:col-span-3">
             <CardBody className="flex flex-col gap-3 py-5 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <div className="text-sm font-semibold text-zinc-900">
+                <div className="text-sm font-semibold text-slate-900 dark:text-white">
                   Leitura rápida de CX
                 </div>
-                <div className="mt-1 text-sm text-zinc-600">
+                <div className="mt-1 text-sm text-slate-600 dark:text-slate-300">
                   Use esta visão para identificar experiências críticas e clientes que precisam de um retorno humano mais rápido.
                 </div>
               </div>
@@ -563,16 +573,16 @@ export default function FeedbackReportsPage() {
                         <BarChart data={distribution}>
                           <CartesianGrid
                             strokeDasharray="3 3"
-                            stroke="hsl(220,14%,16%)"
+                            stroke={gridColor}
                           />
                           <XAxis
                             dataKey="rating"
-                            tick={{ fontSize: 11, fill: "#94a3b8" }}
+                            tick={{ fontSize: 11, fill: axisColor }}
                             axisLine={false}
                             tickLine={false}
                           />
                           <YAxis
-                            tick={{ fontSize: 11, fill: "#94a3b8" }}
+                            tick={{ fontSize: 11, fill: axisColor }}
                             axisLine={false}
                             tickLine={false}
                             width={35}
@@ -585,7 +595,7 @@ export default function FeedbackReportsPage() {
                           <Bar
                             dataKey="count"
                             name="Respostas"
-                            fill="#2563eb"
+                            fill={distributionBarColor}
                             radius={[8, 8, 0, 0]}
                           />
                         </BarChart>
@@ -609,17 +619,17 @@ export default function FeedbackReportsPage() {
                         <LineChart data={trend}>
                           <CartesianGrid
                             strokeDasharray="3 3"
-                            stroke="hsl(220,14%,16%)"
+                            stroke={gridColor}
                           />
                           <XAxis
                             dataKey="label"
-                            tick={{ fontSize: 11, fill: "#94a3b8" }}
+                            tick={{ fontSize: 11, fill: axisColor }}
                             axisLine={false}
                             tickLine={false}
                           />
                           <YAxis
                             domain={[0, 5]}
-                            tick={{ fontSize: 11, fill: "#94a3b8" }}
+                            tick={{ fontSize: 11, fill: axisColor }}
                             axisLine={false}
                             tickLine={false}
                             width={35}
@@ -635,7 +645,7 @@ export default function FeedbackReportsPage() {
                             type="monotone"
                             dataKey="averageRating"
                             name="Nota média"
-                            stroke="#14b8a6"
+                            stroke={trendLineColor}
                             strokeWidth={2.5}
                             dot={{ r: 2 }}
                             activeDot={{ r: 4 }}

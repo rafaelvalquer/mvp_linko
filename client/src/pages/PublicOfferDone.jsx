@@ -310,7 +310,7 @@ export default function PublicOfferDone() {
           <div className={heroCard}>
             <div className="relative space-y-5">
               <div className="flex items-center gap-3">
-                <img src={brand} alt="Luminor Pay" className="h-11 w-11 rounded-2xl object-cover" />
+                <img src={brand} alt="LuminorPay" className="h-11 w-11 rounded-2xl object-cover" />
                 <div>
                   <p className={cls("text-xs font-semibold uppercase tracking-[0.28em]", isDark ? "text-sky-200/80" : "text-sky-700/80")}>
                     Resumo final
@@ -429,7 +429,7 @@ export default function PublicOfferDone() {
           <div className="relative space-y-5">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="flex min-w-0 items-center gap-3">
-                <img src={brand} alt="Luminor Pay" className="h-11 w-11 rounded-2xl object-cover shadow-sm" />
+                <img src={brand} alt="LuminorPay" className="h-11 w-11 rounded-2xl object-cover shadow-sm" />
                 <div className="min-w-0">
                   <p
                     className={cls(
@@ -451,7 +451,7 @@ export default function PublicOfferDone() {
                 Seu resumo final esta pronto.
               </h2>
               <p className={cls("max-w-2xl text-sm sm:text-base", isDark ? "text-slate-300" : "text-slate-600")}>
-                Confira o que foi contratado, o valor pago e, se houver agendamento, os dados da sua reserva.
+                Confira o que foi contratado, o valor pago e, se houver agendamento, os dados da sua reserva em um so lugar.
               </p>
             </div>
 
@@ -485,7 +485,7 @@ export default function PublicOfferDone() {
               <NextStepCard
                 icon={ReceiptText}
                 title="Guarde este resumo"
-                description="Esta pagina mostra o valor pago, os identificadores Pix e os dados finais da proposta."
+                description="Esta pagina mostra o valor pago, os identificadores Pix e os dados finais da proposta para consulta segura."
                 tone="slate"
               />
               {isServiceOffer && (booking.id || bookingId) ? (
@@ -506,7 +506,7 @@ export default function PublicOfferDone() {
                 <NextStepCard
                   icon={ShieldCheck}
                   title="Tudo concluido com seguranca"
-                  description="O pagamento ja foi confirmado. Agora voce pode fechar a pagina ou guardar este link para consulta."
+                  description="O pagamento ja foi confirmado. Agora voce pode fechar a pagina ou guardar este link para consulta futura."
                   tone="emerald"
                 />
               )}
@@ -581,7 +581,7 @@ export default function PublicOfferDone() {
                   </div>
                 ) : (
                   <div className={cls("mt-2 text-sm", isDark ? "text-slate-300" : "text-slate-600")}>
-                    O servico foi confirmado com pagamento registrado.
+                    O servico foi confirmado com pagamento registrado nesta proposta.
                   </div>
                 )}
 
@@ -780,7 +780,7 @@ export default function PublicOfferDone() {
             >
               <div className="flex items-start gap-3">
                 <ReceiptText className="mt-0.5 h-5 w-5 shrink-0" />
-                <span>Esta etapa foi concluida. Voce pode fechar esta pagina com seguranca.</span>
+                <span>Esta etapa foi concluida. Voce pode fechar esta pagina ou guardar este link com seguranca.</span>
               </div>
             </div>
           </SurfaceCard>

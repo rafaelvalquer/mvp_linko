@@ -3,7 +3,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { listWorkspaceUsers } from "../app/authApi.js";
 import { useAuth } from "../app/AuthContext.jsx";
-import useThemeToggle from "../app/useThemeToggle.js";
 import { cancelBooking, listBookings } from "../app/bookingsApi.js";
 import { getSettings } from "../app/settingsApi.js";
 import Badge from "../components/appui/Badge.jsx";
@@ -29,9 +28,12 @@ import Shell from "../components/layout/Shell.jsx";
 
 function renderLoadError(err, onRetry) {
   return (
-    <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-      {err}{" "}
-      <button className="ml-2 font-semibold underline" onClick={onRetry}>
+    <div className="surface-quiet rounded-2xl border border-rose-200/80 px-4 py-3 text-sm text-rose-700 dark:border-rose-400/20 dark:text-rose-200">
+      <span>{err}</span>
+      <button
+        className="ml-2 font-semibold underline underline-offset-2"
+        onClick={onRetry}
+      >
         Tentar novamente
       </button>
     </div>
@@ -41,7 +43,6 @@ function renderLoadError(err, onRetry) {
 export default function Calendar() {
   const nav = useNavigate();
   const { signOut, perms, user } = useAuth();
-  const { isDark } = useThemeToggle();
   const initialOwnerTeamCalendar =
     perms?.isWorkspaceOwner === true && perms?.isWorkspaceTeamPlan === true;
 
@@ -70,9 +71,7 @@ export default function Calendar() {
   const isOwnerTeamCalendar =
     perms?.isWorkspaceOwner === true && perms?.isWorkspaceTeamPlan === true;
   const canAccessAgendaSettings = perms?.modules?.settings === true;
-  const selectClass = isDark
-    ? "h-10 w-full rounded-2xl border border-white/10 bg-white/6 px-3 text-sm text-slate-100 outline-none transition focus:border-cyan-400/30 focus:ring-2 focus:ring-cyan-400/20"
-    : "h-10 w-full rounded-2xl border border-slate-200/80 bg-white/92 px-3 text-sm text-slate-900 outline-none transition focus:border-cyan-300 focus:ring-2 focus:ring-cyan-500/30";
+  const selectClass = "app-field h-10 w-full rounded-2xl px-3";
 
   const { fromIso, toIso, title } = useMemo(() => {
     const start = new Date(`${day}T00:00:00`);
@@ -395,7 +394,7 @@ export default function Calendar() {
       return (
         <div className="hidden xl:col-span-4 xl:block">
           <div className="xl:ml-auto xl:w-full xl:max-w-[420px] 2xl:max-w-[460px]">
-            <Card>
+            <Card variant="quiet">
               <CardHeader
                 title="Calendario do dia"
                 subtitle={`Overview rapido do dia. Fuso ativo: ${agendaTimeZone}`}
@@ -413,14 +412,14 @@ export default function Calendar() {
 
     return (
       <div className="xl:hidden">
-        <Card>
+        <Card variant="quiet">
           <CardHeader
             title="Calendario do dia"
             subtitle={`Preview compacto do dia. Fuso ativo: ${agendaTimeZone}`}
             right={
               <button
                 type="button"
-                className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/80 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-[0_14px_28px_-22px_rgba(15,23,42,0.18)] transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
+                className="surface-quiet inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-950 dark:text-slate-200 dark:hover:text-white"
                 aria-expanded={expanded}
                 aria-controls="calendar-day-accordion"
                 onClick={() => setCalendarExpanded((current) => !current)}
@@ -511,7 +510,7 @@ export default function Calendar() {
                 return (
                   <div
                     key={booking._id}
-                    className="rounded-xl border border-slate-200/80 bg-white/85 p-3 dark:border-white/10 dark:bg-white/[0.03]"
+                    className="surface-quiet rounded-2xl px-4 py-3"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -652,11 +651,11 @@ export default function Calendar() {
           }
           summary={
             <>
-              <Badge tone={agendaScopeTab === "workspace" ? "PUBLIC" : "DRAFT"}>
+              <Badge tone="NEUTRAL">
                 {scopeBadgeLabel}
               </Badge>
-              <Badge tone="DRAFT">{title}</Badge>
-              <Badge tone="PUBLIC">{summary.total} no filtro</Badge>
+              <Badge tone="NEUTRAL">{title}</Badge>
+              <Badge tone="NEUTRAL">{summary.total} no filtro</Badge>
               <Badge tone="CONFIRMED">{summary.confirmed} confirmados</Badge>
               <Badge tone="HOLD">{summary.hold} reservas</Badge>
             </>
@@ -785,7 +784,7 @@ export default function Calendar() {
         </FilterBar>
 
         {showResponsibleDetails ? (
-          <Card>
+          <Card variant="quiet">
             <CardHeader
               title="Equipe no periodo"
               subtitle="Resumo rapido por responsavel para o filtro e intervalo atuais."
@@ -796,7 +795,7 @@ export default function Calendar() {
                   {responsibleSummary.map((entry) => (
                     <div
                       key={entry.key}
-                      className="rounded-2xl border border-slate-200/80 bg-white/90 p-3 dark:border-white/10 dark:bg-white/[0.04]"
+                      className="surface-quiet rounded-2xl px-4 py-3"
                     >
                       <div className="text-sm font-semibold text-slate-900 dark:text-white">
                         {entry.name}
@@ -805,7 +804,7 @@ export default function Calendar() {
                         {entry.total} agendamento{entry.total === 1 ? "" : "s"} no periodo
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
-                        <Badge tone="PUBLIC">{entry.total} total</Badge>
+                        <Badge tone="NEUTRAL">{entry.total} total</Badge>
                         <Badge tone="CONFIRMED">{entry.confirmed} confirmados</Badge>
                         <Badge tone="HOLD">{entry.hold} reservas</Badge>
                       </div>

@@ -1,6 +1,15 @@
 // src/pages/BillingPlans.jsx
-import { useState } from "react";
+import { Check, CreditCard, ShieldCheck, Sparkles } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+
 import { api } from "../app/api.js";
+import { useAuth } from "../app/AuthContext.jsx";
+import Badge from "../components/appui/Badge.jsx";
+import Button from "../components/appui/Button.jsx";
+import Card, { CardBody } from "../components/appui/Card.jsx";
+import PageHeader from "../components/appui/PageHeader.jsx";
+import Shell from "../components/layout/Shell.jsx";
 
 const PLANS = [
   {
