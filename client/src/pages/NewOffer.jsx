@@ -1316,6 +1316,10 @@ export default function NewOffer() {
       ? "Criar recorrencia"
       : "Gerar link";
 
+  const summaryStackRowClass =
+    "flex flex-col items-start gap-1.5 text-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3";
+  const summaryKeyValueClass =
+    "flex flex-col items-start gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3";
   const conditionRowClass =
     "flex flex-col gap-3 rounded-xl border p-3 sm:flex-row sm:items-start sm:justify-between";
   const conditionToggleClass =
@@ -1347,7 +1351,9 @@ export default function NewOffer() {
     return (
       <div
         className={[
-          embedded ? "space-y-3" : "surface-panel space-y-3 px-4 py-4",
+          embedded
+            ? "space-y-3"
+            : "surface-panel space-y-3.5 px-3.5 py-3.5 sm:px-4 sm:py-4",
           className,
         ].join(" ")}
       >
@@ -1359,10 +1365,12 @@ export default function NewOffer() {
           </div>
         ) : null}
 
-        <div className="grid gap-2">
+        <div className="grid gap-3">
           <Button
             variant="secondary"
+            size="lg"
             type="button"
+            className="w-full justify-center rounded-2xl"
             onClick={() =>
               setForm((p) => ({
                 ...p,
@@ -1389,7 +1397,7 @@ export default function NewOffer() {
 
   return (
     <Shell>
-      <div className="mx-auto max-w-[1380px] space-y-5">
+      <div className="mx-auto w-full max-w-[1380px] space-y-4 sm:space-y-5">
         <PageHeader
           eyebrow="Nova venda"
           title="Nova proposta"
@@ -1406,16 +1414,16 @@ export default function NewOffer() {
           }
         />
 
-        <form onSubmit={onSubmit} className="space-y-5">
-          <div className="grid gap-6 lg:grid-cols-12 lg:items-start">
-            <div className="space-y-4 lg:col-span-8 2xl:col-span-9">
+        <form onSubmit={onSubmit} className="space-y-4 sm:space-y-5">
+          <div className="grid gap-4 lg:grid-cols-12 lg:items-start lg:gap-6">
+            <div className="space-y-3 sm:space-y-4 lg:col-span-8 2xl:col-span-9">
               {canUseRecurringFeatures ? (
                 <Card>
                   <CardHeader
                     title="Tipo de criação"
                     subtitle="Escolha se deseja gerar uma proposta avulsa ou configurar uma cobrança recorrente."
                   />
-                  <CardBody className="space-y-4">
+                  <CardBody className="space-y-4 px-4 py-4 sm:px-5">
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <button
                         type="button"
@@ -1425,7 +1433,7 @@ export default function NewOffer() {
                             creationMode: "single",
                           }))
                         }
-                        className={`rounded-2xl border p-4 text-left transition-colors ${
+                        className={`rounded-2xl border p-5 text-left transition-colors sm:p-4 ${
                           form.creationMode === "single"
                             ? "border-emerald-300 bg-emerald-50"
                             : "border-zinc-200 bg-white hover:bg-zinc-50"
@@ -1448,7 +1456,7 @@ export default function NewOffer() {
                             creationMode: "recurring",
                           }))
                         }
-                        className={`rounded-2xl border p-4 text-left transition-colors ${
+                        className={`rounded-2xl border p-5 text-left transition-colors sm:p-4 ${
                           form.creationMode === "recurring"
                             ? "border-emerald-300 bg-emerald-50"
                             : "border-zinc-200 bg-white hover:bg-zinc-50"
@@ -2991,7 +2999,7 @@ export default function NewOffer() {
                   {/* Coluna: Sinal */}
                   <div className="sm:col-span-6">
                     <div className="h-full rounded-2xl border bg-white p-4">
-                      <div className="flex items-center justify-between gap-3">
+                      <div className={summaryKeyValueClass}>
                         <div>
                           <div className="text-xs font-semibold text-zinc-600">
                             Cobrar sinal?
@@ -3118,7 +3126,7 @@ export default function NewOffer() {
               </div>
             </div>
 
-            <div className="col-span-12 h-fit self-start space-y-4 lg:sticky lg:top-4 2xl:col-span-3">
+            <div className="-mx-1 col-span-12 h-fit self-start space-y-3 sm:mx-0 sm:space-y-4 lg:sticky lg:top-4 2xl:col-span-3">
               <SummaryAside
                 title={
                   isRecurring ? "Resumo da recorrencia" : "Resumo da proposta"
@@ -3192,7 +3200,7 @@ export default function NewOffer() {
                 </div>
 
                 <div className="grid gap-2">
-                  <div className="surface-quiet flex items-center justify-between gap-3 px-4 py-3">
+                  <div className="surface-quiet flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
                         Total
@@ -3201,7 +3209,7 @@ export default function NewOffer() {
                         {formatBRL(calc.totalCents)}
                       </div>
                     </div>
-                    <div className="text-right text-xs text-slate-500 dark:text-slate-400">
+                    <div className="text-left text-xs text-slate-500 dark:text-slate-400 sm:text-right">
                       {isProduct
                         ? `${form.items?.length || 0} item(ns)`
                         : "Servico avulso"}
@@ -3209,41 +3217,41 @@ export default function NewOffer() {
                   </div>
 
                   <div className="surface-quiet grid gap-3 px-4 py-3 sm:grid-cols-2 lg:grid-cols-1">
-                    <div className="flex items-center justify-between gap-3 text-sm">
+                    <div className={summaryStackRowClass}>
                       <span className="text-slate-500 dark:text-slate-400">
                         Desconto
                       </span>
-                      <span className="font-semibold text-slate-950 dark:text-white">
+                      <span className="font-semibold leading-5 text-slate-950 dark:text-white sm:text-right">
                         {form.discountEnabled
                           ? `-${formatBRL(calc.discountCents)}`
                           : "Nao aplicado"}
                       </span>
                     </div>
-                    <div className="flex items-center justify-between gap-3 text-sm">
+                    <div className={summaryStackRowClass}>
                       <span className="text-slate-500 dark:text-slate-400">
                         Frete
                       </span>
-                      <span className="font-semibold text-slate-950 dark:text-white">
+                      <span className="font-semibold leading-5 text-slate-950 dark:text-white sm:text-right">
                         {form.freightEnabled
                           ? formatBRL(calc.freightCents)
                           : "Nao aplicado"}
                       </span>
                     </div>
-                    <div className="flex items-center justify-between gap-3 text-sm">
+                    <div className={summaryStackRowClass}>
                       <span className="text-slate-500 dark:text-slate-400">
                         Sinal
                       </span>
-                      <span className="font-semibold text-slate-950 dark:text-white">
+                      <span className="font-semibold leading-5 text-slate-950 dark:text-white sm:text-right">
                         {form.depositEnabled
                           ? `${form.depositPct}% • ${formatBRL(calc.depositCents)}`
                           : "Nao cobrar"}
                       </span>
                     </div>
-                    <div className="flex items-center justify-between gap-3 text-sm">
+                    <div className={summaryStackRowClass}>
                       <span className="text-slate-500 dark:text-slate-400">
                         Restante
                       </span>
-                      <span className="font-semibold text-slate-950 dark:text-white">
+                      <span className="font-semibold leading-5 text-slate-950 dark:text-white sm:text-right">
                         {form.depositEnabled
                           ? formatBRL(calc.remainingCents)
                           : formatBRL(calc.totalCents)}
@@ -3256,30 +3264,30 @@ export default function NewOffer() {
                       Condicoes
                     </div>
                     <div className="mt-2 space-y-2 text-sm">
-                      <div className="flex items-center justify-between gap-3">
+                      <div className={summaryKeyValueClass}>
                         <span className="text-slate-500 dark:text-slate-400">
                           Validade
                         </span>
-                        <span className="font-semibold text-slate-950 dark:text-white">
+                        <span className="font-semibold leading-5 text-slate-950 dark:text-white sm:text-right">
                           {form.validityEnabled
                             ? `${form.validityDays} dia(s)`
                             : "Sem prazo informado"}
                         </span>
                       </div>
-                      <div className="flex items-center justify-between gap-3">
+                      <div className={summaryKeyValueClass}>
                         <span className="text-slate-500 dark:text-slate-400">
                           Notificacao WA
                         </span>
-                        <span className="font-semibold text-slate-950 dark:text-white">
+                        <span className="font-semibold leading-5 text-slate-950 dark:text-white sm:text-right">
                           {form.notifyWhatsAppOnPaid ? "Ativa" : "Desativada"}
                         </span>
                       </div>
                       {isRecurring ? (
-                        <div className="flex items-center justify-between gap-3">
+                        <div className={summaryKeyValueClass}>
                           <span className="text-slate-500 dark:text-slate-400">
                             Envio automatico
                           </span>
-                          <span className="font-semibold text-slate-950 dark:text-white">
+                          <span className="font-semibold leading-5 text-slate-950 dark:text-white sm:text-right">
                             {form.recurringAutoSendToCustomer
                               ? "Ativo"
                               : "Manual"}
