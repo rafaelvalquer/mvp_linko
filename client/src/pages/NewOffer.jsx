@@ -1316,6 +1316,11 @@ export default function NewOffer() {
       ? "Criar recorrencia"
       : "Gerar link";
 
+  const conditionRowClass =
+    "flex flex-col gap-3 rounded-xl border p-3 sm:flex-row sm:items-start sm:justify-between";
+  const conditionToggleClass =
+    "flex items-center gap-2 self-start text-sm sm:shrink-0";
+
   function renderValidationAlert() {
     if (!validationIssues.length) return null;
 
@@ -1367,6 +1372,15 @@ export default function NewOffer() {
             }
           >
             Limpar textos
+          </Button>
+
+          <Button
+            type="submit"
+            size="lg"
+            disabled={busy}
+            className="w-full justify-center rounded-2xl"
+          >
+            {primaryActionLabel}
           </Button>
         </div>
       </div>
@@ -1761,8 +1775,263 @@ export default function NewOffer() {
                     subtitle="Adicione itens com quantidade e valor unitário."
                   />
                   <CardBody className="space-y-3">
+                    <div className="space-y-3 sm:hidden">
+                      {(form.items || []).map((it, idx) => {
+                        const line = calc.lines[idx];
+                        const lineTotal = Number.isFinite(line?.lineTotalCents)
+                          ? formatBRL(line.lineTotalCents)
+                          : "--";
+
+                        return (
+                          <div key={idx} className="rounded-xl border p-3">
+                            <div className="space-y-3">
+                              {isPremium ? (
+                                <div className="relative">
+                                  <label className="text-xs font-semibold text-zinc-600">
+                                    Produto (ID)
+                                  </label>
+                                  <Input
+                                    value={it.productId || ""}
+                                    onChange={(e) =>
+                                      updateItem(idx, {
+                                        productId: e.target.value,
+                                      })
+                                    }
+                                    onFocus={() => {
+                                      setActiveProd({ idx, mode: "id" });
+                                      setProdOpen(true);
+                                    }}
+                                    onBlur={() =>
+                                      setTimeout(() => setProdOpen(false), 120)
+                                    }
+                                    placeholder="ID"
+                                  />
+
+                                  {prodOpen &&
+                                  activeProd?.idx === idx &&
+                                  activeProd?.mode === "id" ? (
+                                    <div className="absolute z-[80] mt-1 w-full overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl">
+                                      <div className="flex items-center justify-between border-b border-zinc-100 px-3 py-2 text-xs text-zinc-500">
+                                        <span>Produtos</span>
+                                        {prodLoading ? (
+                                          <span className="animate-pulse">
+                                            Buscando...
+                                          </span>
+                                        ) : null}
+                                      </div>
+                                      <div className="max-h-80 overflow-auto">
+                                        {(prodHits || []).length ? (
+                                          (prodHits || [])
+                                            .slice(0, 20)
+                                            .map((p) => {
+                                              const pid =
+                                                p?.productId || p?.id || "";
+                                              const name =
+                                                p?.name ||
+                                                p?.title ||
+                                                p?.description ||
+                                                "--";
+                                              const key =
+                                                p?._id ||
+                                                p?.id ||
+                                                `${pid}-${name}`;
+                                              return (
+                                                <button
+                                                  key={key}
+                                                  type="button"
+                                                  onMouseDown={(e) =>
+                                                    e.preventDefault()
+                                                  }
+                                                  onClick={() =>
+                                                    pickProductForLine(idx, p)
+                                                  }
+                                                  className="w-full px-3 py-2 text-left hover:bg-zinc-50"
+                                                >
+                                                  <div className="break-words text-sm font-semibold text-zinc-900">
+                                                    {pid ? (
+                                                      <span className="mr-2 font-mono text-zinc-600">
+                                                        {pid}
+                                                      </span>
+                                                    ) : null}
+                                                    {name}
+                                                  </div>
+                                                  <div className="text-xs text-zinc-500">
+                                                    {formatBRL(
+                                                      Number(p?.priceCents) || 0,
+                                                    )}
+                                                  </div>
+                                                </button>
+                                              );
+                                            })
+                                        ) : (
+                                          <div className="px-3 py-3 text-sm text-zinc-500">
+                                            {prodLoading
+                                              ? "Buscando produtos..."
+                                              : "Nenhum produto encontrado."}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              ) : null}
+
+                              <div className="relative">
+                                <label className="text-xs font-semibold text-zinc-600">
+                                  Descrição
+                                </label>
+                                <Input
+                                  value={it.description}
+                                  onChange={(e) =>
+                                    updateItem(idx, {
+                                      description: e.target.value,
+                                    })
+                                  }
+                                  onFocus={() => {
+                                    if (isPremium) {
+                                      setActiveProd({ idx, mode: "name" });
+                                      setProdOpen(true);
+                                    }
+                                  }}
+                                  onBlur={() =>
+                                    setTimeout(() => setProdOpen(false), 120)
+                                  }
+                                  placeholder="Ex.: Parafuso inox 10mm"
+                                />
+
+                                {isPremium &&
+                                prodOpen &&
+                                activeProd?.idx === idx &&
+                                activeProd?.mode === "name" ? (
+                                  <div className="absolute z-[80] mt-1 w-full overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl">
+                                    <div className="flex items-center justify-between border-b border-zinc-100 px-3 py-2 text-xs text-zinc-500">
+                                      <span>Produtos</span>
+                                      {prodLoading ? (
+                                        <span className="animate-pulse">
+                                          Buscando...
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                    <div className="max-h-80 overflow-auto">
+                                      {(prodHits || []).length ? (
+                                        (prodHits || [])
+                                          .slice(0, 20)
+                                          .map((p) => {
+                                            const pid =
+                                              p?.productId || p?.id || "";
+                                            const name =
+                                              p?.name ||
+                                              p?.title ||
+                                              p?.description ||
+                                              "--";
+                                            const key =
+                                              p?._id ||
+                                              p?.id ||
+                                              `${pid}-${name}`;
+                                            return (
+                                              <button
+                                                key={key}
+                                                type="button"
+                                                onMouseDown={(e) =>
+                                                  e.preventDefault()
+                                                }
+                                                onClick={() =>
+                                                  pickProductForLine(idx, p)
+                                                }
+                                                className="w-full px-3 py-2 text-left hover:bg-zinc-50"
+                                              >
+                                                <div className="break-words text-sm font-semibold text-zinc-900">
+                                                  {name}
+                                                </div>
+                                                <div className="flex gap-2 text-xs text-zinc-500">
+                                                  {pid ? (
+                                                    <span className="font-mono">
+                                                      {pid}
+                                                    </span>
+                                                  ) : null}
+                                                  <span>
+                                                    {formatBRL(
+                                                      Number(p?.priceCents) || 0,
+                                                    )}
+                                                  </span>
+                                                </div>
+                                              </button>
+                                            );
+                                          })
+                                      ) : (
+                                        <div className="px-3 py-3 text-sm text-zinc-500">
+                                          {prodLoading
+                                            ? "Buscando produtos..."
+                                            : "Nenhum produto encontrado."}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                ) : null}
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <label className="text-xs font-semibold text-zinc-600">
+                                    Qtd
+                                  </label>
+                                  <Input
+                                    type="number"
+                                    min={1}
+                                    inputMode="numeric"
+                                    value={it.qtyInput ?? String(it.qty ?? 1)}
+                                    onFocus={(e) =>
+                                      handleItemQtyFocus(idx, e)
+                                    }
+                                    onChange={(e) =>
+                                      handleItemQtyChange(idx, e.target.value)
+                                    }
+                                    onBlur={() => handleItemQtyBlur(idx)}
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-xs font-semibold text-zinc-600">
+                                    Valor unitário
+                                  </label>
+                                  <Input
+                                    value={it.unitPrice}
+                                    onChange={(e) =>
+                                      updateItem(idx, {
+                                        unitPrice: e.target.value,
+                                      })
+                                    }
+                                    placeholder="10,50"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-between gap-3 rounded-xl bg-zinc-50 px-3 py-3">
+                                <div>
+                                  <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500">
+                                    Total do item
+                                  </div>
+                                  <div className="mt-1 text-sm font-semibold text-zinc-900">
+                                    {lineTotal}
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  className="rounded-lg px-3 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-100"
+                                  onClick={() => removeItem(idx)}
+                                  aria-label={`Remover item ${idx + 1}`}
+                                  title="Remover"
+                                >
+                                  Remover
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
                     {/* antes era: <div className="overflow-auto rounded-xl border"> */}
-                    <div className="rounded-xl border">
+                    <div className="hidden rounded-xl border sm:block">
                       {/* permite scroll horizontal sem cortar o dropdown na vertical */}
                       <div className="overflow-x-auto overflow-y-visible">
                         {/* dá “respiro” extra para o dropdown */}
@@ -1813,7 +2082,7 @@ export default function NewOffer() {
                                       {prodOpen &&
                                       activeProd?.idx === idx &&
                                       activeProd?.mode === "id" ? (
-                                        <div className="absolute z-[80] mt-1 w-[520px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl">
+                                        <div className="absolute z-[80] mt-1 w-full sm:w-[520px] sm:max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl">
                                           <div className="px-3 py-2 text-xs text-zinc-500 border-b border-zinc-100 flex items-center justify-between">
                                             <span>Produtos</span>
                                             {prodLoading ? (
@@ -1918,7 +2187,7 @@ export default function NewOffer() {
                                     prodOpen &&
                                     activeProd?.idx === idx &&
                                     activeProd?.mode === "name" ? (
-                                      <div className="absolute z-[80] mt-1 w-full min-w-[520px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl">
+                                      <div className="absolute z-[80] mt-1 w-full sm:min-w-[520px] sm:max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl">
                                         <div className="px-3 py-2 text-xs text-zinc-500 border-b border-zinc-100 flex items-center justify-between">
                                           <span>Produtos</span>
                                           {prodLoading ? (
@@ -2111,7 +2380,7 @@ export default function NewOffer() {
                   {/* ✅ duração estimada (somente service) */}
                   {!isProduct ? (
                     <>
-                      <div className="flex items-start justify-between gap-3 rounded-xl border p-3">
+                      <div className={conditionRowClass}>
                         <div>
                           <div className="text-sm font-semibold text-zinc-900">
                             Duração estimada
@@ -2121,7 +2390,7 @@ export default function NewOffer() {
                             habilitar.
                           </div>
                         </div>
-                        <label className="flex items-center gap-2 text-sm">
+                        <label className={conditionToggleClass}>
                           <input
                             type="checkbox"
                             checked={!!form.durationEnabled}
@@ -2167,7 +2436,7 @@ export default function NewOffer() {
                   ) : null}
 
                   {/* validade */}
-                  <div className="flex items-start justify-between gap-3 rounded-xl border p-3">
+                  <div className={conditionRowClass}>
                     <div>
                       <div className="text-sm font-semibold text-zinc-900">
                         Validade da proposta
@@ -2176,7 +2445,7 @@ export default function NewOffer() {
                         Ex.: válida por 7 dias.
                       </div>
                     </div>
-                    <label className="flex items-center gap-2 text-sm">
+                    <label className={conditionToggleClass}>
                       <input
                         type="checkbox"
                         checked={form.validityEnabled}
@@ -2219,7 +2488,7 @@ export default function NewOffer() {
                   ) : null}
 
                   {/* prazo */}
-                  <div className="flex items-start justify-between gap-3 rounded-xl border p-3">
+                  <div className={conditionRowClass}>
                     <div>
                       <div className="text-sm font-semibold text-zinc-900">
                         Prazo de entrega
@@ -2228,7 +2497,7 @@ export default function NewOffer() {
                         Ex.: 3 dias úteis após pagamento.
                       </div>
                     </div>
-                    <label className="flex items-center gap-2 text-sm">
+                    <label className={conditionToggleClass}>
                       <input
                         type="checkbox"
                         checked={form.deliveryEnabled}
@@ -2258,7 +2527,7 @@ export default function NewOffer() {
                   ) : null}
 
                   {/* garantia */}
-                  <div className="flex items-start justify-between gap-3 rounded-xl border p-3">
+                  <div className={conditionRowClass}>
                     <div>
                       <div className="text-sm font-semibold text-zinc-900">
                         Garantia
@@ -2267,7 +2536,7 @@ export default function NewOffer() {
                         Ex.: 90 dias para defeitos de fabricação.
                       </div>
                     </div>
-                    <label className="flex items-center gap-2 text-sm">
+                    <label className={conditionToggleClass}>
                       <input
                         type="checkbox"
                         checked={form.warrantyEnabled}
@@ -2297,7 +2566,7 @@ export default function NewOffer() {
                   ) : null}
 
                   {/* observações */}
-                  <div className="flex items-start justify-between gap-3 rounded-xl border p-3">
+                  <div className={conditionRowClass}>
                     <div>
                       <div className="text-sm font-semibold text-zinc-900">
                         Observações/condições
@@ -2306,7 +2575,7 @@ export default function NewOffer() {
                         Ex.: política de cancelamento, tolerância etc.
                       </div>
                     </div>
-                    <label className="flex items-center gap-2 text-sm">
+                    <label className={conditionToggleClass}>
                       <input
                         type="checkbox"
                         checked={form.notesEnabled}
@@ -2334,7 +2603,7 @@ export default function NewOffer() {
                   ) : null}
 
                   {/* desconto */}
-                  <div className="flex items-start justify-between gap-3 rounded-xl border p-3">
+                  <div className={conditionRowClass}>
                     <div>
                       <div className="text-sm font-semibold text-zinc-900">
                         Desconto
@@ -2343,7 +2612,7 @@ export default function NewOffer() {
                         Aplicado no total base.
                       </div>
                     </div>
-                    <label className="flex items-center gap-2 text-sm">
+                    <label className={conditionToggleClass}>
                       <input
                         type="checkbox"
                         checked={form.discountEnabled}
@@ -2394,7 +2663,7 @@ export default function NewOffer() {
                   ) : null}
 
                   {/* frete */}
-                  <div className="flex items-start justify-between gap-3 rounded-xl border p-3">
+                  <div className={conditionRowClass}>
                     <div>
                       <div className="text-sm font-semibold text-zinc-900">
                         Frete
@@ -2403,7 +2672,7 @@ export default function NewOffer() {
                         Adicionado ao total final.
                       </div>
                     </div>
-                    <label className="flex items-center gap-2 text-sm">
+                    <label className={conditionToggleClass}>
                       <input
                         type="checkbox"
                         checked={form.freightEnabled}
@@ -2849,7 +3118,7 @@ export default function NewOffer() {
               </div>
             </div>
 
-            <div className="space-y-4 col-span-12 h-fit self-start sticky top-4 2xl:col-span-3">
+            <div className="col-span-12 h-fit self-start space-y-4 lg:sticky lg:top-4 2xl:col-span-3">
               <SummaryAside
                 title={
                   isRecurring ? "Resumo da recorrencia" : "Resumo da proposta"
