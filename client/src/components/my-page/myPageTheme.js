@@ -186,11 +186,29 @@ const BUTTON_ICON_RADIUS_CLASSNAMES = {
   rounded: "rounded-[18px]",
   pill: "rounded-full",
 };
+const MY_PAGE_API_BASE =
+  import.meta.env.VITE_API_BASE || "http://localhost:8011/api";
 
 const MY_PAGE_DESIGN_KEYS = Object.keys(MY_PAGE_DESIGN_DEFAULTS);
 
 function escapeCssUrl(value) {
   return String(value || "").replace(/["\\\n\r]/g, "\\$&");
+}
+
+export function resolveMyPageMediaUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (
+    /^https?:\/\//i.test(raw) ||
+    raw.startsWith("data:") ||
+    raw.startsWith("blob:")
+  ) {
+    return raw;
+  }
+
+  const base = String(MY_PAGE_API_BASE || "").replace(/\/api\/?$/i, "");
+  if (!base) return raw;
+  return `${base}${raw.startsWith("/") ? raw : `/${raw}`}`;
 }
 
 function valueFromOptions(value, options, fallback) {
@@ -316,7 +334,7 @@ function buildHeroMediaStyle(theme, imageUrl) {
 export function getMyPageTheme(pageOrDesign = {}) {
   const { design: rawDesign, coverStyle, avatarUrl: rawAvatarUrl } =
     resolveThemeSource(pageOrDesign);
-  const avatarUrl = String(rawAvatarUrl || "").trim();
+  const avatarUrl = resolveMyPageMediaUrl(rawAvatarUrl);
   const design = normalizeMyPageDesign(rawDesign || {}, coverStyle || "ocean");
   const preset = THEME_PRESETS[design.themePreset] || THEME_PRESETS.ocean;
   const accent = ACCENT_PALETTES[design.accentPalette] || ACCENT_PALETTES.sky;

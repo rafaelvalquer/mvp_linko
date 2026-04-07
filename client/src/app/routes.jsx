@@ -41,7 +41,7 @@ import SettingsAgenda from "../pages/SettingsAgenda.jsx";
 import SettingsNotifications from "../pages/SettingsNotifications.jsx";
 import SettingsTeam from "../pages/SettingsTeam.jsx";
 import MyPageWorkspace from "../pages/MyPageWorkspace.jsx";
-import MyPageLinksPage from "../pages/MyPageLinksPage.jsx";
+import MyPageLinksPage from "../pages/MyPageLinksEditorPage.jsx";
 import MyPageShopPage from "../pages/MyPageShopPage.jsx";
 import MyPageDesignStudioPage from "../pages/MyPageDesignStudioPage.jsx";
 

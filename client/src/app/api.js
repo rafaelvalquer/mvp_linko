@@ -15,8 +15,12 @@ export async function api(path, opts = {}) {
 
   // Só define Content-Type quando realmente existe body (evita preflight desnecessário em GET)
   const hasBody = opts.body != null;
+  const isFormData =
+    typeof FormData !== "undefined" && opts.body instanceof FormData;
   const hasCT = headers["Content-Type"] || headers["content-type"];
-  if (hasBody && !hasCT) headers["Content-Type"] = "application/json";
+  if (hasBody && !hasCT && !isFormData) {
+    headers["Content-Type"] = "application/json";
+  }
 
   // Authorization (vai gerar preflight, mas normalmente seu backend já permite)
   if (token && !headers.Authorization && !headers.authorization) {

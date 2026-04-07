@@ -90,12 +90,14 @@ function PreviewHeader({ page, theme, eyebrow, studio = false }) {
           <div className={cls("mt-1 font-black", studio ? "text-base" : "text-sm")}>
             {page?.title || "Minha Pagina"}
           </div>
-          <div
-            className={cls("mt-1 leading-5", studio ? "text-sm" : "text-xs")}
-            style={theme.mutedTextStyle}
-          >
-            {page?.subtitle || "Seus principais links comerciais em um so lugar."}
-          </div>
+          {page?.subtitle ? (
+            <div
+              className={cls("mt-1 leading-5", studio ? "text-sm" : "text-xs")}
+              style={theme.mutedTextStyle}
+            >
+              {page.subtitle}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

@@ -1,6 +1,9 @@
 import { randomUUID } from "crypto";
+import fs from "fs";
 import mongoose from "mongoose";
+import path from "path";
 import { Router } from "express";
+import multer from "multer";
 import { MyPage, MY_PAGE_BUTTON_TYPES } from "../models/MyPage.js";
 import { MyPageClick } from "../models/MyPageClick.js";
 import { MyPageQuoteRequest } from "../models/MyPageQuoteRequest.js";
@@ -53,6 +56,25 @@ const MY_PAGE_BACKGROUND_STYLES = ["halo", "mesh", "spotlight"];
 const MY_PAGE_FONT_PRESETS = ["inter", "manrope", "jakarta"];
 const MY_PAGE_BUTTON_STYLES = ["solid", "soft", "outline"];
 const MY_PAGE_BUTTON_RADII = ["square", "rounded", "pill"];
+const MY_PAGE_AVATAR_MODES = ["keep", "upload", "url", "remove"];
+
+const myPageUploadDir = path.resolve(process.cwd(), "uploads", "my-page");
+fs.mkdirSync(myPageUploadDir, { recursive: true });
+
+const myPageAvatarUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, myPageUploadDir),
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname || "").toLowerCase() || ".jpg";
+      cb(null, `${randomUUID().replace(/-/g, "")}${ext}`);
+    },
+  }),
+  limits: { fileSize: 3 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ok = /^image\/(png|jpe?g|webp|gif)$/i.test(file.mimetype || "");
+    cb(ok ? null : new Error("Formato de imagem invalido."), ok);
+  },
+});
 
 function toSlug(value) {
   return String(value || "")
@@ -74,6 +96,20 @@ function sanitizeLongText(value, max = 1500) {
 
 function sanitizeUrl(value) {
   return String(value || "").trim().slice(0, 2000);
+}
+
+function parseMaybeJson(value, fallback) {
+  if (value == null) return fallback;
+  if (typeof value !== "string") return value;
+
+  const trimmed = value.trim();
+  if (!trimmed) return fallback;
+
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return fallback;
+  }
 }
 
 function sanitizePhone(value) {
@@ -252,6 +288,14 @@ function sanitizeEnum(value, allowed, fallback) {
     .trim()
     .toLowerCase();
   return allowed.includes(normalized) ? normalized : fallback;
+}
+
+function maybeUploadMyPageAvatar(req, res, next) {
+  const contentType = String(req.headers["content-type"] || "").toLowerCase();
+  if (!contentType.includes("multipart/form-data")) {
+    return next();
+  }
+  return myPageAvatarUpload.single("avatarFile")(req, res, next);
 }
 
 function sanitizeDesign(design = {}, coverStyle = DEFAULT_COVER_STYLE) {
@@ -1139,18 +1183,48 @@ router.put(
 router.put(
   "/my-page/links",
   requireMyPageSettingsAccess,
+  maybeUploadMyPageAvatar,
   asyncHandler(async (req, res) => {
     const { page } = await loadWorkspacePage(req);
     const nextSlug = await uniqueSlug(req.body?.slug || page.slug, page._id);
+    const hasAvatarMode = Object.prototype.hasOwnProperty.call(
+      req.body || {},
+      "avatarMode",
+    );
+    const avatarMode = sanitizeEnum(
+      req.body?.avatarMode,
+      MY_PAGE_AVATAR_MODES,
+      "keep",
+    );
+    const buttons = parseMaybeJson(req.body?.buttons, req.body?.buttons || []);
+    const socialLinks = parseMaybeJson(
+      req.body?.socialLinks,
+      req.body?.socialLinks || [],
+    );
 
     page.slug = nextSlug;
     page.title = sanitizeText(req.body?.title || page.title, 120) || page.title;
     page.subtitle = sanitizeText(req.body?.subtitle, 160);
     page.description = sanitizeText(req.body?.description, 400);
-    page.avatarUrl = sanitizeUrl(req.body?.avatarUrl);
     page.whatsappPhone = sanitizePhone(req.body?.whatsappPhone);
-    page.buttons = sanitizeButtons(req.body?.buttons, page.whatsappPhone);
-    page.socialLinks = sanitizeSocialLinks(req.body?.socialLinks);
+    page.buttons = sanitizeButtons(buttons, page.whatsappPhone);
+    page.socialLinks = sanitizeSocialLinks(socialLinks);
+
+    if (hasAvatarMode) {
+      if (avatarMode === "remove") {
+        page.avatarUrl = "";
+      } else if (avatarMode === "url") {
+        page.avatarUrl = sanitizeUrl(req.body?.avatarUrl);
+      } else if (avatarMode === "upload") {
+        if (req.file) {
+          page.avatarUrl = `/uploads/my-page/${req.file.filename}`;
+        }
+      }
+    } else if (req.file) {
+      page.avatarUrl = `/uploads/my-page/${req.file.filename}`;
+    } else {
+      page.avatarUrl = sanitizeUrl(req.body?.avatarUrl);
+    }
 
     await page.save();
     return res.json({ ok: true, page: serializePage(page) });

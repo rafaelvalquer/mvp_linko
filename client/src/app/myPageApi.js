@@ -12,6 +12,41 @@ export function saveMyPage(payload) {
 }
 
 export function saveMyPageLinks(payload) {
+  const avatarMode = String(payload?.avatarMode || "").trim().toLowerCase();
+  const avatarFile = payload?.avatarFile || null;
+  const hasAvatarFile =
+    typeof File !== "undefined" && avatarFile instanceof File;
+  const shouldUseFormData =
+    hasAvatarFile ||
+    avatarMode === "upload" ||
+    avatarMode === "url" ||
+    avatarMode === "remove";
+
+  if (shouldUseFormData) {
+    const formData = new FormData();
+    formData.set("slug", payload?.slug || "");
+    formData.set("title", payload?.title || "");
+    formData.set("subtitle", payload?.subtitle || "");
+    formData.set("description", payload?.description || "");
+    formData.set("whatsappPhone", payload?.whatsappPhone || "");
+    formData.set("buttons", JSON.stringify(payload?.buttons || []));
+    formData.set("socialLinks", JSON.stringify(payload?.socialLinks || []));
+    formData.set("avatarMode", avatarMode || "keep");
+
+    if (avatarMode === "url") {
+      formData.set("avatarUrl", payload?.avatarUrl || "");
+    }
+
+    if (hasAvatarFile) {
+      formData.set("avatarFile", avatarFile);
+    }
+
+    return api("/my-page/links", {
+      method: "PUT",
+      body: formData,
+    });
+  }
+
   return api("/my-page/links", {
     method: "PUT",
     body: JSON.stringify(payload),

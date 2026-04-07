@@ -1,6 +1,17 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Check, Copy, Eye, Globe2, LayoutPanelTop, Paintbrush2, Store } from "lucide-react";
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Check,
+  Copy,
+  Globe2,
+  LayoutPanelTop,
+  Paintbrush2,
+  QrCode,
+  Share2,
+  Store,
+  X,
+} from "lucide-react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { QRCodeCanvas } from "qrcode.react";
 import Shell from "../components/layout/Shell.jsx";
 import PageHeader from "../components/appui/PageHeader.jsx";
 import Card, { CardBody, CardHeader } from "../components/appui/Card.jsx";
@@ -8,6 +19,7 @@ import Button from "../components/appui/Button.jsx";
 import Badge from "../components/appui/Badge.jsx";
 import Skeleton from "../components/appui/Skeleton.jsx";
 import EmptyState from "../components/appui/EmptyState.jsx";
+import ModalShell from "../components/appui/ModalShell.jsx";
 import {
   getMyPage,
   getMyPageAnalytics,
@@ -20,14 +32,14 @@ const MY_PAGE_TABS = [
     key: "links",
     to: "/my-page/links",
     label: "Links",
-    description: "Identidade, CTAs principais e links secundários.",
+    description: "Identidade, CTAs principais e links secundarios.",
     icon: LayoutPanelTop,
   },
   {
     key: "shop",
     to: "/my-page/shop",
     label: "Shop",
-    description: "Escolha os produtos que entram no catálogo público.",
+    description: "Escolha os produtos que entram no catalogo publico.",
     icon: Store,
   },
   {
@@ -40,15 +52,16 @@ const MY_PAGE_TABS = [
 ];
 
 const PREVIEW_MODES = [
-  { key: "home", label: "Página" },
-  { key: "catalog", label: "Catálogo" },
-  { key: "quote", label: "Orçamento" },
+  { key: "home", label: "Pagina" },
+  { key: "catalog", label: "Catalogo" },
+  { key: "quote", label: "Orcamento" },
   { key: "schedule", label: "Agenda" },
   { key: "pay", label: "Pagamento" },
 ];
 
 function TabCard({ tab }) {
   const Icon = tab.icon;
+
   return (
     <NavLink
       to={tab.to}
@@ -76,6 +89,10 @@ function TabCard({ tab }) {
   );
 }
 
+function displayPublicUrl(value) {
+  return String(value || "").replace(/^https?:\/\//i, "");
+}
+
 export default function MyPageWorkspace() {
   const location = useLocation();
   const [loading, setLoading] = useState(true);
@@ -86,6 +103,7 @@ export default function MyPageWorkspace() {
   const [err, setErr] = useState("");
   const [publishing, setPublishing] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
   const [previewMode, setPreviewMode] = useState("home");
 
   const loadPage = useCallback(async () => {
@@ -123,11 +141,18 @@ export default function MyPageWorkspace() {
     return `${window.location.origin}/u/${page.slug}`;
   }, [page?.slug]);
 
+  const publicUrlLabel = useMemo(
+    () => displayPublicUrl(publicUrl),
+    [publicUrl],
+  );
+
   const effectivePreviewPage = useMemo(
     () => previewPage || page || {},
     [page, previewPage],
   );
+
   const isDesignRoute = location.pathname === "/my-page/design";
+
   const outletContext = useMemo(
     () => ({
       page,
@@ -192,37 +217,8 @@ export default function MyPageWorkspace() {
       <div className="mx-auto max-w-[1380px] space-y-5">
         <PageHeader
           eyebrow="Link na bio"
-          title="Minha Página"
-          subtitle="Organize seus links, curadoria do shop e o visual completo da sua página comercial pública."
-          actions={
-            <>
-              <Button variant="secondary" type="button" onClick={handleCopy}>
-                {copied ? (
-                  <>
-                    <Check className="h-4 w-4" />
-                    Link copiado
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-4 w-4" />
-                    Copiar link
-                  </>
-                )}
-              </Button>
-              {publicUrl ? (
-                <Button
-                  variant="secondary"
-                  type="button"
-                  onClick={() =>
-                    window.open(publicUrl, "_blank", "noopener,noreferrer")
-                  }
-                >
-                  <Eye className="h-4 w-4" />
-                  Abrir página
-                </Button>
-              ) : null}
-            </>
-          }
+          title="Minha Pagina"
+          subtitle="Organize seus links, curadoria do shop e o visual completo da sua pagina comercial publica."
         />
 
         {err ? (
@@ -245,148 +241,261 @@ export default function MyPageWorkspace() {
           <Outlet context={outletContext} />
         ) : (
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_380px]">
-          <div className="space-y-5">
-            <Outlet context={outletContext} />
-          </div>
+            <div className="space-y-5">
+              <Outlet context={outletContext} />
+            </div>
 
             <div className="space-y-5 xl:sticky xl:top-4 xl:self-start">
-            <Card>
-              <CardHeader
-                title="Publicação"
-                subtitle="Controle o link público e acompanhe o status da sua página."
-                right={
-                  <Badge tone={page?.isPublished ? "PAID" : "DRAFT"}>
-                    {page?.isPublished ? "Publicada" : "Rascunho"}
-                  </Badge>
-                }
-              />
-              <CardBody className="space-y-4">
-                <div className="rounded-[24px] border border-slate-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-white/5">
-                  <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                    Link público
-                  </div>
-                  <div className="mt-2 break-all text-sm font-medium text-slate-700 dark:text-slate-100">
-                    {publicUrl || "Defina um slug em Links para gerar sua URL."}
-                  </div>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    disabled={publishing}
-                    onClick={() => handleTogglePublish(!page?.isPublished)}
-                  >
-                    {page?.isPublished ? "Despublicar" : "Publicar página"}
-                  </Button>
-                  {publicUrl ? (
-                    <Button type="button" variant="secondary" onClick={handleCopy}>
-                      <Globe2 className="h-4 w-4" />
-                      Copiar URL
-                    </Button>
-                  ) : null}
-                </div>
-              </CardBody>
-            </Card>
-
-            <Card>
-              <CardHeader
-                title="Prévia mobile"
-                subtitle={
-                  previewDirty
-                    ? "Mudancas do Design aparecem aqui antes de salvar."
-                    : "Alterne entre os fluxos e veja como a página vai aparecer."
-                }
-                right={
-                  previewDirty ? (
-                    <Badge tone="DRAFT">Alteracoes nao salvas</Badge>
-                  ) : null
-                }
-              />
-              <CardBody className="space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  {PREVIEW_MODES.map((mode) => (
+              <Card>
+                <CardBody className="p-5">
+                  <div className="flex gap-3">
                     <button
-                      key={mode.key}
                       type="button"
-                      onClick={() => setPreviewMode(mode.key)}
+                      disabled={!publicUrl}
+                      onClick={() => setShareModalOpen(true)}
                       className={[
-                        "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
-                        previewMode === mode.key
-                          ? "border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-300/40 dark:bg-sky-400/10 dark:text-sky-100"
-                          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-300",
+                        "flex min-w-0 flex-1 items-center gap-3 rounded-full border px-4 py-3 text-left transition",
+                        publicUrl
+                          ? "border-slate-200/90 bg-white/90 text-slate-700 hover:border-slate-300 hover:bg-white dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:border-white/20"
+                          : "cursor-not-allowed border-slate-200/70 bg-slate-50 text-slate-400 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-500",
                       ].join(" ")}
                     >
-                      {mode.label}
+                      <Globe2 className="h-4 w-4 shrink-0" />
+                      <span className="truncate text-sm font-semibold">
+                        {publicUrlLabel || "Defina um slug em Links"}
+                      </span>
                     </button>
-                  ))}
-                </div>
-                <MyPageMobilePreview
-                  page={effectivePreviewPage}
-                  mode={previewMode}
+
+                    <button
+                      type="button"
+                      disabled={!publicUrl}
+                      onClick={() => setShareModalOpen(true)}
+                      className={[
+                        "inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full border transition",
+                        publicUrl
+                          ? "border-slate-200/90 bg-white/90 text-slate-700 hover:border-slate-300 hover:bg-white dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:border-white/20"
+                          : "cursor-not-allowed border-slate-200/70 bg-slate-50 text-slate-400 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-500",
+                      ].join(" ")}
+                      aria-label="Compartilhar pagina"
+                    >
+                      <Share2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </CardBody>
+              </Card>
+
+              <Card>
+                <CardHeader
+                  title="Previa mobile"
+                  subtitle={
+                    previewDirty
+                      ? "Mudancas do Design aparecem aqui antes de salvar."
+                      : "Alterne entre os fluxos e veja como a pagina vai aparecer."
+                  }
+                  right={
+                    previewDirty ? (
+                      <Badge tone="DRAFT">Alteracoes nao salvas</Badge>
+                    ) : null
+                  }
                 />
-              </CardBody>
-            </Card>
-
-            <Card>
-              <CardHeader
-                title="Métricas básicas"
-                subtitle="Acompanhe cliques e botões mais acessados."
-              />
-              <CardBody className="space-y-4">
-                <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
-                  <div className="rounded-[24px] border border-slate-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-white/5">
-                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                      Total de cliques
-                    </div>
-                    <div className="mt-2 text-2xl font-black text-slate-950 dark:text-white">
-                      {analytics?.totalClicks || 0}
-                    </div>
-                  </div>
-                  <div className="rounded-[24px] border border-slate-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-white/5">
-                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                      Últimos 7 dias
-                    </div>
-                    <div className="mt-2 text-2xl font-black text-slate-950 dark:text-white">
-                      {analytics?.clicksLast7d || 0}
-                    </div>
-                  </div>
-                  <div className="rounded-[24px] border border-slate-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-white/5">
-                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                      Shop selecionado
-                    </div>
-                    <div className="mt-2 text-2xl font-black text-slate-950 dark:text-white">
-                      {page?.summary?.selectedProductsCount || 0}
-                    </div>
-                  </div>
-                </div>
-
-                {(analytics?.topButtons || []).length ? (
-                  <div className="space-y-2">
-                    {analytics.topButtons.map((item) => (
-                      <div
-                        key={`${item.buttonId}:${item.label}`}
-                        className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-white/90 px-4 py-3 text-sm dark:border-white/10 dark:bg-white/5"
+                <CardBody className="space-y-4">
+                  <div className="flex flex-wrap gap-2">
+                    {PREVIEW_MODES.map((mode) => (
+                      <button
+                        key={mode.key}
+                        type="button"
+                        onClick={() => setPreviewMode(mode.key)}
+                        className={[
+                          "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+                          previewMode === mode.key
+                            ? "border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-300/40 dark:bg-sky-400/10 dark:text-sky-100"
+                            : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-300",
+                        ].join(" ")}
                       >
-                        <span className="font-medium text-slate-700 dark:text-slate-200">
-                          {item.label || "Botão"}
-                        </span>
-                        <Badge tone="PUBLIC">{item.count}</Badge>
-                      </div>
+                        {mode.label}
+                      </button>
                     ))}
                   </div>
-                ) : (
-                  <EmptyState
-                    title="Sem cliques ainda"
-                    description="As métricas aparecem aqui assim que sua página começar a receber acessos."
+                  <MyPageMobilePreview
+                    page={effectivePreviewPage}
+                    mode={previewMode}
                   />
-                )}
-              </CardBody>
-            </Card>
+                </CardBody>
+              </Card>
+
+              <Card>
+                <CardHeader
+                  title="Metricas basicas"
+                  subtitle="Acompanhe cliques e botoes mais acessados."
+                />
+                <CardBody className="space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
+                    <div className="rounded-[24px] border border-slate-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-white/5">
+                      <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                        Total de cliques
+                      </div>
+                      <div className="mt-2 text-2xl font-black text-slate-950 dark:text-white">
+                        {analytics?.totalClicks || 0}
+                      </div>
+                    </div>
+                    <div className="rounded-[24px] border border-slate-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-white/5">
+                      <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                        Ultimos 7 dias
+                      </div>
+                      <div className="mt-2 text-2xl font-black text-slate-950 dark:text-white">
+                        {analytics?.clicksLast7d || 0}
+                      </div>
+                    </div>
+                    <div className="rounded-[24px] border border-slate-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-white/5">
+                      <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                        Shop selecionado
+                      </div>
+                      <div className="mt-2 text-2xl font-black text-slate-950 dark:text-white">
+                        {page?.summary?.selectedProductsCount || 0}
+                      </div>
+                    </div>
+                  </div>
+
+                  {(analytics?.topButtons || []).length ? (
+                    <div className="space-y-2">
+                      {analytics.topButtons.map((item) => (
+                        <div
+                          key={`${item.buttonId}:${item.label}`}
+                          className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-white/90 px-4 py-3 text-sm dark:border-white/10 dark:bg-white/5"
+                        >
+                          <span className="font-medium text-slate-700 dark:text-slate-200">
+                            {item.label || "Botao"}
+                          </span>
+                          <Badge tone="PUBLIC">{item.count}</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyState
+                      title="Sem cliques ainda"
+                      description="As metricas aparecem aqui assim que sua pagina comecar a receber acessos."
+                    />
+                  )}
+                </CardBody>
+              </Card>
             </div>
           </div>
         )}
       </div>
+
+      <ModalShell
+        open={shareModalOpen}
+        onClose={() => setShareModalOpen(false)}
+        panelClassName="max-w-xl"
+      >
+        <div className="surface-elevated overflow-hidden rounded-[32px] border border-slate-200/80 p-5 shadow-[0_30px_80px_-40px_rgba(15,23,42,0.35)] dark:border-white/10">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-xl font-black text-slate-950 dark:text-white">
+                Compartilhar
+              </div>
+              <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                Copie o link, mostre o QR code e controle a publicacao.
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShareModalOpen(false)}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200/80 bg-white/90 text-slate-500 transition hover:border-slate-300 hover:text-slate-950 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-white/20 dark:hover:text-white"
+              aria-label="Fechar"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="mt-6 space-y-4">
+            <div className="rounded-[28px] border border-slate-200/80 bg-white/80 p-4 dark:border-white/10 dark:bg-white/[0.04]">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 text-slate-700 dark:text-slate-100">
+                    <Globe2 className="h-4 w-4 shrink-0" />
+                    <span className="truncate text-sm font-semibold">
+                      {publicUrlLabel || "Defina um slug em Links"}
+                    </span>
+                  </div>
+                  <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                    {page?.isPublished
+                      ? "Link pronto para compartilhar."
+                      : "Publique para liberar o acesso publico."}
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={handleCopy}
+                  disabled={!publicUrl}
+                >
+                  {copied ? (
+                    <>
+                      <Check className="h-4 w-4" />
+                      Copiado
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-4 w-4" />
+                      Copiar
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+
+            <div className="rounded-[28px] border border-slate-200/80 bg-white/80 p-5 dark:border-white/10 dark:bg-white/[0.04]">
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-100">
+                <QrCode className="h-4 w-4" />
+                QR code
+              </div>
+
+              <div className="mt-4 flex justify-center">
+                {publicUrl ? (
+                  <div className="rounded-[28px] bg-white p-4 shadow-[0_18px_42px_-28px_rgba(15,23,42,0.25)]">
+                    <QRCodeCanvas value={publicUrl} size={180} includeMargin />
+                  </div>
+                ) : (
+                  <div className="flex h-[212px] w-[212px] items-center justify-center rounded-[28px] border border-dashed border-slate-300 bg-slate-50 text-sm text-slate-400 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-500">
+                    Defina um slug
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-4 text-center">
+                <div className="text-base font-bold text-slate-900 dark:text-white">
+                  {page?.isPublished
+                    ? "Escaneie para abrir a pagina"
+                    : "Publique para compartilhar"}
+                </div>
+                <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  {page?.isPublished
+                    ? "Seu cliente pode acessar a pagina apontando a camera do celular."
+                    : "O QR code ja esta pronto, mas o acesso publico so libera depois da publicacao."}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 flex flex-col gap-3 border-t border-slate-200/80 pt-4 dark:border-white/10 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-sm text-slate-500 dark:text-slate-400">
+              {page?.isPublished
+                ? "Sua pagina esta publicada e pronta para receber acessos."
+                : "Sua pagina continua em rascunho ate voce publicar."}
+            </div>
+            <Button
+              type="button"
+              variant={page?.isPublished ? "danger" : "primary"}
+              disabled={publishing}
+              onClick={() => handleTogglePublish(!page?.isPublished)}
+            >
+              {page?.isPublished ? "Despublicar" : "Publicar pagina"}
+            </Button>
+          </div>
+        </div>
+      </ModalShell>
     </Shell>
   );
 }

@@ -1,8 +1,8 @@
 import { Link2 } from "lucide-react";
-import brand from "../../assets/brand.png";
 import {
   getMyPageButtonProps,
   getMyPageSelectableCardProps,
+  resolveMyPageMediaUrl,
   getMyPageSurfaceProps,
   getMyPageTheme,
 } from "./myPageTheme.js";
@@ -70,10 +70,12 @@ export function MyPagePublicAvatar({
   sizeClassName = "h-16 w-16 rounded-full",
   iconSizeClassName = "h-5 w-5",
 }) {
-  if (page?.avatarUrl) {
+  const avatarSrc = resolveMyPageMediaUrl(page?.avatarUrl);
+
+  if (avatarSrc) {
     return (
       <img
-        src={page.avatarUrl}
+        src={avatarSrc}
         alt={page?.title || "Minha Pagina"}
         className={cls(sizeClassName, "object-cover")}
       />
@@ -85,11 +87,7 @@ export function MyPagePublicAvatar({
       className={cls("flex items-center justify-center", sizeClassName)}
       style={theme.primaryButtonStyle}
     >
-      <img
-        src={brand}
-        alt="LuminorPay"
-        className={cls("object-contain", iconSizeClassName)}
-      />
+      <Link2 className={iconSizeClassName} />
     </div>
   );
 }
@@ -162,22 +160,5 @@ export function MyPagePublicHero({
 }
 
 export function MyPagePublicFooter({ theme }) {
-  const buttonProps = getPublicButtonProps(theme, "secondary");
-
-  return (
-    <div className="pt-2 text-center">
-      <div className="text-xs" style={theme.mutedTextStyle}>
-        Criado com LuminorPay
-      </div>
-      <div className="mt-3">
-        <button
-          type="button"
-          {...buttonProps}
-          onClick={() => window.open("/", "_self")}
-        >
-          Conhecer a LuminorPay
-        </button>
-      </div>
-    </div>
-  );
+  return <div className="pt-1" style={theme.mutedTextStyle} />;
 }
