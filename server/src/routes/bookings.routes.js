@@ -15,6 +15,22 @@ import { User } from "../models/User.js";
 
 const router = express.Router();
 
+function buildBookingOfferSummary(doc) {
+  if (doc?.offerId) {
+    return {
+      _id: doc.offerId._id,
+      title: doc.offerId.title,
+      publicToken: doc.offerId.publicToken,
+    };
+  }
+
+  return {
+    _id: null,
+    title: doc?.serviceLabel || "Agendamento via Minha Pagina",
+    publicToken: "",
+  };
+}
+
 function assertCalendarModule(req) {
   assertWorkspaceModuleAccess({
     user: req.user,
@@ -167,6 +183,9 @@ router.get("/bookings", async (req, res, next) => {
 
     const items = (docs || []).map((b) => ({
       _id: b._id,
+      sourceType: b.sourceType || "offer",
+      myPageId: b.myPageId || null,
+      serviceLabel: b.serviceLabel || "",
       ownerUserId: b?.ownerUserId?._id || b?.ownerUserId || null,
       responsibleUser: b?.ownerUserId
         ? {
@@ -180,13 +199,7 @@ router.get("/bookings", async (req, res, next) => {
       holdExpiresAt: b.holdExpiresAt || null,
       customerName: b.customerName || "",
       customerWhatsApp: b.customerWhatsApp || "",
-      offer: b.offerId
-        ? {
-            _id: b.offerId._id,
-            title: b.offerId.title,
-            publicToken: b.offerId.publicToken,
-          }
-        : null,
+      offer: buildBookingOfferSummary(b),
     }));
 
     return res.json({
@@ -265,6 +278,9 @@ router.patch("/bookings/:id/cancel", async (req, res, next) => {
       ok: true,
       booking: {
         _id: doc._id,
+        sourceType: doc.sourceType || "offer",
+        myPageId: doc.myPageId || null,
+        serviceLabel: doc.serviceLabel || "",
         ownerUserId: doc?.ownerUserId?._id || doc?.ownerUserId || null,
         responsibleUser: doc?.ownerUserId
           ? {
@@ -278,13 +294,7 @@ router.patch("/bookings/:id/cancel", async (req, res, next) => {
         holdExpiresAt: doc.holdExpiresAt || null,
         customerName: doc.customerName || "",
         customerWhatsApp: doc.customerWhatsApp || "",
-        offer: doc.offerId
-          ? {
-              _id: doc.offerId._id,
-              title: doc.offerId.title,
-              publicToken: doc.offerId.publicToken,
-            }
-          : null,
+        offer: buildBookingOfferSummary(doc),
       },
     });
   } catch (e) {

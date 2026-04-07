@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../app/api.js";
 import { listWorkspaceUsers } from "../app/authApi.js";
+import {
+  getMyPageQuoteRequests,
+  updateMyPageQuoteRequestStatus,
+} from "../app/myPageApi.js";
 import { useAuth } from "../app/AuthContext.jsx";
 
 import Shell from "../components/layout/Shell.jsx";
@@ -15,6 +19,7 @@ import Badge from "../components/appui/Badge.jsx";
 import Skeleton from "../components/appui/Skeleton.jsx";
 import EmptyState from "../components/appui/EmptyState.jsx";
 import useThemeToggle from "../app/useThemeToggle.js";
+import { hasWorkspaceModuleAccess } from "../utils/workspacePermissions.js";
 
 import OfferDetailsModal from "../components/offers/OfferDetailsModal.jsx";
 import {
@@ -34,6 +39,13 @@ import {
   matchesOfferCxFilter,
   normalizeOfferCxFilter,
 } from "../components/offers/offerHelpers.js";
+import {
+  buildQuoteRequestsSummary,
+  formatQuoteRequestDateTime,
+  matchesQuoteRequestStatus,
+  normalizeQuoteRequestStatusFilter,
+  quoteRequestStatusBadge,
+} from "../components/my-page/quoteRequestHelpers.js";
 
 function PulseGlowBadge({ children, isDark }) {
   const chipClass = isDark
@@ -81,17 +93,29 @@ function buildOffersQuery({ scope, ownerUserId }) {
   return params.toString();
 }
 
+function normalizeOffersView(value) {
+  return String(value || "").trim().toLowerCase() === "requests"
+    ? "requests"
+    : "offers";
+}
+
 export default function Offers() {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { isDark } = useThemeToggle();
   const { perms, user } = useAuth();
   const isOwnerTeamView =
     perms?.isWorkspaceOwner === true && perms?.isWorkspaceTeamPlan === true;
   const ownerUserId = String(user?._id || "").trim();
+  const canCreateOffers = hasWorkspaceModuleAccess(perms, "newOffer");
 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [quoteRequests, setQuoteRequests] = useState([]);
+  const [requestsLoading, setRequestsLoading] = useState(true);
+  const [requestsError, setRequestsError] = useState("");
+  const [requestBusyId, setRequestBusyId] = useState("");
   const [workspaceUsers, setWorkspaceUsers] = useState([]);
   const [teamUsersBusy, setTeamUsersBusy] = useState(false);
 
@@ -104,11 +128,16 @@ export default function Offers() {
   const [cxFilter, setCxFilter] = useState(() =>
     normalizeOfferCxFilter(searchParams.get("cxFilter")),
   );
+  const [requestSearch, setRequestSearch] = useState("");
   const [copiedId, setCopiedId] = useState(null);
 
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsOffer, setDetailsOffer] = useState(null);
   const [detailsIntent, setDetailsIntent] = useState("");
+  const currentView = normalizeOffersView(searchParams.get("view"));
+  const requestStatusFilter = normalizeQuoteRequestStatusFilter(
+    searchParams.get("requestStatus"),
+  );
 
   const selectClass = "app-field h-10 rounded-xl px-3";
   const tableHeadClass = isDark
@@ -149,6 +178,16 @@ export default function Offers() {
     setCxFilter((prev) => (prev === nextFilter ? prev : nextFilter));
   }, [searchParams]);
 
+  const updateSearchParam = useCallback(
+    (key, value, defaultValue = "") => {
+      const nextParams = new URLSearchParams(searchParams);
+      if (!value || value === defaultValue) nextParams.delete(key);
+      else nextParams.set(key, value);
+      setSearchParams(nextParams, { replace: true });
+    },
+    [searchParams, setSearchParams],
+  );
+
   useEffect(() => {
     const currentParam = normalizeOfferCxFilter(searchParams.get("cxFilter"));
     if (currentParam === cxFilter) return;
@@ -170,6 +209,24 @@ export default function Offers() {
       prev?._id === updated._id ? { ...prev, ...updated } : prev,
     );
   }, []);
+
+  const setViewMode = useCallback(
+    (nextView) => {
+      updateSearchParam("view", normalizeOffersView(nextView), "offers");
+    },
+    [updateSearchParam],
+  );
+
+  const setRequestStatusParam = useCallback(
+    (nextStatus) => {
+      updateSearchParam(
+        "requestStatus",
+        normalizeQuoteRequestStatusFilter(nextStatus),
+        "ALL",
+      );
+    },
+    [updateSearchParam],
+  );
 
   const loadWorkspaceTeam = useCallback(async () => {
     if (!isOwnerTeamView) {
@@ -220,6 +277,24 @@ export default function Offers() {
   useEffect(() => {
     loadWorkspaceTeam();
   }, [loadWorkspaceTeam]);
+
+  const loadQuoteRequests = useCallback(async () => {
+    try {
+      setRequestsLoading(true);
+      setRequestsError("");
+      const data = await getMyPageQuoteRequests();
+      setQuoteRequests(Array.isArray(data?.items) ? data.items : []);
+    } catch (e) {
+      setRequestsError(e?.message || "Falha ao carregar solicitacoes.");
+      setQuoteRequests([]);
+    } finally {
+      setRequestsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadQuoteRequests();
+  }, [loadQuoteRequests]);
 
   const filteredBase = useMemo(() => {
     const query = q.trim().toLowerCase();
@@ -307,6 +382,42 @@ export default function Offers() {
     );
   }, [filteredBase]);
 
+  const quoteRequestsSummary = useMemo(
+    () => buildQuoteRequestsSummary(quoteRequests),
+    [quoteRequests],
+  );
+
+  const filteredQuoteRequests = useMemo(() => {
+    const query = requestSearch.trim().toLowerCase();
+
+    return (quoteRequests || []).filter((request) => {
+      if (!matchesQuoteRequestStatus(request, requestStatusFilter)) {
+        return false;
+      }
+      if (!query) return true;
+
+      const productsText = Array.isArray(request?.selectedProducts)
+        ? request.selectedProducts
+            .map((item) => `${item?.name || ""} ${item?.productId || ""}`)
+            .join(" ")
+        : "";
+
+      const haystack = [
+        request?.customerName,
+        request?.customerWhatsApp,
+        request?.customerEmail,
+        request?.message,
+        request?.pageTitleSnapshot,
+        request?.requestType,
+        productsText,
+      ]
+        .map((item) => String(item || "").toLowerCase())
+        .join(" ");
+
+      return haystack.includes(query);
+    });
+  }, [quoteRequests, requestSearch, requestStatusFilter]);
+
   const copyLink = useCallback(async (offer) => {
     const token = offer?.publicToken;
     if (!token) return;
@@ -321,6 +432,58 @@ export default function Offers() {
     }
   }, []);
 
+  const handleQuoteRequestStatus = useCallback(async (id, status) => {
+    try {
+      setRequestBusyId(id);
+      setRequestsError("");
+      const response = await updateMyPageQuoteRequestStatus(id, status);
+      const nextRequest = response?.request || null;
+      if (!nextRequest?._id) return;
+
+      setQuoteRequests((prev) =>
+        prev.map((item) => (item._id === nextRequest._id ? nextRequest : item)),
+      );
+    } catch (e) {
+      setRequestsError(e?.message || "Nao consegui atualizar a solicitacao.");
+    } finally {
+      setRequestBusyId("");
+    }
+  }, []);
+
+  const handleCreateOfferFromRequest = useCallback(
+    async (request) => {
+      if (!request?._id || !canCreateOffers) return;
+
+      try {
+        if (request.status === "new") {
+          setRequestBusyId(request._id);
+          setRequestsError("");
+          const response = await updateMyPageQuoteRequestStatus(
+            request._id,
+            "in_progress",
+          );
+          const nextRequest = response?.request || request;
+          setQuoteRequests((prev) =>
+            prev.map((item) =>
+              item._id === nextRequest._id ? nextRequest : item,
+            ),
+          );
+        }
+
+        navigate(
+          `/offers/new?quoteRequestId=${encodeURIComponent(request._id)}`,
+        );
+      } catch (e) {
+        setRequestsError(
+          e?.message || "Nao consegui abrir a proposta desta solicitacao.",
+        );
+      } finally {
+        setRequestBusyId("");
+      }
+    },
+    [canCreateOffers, navigate],
+  );
+
   const openDetails = useCallback((offer, intent = "") => {
     setDetailsOffer(offer || null);
     setDetailsIntent(intent || "");
@@ -333,11 +496,13 @@ export default function Offers() {
         <PageHeader
           eyebrow="Propostas"
           title="Propostas"
-          subtitle="Gerencie propostas avulsas, cobrancas recorrentes e confirmacoes de pagamento."
+          subtitle="Gerencie propostas, solicitacoes vindas da Minha Pagina e confirmacoes de pagamento."
           actions={
-            <Link to="/offers/new">
-              <Button size="lg">Nova proposta</Button>
-            </Link>
+            canCreateOffers ? (
+              <Link to="/offers/new">
+                <Button size="lg">Nova proposta</Button>
+              </Link>
+            ) : null
           }
         />
 
@@ -385,6 +550,36 @@ export default function Offers() {
           </Card>
         ) : null}
 
+        <Card>
+          <CardBody className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant={currentView === "offers" ? "primary" : "secondary"}
+                onClick={() => setViewMode("offers")}
+              >
+                Propostas
+              </Button>
+              <Button
+                size="sm"
+                variant={currentView === "requests" ? "primary" : "secondary"}
+                onClick={() => setViewMode("requests")}
+              >
+                Solicitacoes
+              </Button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone="NEUTRAL">{items.length} propostas</Badge>
+              <Badge tone="PUBLIC">{quoteRequestsSummary.total} solicitacoes</Badge>
+              <Badge tone="ACCEPTED">{quoteRequestsSummary.newCount} novas</Badge>
+              <Badge tone="PUBLIC">{quoteRequestsSummary.inProgress} em andamento</Badge>
+            </div>
+          </CardBody>
+        </Card>
+
+        {currentView === "offers" ? (
+          <>
         <FilterBar
           actions={
             <Button variant="secondary" size="md" onClick={load} disabled={loading}>
@@ -488,8 +683,8 @@ export default function Offers() {
                 <EmptyState
                   title="Nenhuma proposta"
                   description="Ajuste filtros ou crie uma nova proposta."
-                  ctaLabel="Criar proposta"
-                  onCta={() => (window.location.href = "/offers/new")}
+                  ctaLabel={canCreateOffers ? "Criar proposta" : undefined}
+                  onCta={canCreateOffers ? () => navigate("/offers/new") : undefined}
                 />
               </div>
             ) : (
@@ -672,6 +867,235 @@ export default function Offers() {
           copyLink={copyLink}
           copiedId={copiedId}
         />
+          </>
+        ) : (
+          <>
+            <FilterBar
+              actions={
+                <Button
+                  variant="secondary"
+                  size="md"
+                  onClick={loadQuoteRequests}
+                  disabled={requestsLoading}
+                >
+                  Atualizar
+                </Button>
+              }
+              summary={
+                <>
+                  <Badge tone="PUBLIC">{quoteRequestsSummary.total} recebidas</Badge>
+                  <Badge tone="ACCEPTED">{quoteRequestsSummary.newCount} novas</Badge>
+                  <Badge tone="PUBLIC">{quoteRequestsSummary.inProgress} em andamento</Badge>
+                  <Badge tone="PAID">{quoteRequestsSummary.converted} convertidas</Badge>
+                  <Badge tone="DRAFT">{quoteRequestsSummary.archived} arquivadas</Badge>
+                </>
+              }
+            >
+              <div className="flex flex-col gap-2 md:flex-row md:items-center">
+                <select
+                  className={selectClass}
+                  value={requestStatusFilter}
+                  onChange={(e) => setRequestStatusParam(e.target.value)}
+                >
+                  <option value="ALL">Todas as solicitacoes</option>
+                  <option value="NEW">Novas</option>
+                  <option value="IN_PROGRESS">Em andamento</option>
+                  <option value="CONVERTED">Convertidas</option>
+                  <option value="ARCHIVED">Arquivadas</option>
+                </select>
+
+                <div className="w-full md:w-[420px]">
+                  <Input
+                    value={requestSearch}
+                    onChange={(e) => setRequestSearch(e.target.value)}
+                    placeholder="Buscar lead, contato, mensagem ou produto..."
+                    className="h-10"
+                  />
+                </div>
+              </div>
+            </FilterBar>
+
+            <Card className="overflow-hidden">
+              <CardHeader
+                title="Solicitacoes recebidas"
+                subtitle="Pedidos de orcamento que chegaram pela Minha Pagina e podem virar proposta."
+                right={
+                  <Badge tone="PUBLIC">
+                    {filteredQuoteRequests.length} visiveis
+                  </Badge>
+                }
+              />
+              <CardBody className="space-y-3">
+                {requestsLoading ? (
+                  <>
+                    <Skeleton className="h-28 w-full rounded-[24px]" />
+                    <Skeleton className="h-28 w-full rounded-[24px]" />
+                  </>
+                ) : requestsError ? (
+                  <div
+                    className={[
+                      "rounded-xl border p-4 text-sm",
+                      isDark
+                        ? "border-red-400/20 bg-red-500/10 text-red-100"
+                        : "border-red-200 bg-red-50 text-red-800",
+                    ].join(" ")}
+                  >
+                    {requestsError}
+                  </div>
+                ) : filteredQuoteRequests.length === 0 ? (
+                  <EmptyState
+                    title="Nenhuma solicitacao"
+                    description="Quando alguem pedir orcamento pela sua Minha Pagina, as solicitacoes aparecerao aqui."
+                  />
+                ) : (
+                  filteredQuoteRequests.map((request) => {
+                    const statusMeta = quoteRequestStatusBadge(request.status);
+                    const busy = requestBusyId === request._id;
+                    const hasOffer = !!request?.createdOffer?._id;
+
+                    return (
+                      <div
+                        key={request._id}
+                        className="rounded-[24px] border border-slate-200/80 bg-white/90 p-4 shadow-[0_18px_36px_-28px_rgba(15,23,42,0.14)] dark:border-white/10 dark:bg-white/5"
+                      >
+                        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <div className="text-sm font-semibold text-slate-950 dark:text-white">
+                                {request.customerName || "Lead sem nome"}
+                              </div>
+                              <Badge tone={statusMeta.tone}>
+                                {statusMeta.label}
+                              </Badge>
+                              <Badge
+                                tone={
+                                  request.requestType === "product"
+                                    ? "PAID"
+                                    : "PUBLIC"
+                                }
+                              >
+                                {request.requestType === "product"
+                                  ? "Produto"
+                                  : "Servico"}
+                              </Badge>
+                            </div>
+
+                            <div className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                              {request.customerWhatsApp || "Sem WhatsApp"}
+                              {request.customerEmail
+                                ? ` • ${request.customerEmail}`
+                                : ""}
+                            </div>
+
+                            {request.message ? (
+                              <div className="mt-3 rounded-2xl border border-slate-200/80 bg-slate-50/90 px-3 py-3 text-sm text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-200">
+                                {request.message}
+                              </div>
+                            ) : null}
+
+                            {request.selectedProducts?.length ? (
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                {request.selectedProducts.map((product) => (
+                                  <span
+                                    key={`${request._id}:${product._id || product.productId}`}
+                                    className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
+                                  >
+                                    {product.name}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : null}
+
+                            <div className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+                              Recebido em{" "}
+                              {formatQuoteRequestDateTime(request.createdAt)}
+                              {request?.createdOffer?.publicCode
+                                ? ` • Codigo ${request.createdOffer.publicCode}`
+                                : ""}
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap gap-2 md:max-w-[320px] md:justify-end">
+                            {!hasOffer && canCreateOffers ? (
+                              <Button
+                                type="button"
+                                disabled={busy}
+                                onClick={() =>
+                                  handleCreateOfferFromRequest(request)
+                                }
+                              >
+                                {busy ? "Abrindo..." : "Criar proposta"}
+                              </Button>
+                            ) : null}
+
+                            {hasOffer && request.createdOffer?.publicToken ? (
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                onClick={() =>
+                                  window.open(
+                                    `/p/${request.createdOffer.publicToken}`,
+                                    "_blank",
+                                    "noopener,noreferrer",
+                                  )
+                                }
+                              >
+                                Ver proposta
+                              </Button>
+                            ) : null}
+
+                            {!hasOffer && request.status !== "in_progress" ? (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                disabled={busy}
+                                onClick={() =>
+                                  handleQuoteRequestStatus(
+                                    request._id,
+                                    "in_progress",
+                                  )
+                                }
+                              >
+                                Em andamento
+                              </Button>
+                            ) : null}
+
+                            {request.status !== "archived" ? (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                disabled={busy}
+                                onClick={() =>
+                                  handleQuoteRequestStatus(
+                                    request._id,
+                                    "archived",
+                                  )
+                                }
+                              >
+                                Arquivar
+                              </Button>
+                            ) : (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                disabled={busy}
+                                onClick={() =>
+                                  handleQuoteRequestStatus(request._id, "new")
+                                }
+                              >
+                                Reabrir
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </CardBody>
+            </Card>
+          </>
+        )}
       </div>
     </Shell>
   );

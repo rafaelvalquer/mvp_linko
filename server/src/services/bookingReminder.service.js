@@ -89,7 +89,9 @@ function getOfferId(booking) {
 
 function getServiceName(booking) {
   const offer = getOfferDoc(booking);
-  const title = String(offer?.title || offer?.name || "").trim();
+  const title = String(
+    offer?.title || offer?.name || booking?.serviceLabel || "",
+  ).trim();
   return title || "seu servico";
 }
 
@@ -404,6 +406,7 @@ export async function processAutomaticBookingReminders({
 
   const bookings = await Booking.find({
     status: "CONFIRMED",
+    offerId: { $ne: null },
     startAt: {
       $gt: now instanceof Date ? now : new Date(now),
       $lte: upperBound,

@@ -30,11 +30,20 @@ import PublicOfferCancelled from "../pages/PublicOfferCancelled.jsx";
 import PublicOfferDone from "../pages/PublicOfferDone.jsx";
 import PublicOfferFeedback from "../pages/PublicOfferFeedback.jsx";
 import PublicPaidGuard from "../pages/PublicPaidGuard.jsx";
+import PublicMyPage from "../pages/PublicMyPageV2.jsx";
+import PublicMyPageCatalog from "../pages/PublicMyPageCatalogV2.jsx";
+import PublicMyPageQuote from "../pages/PublicMyPageQuoteV2.jsx";
+import PublicMyPageSchedule from "../pages/PublicMyPageScheduleV2.jsx";
+import PublicMyPagePay from "../pages/PublicMyPagePayV2.jsx";
 import SettingsAccount from "../pages/SettingsAccount.jsx";
 import SettingsAgentGuide from "../pages/SettingsAgentGuide.jsx";
 import SettingsAgenda from "../pages/SettingsAgenda.jsx";
 import SettingsNotifications from "../pages/SettingsNotifications.jsx";
 import SettingsTeam from "../pages/SettingsTeam.jsx";
+import MyPageWorkspace from "../pages/MyPageWorkspace.jsx";
+import MyPageLinksPage from "../pages/MyPageLinksPage.jsx";
+import MyPageShopPage from "../pages/MyPageShopPage.jsx";
+import MyPageDesignStudioPage from "../pages/MyPageDesignStudioPage.jsx";
 
 // ✅ billing
 import BillingPlans from "../pages/BillingPlansV2.jsx";
@@ -230,6 +239,36 @@ export const router = createBrowserRouter(
         },
 
         {
+          path: "/my-page",
+          element: (
+            <RequireAuth>
+              <RequireWorkspaceOwner>
+                <RequireModuleAccess moduleKey="settings">
+                  <MyPageWorkspace />
+                </RequireModuleAccess>
+              </RequireWorkspaceOwner>
+            </RequireAuth>
+          ),
+          children: [
+            {
+              index: true,
+              element: <Navigate to="/my-page/links" replace />,
+            },
+            {
+              path: "links",
+              element: <MyPageLinksPage />,
+            },
+            {
+              path: "shop",
+              element: <MyPageShopPage />,
+            },
+            {
+              path: "design",
+              element: <MyPageDesignStudioPage />,
+            },
+          ],
+        },
+        {
           path: "/settings",
           element: (
             <RequireAuth>
@@ -374,6 +413,11 @@ export const router = createBrowserRouter(
 
         { path: "/p/:token/done", element: <PublicOfferDone /> },
         { path: "/p/:token/feedback", element: <PublicOfferFeedback /> },
+        { path: "/u/:slug", element: <PublicMyPage /> },
+        { path: "/u/:slug/catalog", element: <PublicMyPageCatalog /> },
+        { path: "/u/:slug/quote", element: <PublicMyPageQuote /> },
+        { path: "/u/:slug/schedule", element: <PublicMyPageSchedule /> },
+        { path: "/u/:slug/pay", element: <PublicMyPagePay /> },
       ],
     },
   ],

@@ -16,6 +16,7 @@ import Shell from "../components/layout/Shell.jsx";
 import { api } from "../app/api.js";
 import * as authApi from "../app/authApi.js";
 import { listBookings } from "../app/bookingsApi.js";
+import { getMyPageQuoteRequests } from "../app/myPageApi.js";
 import Card, { CardBody, CardHeader } from "../components/appui/Card.jsx";
 import Button from "../components/appui/Button.jsx";
 import Skeleton from "../components/appui/Skeleton.jsx";
@@ -50,6 +51,11 @@ import {
 } from "../utils/guardOfferCreation.js";
 import { canUseRecurringPlan } from "../utils/planFeatures.js";
 import { hasWorkspaceModuleAccess } from "../utils/workspacePermissions.js";
+import {
+  buildQuoteRequestsSummary,
+  formatQuoteRequestDateTime,
+  quoteRequestStatusBadge,
+} from "../components/my-page/quoteRequestHelpers.js";
 
 const Icons = {
   Refresh: () => (
@@ -382,9 +388,11 @@ export default function Dashboard() {
 
   const [loading, setLoading] = useState(true);
   const [bookingsBusy, setBookingsBusy] = useState(true);
+  const [quoteRequestsBusy, setQuoteRequestsBusy] = useState(true);
   const [teamUsersBusy, setTeamUsersBusy] = useState(false);
   const [error, setError] = useState("");
   const [bookingsErr, setBookingsErr] = useState("");
+  const [quoteRequestsErr, setQuoteRequestsErr] = useState("");
   const [scopeTab, setScopeTab] = useState("mine");
   const [teamOwnerFilter, setTeamOwnerFilter] = useState("all");
 
@@ -408,6 +416,7 @@ export default function Dashboard() {
   const { signOut, user, workspace, loadingMe, refreshWorkspace, perms } = useAuth();
   const hasRecurringPlan = canUseRecurringPlan(workspace?.plan);
   const canAccessReports = hasWorkspaceModuleAccess(perms, "reports");
+  const canAccessOffers = hasWorkspaceModuleAccess(perms, "offers");
   const canManagePixAccount = perms?.canManagePixAccount === true;
   const isOwnerTeamDashboard =
     perms?.isWorkspaceOwner === true && perms?.isWorkspaceTeamPlan === true;
@@ -422,6 +431,7 @@ export default function Dashboard() {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsOffer, setDetailsOffer] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
+  const [quoteRequests, setQuoteRequests] = useState([]);
 
   const effectivePayoutPixKeyMasked = useMemo(
     () => getEffectivePixKeyMasked(workspace, localPayoutPixKeyMasked),
@@ -675,6 +685,14 @@ export default function Dashboard() {
     try {
       setLoading(true);
       setError("");
+      if (canAccessOffers) {
+        setQuoteRequestsBusy(true);
+        setQuoteRequestsErr("");
+      } else {
+        setQuoteRequests([]);
+        setQuoteRequestsBusy(false);
+        setQuoteRequestsErr("");
+      }
       const offersPath = `/offers?${new URLSearchParams({
         scope: appliedScope,
         ...(selectedOwnerUserId ? { ownerUserId: selectedOwnerUserId } : {}),
@@ -684,10 +702,14 @@ export default function Dashboard() {
         scope: appliedScope,
         ...(selectedOwnerUserId ? { ownerUserId: selectedOwnerUserId } : {}),
       }).toString()}`;
-      const [offersResult, recurringResult] = await Promise.allSettled([
+      const [offersResult, recurringResult, quoteRequestsResult] =
+        await Promise.allSettled([
         api(offersPath),
         hasRecurringPlan
           ? api(recurringPath)
+          : Promise.resolve({ items: [] }),
+        canAccessOffers
+          ? getMyPageQuoteRequests()
           : Promise.resolve({ items: [] }),
       ]);
 
@@ -712,6 +734,19 @@ export default function Dashboard() {
         setActiveRecurringIds([]);
       }
 
+      if (quoteRequestsResult.status === "fulfilled") {
+        setQuoteRequests(
+          Array.isArray(quoteRequestsResult.value?.items)
+            ? quoteRequestsResult.value.items
+            : [],
+        );
+        setQuoteRequestsErr("");
+      } else {
+        if (quoteRequestsResult.reason?.status === 401) return signOut();
+        setQuoteRequests([]);
+        setQuoteRequestsErr("Nao foi possivel carregar as solicitacoes.");
+      }
+
       setLastUpdate(
         new Intl.DateTimeFormat("pt-BR", { timeStyle: "short" }).format(
           new Date(),
@@ -723,9 +758,11 @@ export default function Dashboard() {
       if (e?.status === 401) return signOut();
       setActiveRecurringCount(0);
       setActiveRecurringIds([]);
+      setQuoteRequests([]);
       setError("Falha ao carregar dados principais.");
     } finally {
       setLoading(false);
+      setQuoteRequestsBusy(false);
     }
   }
 
@@ -733,7 +770,7 @@ export default function Dashboard() {
     if (loadingMe) return;
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasRecurringPlan, loadingMe, appliedScope, selectedOwnerUserId]);
+  }, [hasRecurringPlan, loadingMe, appliedScope, selectedOwnerUserId, canAccessOffers]);
 
   useEffect(() => {
     loadWorkspaceTeam();
@@ -931,6 +968,16 @@ export default function Dashboard() {
       .filter((o) => normStatus(o?.paymentStatus) === "WAITING_CONFIRMATION")
       .slice(0, 5);
   }, [offers]);
+
+  const quoteRequestsSummary = useMemo(
+    () => buildQuoteRequestsSummary(quoteRequests),
+    [quoteRequests],
+  );
+
+  const latestQuoteRequest = useMemo(
+    () => (Array.isArray(quoteRequests) && quoteRequests.length ? quoteRequests[0] : null),
+    [quoteRequests],
+  );
 
   const teamPerformanceRows = useMemo(() => {
     return (workspaceUsers || [])
@@ -1572,6 +1619,161 @@ export default function Dashboard() {
                         </div>
                       </div>
                     ))
+                  )}
+                </CardBody>
+              </Card>
+            ) : null}
+
+            {canAccessOffers ? (
+              <Card>
+                <CardHeader
+                  title="Solicitações da Minha Página"
+                  subtitle={
+                    quoteRequestsErr ||
+                    "Novos pedidos de orçamento aguardando ação comercial."
+                  }
+                  right={
+                    <Link
+                      to="/offers?view=requests"
+                      className="text-[11px] font-bold uppercase tracking-[0.18em] text-sky-700 hover:underline"
+                    >
+                      VER SOLICITAÇÕES
+                    </Link>
+                  }
+                />
+                <CardBody className="space-y-4">
+                  {quoteRequestsBusy ? (
+                    <Skeleton className="h-32 w-full rounded-xl" />
+                  ) : quoteRequestsSummary.total === 0 ? (
+                    <div className="py-4 text-center">
+                      <p
+                        className={
+                          isDark
+                            ? "text-xs font-medium text-slate-500"
+                            : "text-xs font-medium text-slate-400"
+                        }
+                      >
+                        Nenhuma solicitação recebida ainda
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
+                        <div
+                          className={[
+                            "rounded-2xl border px-4 py-3",
+                            quoteRequestsSummary.newCount > 0
+                              ? isDark
+                                ? "border-emerald-400/20 bg-emerald-400/10"
+                                : "border-emerald-200 bg-emerald-50/80"
+                              : isDark
+                                ? "border-white/10 bg-white/5"
+                                : "border-slate-200/80 bg-slate-50/80",
+                          ].join(" ")}
+                        >
+                          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                            Novas
+                          </div>
+                          <div className="mt-2 text-2xl font-black text-slate-950 dark:text-white">
+                            {quoteRequestsSummary.newCount}
+                          </div>
+                        </div>
+                        <div
+                          className={[
+                            "rounded-2xl border px-4 py-3",
+                            isDark
+                              ? "border-white/10 bg-white/5"
+                              : "border-slate-200/80 bg-slate-50/80",
+                          ].join(" ")}
+                        >
+                          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                            Em andamento
+                          </div>
+                          <div className="mt-2 text-2xl font-black text-slate-950 dark:text-white">
+                            {quoteRequestsSummary.inProgress}
+                          </div>
+                        </div>
+                        <div
+                          className={[
+                            "rounded-2xl border px-4 py-3",
+                            isDark
+                              ? "border-white/10 bg-white/5"
+                              : "border-slate-200/80 bg-slate-50/80",
+                          ].join(" ")}
+                        >
+                          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                            Convertidas
+                          </div>
+                          <div className="mt-2 text-2xl font-black text-slate-950 dark:text-white">
+                            {quoteRequestsSummary.converted}
+                          </div>
+                        </div>
+                      </div>
+
+                      {latestQuoteRequest ? (
+                        <div
+                          className={[
+                            "rounded-2xl border px-4 py-3",
+                            isDark
+                              ? "border-white/10 bg-white/5"
+                              : "border-slate-200/80 bg-slate-50/80",
+                          ].join(" ")}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div
+                                className={
+                                  isDark
+                                    ? "truncate text-sm font-semibold text-white"
+                                    : "truncate text-sm font-semibold text-slate-900"
+                                }
+                              >
+                                {latestQuoteRequest.customerName || "Lead sem nome"}
+                              </div>
+                              <div
+                                className={
+                                  isDark
+                                    ? "mt-1 text-[11px] text-slate-400"
+                                    : "mt-1 text-[11px] text-slate-500"
+                                }
+                              >
+                                {latestQuoteRequest.customerWhatsApp || "Sem WhatsApp"} •{" "}
+                                {formatQuoteRequestDateTime(
+                                  latestQuoteRequest.createdAt,
+                                )}
+                              </div>
+                            </div>
+
+                            <Badge
+                              tone={
+                                quoteRequestStatusBadge(latestQuoteRequest.status)
+                                  .tone
+                              }
+                            >
+                              {
+                                quoteRequestStatusBadge(latestQuoteRequest.status)
+                                  .label
+                              }
+                            </Badge>
+                          </div>
+
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <Link to="/offers?view=requests">
+                              <Button variant="secondary" size="sm">
+                                Ver solicitações
+                              </Button>
+                            </Link>
+                            {quoteRequestsSummary.newCount > 0 ? (
+                              <Link to="/offers?view=requests&requestStatus=NEW">
+                                <Button variant="ghost" size="sm">
+                                  Abrir novas
+                                </Button>
+                              </Link>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
+                    </>
                   )}
                 </CardBody>
               </Card>

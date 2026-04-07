@@ -19,6 +19,7 @@ import settingsRoutes from "./routes/settings.routes.js";
 import reportsRoutes from "./routes/reports.routes.js";
 import offerRemindersRoutes from "./routes/offer-reminders.routes.js";
 import userAutomationsRoutes from "./routes/user-automations.routes.js";
+import myPageRoutes from "./routes/my-page.native.routes.js";
 
 import billingStripeRoutes from "./routes/billing.stripe.routes.js";
 import webhooksStripeRoutes from "./routes/webhooks.stripe.routes.js";
@@ -114,6 +115,7 @@ export function createApp() {
   app.use("/api", settingsRoutes);
   app.use("/api", analyticsRoutes);
   app.use("/api", reportsRoutes);
+  app.use("/api", myPageRoutes);
   app.use("/api", userAutomationsRoutes);
   app.use("/api", billingStripeRoutes);
   app.use("/api", adminRoutes);

@@ -5,6 +5,7 @@ import mongoose from "mongoose";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { Offer } from "../models/Offer.js";
 import Booking from "../models/Booking.js";
+import { MyPageQuoteRequest } from "../models/MyPageQuoteRequest.js";
 import { ensureAuth, tenantFromUser } from "../middleware/auth.js";
 import { Client } from "../models/Client.js";
 import { Workspace } from "../models/Workspace.js";
@@ -1058,6 +1059,25 @@ r.post(
       notificationContext,
       body: req.body,
     });
+
+    const myPageQuoteRequestId = String(
+      req.body?.myPageQuoteRequestId || "",
+    ).trim();
+    if (mongoose.Types.ObjectId.isValid(myPageQuoteRequestId)) {
+      await MyPageQuoteRequest.findOneAndUpdate(
+        {
+          _id: myPageQuoteRequestId,
+          workspaceId: req.tenantId,
+        },
+        {
+          $set: {
+            status: "converted",
+            createdOfferId: offer._id,
+          },
+        },
+        { strict: false },
+      ).catch(() => null);
+    }
 
     res.json({ ok: true, offer, publicUrl: `/p/${offer.publicToken}` });
   }),

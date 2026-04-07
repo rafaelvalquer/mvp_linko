@@ -167,6 +167,7 @@ const OfferSchema = new mongoose.Schema(
     originMeta: { type: mongoose.Schema.Types.Mixed, default: null },
 
     publicToken: { type: String, index: true, unique: true, sparse: true },
+    publicCode: { type: String, default: null, trim: true, uppercase: true },
     expiresAt: { type: Date, default: null },
 
     status: { type: String, default: "PUBLIC", index: true },
@@ -251,7 +252,21 @@ const OfferSchema = new mongoose.Schema(
 
 OfferSchema.pre("validate", function normalizeLegacyStatus(next) {
   if (this.status === "CANCELED") this.status = "CANCELLED";
+  if (this.publicCode != null) {
+    const nextCode = String(this.publicCode || "")
+      .trim()
+      .toUpperCase();
+    this.publicCode = nextCode || null;
+  }
   next();
 });
+
+OfferSchema.index(
+  { workspaceId: 1, publicCode: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { publicCode: { $type: "string" } },
+  },
+);
 
 export const Offer = mongoose.model("Offer", OfferSchema);

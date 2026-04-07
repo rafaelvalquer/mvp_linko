@@ -395,9 +395,15 @@ export default function Sidebar({
     [loc.pathname],
   );
 
+  const isMyPageRoute = useMemo(
+    () => loc.pathname === "/my-page" || loc.pathname.startsWith("/my-page/"),
+    [loc.pathname],
+  );
+
   const [isOffersOpen, setIsOffersOpen] = useState(isOffersAny);
   const [isReportsOpen, setIsReportsOpen] = useState(isReportsAny);
   const [isStoreOpen, setIsStoreOpen] = useState(isStoreRoute);
+  const [isMyPageOpen, setIsMyPageOpen] = useState(isMyPageRoute);
   const [localPayoutPixKeyMasked, setLocalPayoutPixKeyMasked] = useState("");
   const [pixModalState, setPixModalState] = useState({
     open: false,
@@ -417,6 +423,10 @@ export default function Sidebar({
   useEffect(() => {
     if (isStoreRoute) setIsStoreOpen(true);
   }, [isStoreRoute]);
+
+  useEffect(() => {
+    if (isMyPageRoute) setIsMyPageOpen(true);
+  }, [isMyPageRoute]);
 
   useEffect(() => {
     setLocalPayoutPixKeyMasked(
@@ -494,6 +504,18 @@ export default function Sidebar({
     nav("/reports");
   }
 
+  function handleMyPageClick() {
+    if (collapsed) {
+      onToggle?.();
+      setIsMyPageOpen(true);
+      nav("/my-page/links");
+      return;
+    }
+
+    setIsMyPageOpen((prev) => !prev);
+    nav("/my-page/links");
+  }
+
   function handleCreateOffer() {
     const allowed = guardOfferCreation({
       workspace,
@@ -545,6 +567,7 @@ export default function Sidebar({
   const canAccessProducts = hasWorkspaceModuleAccess(perms, "products");
   const canAccessClients = hasWorkspaceModuleAccess(perms, "clients");
   const canAccessSettings = hasWorkspaceModuleAccess(perms, "settings");
+  const canAccessMyPage = canAccessSettings && perms?.isWorkspaceOwner === true;
   const planLabel = String(perms.plan || "free").toUpperCase();
 
   return (
@@ -716,67 +739,70 @@ export default function Sidebar({
             </SidebarItem>
           ) : null}
 
-          {canAccessOffers ? <div className="pt-1">
-            <SidebarParentButton
-              icon={Icons.Offers}
-              label="Propostas"
-              collapsed={collapsed}
-              highlighted={isOffersAny}
-              open={isOffersOpen}
-              isDark={isDark}
-              onClick={handleOffersClick}
-            />
+          {canAccessOffers ? (
+            <div className="pt-1">
+              <SidebarParentButton
+                icon={Icons.Offers}
+                label="Propostas"
+                collapsed={collapsed}
+                highlighted={isOffersAny}
+                open={isOffersOpen}
+                isDark={isDark}
+                onClick={handleOffersClick}
+              />
 
-            <div
-              className={`overflow-hidden transition-all duration-300 ease-out ${
-                !collapsed && isOffersOpen
-                  ? canUseRecurringFeatures
-                    ? "mt-1 max-h-44 opacity-100"
-                    : "mt-1 max-h-32 opacity-100"
-                  : "mt-0 max-h-0 opacity-0"
-              }`}
-            >
-              <div className="space-y-1">
-                <SidebarItem
-                  to="/offers"
-                  collapsed={collapsed}
-                  indent
-                  end
-                  isDark={isDark}
-                  onNavigate={onNavigate}
-                >
-                  Todas as propostas
-                </SidebarItem>
-
-                {canCreateOffers ? (
-                  <SidebarActionItem
-                    collapsed={collapsed}
-                    indent
-                    isDark={isDark}
-                    active={
-                      loc.pathname === "/offers/new" &&
-                      (!loc.search.includes("mode=recurring") || !canUseRecurringFeatures)
-                    }
-                    onClick={handleCreateOffer}
-                  >
-                    Nova proposta
-                  </SidebarActionItem>
-                ) : null}
-
-                {canUseRecurringFeatures ? (
+              <div
+                className={`overflow-hidden transition-all duration-300 ease-out ${
+                  !collapsed && isOffersOpen
+                    ? canUseRecurringFeatures
+                      ? "mt-1 max-h-44 opacity-100"
+                      : "mt-1 max-h-32 opacity-100"
+                    : "mt-0 max-h-0 opacity-0"
+                }`}
+              >
+                <div className="space-y-1">
                   <SidebarItem
-                    to="/offers/recurring"
+                    to="/offers"
                     collapsed={collapsed}
                     indent
+                    end
                     isDark={isDark}
                     onNavigate={onNavigate}
                   >
-                    Recorrências
+                    Todas as propostas
                   </SidebarItem>
-                ) : null}
+
+                  {canCreateOffers ? (
+                    <SidebarActionItem
+                      collapsed={collapsed}
+                      indent
+                      isDark={isDark}
+                      active={
+                        loc.pathname === "/offers/new" &&
+                        (!loc.search.includes("mode=recurring") ||
+                          !canUseRecurringFeatures)
+                      }
+                      onClick={handleCreateOffer}
+                    >
+                      Nova proposta
+                    </SidebarActionItem>
+                  ) : null}
+
+                  {canUseRecurringFeatures ? (
+                    <SidebarItem
+                      to="/offers/recurring"
+                      collapsed={collapsed}
+                      indent
+                      isDark={isDark}
+                      onNavigate={onNavigate}
+                    >
+                      Recorrências
+                    </SidebarItem>
+                  ) : null}
+                </div>
               </div>
             </div>
-          </div> : null}
+          ) : null}
 
           {canAccessCalendar ? (
             <SidebarItem
@@ -790,62 +816,64 @@ export default function Sidebar({
             </SidebarItem>
           ) : null}
 
-          {canAccessReports ? <div className="pt-1">
-            <SidebarParentButton
-              icon={Icons.Reports}
-              label="Relatórios"
-              collapsed={collapsed}
-              highlighted={isReportsAny}
-              open={isReportsOpen}
-              isDark={isDark}
-              onClick={handleReportsClick}
-            />
+          {canAccessReports ? (
+            <div className="pt-1">
+              <SidebarParentButton
+                icon={Icons.Reports}
+                label="Relatórios"
+                collapsed={collapsed}
+                highlighted={isReportsAny}
+                open={isReportsOpen}
+                isDark={isDark}
+                onClick={handleReportsClick}
+              />
 
-            <div
-              className={`overflow-hidden transition-all duration-300 ease-out ${
-                !collapsed && isReportsOpen
-                  ? canUseRecurringFeatures
-                    ? "mt-1 max-h-48 opacity-100"
-                    : "mt-1 max-h-32 opacity-100"
-                  : "mt-0 max-h-0 opacity-0"
-              }`}
-            >
-              <div className="space-y-1">
-                <SidebarItem
-                  to="/reports"
-                  collapsed={collapsed}
-                  indent
-                  end
-                  isDark={isDark}
-                  onNavigate={onNavigate}
-                >
-                  Geral
-                </SidebarItem>
-
-                <SidebarItem
-                  to="/reports/feedback"
-                  collapsed={collapsed}
-                  indent
-                  isDark={isDark}
-                  onNavigate={onNavigate}
-                >
-                  Satisfação
-                </SidebarItem>
-
-                {canUseRecurringFeatures ? (
+              <div
+                className={`overflow-hidden transition-all duration-300 ease-out ${
+                  !collapsed && isReportsOpen
+                    ? canUseRecurringFeatures
+                      ? "mt-1 max-h-48 opacity-100"
+                      : "mt-1 max-h-32 opacity-100"
+                    : "mt-0 max-h-0 opacity-0"
+                }`}
+              >
+                <div className="space-y-1">
                   <SidebarItem
-                    to="/reports/recurring"
+                    to="/reports"
+                    collapsed={collapsed}
+                    indent
+                    end
+                    isDark={isDark}
+                    onNavigate={onNavigate}
+                  >
+                    Geral
+                  </SidebarItem>
+
+                  <SidebarItem
+                    to="/reports/feedback"
                     collapsed={collapsed}
                     indent
                     isDark={isDark}
                     onNavigate={onNavigate}
                   >
-                    Recorrência
+                    Satisfação
                   </SidebarItem>
-                ) : null}
+
+                  {canUseRecurringFeatures ? (
+                    <SidebarItem
+                      to="/reports/recurring"
+                      collapsed={collapsed}
+                      indent
+                      isDark={isDark}
+                      onNavigate={onNavigate}
+                    >
+                      Recorrência
+                    </SidebarItem>
+                  ) : null}
+                </div>
               </div>
             </div>
-          </div> : null}
+          ) : null}
 
           {canAccessAutomations ? (
             <SidebarItem
@@ -855,7 +883,7 @@ export default function Sidebar({
               isDark={isDark}
               onNavigate={onNavigate}
             >
-              Automacoes
+              Automações
             </SidebarItem>
           ) : null}
 
@@ -906,17 +934,71 @@ export default function Sidebar({
             </div>
           ) : null}
 
-          {canAccessSettings ? <div className="pt-1">
-            <SidebarItem
-              to="/settings"
-              icon={Icons.Settings}
-              collapsed={collapsed}
-              isDark={isDark}
-              onNavigate={onNavigate}
-          >
-              Configurações
-            </SidebarItem>
-          </div> : null}
+          {canAccessMyPage ? (
+            <div className="pt-1">
+              <SidebarParentButton
+                icon={Icons.Link}
+                label="Minha Pagina"
+                collapsed={collapsed}
+                highlighted={isMyPageRoute}
+                open={isMyPageOpen}
+                isDark={isDark}
+                onClick={handleMyPageClick}
+              />
+
+              <div
+                className={`overflow-hidden transition-all duration-300 ease-out ${
+                  !collapsed && isMyPageOpen
+                    ? "mt-1 max-h-44 opacity-100"
+                    : "mt-0 max-h-0 opacity-0"
+                }`}
+              >
+                <div className="space-y-1">
+                  <SidebarItem
+                    to="/my-page/links"
+                    collapsed={collapsed}
+                    indent
+                    isDark={isDark}
+                    onNavigate={onNavigate}
+                  >
+                    Links
+                  </SidebarItem>
+                  <SidebarItem
+                    to="/my-page/shop"
+                    collapsed={collapsed}
+                    indent
+                    isDark={isDark}
+                    onNavigate={onNavigate}
+                  >
+                    Shop
+                  </SidebarItem>
+                  <SidebarItem
+                    to="/my-page/design"
+                    collapsed={collapsed}
+                    indent
+                    isDark={isDark}
+                    onNavigate={onNavigate}
+                  >
+                    Design
+                  </SidebarItem>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {canAccessSettings ? (
+            <div className="pt-1">
+              <SidebarItem
+                to="/settings"
+                icon={Icons.Settings}
+                collapsed={collapsed}
+                isDark={isDark}
+                onNavigate={onNavigate}
+              >
+                Configurações
+              </SidebarItem>
+            </div>
+          ) : null}
 
           <div className="pt-1">
             <SidebarItem
@@ -1000,4 +1082,3 @@ export default function Sidebar({
     </>
   );
 }
-

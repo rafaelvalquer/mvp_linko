@@ -83,12 +83,16 @@ function formatDateTime(value) {
 }
 
 function formatChannelLabel(value) {
-  return CHANNEL_OPTIONS.find((item) => item.value === value)?.label || "WhatsApp";
+  return (
+    CHANNEL_OPTIONS.find((item) => item.value === value)?.label || "WhatsApp"
+  );
 }
 
 function formatFrequencyLabel(value, dayOfWeek = "") {
   if (value !== "weekly") return "Diaria";
-  const weekday = WEEKDAY_OPTIONS.find((item) => item.value === dayOfWeek)?.label || "Segunda-feira";
+  const weekday =
+    WEEKDAY_OPTIONS.find((item) => item.value === dayOfWeek)?.label ||
+    "Segunda-feira";
   return `Semanal (${weekday})`;
 }
 
@@ -105,7 +109,9 @@ function statusLabel(value) {
 }
 
 function templateSurfaceClass(key = "") {
-  const normalizedKey = String(key || "").trim().toLowerCase();
+  const normalizedKey = String(key || "")
+    .trim()
+    .toLowerCase();
 
   if (normalizedKey.includes("agenda")) {
     return "border-sky-200 bg-sky-50/80 text-sky-700 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-200";
@@ -139,8 +145,12 @@ function StatCard({ title, value, subtitle }) {
         <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
           {title}
         </div>
-        <div className="text-3xl font-black tracking-tight text-slate-950 dark:text-white">{value}</div>
-        <div className="text-sm leading-6 text-slate-500 dark:text-slate-300">{subtitle}</div>
+        <div className="text-3xl font-black tracking-tight text-slate-950 dark:text-white">
+          {value}
+        </div>
+        <div className="text-sm leading-6 text-slate-500 dark:text-slate-300">
+          {subtitle}
+        </div>
       </div>
     </div>
   );
@@ -202,7 +212,9 @@ function ChannelPill({ value }) {
         : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200";
 
   return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass}`}>
+    <span
+      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass}`}
+    >
       {label}
     </span>
   );
@@ -228,7 +240,13 @@ function ChevronIcon({ expanded }) {
   );
 }
 
-function TemplatePreview({ template, channel, frequency, timeOfDay, dayOfWeek }) {
+function TemplatePreview({
+  template,
+  channel,
+  frequency,
+  timeOfDay,
+  dayOfWeek,
+}) {
   return (
     <div className="surface-secondary rounded-[24px] p-4">
       <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
@@ -258,7 +276,9 @@ function TemplatePreview({ template, channel, frequency, timeOfDay, dayOfWeek })
           <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
             Horario
           </div>
-          <div className="mt-2 text-sm font-semibold text-slate-950 dark:text-white">{timeOfDay || "-"}</div>
+          <div className="mt-2 text-sm font-semibold text-slate-950 dark:text-white">
+            {timeOfDay || "-"}
+          </div>
         </div>
         <div className="surface-quiet rounded-2xl px-3 py-3">
           <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
@@ -279,15 +299,15 @@ function AutomationCard({ item, busy, expanded, onAction, onToggle }) {
   const compactSchedule = `${formatChannelLabel(item.channel)} | ${formatFrequencyLabel(item.frequency, item.dayOfWeek)}`;
   const accordionId = `automation-panel-${item.id}`;
 
-    return (
-      <div
-        className={[
-          "surface-panel overflow-hidden rounded-[28px] transition",
-          expanded ? "border-slate-300/90 dark:border-white/15" : "",
-          busy && expanded
-            ? "border-sky-200 shadow-[0_24px_52px_-34px_rgba(37,99,235,0.28)] dark:border-sky-400/25"
-            : "",
-        ].join(" ")}
+  return (
+    <div
+      className={[
+        "surface-panel overflow-hidden rounded-[28px] transition",
+        expanded ? "border-slate-300/90 dark:border-white/15" : "",
+        busy && expanded
+          ? "border-sky-200 shadow-[0_24px_52px_-34px_rgba(37,99,235,0.28)] dark:border-sky-400/25"
+          : "",
+      ].join(" ")}
     >
       <button
         type="button"
@@ -304,42 +324,48 @@ function AutomationCard({ item, busy, expanded, onAction, onToggle }) {
               >
                 {item.templateLabel}
               </span>
-              <Badge tone={statusTone(item.status)}>{statusLabel(item.status)}</Badge>
+              <Badge tone={statusTone(item.status)}>
+                {statusLabel(item.status)}
+              </Badge>
               {item.lastError?.message ? (
-                  <span className="inline-flex rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-700 dark:border-rose-400/20 dark:bg-rose-400/10 dark:text-rose-200">
-                    Requer revisao
-                  </span>
+                <span className="inline-flex rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-700 dark:border-rose-400/20 dark:bg-rose-400/10 dark:text-rose-200">
+                  Requer revisao
+                </span>
               ) : null}
             </div>
 
             <div className="space-y-1">
-                <div className="text-lg font-black tracking-tight text-slate-950 dark:text-white sm:text-xl">
-                  {item.name}
+              <div className="text-lg font-black tracking-tight text-slate-950 dark:text-white sm:text-xl">
+                {item.name}
+              </div>
+              <div className="text-sm text-slate-600 dark:text-slate-300">
+                {compactSchedule}
+              </div>
+              {item.lastError?.message ? (
+                <div className="text-xs leading-5 text-rose-600 dark:text-rose-200">
+                  Falha recente detectada. Expanda para revisar os detalhes.
                 </div>
-                <div className="text-sm text-slate-600 dark:text-slate-300">{compactSchedule}</div>
-                {item.lastError?.message ? (
-                  <div className="text-xs leading-5 text-rose-600 dark:text-rose-200">
-                    Falha recente detectada. Expanda para revisar os detalhes.
-                  </div>
-                ) : null}
+              ) : null}
+            </div>
+          </div>
+
+          <div className="flex items-start gap-3 lg:items-center">
+            <div className="surface-quiet min-w-0 rounded-[22px] px-4 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                Proxima execucao
+              </div>
+              <div className="mt-2 text-sm font-semibold text-slate-950 dark:text-white">
+                {formatDateTime(item.nextRunAt)}
+              </div>
+              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                Canal e frequencia prontos para leitura rapida.
               </div>
             </div>
 
-            <div className="flex items-start gap-3 lg:items-center">
-              <div className="surface-quiet min-w-0 rounded-[22px] px-4 py-3">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                  Proxima execucao
-                </div>
-                <div className="mt-2 text-sm font-semibold text-slate-950 dark:text-white">
-                  {formatDateTime(item.nextRunAt)}
-                </div>
-                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Canal e frequencia prontos para leitura rapida.</div>
-              </div>
-
-              <div className="surface-quiet flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-slate-500 dark:text-slate-300">
-                <ChevronIcon expanded={expanded} />
-              </div>
+            <div className="surface-quiet flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-slate-500 dark:text-slate-300">
+              <ChevronIcon expanded={expanded} />
             </div>
+          </div>
         </div>
       </button>
 
@@ -352,16 +378,34 @@ function AutomationCard({ item, busy, expanded, onAction, onToggle }) {
             <div className="flex flex-col gap-5 xl:grid xl:grid-cols-[minmax(0,1fr)_240px] xl:items-start">
               <div className="space-y-5">
                 <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
-                  <InfoTile label="Canal" value={<ChannelPill value={item.channel} />} />
-                  <InfoTile label="Horario" value={item.timeOfDay || "-"} strong />
+                  <InfoTile
+                    label="Canal"
+                    value={<ChannelPill value={item.channel} />}
+                  />
+                  <InfoTile
+                    label="Horario"
+                    value={item.timeOfDay || "-"}
+                    strong
+                  />
                   <InfoTile
                     label="Frequencia"
                     value={formatFrequencyLabel(item.frequency, item.dayOfWeek)}
                     strong
                   />
-                  <InfoTile label="Ultima execucao" value={formatDateTime(item.lastRunAt)} />
-                  <InfoTile label="Execucoes" value={`${Number(item.runCount || 0)} no total`} strong />
-                  <InfoTile label="Status" value={statusLabel(item.status)} strong />
+                  <InfoTile
+                    label="Ultima execucao"
+                    value={formatDateTime(item.lastRunAt)}
+                  />
+                  <InfoTile
+                    label="Execucoes"
+                    value={`${Number(item.runCount || 0)} no total`}
+                    strong
+                  />
+                  <InfoTile
+                    label="Status"
+                    value={statusLabel(item.status)}
+                    strong
+                  />
                 </div>
 
                 {item.lastError?.message ? (
@@ -369,7 +413,9 @@ function AutomationCard({ item, busy, expanded, onAction, onToggle }) {
                     <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-600 dark:text-rose-200">
                       Ultimo erro
                     </div>
-                    <div className="mt-2 text-sm leading-6">{item.lastError.message}</div>
+                    <div className="mt-2 text-sm leading-6">
+                      {item.lastError.message}
+                    </div>
                   </div>
                 ) : null}
 
@@ -378,7 +424,9 @@ function AutomationCard({ item, busy, expanded, onAction, onToggle }) {
                     <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                       Ultimo resultado
                     </div>
-                    <div className="mt-2 text-sm leading-6 text-slate-700 dark:text-slate-200">{lastHistory.message}</div>
+                    <div className="mt-2 text-sm leading-6 text-slate-700 dark:text-slate-200">
+                      {lastHistory.message}
+                    </div>
                   </div>
                 ) : null}
               </div>
@@ -491,7 +539,11 @@ export default function AutomationsPage() {
         templateKey: current.templateKey || firstTemplateKey,
       }));
     } catch (err) {
-      setError(err?.data?.error || err?.message || "Nao consegui carregar as automacoes.");
+      setError(
+        err?.data?.error ||
+          err?.message ||
+          "Nao consegui carregar as automacoes.",
+      );
     } finally {
       setLoading(false);
     }
@@ -502,12 +554,15 @@ export default function AutomationsPage() {
   }, []);
 
   const items = Array.isArray(dashboard?.items) ? dashboard.items : [];
-  const templates = Array.isArray(dashboard?.templates) ? dashboard.templates : [];
+  const templates = Array.isArray(dashboard?.templates)
+    ? dashboard.templates
+    : [];
   const templateGroups = useMemo(() => {
     const groups = new Map();
 
     templates.forEach((template) => {
-      const groupKey = String(template?.groupKey || "resumos").trim() || "resumos";
+      const groupKey =
+        String(template?.groupKey || "resumos").trim() || "resumos";
       if (!groups.has(groupKey)) {
         groups.set(groupKey, {
           key: groupKey,
@@ -520,7 +575,9 @@ export default function AutomationsPage() {
       groups.get(groupKey).items.push(template);
     });
 
-    return Array.from(groups.values()).filter((group) => group.items.length > 0);
+    return Array.from(groups.values()).filter(
+      (group) => group.items.length > 0,
+    );
   }, [templates]);
   const planSummary = dashboard?.planSummary || null;
   const activeCount = Number(dashboard?.activeCount || 0);
@@ -561,7 +618,8 @@ export default function AutomationsPage() {
       return;
     }
 
-    const templateGroupKey = selectedTemplate?.groupKey || templateGroups[0]?.key || "";
+    const templateGroupKey =
+      selectedTemplate?.groupKey || templateGroups[0]?.key || "";
     if (templateGroupKey && templateGroupKey !== selectedTemplateGroupKey) {
       setSelectedTemplateGroupKey(templateGroupKey);
     }
@@ -582,7 +640,9 @@ export default function AutomationsPage() {
 
   useEffect(() => {
     if (!expandedAutomationId) return;
-    const stillVisible = visibleItems.some((item) => item.id === expandedAutomationId);
+    const stillVisible = visibleItems.some(
+      (item) => item.id === expandedAutomationId,
+    );
     if (!stillVisible) {
       setExpandedAutomationId("");
     }
@@ -601,7 +661,9 @@ export default function AutomationsPage() {
     setSelectedTemplateGroupKey(group.key);
     setForm((current) => ({
       ...current,
-      templateKey: group.items.some((template) => template.key === current.templateKey)
+      templateKey: group.items.some(
+        (template) => template.key === current.templateKey,
+      )
         ? current.templateKey
         : group.items[0]?.key || "",
     }));
@@ -634,7 +696,9 @@ export default function AutomationsPage() {
       setFlash("Automacao criada com sucesso.");
       await loadDashboard({ keepFlash: true });
     } catch (err) {
-      setError(err?.data?.error || err?.message || "Nao consegui criar a automacao.");
+      setError(
+        err?.data?.error || err?.message || "Nao consegui criar a automacao.",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -666,7 +730,9 @@ export default function AutomationsPage() {
 
       await loadDashboard({ keepFlash: true });
     } catch (err) {
-      setError(err?.data?.error || err?.message || "Nao consegui concluir essa acao.");
+      setError(
+        err?.data?.error || err?.message || "Nao consegui concluir essa acao.",
+      );
     } finally {
       setActingId("");
     }
@@ -677,7 +743,7 @@ export default function AutomationsPage() {
       <div className="space-y-6">
         <PageHeader
           eyebrow="Lumina"
-          title="Automacoes"
+          title="Automações"
           subtitle="Central manual para revisar, executar e ajustar suas rotinas pessoais sem depender do chat."
           actions={
             <div className="flex flex-wrap gap-2">
@@ -708,7 +774,9 @@ export default function AutomationsPage() {
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <StatCard
             title="Plano"
-            value={String(perms?.plan || workspace?.plan || "start").toUpperCase()}
+            value={String(
+              perms?.plan || workspace?.plan || "start",
+            ).toUpperCase()}
             subtitle="Rotinas pessoais liberadas nos planos pagos, com entregas por WhatsApp e e-mail."
           />
           <StatCard
@@ -740,19 +808,26 @@ export default function AutomationsPage() {
               <form className="space-y-4" onSubmit={handleCreate}>
                 <div className="space-y-3">
                   <div className="space-y-1">
-                    <div className="text-sm font-semibold text-slate-700 dark:text-white">Template</div>
+                    <div className="text-sm font-semibold text-slate-700 dark:text-white">
+                      Template
+                    </div>
                     <div className="text-xs leading-5 text-slate-500 dark:text-slate-300">
-                      Escolha a categoria e depois a rotina que voce quer automatizar.
+                      Escolha a categoria e depois a rotina que voce quer
+                      automatizar.
                     </div>
                   </div>
 
                   <div className="grid gap-4 sm:grid-cols-2">
                     <label className="block space-y-1">
-                      <span className="text-sm font-semibold text-slate-700 dark:text-white">Categoria</span>
+                      <span className="text-sm font-semibold text-slate-700 dark:text-white">
+                        Categoria
+                      </span>
                       <select
                         className={fieldClass}
                         value={selectedTemplateGroup?.key || ""}
-                        onChange={(event) => handleTemplateGroupSelect(event.target.value)}
+                        onChange={(event) =>
+                          handleTemplateGroupSelect(event.target.value)
+                        }
                       >
                         {templateGroups.map((group) => (
                           <option key={group.key} value={group.key}>
@@ -767,11 +842,15 @@ export default function AutomationsPage() {
                     </label>
 
                     <label className="block space-y-1">
-                      <span className="text-sm font-semibold text-slate-700 dark:text-white">Template</span>
+                      <span className="text-sm font-semibold text-slate-700 dark:text-white">
+                        Template
+                      </span>
                       <select
                         className={fieldClass}
                         value={form.templateKey}
-                        onChange={(event) => handleTemplateSelect(event.target.value)}
+                        onChange={(event) =>
+                          handleTemplateSelect(event.target.value)
+                        }
                       >
                         {visibleTemplates.map((template) => (
                           <option key={template.key} value={template.key}>
@@ -796,7 +875,9 @@ export default function AutomationsPage() {
                 </div>
 
                 <label className="block space-y-1">
-                  <span className="text-sm font-semibold text-slate-700 dark:text-white">Canal</span>
+                  <span className="text-sm font-semibold text-slate-700 dark:text-white">
+                    Canal
+                  </span>
                   <select
                     className={fieldClass}
                     value={form.channel}
@@ -817,7 +898,9 @@ export default function AutomationsPage() {
 
                 <div className="grid gap-4 sm:grid-cols-2">
                   <label className="block space-y-1">
-                    <span className="text-sm font-semibold text-slate-700 dark:text-white">Frequencia</span>
+                    <span className="text-sm font-semibold text-slate-700 dark:text-white">
+                      Frequencia
+                    </span>
                     <select
                       className={fieldClass}
                       value={form.frequency}
@@ -837,7 +920,9 @@ export default function AutomationsPage() {
                   </label>
 
                   <label className="block space-y-1">
-                    <span className="text-sm font-semibold text-slate-700 dark:text-white">Horario</span>
+                    <span className="text-sm font-semibold text-slate-700 dark:text-white">
+                      Horario
+                    </span>
                     <input
                       type="time"
                       className={fieldClass}
@@ -854,7 +939,9 @@ export default function AutomationsPage() {
 
                 {form.frequency === "weekly" ? (
                   <label className="block space-y-1">
-                    <span className="text-sm font-semibold text-slate-700 dark:text-white">Dia da semana</span>
+                    <span className="text-sm font-semibold text-slate-700 dark:text-white">
+                      Dia da semana
+                    </span>
                     <select
                       className={fieldClass}
                       value={form.dayOfWeek}
@@ -875,7 +962,8 @@ export default function AutomationsPage() {
                 ) : null}
 
                 <div className="surface-quiet rounded-[22px] px-4 py-3 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                  A automacao usa por padrao o seu proprio WhatsApp e e-mail cadastrados.
+                  A automacao usa por padrao o seu proprio WhatsApp e e-mail
+                  cadastrados.
                 </div>
 
                 <Button
@@ -937,7 +1025,9 @@ export default function AutomationsPage() {
                       busy={actingId === item.id}
                       expanded={expandedAutomationId === item.id}
                       onToggle={() =>
-                        setExpandedAutomationId((current) => (current === item.id ? "" : item.id))
+                        setExpandedAutomationId((current) =>
+                          current === item.id ? "" : item.id,
+                        )
                       }
                       onAction={handleAction}
                     />

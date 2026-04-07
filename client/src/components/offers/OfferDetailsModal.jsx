@@ -1350,6 +1350,14 @@ export default function OfferDetailsModal({
                           <div className="mt-1 break-all">
                             {buildPublicUrl(active) || "—"}
                           </div>
+                          {active?.publicCode ? (
+                            <div className="mt-2 text-zinc-600">
+                              Codigo publico:{" "}
+                              <span className="font-mono font-semibold text-zinc-900">
+                                {active.publicCode}
+                              </span>
+                            </div>
+                          ) : null}
 
                           <Button
                             variant="secondary"

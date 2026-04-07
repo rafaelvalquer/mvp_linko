@@ -43,7 +43,7 @@ const BookingSchema = new mongoose.Schema(
     offerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Offer",
-      required: true,
+      default: null,
       index: true,
     },
 
@@ -62,6 +62,20 @@ const BookingSchema = new mongoose.Schema(
     },
 
     publicToken: { type: String, index: true },
+
+    sourceType: {
+      type: String,
+      enum: ["offer", "my_page"],
+      default: "offer",
+      index: true,
+    },
+    myPageId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "MyPage",
+      default: null,
+      index: true,
+    },
+    serviceLabel: { type: String, default: "", trim: true },
 
     startAt: { type: Date, required: true },
     endAt: { type: Date, required: true },
@@ -98,6 +112,12 @@ const BookingSchema = new mongoose.Schema(
 // normaliza legado
 BookingSchema.pre("validate", function (next) {
   if (this.status === "CANCELED") this.status = "CANCELLED";
+  if (this.sourceType !== "my_page" && !this.offerId) {
+    this.invalidate("offerId", "offerId is required for offer bookings");
+  }
+  if (this.sourceType === "my_page" && !this.myPageId) {
+    this.invalidate("myPageId", "myPageId is required for my_page bookings");
+  }
   next();
 });
 

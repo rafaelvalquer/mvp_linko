@@ -45,6 +45,26 @@ async function generateUniquePublicToken() {
   throw new Error("Failed to generate a unique public token");
 }
 
+function makePublicCode() {
+  return `LP${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
+}
+
+async function generateUniquePublicCode(workspaceId) {
+  const scopedWorkspaceId = workspaceId || null;
+
+  for (let i = 0; i < 8; i += 1) {
+    const code = makePublicCode();
+    // eslint-disable-next-line no-await-in-loop
+    const exists = await Offer.exists({
+      workspaceId: scopedWorkspaceId,
+      publicCode: code,
+    });
+    if (!exists) return code;
+  }
+
+  throw new Error("Failed to generate a unique public code");
+}
+
 function normalizeItems(raw) {
   const items = Array.isArray(raw) ? raw : [];
   return items
@@ -247,6 +267,7 @@ export async function createOfferFromPayload({
   validateOfferSnapshotFields(snapshot);
 
   const publicToken = await generateUniquePublicToken();
+  const publicCode = await generateUniquePublicCode(tenantId);
   const expiresAt = addDays(
     new Date(),
     Number.isFinite(LINK_TTL_DAYS) ? LINK_TTL_DAYS : 90,
@@ -259,6 +280,7 @@ export async function createOfferFromPayload({
     ...snapshot,
 
     publicToken,
+    publicCode,
     expiresAt,
     status: "PUBLIC",
     paymentMethod: "MANUAL_PIX",

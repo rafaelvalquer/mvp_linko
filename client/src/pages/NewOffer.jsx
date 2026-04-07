@@ -4,6 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import { api } from "../app/api.js";
 import { createRecurringOffer } from "../app/recurringOffersApi.js";
 import { getSettings } from "../app/settingsApi.js";
+import { getMyPageQuoteRequestPrefill } from "../app/myPageApi.js";
 import PageHeader from "../components/appui/PageHeader.jsx";
 import Card, { CardBody, CardHeader } from "../components/appui/Card.jsx";
 import Button from "../components/appui/Button.jsx";
@@ -221,12 +222,19 @@ function linkTextForWhatsApp(offerUrl) {
   }
 }
 
-function buildWaMeLink({ phoneRaw, offerUrl }) {
+function buildWaMeLink({ phoneRaw, offerUrl, publicCode }) {
   const to = normalizePhoneForWaMe(phoneRaw);
   if (!to) return "";
 
   const waLinkText = linkTextForWhatsApp(offerUrl); // ✅ agora manda "www..."
-  const msg = `Segue o link da proposta:\n${waLinkText}`;
+  const codeText = String(publicCode || "").trim();
+  const msg = [
+    "Segue o link da proposta:",
+    waLinkText,
+    codeText ? `Codigo publico: ${codeText}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
   return `https://wa.me/${to}?text=${encodeURIComponent(msg)}`;
 }
 
@@ -524,6 +532,7 @@ function commitNumericDrafts(form) {
 export default function NewOffer() {
   const { user, perms } = useAuth();
   const [searchParams] = useSearchParams();
+  const quoteRequestId = String(searchParams.get("quoteRequestId") || "").trim();
   const initialRecurringMode =
     String(searchParams.get("mode") || "")
       .trim()
@@ -613,6 +622,9 @@ export default function NewOffer() {
   const [err, setErr] = useState("");
   const [validationIssues, setValidationIssues] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [quotePrefillMeta, setQuotePrefillMeta] = useState(null);
+  const [quotePrefillLoading, setQuotePrefillLoading] = useState(false);
+  const [quotePrefillErr, setQuotePrefillErr] = useState("");
 
   // Premium: auto-preencher cliente/produto a partir de cadastros
   const [customerDoc, setCustomerDoc] = useState(""); // SOMENTE dígitos
@@ -657,6 +669,85 @@ export default function NewOffer() {
         : { ...prev, creationMode: nextMode },
     );
   }, [canUseRecurringFeatures, initialRecurringMode]);
+
+  useEffect(() => {
+    let alive = true;
+
+    if (!quoteRequestId) {
+      setQuotePrefillMeta(null);
+      setQuotePrefillErr("");
+      setQuotePrefillLoading(false);
+      return () => {
+        alive = false;
+      };
+    }
+
+    (async () => {
+      try {
+        setQuotePrefillLoading(true);
+        setQuotePrefillErr("");
+
+        const response = await getMyPageQuoteRequestPrefill(quoteRequestId);
+        if (!alive) return;
+
+        const prefill = response?.prefill || {};
+        const request = response?.request || null;
+
+        setQuotePrefillMeta({
+          requestId: prefill.quoteRequestId || quoteRequestId,
+          customerName: request?.customerName || prefill.customerName || "",
+          requestType: request?.requestType || prefill.offerType || "service",
+          createdAt: request?.createdAt || null,
+        });
+        setCustomerDoc(prefill.customerDoc || "");
+
+        setForm((prev) => {
+          const items =
+            prefill.offerType === "product" &&
+            Array.isArray(prefill.items) &&
+            prefill.items.length
+              ? prefill.items.map((item) => ({
+                  ...createOfferItem(),
+                  productId: item.productId || "",
+                  description: item.description || "",
+                  unitPrice: centsToMoneyInput(
+                    Number(item.unitPriceCents || 0),
+                  ),
+                }))
+              : prev.items;
+
+          return {
+            ...prev,
+            customerName: prefill.customerName || prev.customerName,
+            customerWhatsApp:
+              prefill.customerWhatsApp || prev.customerWhatsApp,
+            customerEmail: prefill.customerEmail || prev.customerEmail,
+            customerDoc: prefill.customerDoc || prev.customerDoc,
+            offerType:
+              prefill.offerType === "product" ||
+              prefill.offerType === "service"
+                ? prefill.offerType
+                : prev.offerType,
+            title: prefill.title || prev.title,
+            description: prefill.description || prev.description,
+            items,
+          };
+        });
+      } catch (error) {
+        if (!alive) return;
+        setQuotePrefillErr(
+          error?.message ||
+            "Nao consegui carregar os dados da solicitacao da Minha Pagina.",
+        );
+      } finally {
+        if (alive) setQuotePrefillLoading(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [quoteRequestId]);
 
   useEffect(() => {
     let alive = true;
@@ -1238,6 +1329,10 @@ export default function NewOffer() {
         }));
       }
 
+      if (quoteRequestId && creationMode !== "recurring") {
+        payload.myPageQuoteRequestId = quoteRequestId;
+      }
+
       if (creationMode === "recurring") {
         const startsAt = new Date(
           `${activeForm.recurringStartDate}T${activeForm.recurringTimeOfDay}:00`,
@@ -1296,15 +1391,17 @@ export default function NewOffer() {
 
   const createdRecurring = result?.recurring || null;
   const createdOffer = result?.firstOffer || result?.offer || null;
+  const createdOfferPublicCode = createdOffer?.publicCode || "";
 
   const offerPublicUrl = createdOffer?.publicToken
     ? `${window.location.origin}/p/${createdOffer.publicToken}`
     : "";
 
   const waShareUrl = offerPublicUrl
-    ? buildWaMeLink({
+      ? buildWaMeLink({
         phoneRaw: form.customerWhatsApp,
         offerUrl: offerPublicUrl,
+        publicCode: createdOfferPublicCode,
       })
     : "";
 
@@ -1413,6 +1510,31 @@ export default function NewOffer() {
             </Button>
           }
         />
+
+        {quoteRequestId ? (
+          <div className="surface-panel px-[clamp(0.875rem,3.8vw,1rem)] py-[clamp(0.875rem,3.6vw,1rem)] sm:px-4 sm:py-4">
+            <div className="flex items-start gap-3">
+              <MessageCircle className="mt-0.5 h-5 w-5 shrink-0 text-sky-600 dark:text-sky-300" />
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-slate-950 dark:text-white">
+                  Solicitacao da Minha Pagina
+                </div>
+                <div className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                  {quotePrefillLoading
+                    ? "Carregando os dados do pedido recebido pela sua pagina..."
+                    : quotePrefillMeta?.customerName
+                      ? `Voce esta criando uma proposta para ${quotePrefillMeta.customerName}.`
+                      : "Voce esta convertendo uma solicitacao recebida pela sua pagina."}
+                </div>
+                {quotePrefillErr ? (
+                  <div className="mt-2 text-sm text-red-700 dark:text-red-300">
+                    {quotePrefillErr}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         <form
           onSubmit={onSubmit}
@@ -3363,17 +3485,34 @@ export default function NewOffer() {
                             {window.location.origin}/p/
                             {createdOffer.publicToken}
                           </div>
+                          {createdOfferPublicCode ? (
+                            <div className="mt-2 text-xs font-semibold text-zinc-600">
+                              Codigo publico: {createdOfferPublicCode}
+                            </div>
+                          ) : null}
                         </div>
                       ) : null}
                     </>
                   ) : (
-                    <div className="rounded-xl border border-emerald-200 bg-white p-3 text-sm shadow-sm">
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-600">
-                        Link da Proposta
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div className="rounded-xl border border-emerald-200 bg-white p-3 text-sm shadow-sm">
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-600">
+                          Link da Proposta
+                        </div>
+                        <div className="mt-1 font-mono text-sm text-zinc-900 break-all">
+                          {window.location.origin}/p/{createdOffer?.publicToken}
+                        </div>
                       </div>
-                      <div className="mt-1 font-mono text-sm text-zinc-900 break-all">
-                        {window.location.origin}/p/{createdOffer?.publicToken}
-                      </div>
+                      {createdOfferPublicCode ? (
+                        <div className="rounded-xl border border-emerald-200 bg-white p-3 text-sm shadow-sm">
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-600">
+                            Codigo publico
+                          </div>
+                          <div className="mt-1 font-mono text-sm text-zinc-900 break-all">
+                            {createdOfferPublicCode}
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   )}
 
