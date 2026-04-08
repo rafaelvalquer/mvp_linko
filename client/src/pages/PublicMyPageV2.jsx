@@ -16,6 +16,7 @@ import {
   MyPagePublicCard,
   MyPagePublicFooter,
   MyPagePublicHeroMedia,
+  MyPagePublicLoadingSplash,
   MyPageSecondaryLinks,
   MyPagePublicScreen,
 } from "../components/my-page/MyPagePublicUi.jsx";
@@ -83,105 +84,105 @@ export default function PublicMyPageV2() {
       {(theme) => (
         <div className={theme?.layout?.homeShellClassName}>
           <div className={cls("mx-auto w-full", theme?.layout?.homeMaxWidthClassName)}>
-            <MyPagePublicCard theme={theme} className={theme?.layout?.homeCardClassName}>
-              <div className={theme?.layout?.homeHeaderClassName}>
-                <MyPagePublicHeroMedia
-                  page={page}
-                  theme={theme}
-                  className="mb-5 w-full"
-                  heightClassName={theme?.layout?.heroMediaHeightClassName}
-                />
-                {theme.usesHeroLayout ? null : (
-                  <MyPagePublicAvatar
+            {loading ? (
+              <MyPagePublicLoadingSplash theme={theme} />
+            ) : (
+              <MyPagePublicCard theme={theme} className={theme?.layout?.homeCardClassName}>
+                <div className={theme?.layout?.homeHeaderClassName}>
+                  <MyPagePublicHeroMedia
                     page={page}
                     theme={theme}
-                    sizeClassName={theme?.layout?.heroAvatarSizeClassName}
-                    iconSizeClassName={theme?.layout?.heroAvatarIconSizeClassName}
+                    className="mb-5 w-full"
+                    heightClassName={theme?.layout?.heroMediaHeightClassName}
                   />
-                )}
-                <div className={theme?.layout?.homeTitleClassName} style={theme.titleStyle}>
-                  {page?.title || "Minha Pagina"}
-                </div>
-                {page?.subtitle ? (
-                  <div
-                    className="mt-2 text-sm font-semibold"
-                    style={{
-                      ...theme.accentTextStyle,
-                      fontFamily: theme.headingFontFamily,
-                    }}
-                  >
-                    {page.subtitle}
+                  {theme.usesHeroLayout ? null : (
+                    <MyPagePublicAvatar
+                      page={page}
+                      theme={theme}
+                      sizeClassName={theme?.layout?.heroAvatarSizeClassName}
+                      iconSizeClassName={theme?.layout?.heroAvatarIconSizeClassName}
+                    />
+                  )}
+                  <div className={theme?.layout?.homeTitleClassName} style={theme.titleStyle}>
+                    {page?.title || "Minha Pagina"}
                   </div>
-                ) : null}
-                {page?.description ? (
-                  <div
-                    className={theme?.layout?.homeDescriptionClassName}
-                    style={theme.mutedTextStyle}
-                  >
-                    {page.description}
+                  {page?.subtitle ? (
+                    <div
+                      className="mt-2 text-sm font-semibold"
+                      style={{
+                        ...theme.accentTextStyle,
+                        fontFamily: theme.headingFontFamily,
+                      }}
+                    >
+                      {page.subtitle}
+                    </div>
+                  ) : null}
+                  {page?.description ? (
+                    <div
+                      className={theme?.layout?.homeDescriptionClassName}
+                      style={theme.mutedTextStyle}
+                    >
+                      {page.description}
+                    </div>
+                  ) : null}
+                </div>
+
+                {err ? (
+                  <div className="mt-8 rounded-[28px] border border-red-200 bg-red-50 p-5 text-center text-sm text-red-700">
+                    {err}
                   </div>
-                ) : null}
-              </div>
+                ) : (
+                  <>
+                    <div className={theme?.layout?.homeButtonsClassName}>
+                      {buttons.map((button, index) => {
+                        const Icon = iconForType(button.type);
+                        const buttonProps = getPublicButtonProps(
+                          theme,
+                          buttonVariantForHome(theme, button, index),
+                          theme?.layout?.homeButtonClassName,
+                        );
 
-              {loading ? (
-                <div className="mt-8 text-center text-sm" style={theme.mutedTextStyle}>
-                  Carregando sua pagina...
-                </div>
-              ) : err ? (
-                <div className="mt-8 rounded-[28px] border border-red-200 bg-red-50 p-5 text-center text-sm text-red-700">
-                  {err}
-                </div>
-              ) : (
-                <>
-                  <div className={theme?.layout?.homeButtonsClassName}>
-                    {buttons.map((button, index) => {
-                      const Icon = iconForType(button.type);
-                      const buttonProps = getPublicButtonProps(
-                        theme,
-                        buttonVariantForHome(theme, button, index),
-                        theme?.layout?.homeButtonClassName,
-                      );
-
-                      return (
-                        <button
-                          key={button.id}
-                          type="button"
-                          onClick={() => handleButtonClick(button)}
-                          {...buttonProps}
-                        >
-                          <div className="flex min-w-0 items-center gap-4">
-                            <div
-                              className={cls(
-                                "flex h-12 w-12 shrink-0 items-center justify-center border",
-                                theme.buttonIconRadiusClassName,
-                              )}
-                              style={theme.softSurfaceStyle}
-                            >
-                              <Icon className="h-5 w-5" />
-                            </div>
-                            <div className="min-w-0">
-                              <div className="truncate text-base font-semibold">
-                                {button.label}
+                        return (
+                          <button
+                            key={button.id}
+                            type="button"
+                            onClick={() => handleButtonClick(button)}
+                            {...buttonProps}
+                          >
+                            <div className="flex min-w-0 items-center gap-4">
+                              <div
+                                className={cls(
+                                  "flex h-12 w-12 shrink-0 items-center justify-center border",
+                                  theme.buttonIconRadiusClassName,
+                                )}
+                                style={theme.softSurfaceStyle}
+                              >
+                                <Icon className="h-5 w-5" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="truncate text-base font-semibold">
+                                  {button.label}
+                                </div>
                               </div>
                             </div>
-                          </div>
 
-                          <span className="text-sm font-semibold" style={theme.accentTextStyle}>
-                            Abrir
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                            <span className="text-sm font-semibold" style={theme.accentTextStyle}>
+                              Abrir
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
 
-                  <MyPageSecondaryLinks theme={theme} links={socialLinks} />
-                </>
-              )}
+                    <MyPageSecondaryLinks theme={theme} links={socialLinks} />
+                  </>
+                )}
 
-              <div className="mt-8">
-                <MyPagePublicFooter theme={theme} />
-              </div>
-            </MyPagePublicCard>
+                <div className="mt-8">
+                  <MyPagePublicFooter theme={theme} />
+                </div>
+              </MyPagePublicCard>
+            )}
           </div>
         </div>
       )}

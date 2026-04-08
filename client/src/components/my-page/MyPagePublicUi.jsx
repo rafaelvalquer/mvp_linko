@@ -215,6 +215,100 @@ export function MyPagePublicFooter({ theme }) {
   return <div className="pt-1" style={theme.mutedTextStyle} />;
 }
 
+export function MyPagePublicLoadingSplash({ theme, className = "" }) {
+  const accentBackground =
+    theme?.primaryButtonStyle?.background ||
+    theme?.activeCardStyle?.background ||
+    "linear-gradient(135deg, rgba(37,99,235,0.9), rgba(20,184,166,0.8))";
+  const softBackground =
+    theme?.softSurfaceStyle?.background ||
+    "linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.05))";
+
+  return (
+    <MyPagePublicCard
+      theme={theme}
+      className={cls(theme?.layout?.homeCardClassName, "relative overflow-hidden", className)}
+    >
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div
+          className="absolute left-1/2 top-16 h-40 w-40 -translate-x-1/2 rounded-full blur-3xl animate-pulse"
+          style={{ background: accentBackground, opacity: 0.24 }}
+        />
+        <div
+          className="absolute right-8 top-24 h-28 w-28 rounded-full blur-3xl animate-pulse"
+          style={{
+            background: softBackground,
+            opacity: 0.4,
+            animationDelay: "240ms",
+          }}
+        />
+        <div
+          className="absolute bottom-16 left-10 h-24 w-24 rounded-full blur-3xl animate-pulse"
+          style={{
+            background: accentBackground,
+            opacity: 0.14,
+            animationDelay: "480ms",
+          }}
+        />
+      </div>
+
+      <div className="relative flex min-h-[540px] flex-col items-center justify-center px-6 py-10 text-center sm:px-10">
+        <div className="relative mb-8">
+          <div
+            className="absolute inset-[-12px] rounded-full border animate-pulse"
+            style={{ borderColor: theme?.activeCardStyle?.borderColor || theme?.dividerStyle?.borderColor, opacity: 0.4 }}
+          />
+          <div
+            className="absolute inset-[-26px] rounded-full border animate-pulse"
+            style={{
+              borderColor: theme?.dividerStyle?.borderColor || theme?.softSurfaceStyle?.borderColor,
+              opacity: 0.22,
+              animationDelay: "180ms",
+            }}
+          />
+          <div
+            className="relative flex h-24 w-24 items-center justify-center rounded-full border shadow-[0_24px_50px_-28px_rgba(15,23,42,0.45)]"
+            style={theme?.activeCardStyle || theme?.softSurfaceStyle}
+          >
+            <div
+              className="h-10 w-10 rounded-full animate-pulse"
+              style={{
+                background: accentBackground,
+                opacity: 0.95,
+              }}
+            />
+          </div>
+        </div>
+
+        <div className="text-[11px] font-bold uppercase tracking-[0.22em]" style={theme?.accentTextStyle}>
+          Carregando
+        </div>
+        <div className="mt-3 text-2xl font-black tracking-[-0.04em]" style={theme?.titleStyle}>
+          Sua pagina
+        </div>
+        <div className="mt-3 max-w-[28ch] text-sm leading-6" style={theme?.mutedTextStyle}>
+          Preparando a experiencia e aplicando o visual da sua pagina.
+        </div>
+
+        <div className="mt-8 w-full max-w-sm space-y-3">
+          <div
+            className="h-4 w-40 rounded-full animate-pulse mx-auto"
+            style={{ background: softBackground, opacity: 0.9 }}
+          />
+          <div
+            className="h-3 w-56 rounded-full animate-pulse mx-auto"
+            style={{ background: softBackground, opacity: 0.72, animationDelay: "120ms" }}
+          />
+          <div
+            className="h-14 w-full rounded-[24px] border animate-pulse"
+            style={theme?.primaryButtonStyle}
+          />
+        </div>
+      </div>
+    </MyPagePublicCard>
+  );
+}
+
 function normalizeSecondaryLinkLabel(item) {
   return String(item?.label || item?.platform || "").trim();
 }
