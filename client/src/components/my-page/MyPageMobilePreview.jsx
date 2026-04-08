@@ -8,6 +8,7 @@ import {
 import {
   MyPagePublicAvatar,
   MyPagePublicHeroMedia,
+  MyPageSecondaryLinks,
 } from "./MyPagePublicUi.jsx";
 
 function cls(...parts) {
@@ -16,7 +17,6 @@ function cls(...parts) {
 
 function PreviewButton({ children, theme, variant = "primary", className = "" }) {
   const buttonProps = getMyPageButtonProps(theme, variant);
-
   return (
     <div
       className={cls(buttonProps.className, "w-full justify-between", className)}
@@ -61,6 +61,12 @@ function PreviewField({ theme, className = "", children }) {
   );
 }
 
+function resolveHomeButtonVariant(theme, button, index) {
+  if (theme?.layout?.homePrimaryAll) return "primary";
+  if (theme?.layout?.homeHighlightFirst && index === 0) return "primary";
+  return button?.type === "whatsapp" ? "primary" : "secondary";
+}
+
 function PreviewHeader({ page, theme, eyebrow, studio = false }) {
   return (
     <div className="space-y-3">
@@ -68,10 +74,14 @@ function PreviewHeader({ page, theme, eyebrow, studio = false }) {
         page={page}
         theme={theme}
         className="w-full"
-        heightClassName={studio ? "h-28" : "h-24"}
+        heightClassName={
+          studio
+            ? theme?.layout?.previewMediaHeightClassName
+            : "h-24"
+        }
       />
 
-      <div className="flex items-start gap-3">
+      <div className={cls("gap-3", theme?.layout?.previewHeaderClassName)}>
         {theme.usesHeroLayout ? null : (
           <MyPagePublicAvatar
             page={page}
@@ -87,7 +97,10 @@ function PreviewHeader({ page, theme, eyebrow, studio = false }) {
           >
             {eyebrow}
           </div>
-          <div className={cls("mt-1 font-black", studio ? "text-base" : "text-sm")}>
+          <div
+            className={cls(theme?.layout?.previewTitleClassName, studio ? "text-base" : "text-sm")}
+            style={theme.titleStyle}
+          >
             {page?.title || "Minha Pagina"}
           </div>
           {page?.subtitle ? (
@@ -112,7 +125,12 @@ function DeviceShell({ theme, studio = false, children }) {
   };
 
   return (
-    <div className={cls("mx-auto w-full", studio ? "max-w-[430px]" : "max-w-[344px]")}>
+    <div
+      className={cls(
+        "mx-auto w-full",
+        studio ? theme?.layout?.previewDeviceClassName : "max-w-[344px]",
+      )}
+    >
       <div
         className={cls(
           "rounded-[42px] border border-slate-950/80 bg-slate-950 p-2.5",
@@ -124,7 +142,10 @@ function DeviceShell({ theme, studio = false, children }) {
         <div className="flex justify-center pb-2">
           <div className="h-1.5 w-20 rounded-full bg-white/20" />
         </div>
-        <div className="overflow-hidden rounded-[30px] border border-white/10" style={screenStyle}>
+        <div
+          className="overflow-hidden rounded-[30px] border border-white/10"
+          style={screenStyle}
+        >
           <div className={cls("space-y-4", studio ? "p-5" : "p-4")}>{children}</div>
         </div>
       </div>
@@ -147,39 +168,49 @@ export default function MyPageMobilePreview({
   return (
     <DeviceShell theme={theme} studio={isStudio}>
       {mode === "catalog" ? (
-          <PreviewCard theme={theme} className={cls(isStudio ? "p-5" : "p-4")}>
-            <div className="space-y-3">
-              <PreviewHeader page={page} theme={theme} eyebrow="Catalogo" studio={isStudio} />
-            {Array.from({ length: Math.max(shopCount || 2, 2) })
-              .slice(0, 2)
-              .map((_, index) => (
-                <PreviewSelectable
-                  key={`catalog:${index}`}
-                  theme={theme}
-                  className={cls(isStudio ? "p-4" : "p-3")}
-                >
-                  <div className="flex items-start gap-3">
-                    <div
-                      className={cls(
-                        "flex items-center justify-center border",
-                        theme.buttonIconRadiusClassName,
-                        isStudio ? "h-14 w-14" : "h-12 w-12",
-                      )}
-                      style={theme.softSurfaceStyle}
-                    >
-                      <ShoppingBag className={cls(isStudio ? "h-6 w-6" : "h-5 w-5")} />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className={cls("truncate font-semibold", isStudio ? "text-base" : "text-sm")}>
-                        Produto do shop
+        <PreviewCard
+          theme={theme}
+          className={cls(isStudio ? theme?.layout?.previewCardClassName : "p-4")}
+        >
+          <div className="space-y-3">
+            <PreviewHeader page={page} theme={theme} eyebrow="Catalogo" studio={isStudio} />
+            <div className={cls(theme?.layout?.catalogGridClassName, "grid-cols-1")}>
+              {Array.from({ length: Math.max(shopCount || 2, 2) })
+                .slice(0, 2)
+                .map((_, index) => (
+                  <PreviewSelectable
+                    key={`catalog:${index}`}
+                    theme={theme}
+                    className={cls(isStudio ? "p-4" : "p-3")}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div
+                        className={cls(
+                          "flex items-center justify-center border",
+                          theme.buttonIconRadiusClassName,
+                          isStudio ? "h-14 w-14" : "h-12 w-12",
+                        )}
+                        style={theme.softSurfaceStyle}
+                      >
+                        <ShoppingBag className={cls(isStudio ? "h-6 w-6" : "h-5 w-5")} />
                       </div>
-                      <div className="mt-1 text-xs" style={theme.mutedTextStyle}>
-                        Item publico
+                      <div className="min-w-0 flex-1">
+                        <div
+                          className={cls(
+                            "truncate font-semibold",
+                            isStudio ? "text-base" : "text-sm",
+                          )}
+                        >
+                          Produto do shop
+                        </div>
+                        <div className="mt-1 text-xs" style={theme.mutedTextStyle}>
+                          Item publico
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </PreviewSelectable>
-              ))}
+                  </PreviewSelectable>
+                ))}
+            </div>
             <PreviewButton theme={theme}>
               <span className="inline-flex items-center gap-2">
                 <ShoppingBag className="h-4 w-4" />
@@ -191,22 +222,37 @@ export default function MyPageMobilePreview({
       ) : null}
 
       {mode === "quote" ? (
-        <PreviewCard theme={theme} className={cls(isStudio ? "p-5" : "p-4")}>
+        <PreviewCard
+          theme={theme}
+          className={cls(isStudio ? theme?.layout?.previewCardClassName : "p-4")}
+        >
           <div className="space-y-3">
-            <PreviewHeader page={page} theme={theme} eyebrow="Pedir orcamento" studio={isStudio} />
-            <PreviewCard theme={theme} variant="soft" className={cls("space-y-2", isStudio ? "p-4" : "p-3")}>
-              <PreviewField theme={theme}>
-                Nome
-              </PreviewField>
-              <PreviewField theme={theme}>
-                WhatsApp
-              </PreviewField>
+            <PreviewHeader
+              page={page}
+              theme={theme}
+              eyebrow="Pedir orcamento"
+              studio={isStudio}
+            />
+            <PreviewCard
+              theme={theme}
+              variant="soft"
+              className={cls("space-y-2", isStudio ? "p-4" : "p-3")}
+            >
+              <PreviewField theme={theme}>Nome</PreviewField>
+              <PreviewField theme={theme}>WhatsApp</PreviewField>
               <PreviewField theme={theme} className="py-3">
                 Conte o que voce precisa
               </PreviewField>
             </PreviewCard>
-            <PreviewCard theme={theme} variant="soft" className={cls(isStudio ? "p-4" : "p-3")}>
-              <div className="text-[10px] font-bold uppercase tracking-[0.18em]" style={theme.accentTextStyle}>
+            <PreviewCard
+              theme={theme}
+              variant="soft"
+              className={cls(isStudio ? "p-4" : "p-3")}
+            >
+              <div
+                className="text-[10px] font-bold uppercase tracking-[0.18em]"
+                style={theme.accentTextStyle}
+              >
                 Produtos
               </div>
               <div className="mt-2 text-xs" style={theme.mutedTextStyle}>
@@ -224,9 +270,17 @@ export default function MyPageMobilePreview({
       ) : null}
 
       {mode === "schedule" ? (
-        <PreviewCard theme={theme} className={cls(isStudio ? "p-5" : "p-4")}>
+        <PreviewCard
+          theme={theme}
+          className={cls(isStudio ? theme?.layout?.previewCardClassName : "p-4")}
+        >
           <div className="space-y-3">
-            <PreviewHeader page={page} theme={theme} eyebrow="Agendar atendimento" studio={isStudio} />
+            <PreviewHeader
+              page={page}
+              theme={theme}
+              eyebrow="Agendar atendimento"
+              studio={isStudio}
+            />
             <div className="grid grid-cols-2 gap-2">
               {["09:00", "10:30", "14:00", "16:00"].map((slot) => (
                 <PreviewSelectable
@@ -249,16 +303,26 @@ export default function MyPageMobilePreview({
       ) : null}
 
       {mode === "pay" ? (
-        <PreviewCard theme={theme} className={cls(isStudio ? "p-5" : "p-4")}>
+        <PreviewCard
+          theme={theme}
+          className={cls(isStudio ? theme?.layout?.previewCardClassName : "p-4")}
+        >
           <div className="space-y-3">
-            <PreviewHeader page={page} theme={theme} eyebrow="Pagar proposta" studio={isStudio} />
-            <PreviewCard theme={theme} variant="soft" className={cls("space-y-2", isStudio ? "p-4" : "p-3")}>
+            <PreviewHeader
+              page={page}
+              theme={theme}
+              eyebrow="Pagar proposta"
+              studio={isStudio}
+            />
+            <PreviewCard
+              theme={theme}
+              variant="soft"
+              className={cls("space-y-2", isStudio ? "p-4" : "p-3")}
+            >
               <div className="text-xs" style={theme.mutedTextStyle}>
                 Digite o codigo publico ou cole o link recebido.
               </div>
-              <PreviewField theme={theme}>
-                LPABC123
-              </PreviewField>
+              <PreviewField theme={theme}>LPABC123</PreviewField>
             </PreviewCard>
             <PreviewButton theme={theme}>
               <span className="inline-flex items-center gap-2">
@@ -271,14 +335,19 @@ export default function MyPageMobilePreview({
       ) : null}
 
       {mode === "home" ? (
-        <PreviewCard theme={theme} className={cls(isStudio ? "p-6" : "p-4")}>
+        <PreviewCard
+          theme={theme}
+          className={cls(isStudio ? theme?.layout?.previewCardClassName : "p-4")}
+        >
           <div className="space-y-4">
-            <div className="flex flex-col items-center text-center">
+            <div className={cls(theme?.layout?.previewHeaderClassName)}>
               <MyPagePublicHeroMedia
                 page={page}
                 theme={theme}
                 className="mb-4 w-full"
-                heightClassName={isStudio ? "h-[180px]" : "h-28"}
+                heightClassName={
+                  isStudio ? theme?.layout?.previewMediaHeightClassName : "h-28"
+                }
               />
               {theme.usesHeroLayout ? null : (
                 <MyPagePublicAvatar
@@ -288,7 +357,7 @@ export default function MyPageMobilePreview({
                   iconSizeClassName={isStudio ? "h-8 w-8" : "h-6 w-6"}
                 />
               )}
-              <div className={cls("mt-3 font-black tracking-[-0.05em]", isStudio ? "text-2xl" : "text-lg")}>
+              <div className={theme?.layout?.previewTitleClassName} style={theme.titleStyle}>
                 {page?.title || "Minha Pagina"}
               </div>
               {page?.subtitle ? (
@@ -297,34 +366,43 @@ export default function MyPageMobilePreview({
                 </div>
               ) : null}
               <div
-                className={cls("mt-2 leading-6", isStudio ? "max-w-[30ch] text-sm" : "text-xs")}
+                className={cls(
+                  theme?.layout?.previewDescriptionClassName,
+                  isStudio ? "max-w-[30ch] text-sm" : "text-xs",
+                )}
                 style={theme.mutedTextStyle}
               >
                 {page?.description || "Centralize seus principais links."}
               </div>
             </div>
 
-            <div className="space-y-2">
+            <div className={theme?.layout?.previewButtonsClassName || "space-y-2"}>
               {buttons.length ? (
-                buttons.map((button) => (
+                buttons.map((button, index) => (
                   <PreviewButton
                     key={button.id}
                     theme={theme}
-                    variant={button.type === "whatsapp" ? "primary" : "secondary"}
+                    variant={resolveHomeButtonVariant(theme, button, index)}
                   >
                     <span className="truncate">{button.label}</span>
                   </PreviewButton>
                 ))
               ) : (
-                <PreviewCard theme={theme} variant="soft" className="p-3 text-center text-xs">
+                <PreviewCard
+                  theme={theme}
+                  variant="soft"
+                  className="p-3 text-center text-xs"
+                >
                   Ative pelo menos um CTA em Links.
                 </PreviewCard>
               )}
             </div>
 
-            <div className="pt-2 text-center text-[11px]" style={theme.mutedTextStyle}>
-              Criado com LuminorPay
-            </div>
+            <MyPageSecondaryLinks
+              theme={theme}
+              links={page?.socialLinks || []}
+              interactive={false}
+            />
           </div>
         </PreviewCard>
       ) : null}

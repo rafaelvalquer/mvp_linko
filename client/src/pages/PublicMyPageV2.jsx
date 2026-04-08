@@ -16,6 +16,7 @@ import {
   MyPagePublicCard,
   MyPagePublicFooter,
   MyPagePublicHeroMedia,
+  MyPageSecondaryLinks,
   MyPagePublicScreen,
 } from "../components/my-page/MyPagePublicUi.jsx";
 
@@ -26,6 +27,12 @@ function iconForType(type) {
   if (type === "catalog") return ShoppingBag;
   if (type === "payment_link") return CreditCard;
   return Link2;
+}
+
+function buttonVariantForHome(theme, button, index) {
+  if (theme?.layout?.homePrimaryAll) return "primary";
+  if (theme?.layout?.homeHighlightFirst && index === 0) return "primary";
+  return button?.type === "whatsapp" ? "primary" : "secondary";
 }
 
 export default function PublicMyPageV2() {
@@ -72,121 +79,110 @@ export default function PublicMyPageV2() {
   }
 
   return (
-    <MyPagePublicScreen page={page} maxWidth="max-w-xl">
+    <MyPagePublicScreen page={page}>
       {(theme) => (
-        <div className="flex min-h-[calc(100vh-3rem)] items-center">
-          <MyPagePublicCard theme={theme} className="w-full p-5 sm:p-7">
-            <div className="flex flex-col items-center text-center">
-              <MyPagePublicHeroMedia
-                page={page}
-                theme={theme}
-                className="mb-5 w-full"
-                heightClassName="h-[180px] sm:h-[220px]"
-              />
-              {theme.usesHeroLayout ? null : (
-                <MyPagePublicAvatar
+        <div className={theme?.layout?.homeShellClassName}>
+          <div className={cls("mx-auto w-full", theme?.layout?.homeMaxWidthClassName)}>
+            <MyPagePublicCard theme={theme} className={theme?.layout?.homeCardClassName}>
+              <div className={theme?.layout?.homeHeaderClassName}>
+                <MyPagePublicHeroMedia
                   page={page}
                   theme={theme}
-                  sizeClassName="h-24 w-24 rounded-full"
-                  iconSizeClassName="h-10 w-10"
+                  className="mb-5 w-full"
+                  heightClassName={theme?.layout?.heroMediaHeightClassName}
                 />
-              )}
-              <div className="mt-5 text-3xl font-black tracking-[-0.05em]">
-                {page?.title || "Minha Pagina"}
-              </div>
-              {page?.subtitle ? (
-                <div className="mt-2 text-sm font-semibold" style={theme.accentTextStyle}>
-                  {page.subtitle}
+                {theme.usesHeroLayout ? null : (
+                  <MyPagePublicAvatar
+                    page={page}
+                    theme={theme}
+                    sizeClassName={theme?.layout?.heroAvatarSizeClassName}
+                    iconSizeClassName={theme?.layout?.heroAvatarIconSizeClassName}
+                  />
+                )}
+                <div className={theme?.layout?.homeTitleClassName} style={theme.titleStyle}>
+                  {page?.title || "Minha Pagina"}
                 </div>
-              ) : null}
-              {page?.description ? (
-                <div className="mt-4 max-w-[32ch] text-sm leading-6" style={theme.mutedTextStyle}>
-                  {page.description}
-                </div>
-              ) : null}
-            </div>
-
-            {loading ? (
-              <div className="mt-8 text-center text-sm" style={theme.mutedTextStyle}>
-                Carregando sua pagina...
+                {page?.subtitle ? (
+                  <div
+                    className="mt-2 text-sm font-semibold"
+                    style={{
+                      ...theme.accentTextStyle,
+                      fontFamily: theme.headingFontFamily,
+                    }}
+                  >
+                    {page.subtitle}
+                  </div>
+                ) : null}
+                {page?.description ? (
+                  <div
+                    className={theme?.layout?.homeDescriptionClassName}
+                    style={theme.mutedTextStyle}
+                  >
+                    {page.description}
+                  </div>
+                ) : null}
               </div>
-            ) : err ? (
-              <div className="mt-8 rounded-[28px] border border-red-200 bg-red-50 p-5 text-center text-sm text-red-700">
-                {err}
-              </div>
-            ) : (
-              <>
-                <div className="mt-8 space-y-3">
-                  {buttons.map((button) => {
-                    const Icon = iconForType(button.type);
-                    const buttonProps = getPublicButtonProps(
-                      theme,
-                      button.type === "whatsapp" ? "primary" : "secondary",
-                      "flex w-full items-center justify-between gap-4 px-5 py-4 text-left",
-                    );
 
-                    return (
-                      <button
-                        key={button.id}
-                        type="button"
-                        onClick={() => handleButtonClick(button)}
-                        {...buttonProps}
-                      >
-                        <div className="flex min-w-0 items-center gap-4">
-                          <div
-                            className={cls(
-                              "flex h-12 w-12 shrink-0 items-center justify-center border",
-                              theme.buttonIconRadiusClassName,
-                            )}
-                            style={theme.softSurfaceStyle}
-                          >
-                            <Icon className="h-5 w-5" />
-                          </div>
-                          <div className="min-w-0">
-                            <div className="truncate text-base font-semibold">
-                              {button.label}
-                            </div>
-                          </div>
-                        </div>
-
-                        <span className="text-sm font-semibold" style={theme.accentTextStyle}>
-                          Abrir
-                        </span>
-                      </button>
-                    );
-                  })}
+              {loading ? (
+                <div className="mt-8 text-center text-sm" style={theme.mutedTextStyle}>
+                  Carregando sua pagina...
                 </div>
-
-                {socialLinks.length ? (
-                  <div className="mt-6 flex flex-wrap justify-center gap-2">
-                    {socialLinks.map((item) => {
-                      const linkProps = getPublicButtonProps(
+              ) : err ? (
+                <div className="mt-8 rounded-[28px] border border-red-200 bg-red-50 p-5 text-center text-sm text-red-700">
+                  {err}
+                </div>
+              ) : (
+                <>
+                  <div className={theme?.layout?.homeButtonsClassName}>
+                    {buttons.map((button, index) => {
+                      const Icon = iconForType(button.type);
+                      const buttonProps = getPublicButtonProps(
                         theme,
-                        "secondary",
-                        "px-3 py-2 text-xs font-semibold",
+                        buttonVariantForHome(theme, button, index),
+                        theme?.layout?.homeButtonClassName,
                       );
 
                       return (
-                        <a
-                          key={item.id}
-                          href={item.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          {...linkProps}
+                        <button
+                          key={button.id}
+                          type="button"
+                          onClick={() => handleButtonClick(button)}
+                          {...buttonProps}
                         >
-                          {item.label || item.platform}
-                        </a>
+                          <div className="flex min-w-0 items-center gap-4">
+                            <div
+                              className={cls(
+                                "flex h-12 w-12 shrink-0 items-center justify-center border",
+                                theme.buttonIconRadiusClassName,
+                              )}
+                              style={theme.softSurfaceStyle}
+                            >
+                              <Icon className="h-5 w-5" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="truncate text-base font-semibold">
+                                {button.label}
+                              </div>
+                            </div>
+                          </div>
+
+                          <span className="text-sm font-semibold" style={theme.accentTextStyle}>
+                            Abrir
+                          </span>
+                        </button>
                       );
                     })}
                   </div>
-                ) : null}
-              </>
-            )}
 
-            <div className="mt-8">
-              <MyPagePublicFooter theme={theme} />
-            </div>
-          </MyPagePublicCard>
+                  <MyPageSecondaryLinks theme={theme} links={socialLinks} />
+                </>
+              )}
+
+              <div className="mt-8">
+                <MyPagePublicFooter theme={theme} />
+              </div>
+            </MyPagePublicCard>
+          </div>
         </div>
       )}
     </MyPagePublicScreen>

@@ -206,8 +206,11 @@ export default function PublicMyPageQuoteV2() {
               {err}
             </MyPagePublicCard>
           ) : (
-            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-              <MyPagePublicCard theme={theme}>
+            <div className={theme?.layout?.formLayoutClassName}>
+              <MyPagePublicCard
+                theme={theme}
+                className={theme?.layout?.formCardClassName}
+              >
                 <form className="space-y-5" onSubmit={handleSubmit}>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <button
@@ -320,7 +323,10 @@ export default function PublicMyPageQuoteV2() {
                 </form>
               </MyPagePublicCard>
 
-              <MyPagePublicCard theme={theme} className="lg:sticky lg:top-6">
+              <MyPagePublicCard
+                theme={theme}
+                className={theme?.layout?.summaryCardClassName}
+              >
                 <div
                   className="text-[11px] font-bold uppercase tracking-[0.18em]"
                   style={theme.mutedTextStyle}

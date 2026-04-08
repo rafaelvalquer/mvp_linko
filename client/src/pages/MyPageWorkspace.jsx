@@ -46,7 +46,7 @@ const MY_PAGE_TABS = [
     key: "design",
     to: "/my-page/design",
     label: "Design",
-    description: "Tema, fundo, tipografia e estilo visual.",
+    description: "Tema, cor, fundo, fonte e botoes.",
     icon: Paintbrush2,
   },
 ];

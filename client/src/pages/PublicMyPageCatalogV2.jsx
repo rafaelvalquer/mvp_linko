@@ -5,6 +5,7 @@ import { getPublicMyPageCatalog } from "../app/myPageApi.js";
 import { imageSrc } from "../app/productsApi.js";
 import { Input } from "../components/appui/Input.jsx";
 import {
+  cls,
   getPublicButtonProps,
   MyPagePublicCard,
   MyPagePublicFooter,
@@ -135,12 +136,12 @@ export default function PublicMyPageCatalogV2() {
           </MyPagePublicCard>
 
           {loading ? (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className={theme?.layout?.catalogGridClassName}>
               {Array.from({ length: 6 }).map((_, index) => (
                 <MyPagePublicCard
                   key={index}
                   theme={theme}
-                  className="h-64 animate-pulse"
+                  className={cls(theme?.layout?.catalogCardClassName, "h-64 animate-pulse")}
                 />
               ))}
             </div>
@@ -149,22 +150,22 @@ export default function PublicMyPageCatalogV2() {
               {err}
             </MyPagePublicCard>
           ) : products.length ? (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className={theme?.layout?.catalogGridClassName}>
               {products.map((product) => (
                 <MyPagePublicCard
                   key={product._id || product.productId}
                   theme={theme}
-                  className="flex h-full flex-col"
+                  className={theme?.layout?.catalogCardClassName}
                 >
                   <div
-                    className="mb-4 flex h-40 items-center justify-center overflow-hidden rounded-[24px] border"
+                    className={theme?.layout?.catalogImageWrapClassName}
                     style={theme.softSurfaceStyle}
                   >
                     {product.imageUrl ? (
                       <img
                         src={imageSrc(product.imageUrl)}
                         alt={product.name}
-                        className="h-full w-full rounded-[24px] object-cover"
+                        className={theme?.layout?.catalogImageClassName}
                       />
                     ) : (
                       <ShoppingBag className="h-10 w-10" style={theme.mutedTextStyle} />
@@ -184,7 +185,7 @@ export default function PublicMyPageCatalogV2() {
                     </div>
                   </div>
 
-                  <div className="mt-5 flex items-center justify-between gap-3">
+                  <div className={theme?.layout?.catalogActionsClassName}>
                     <div className="text-xl font-black tracking-[-0.03em]">
                       {fmtBRL(product.priceCents)}
                     </div>

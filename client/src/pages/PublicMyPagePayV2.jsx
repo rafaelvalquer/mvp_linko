@@ -112,7 +112,7 @@ export default function PublicMyPagePayV2() {
                   </div>
                 ) : null}
 
-                <div className="flex flex-col gap-3 sm:flex-row">
+                <div className={theme?.layout?.payActionsClassName}>
                   <button
                     type="submit"
                     disabled={resolving || !input.trim()}

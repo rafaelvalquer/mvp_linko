@@ -35,6 +35,9 @@ const PASSIVE_TEASER_DISMISS_MS = 15 * 60 * 1000;
 const PASSIVE_ACKNOWLEDGE_MS = 45 * 60 * 1000;
 const PASSIVE_REFRESH_INTERVAL_MS = 15 * 60 * 1000;
 const PASSIVE_FOCUS_STALE_MS = 10 * 60 * 1000;
+const PASSIVE_DAILY_DISMISS_LIMIT = 3;
+const PASSIVE_FIRST_DISMISS_COOLDOWN_MS = 60 * 60 * 1000;
+const PASSIVE_SECOND_DISMISS_COOLDOWN_MS = 4 * 60 * 60 * 1000;
 const INSIGHT_ACTION_KEY = "insight_summary";
 const INSIGHT_ACTION_TEXT = "Quero gerar um insight financeiro";
 const INTERRUPTIBLE_OPERATIONAL_FLOW_TYPES = new Set([
@@ -59,6 +62,107 @@ const DEFAULT_PASSIVE_SESSION_STATE = {
   nextEligibleAt: 0,
   lastFetchedAt: 0,
 };
+const DEFAULT_PASSIVE_DISMISS_POLICY = {
+  dayKey: "",
+  dismissCount: 0,
+  cooldownUntil: 0,
+  blockedUntil: 0,
+};
+
+function getLocalDayKey(value = Date.now()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getNextLocalDayStart(value = Date.now()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return 0;
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate() + 1,
+    0,
+    0,
+    0,
+    0,
+  ).getTime();
+}
+
+function normalizePassiveDismissPolicy(value = null, now = Date.now()) {
+  const dayKey = getLocalDayKey(now);
+  const source =
+    value && typeof value === "object" && !Array.isArray(value) ? value : {};
+
+  if (!dayKey) {
+    return {
+      ...DEFAULT_PASSIVE_DISMISS_POLICY,
+      dayKey: "",
+    };
+  }
+
+  if (String(source?.dayKey || "").trim() !== dayKey) {
+    return {
+      ...DEFAULT_PASSIVE_DISMISS_POLICY,
+      dayKey,
+    };
+  }
+
+  const nextDayStart = getNextLocalDayStart(now);
+  const dismissCount = Math.max(
+    0,
+    Math.min(PASSIVE_DAILY_DISMISS_LIMIT, Number(source?.dismissCount || 0)),
+  );
+  const cooldownUntil = Math.max(
+    0,
+    Math.min(Number(source?.cooldownUntil || 0), nextDayStart || Number.MAX_SAFE_INTEGER),
+  );
+  const blockedUntil = Math.max(
+    0,
+    Math.min(Number(source?.blockedUntil || 0), nextDayStart || Number.MAX_SAFE_INTEGER),
+  );
+
+  return {
+    dayKey,
+    dismissCount,
+    cooldownUntil,
+    blockedUntil,
+  };
+}
+
+function buildNextPassiveDismissPolicy(current = null, now = Date.now()) {
+  const base = normalizePassiveDismissPolicy(current, now);
+  const nextDayStart = getNextLocalDayStart(now);
+  const nextDismissCount = Math.min(
+    PASSIVE_DAILY_DISMISS_LIMIT,
+    Number(base?.dismissCount || 0) + 1,
+  );
+
+  if (nextDismissCount >= PASSIVE_DAILY_DISMISS_LIMIT) {
+    return {
+      dayKey: base.dayKey || getLocalDayKey(now),
+      dismissCount: PASSIVE_DAILY_DISMISS_LIMIT,
+      cooldownUntil: nextDayStart,
+      blockedUntil: nextDayStart,
+    };
+  }
+
+  const cooldownMs =
+    nextDismissCount === 1
+      ? PASSIVE_FIRST_DISMISS_COOLDOWN_MS
+      : PASSIVE_SECOND_DISMISS_COOLDOWN_MS;
+
+  return {
+    dayKey: base.dayKey || getLocalDayKey(now),
+    dismissCount: nextDismissCount,
+    cooldownUntil: Math.min(now + cooldownMs, nextDayStart || now + cooldownMs),
+    blockedUntil: 0,
+  };
+}
 
 function readPassiveSessionState(storageKey) {
   if (!storageKey || typeof window === "undefined") {
@@ -87,6 +191,31 @@ function writePassiveSessionState(storageKey, value) {
 
   try {
     window.sessionStorage.setItem(storageKey, JSON.stringify(value));
+  } catch {}
+}
+
+function readPassiveDismissPolicy(storageKey) {
+  if (!storageKey || typeof window === "undefined") {
+    return normalizePassiveDismissPolicy();
+  }
+
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return normalizePassiveDismissPolicy();
+    return normalizePassiveDismissPolicy(JSON.parse(raw));
+  } catch {
+    return normalizePassiveDismissPolicy();
+  }
+}
+
+function writePassiveDismissPolicy(storageKey, value) {
+  if (!storageKey || typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify(normalizePassiveDismissPolicy(value)),
+    );
   } catch {}
 }
 
@@ -1198,6 +1327,9 @@ export default function LuminaChatWidget() {
   const [passiveSessionState, setPassiveSessionState] = useState(
     DEFAULT_PASSIVE_SESSION_STATE,
   );
+  const [passiveDismissPolicy, setPassiveDismissPolicy] = useState(
+    DEFAULT_PASSIVE_DISMISS_POLICY,
+  );
   const [pendingPassiveEntry, setPendingPassiveEntry] = useState(null);
   const [draft, setDraft] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -1235,6 +1367,12 @@ export default function LuminaChatWidget() {
     const userId = String(user?._id || user?.id || "").trim();
     if (!workspaceId || !userId) return "";
     return `lumina-passive:${workspaceId}:${userId}`;
+  }, [workspace?._id, workspace?.id, perms?.workspaceId, user?._id, user?.id]);
+  const passiveDismissPolicyStorageKey = useMemo(() => {
+    const workspaceId = String(workspace?._id || workspace?.id || perms?.workspaceId || "").trim();
+    const userId = String(user?._id || user?.id || "").trim();
+    if (!workspaceId || !userId) return "";
+    return `lumina-passive-policy:${workspaceId}:${userId}`;
   }, [workspace?._id, workspace?.id, perms?.workspaceId, user?._id, user?.id]);
 
   const displayedMessages = useMemo(() => {
@@ -1383,6 +1521,11 @@ export default function LuminaChatWidget() {
     passiveOpportunityCount > 9 ? "9+" : String(passiveOpportunityCount || 0);
   const passiveSignature = `${passiveTopOpportunityId}:${passiveMessage}:${passiveOpportunityCount}`;
   const activePassiveSignature = String(activePassiveNudge?.signature || "").trim();
+  const effectivePassiveDismissPolicy = normalizePassiveDismissPolicy(passiveDismissPolicy);
+  const passiveDismissBlockedUntil = Number(effectivePassiveDismissPolicy?.blockedUntil || 0);
+  const passiveDismissCooldownUntil = Number(effectivePassiveDismissPolicy?.cooldownUntil || 0);
+  const passiveDismissSuppressed =
+    passiveDismissBlockedUntil > Date.now() || passiveDismissCooldownUntil > Date.now();
   const passiveEntryMessage = useMemo(() => {
     if (!pendingPassiveEntry?.message) return null;
     return {
@@ -1397,7 +1540,7 @@ export default function LuminaChatWidget() {
   const isActionsOverlayOpen = activeOverlay === "actions";
   const isReplySelectorOpen = activeOverlay === "reply-selector";
   const isInsightSwitchOverlayOpen = activeOverlay === "insight-switch";
-  const showPassiveLauncherSignal = !!activePassiveNudge;
+  const showPassiveLauncherSignal = !passiveDismissSuppressed && !!activePassiveNudge;
   const shouldShowPassiveEntryBubble =
     !!passiveEntryMessage &&
     !bootstrapping;
@@ -1556,6 +1699,19 @@ export default function LuminaChatWidget() {
     });
   }
 
+  function updatePassiveDismissPolicy(updater) {
+    setPassiveDismissPolicy((current) => {
+      const base = normalizePassiveDismissPolicy(current);
+      const next =
+        typeof updater === "function"
+          ? updater(base)
+          : { ...base, ...(updater || {}) };
+      const normalized = normalizePassiveDismissPolicy(next);
+      writePassiveDismissPolicy(passiveDismissPolicyStorageKey, normalized);
+      return normalized;
+    });
+  }
+
   useEffect(() => {
     if (!open) return undefined;
 
@@ -1591,6 +1747,22 @@ export default function LuminaChatWidget() {
     setActivePassiveNudge(null);
     setPendingPassiveEntry(null);
   }, [passiveSessionStorageKey]);
+
+  useEffect(() => {
+    setPassiveDismissPolicy(readPassiveDismissPolicy(passiveDismissPolicyStorageKey));
+  }, [passiveDismissPolicyStorageKey]);
+
+  useEffect(() => {
+    if (!passiveDismissPolicyStorageKey || typeof window === "undefined") return undefined;
+
+    function handleStorage(event) {
+      if (event.key !== passiveDismissPolicyStorageKey) return;
+      setPassiveDismissPolicy(readPassiveDismissPolicy(passiveDismissPolicyStorageKey));
+    }
+
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, [passiveDismissPolicyStorageKey]);
 
   useEffect(() => {
     if (!canUseLumina) {
@@ -1634,7 +1806,13 @@ export default function LuminaChatWidget() {
   }, [open, canUseLumina]);
 
   useEffect(() => {
-    if (!canUseLumina || !passiveEnabled || !passiveOpportunityCount || !passiveSignature) {
+    if (
+      !canUseLumina ||
+      !passiveEnabled ||
+      !passiveOpportunityCount ||
+      !passiveSignature ||
+      passiveDismissSuppressed
+    ) {
       setActivePassiveNudge(null);
       return;
     }
@@ -1683,6 +1861,7 @@ export default function LuminaChatWidget() {
     passiveStatus?.topOpportunity,
     passiveSessionState,
     activePassiveSignature,
+    passiveDismissSuppressed,
   ]);
 
   useEffect(() => {
@@ -2029,6 +2208,19 @@ export default function LuminaChatWidget() {
     );
   }
 
+  function handleDismissPassiveTeaser() {
+    const dismissedSignature = activePassiveSignature;
+    const now = Date.now();
+
+    setActivePassiveNudge(null);
+    updatePassiveSessionState((current) => ({
+      ...current,
+      lastDismissedSignature: dismissedSignature,
+      nextEligibleAt: now + PASSIVE_TEASER_DISMISS_MS,
+    }));
+    updatePassiveDismissPolicy((current) => buildNextPassiveDismissPolicy(current, now));
+  }
+
   if (!canUseLumina || typeof document === "undefined") {
     return null;
   }
@@ -2042,15 +2234,7 @@ export default function LuminaChatWidget() {
             message={String(activePassiveNudge?.message || "").trim()}
             count={Number(activePassiveNudge?.count || 0)}
             onOpen={openLuminaFromLauncher}
-            onDismiss={() => {
-              const dismissedSignature = activePassiveSignature;
-              setActivePassiveNudge(null);
-              updatePassiveSessionState((current) => ({
-                ...current,
-                lastDismissedSignature: dismissedSignature,
-                nextEligibleAt: Date.now() + PASSIVE_TEASER_DISMISS_MS,
-              }));
-            }}
+            onDismiss={handleDismissPassiveTeaser}
             isDark={isDark}
             motionPreset={motionPreset}
           />

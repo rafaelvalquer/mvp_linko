@@ -5,6 +5,7 @@ import {
   CircleDot,
   Check,
   Image,
+  Link2,
   Palette,
   Paintbrush2,
   Rows3,
@@ -18,10 +19,14 @@ import Card, { CardBody } from "../components/appui/Card.jsx";
 import Button from "../components/appui/Button.jsx";
 import Badge from "../components/appui/Badge.jsx";
 import MyPageMobilePreview from "../components/my-page/MyPageMobilePreview.jsx";
-import { MyPagePublicAvatar } from "../components/my-page/MyPagePublicUi.jsx";
+import {
+  MyPagePublicAvatar,
+  MyPageSecondaryLinks,
+} from "../components/my-page/MyPagePublicUi.jsx";
 import { useMyPageContext } from "../components/my-page/useMyPageContext.js";
 import {
   getMyPageButtonProps,
+  getMyPageThemePresetDefaults,
   getMyPageTheme,
   MY_PAGE_ACCENT_PALETTE_OPTIONS,
   MY_PAGE_BACKGROUND_STYLE_OPTIONS,
@@ -29,6 +34,7 @@ import {
   MY_PAGE_BUTTON_RADIUS_OPTIONS,
   MY_PAGE_BUTTON_STYLE_OPTIONS,
   MY_PAGE_FONT_PRESET_OPTIONS,
+  MY_PAGE_SECONDARY_LINK_STYLE_OPTIONS,
   MY_PAGE_THEME_PRESET_OPTIONS,
   normalizeMyPageDesign,
 } from "../components/my-page/myPageTheme.js";
@@ -45,38 +51,61 @@ const DESIGN_SECTIONS = [
   {
     key: "header",
     label: "Marca",
-    description: "Avatar ou hero.",
     icon: UserRound,
   },
   {
     key: "theme",
     label: "Tema",
-    description: "Clima visual.",
     icon: Paintbrush2,
   },
   {
-    key: "wallpaper",
+    key: "background",
     label: "Fundo",
-    description: "Luz e textura.",
     icon: Image,
   },
   {
     key: "text",
     label: "Fonte",
-    description: "Familia tipografica.",
     icon: Type,
   },
   {
     key: "buttons",
     label: "Botao",
-    description: "Estilo e forma.",
     icon: Rows3,
+  },
+  {
+    key: "secondary-links",
+    label: "Redes",
+    icon: Link2,
   },
   {
     key: "colors",
     label: "Cor",
-    description: "Acento principal.",
     icon: Palette,
+  },
+];
+
+const SECONDARY_LINK_STYLE_SAMPLES = [
+  {
+    id: "instagram",
+    platform: "Instagram",
+    label: "Instagram",
+    url: "https://instagram.com/exemplo",
+    enabled: true,
+  },
+  {
+    id: "youtube",
+    platform: "YouTube",
+    label: "YouTube",
+    url: "https://youtube.com/exemplo",
+    enabled: true,
+  },
+  {
+    id: "site",
+    platform: "Site",
+    label: "Site oficial",
+    url: "https://example.com",
+    enabled: true,
   },
 ];
 
@@ -92,7 +121,7 @@ function StudioSectionButton({ section, active, onClick }) {
       type="button"
       onClick={onClick}
       className={cls(
-        "flex min-w-[96px] flex-col items-center gap-2 rounded-[24px] border px-3 py-4 text-center transition xl:min-w-0",
+        "flex min-w-[92px] flex-col items-center gap-2 rounded-[22px] border px-3 py-3 text-center transition xl:min-w-0",
         active
           ? "border-sky-300 bg-[linear-gradient(135deg,rgba(37,99,235,0.12),rgba(20,184,166,0.16))] text-slate-950 shadow-[0_20px_44px_-30px_rgba(37,99,235,0.3)] dark:border-sky-400/25 dark:bg-[linear-gradient(135deg,rgba(37,99,235,0.2),rgba(20,184,166,0.14))] dark:text-white"
           : "border-slate-200/80 bg-white/90 text-slate-700 hover:border-slate-300 hover:text-slate-950 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-white/15 dark:hover:text-white",
@@ -179,7 +208,7 @@ export default function MyPageDesignStudioPage() {
     useMyPageContext();
   const [saving, setSaving] = useState(false);
   const [previewMode, setPreviewMode] = useState("home");
-  const [activeSection, setActiveSection] = useState("header");
+  const [activeSection, setActiveSection] = useState("theme");
 
   const savedDesign = useMemo(
     () => normalizeMyPageDesign(page?.design || {}, page?.coverStyle),
@@ -195,7 +224,6 @@ export default function MyPageDesignStudioPage() {
     () => ({ ...(page || {}), design: draftDesign }),
     [draftDesign, page],
   );
-  const theme = useMemo(() => getMyPageTheme(previewPage), [previewPage]);
 
   useEffect(() => {
     setDraftDesign(savedDesign);
@@ -228,6 +256,18 @@ export default function MyPageDesignStudioPage() {
 
   function updateDesignField(key, value) {
     setDraftDesign((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function applyThemePreset(themePreset) {
+    const presetDefaults = getMyPageThemePresetDefaults(themePreset);
+    setDraftDesign((prev) => ({
+      ...prev,
+      themePreset: presetDefaults.themePreset,
+      accentPalette: presetDefaults.accentPalette,
+      backgroundStyle: presetDefaults.backgroundStyle,
+      fontPreset: presetDefaults.fontPreset,
+      buttonStyle: presetDefaults.buttonStyle,
+    }));
   }
 
   function getOptionTheme(patch) {
@@ -365,12 +405,20 @@ export default function MyPageDesignStudioPage() {
     return (
       <SectionShell
         eyebrow="Tema"
-        title="Clima"
-        description="Troque o preset e compare na hora."
+        title="Escolha um preset"
+        description="O tema aplica um ponto de partida completo para cor, fundo, fonte e botoes."
       >
         <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
           {MY_PAGE_THEME_PRESET_OPTIONS.map((option) => {
-            const optionTheme = getOptionTheme({ themePreset: option.value });
+            const presetDefaults = getMyPageThemePresetDefaults(option.value);
+            const optionTheme = getOptionTheme({
+              themePreset: option.value,
+              accentPalette: presetDefaults.accentPalette,
+              backgroundStyle: presetDefaults.backgroundStyle,
+              fontPreset: presetDefaults.fontPreset,
+              buttonStyle: presetDefaults.buttonStyle,
+            });
+            const buttonProps = getMyPageButtonProps(optionTheme, "primary");
 
             return (
               <StudioChoiceCard
@@ -378,7 +426,7 @@ export default function MyPageDesignStudioPage() {
                 active={draftDesign.themePreset === option.value}
                 label={option.label}
                 description={option.description}
-                onClick={() => updateDesignField("themePreset", option.value)}
+                onClick={() => applyThemePreset(option.value)}
               >
                 <div
                   className="rounded-[24px] border p-4"
@@ -389,29 +437,36 @@ export default function MyPageDesignStudioPage() {
                   }}
                 >
                   <div
-                    className="rounded-[18px] border px-3 py-2 text-xs font-semibold"
+                    className={cls(
+                      "flex h-full flex-col justify-between rounded-[18px] border p-4",
+                      "items-center text-center",
+                    )}
                     style={optionTheme.softSurfaceStyle}
                   >
-                    {option.label}
-                  </div>
-                  <div
-                    className="mt-5 text-xl font-black tracking-[-0.05em]"
-                    style={{
-                      color: optionTheme.preset.text,
-                      fontFamily: optionTheme.rootStyle.fontFamily,
-                    }}
-                  >
-                    Minha Pagina
-                  </div>
-                  <div className="mt-3">
                     <div
-                      className={cls(
-                        getMyPageButtonProps(optionTheme, "primary").className,
-                        "w-full justify-center",
-                      )}
-                      style={getMyPageButtonProps(optionTheme, "primary").style}
+                      className="mx-auto text-[10px] font-bold uppercase tracking-[0.18em]"
+                      style={optionTheme.accentTextStyle}
                     >
-                      CTA
+                      {option.label}
+                    </div>
+                    <div className="mt-4 w-full text-center">
+                      <div
+                        className="text-lg font-black tracking-[-0.05em]"
+                        style={optionTheme.titleStyle}
+                      >
+                        Minha Pagina
+                      </div>
+                      <div className="mt-1 text-xs" style={optionTheme.mutedTextStyle}>
+                        Visual base do preset.
+                      </div>
+                    </div>
+                    <div className="mt-4 w-full">
+                      <div
+                        className={cls(buttonProps.className, "w-full justify-center")}
+                        style={buttonProps.style}
+                      >
+                        Ver layout
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -423,14 +478,14 @@ export default function MyPageDesignStudioPage() {
     );
   }
 
-  function renderWallpaperSection() {
+  function renderBackgroundSection() {
     return (
       <SectionShell
         eyebrow="Fundo"
-        title="Luz"
-        description="Escolha o comportamento do fundo."
+        title="Escolha a atmosfera"
+        description="Mude a textura do fundo sem alterar as dimensoes da bio."
       >
-        <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-4 lg:grid-cols-3">
           {MY_PAGE_BACKGROUND_STYLE_OPTIONS.map((option) => {
             const optionTheme = getOptionTheme({ backgroundStyle: option.value });
 
@@ -443,15 +498,13 @@ export default function MyPageDesignStudioPage() {
                 onClick={() => updateDesignField("backgroundStyle", option.value)}
               >
                 <div
-                  className="rounded-[24px] border"
+                  className="h-28 rounded-[22px] border"
                   style={{
                     ...optionTheme.rootStyle,
-                    minHeight: "148px",
+                    minHeight: "112px",
                     backgroundAttachment: "scroll",
                   }}
-                >
-                  <div className="h-[148px] rounded-[24px]" />
-                </div>
+                />
               </StudioChoiceCard>
             );
           })}
@@ -464,10 +517,10 @@ export default function MyPageDesignStudioPage() {
     return (
       <SectionShell
         eyebrow="Fonte"
-        title="Familia"
-        description="A tipografia vale para toda a familia publica."
+        title="Escolha a tipografia"
+        description="A fonte vale para pagina, catalogo, formulario e pagamento."
       >
-        <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
           {MY_PAGE_FONT_PRESET_OPTIONS.map((option) => {
             const optionTheme = getOptionTheme({ fontPreset: option.value });
 
@@ -480,21 +533,20 @@ export default function MyPageDesignStudioPage() {
                 onClick={() => updateDesignField("fontPreset", option.value)}
               >
                 <div
-                  className="rounded-[24px] border p-4"
-                  style={{
-                    ...optionTheme.surfaceStyle,
-                    fontFamily: option.family,
-                  }}
+                  className="space-y-2 rounded-[24px] border p-4"
+                  style={optionTheme.softSurfaceStyle}
                 >
-                  <div className="text-3xl font-black tracking-[-0.05em]">Aa</div>
                   <div
                     className="text-2xl font-black tracking-[-0.05em]"
-                    style={{ color: optionTheme.preset.text }}
+                    style={optionTheme.titleStyle}
                   >
+                    Aa
+                  </div>
+                  <div className="text-sm font-semibold" style={optionTheme.headingStyle}>
                     Minha Pagina
                   </div>
-                  <div className="text-sm" style={optionTheme.mutedTextStyle}>
-                    Catalogo, agenda e pagamento.
+                  <div className="text-xs leading-5" style={optionTheme.mutedTextStyle}>
+                    Tipografia aplicada em todo o publico.
                   </div>
                 </div>
               </StudioChoiceCard>
@@ -509,37 +561,25 @@ export default function MyPageDesignStudioPage() {
     return (
       <SectionShell
         eyebrow="Botao"
-        title="Estilo e forma"
-        description="Defina acabamento e borda dos CTAs."
+        title="Acabamento e forma"
+        description="Combine estilo visual e formato sem alterar a estrutura da pagina."
       >
-        <div className="space-y-5">
-          <div className="space-y-3">
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+        <div className="space-y-6">
+          <div>
+            <div className="mb-3 text-sm font-semibold text-slate-950 dark:text-white">
               Estilo
             </div>
             <div className="grid gap-4 lg:grid-cols-3">
               {MY_PAGE_BUTTON_STYLE_OPTIONS.map((option) => {
                 const optionTheme = getOptionTheme({ buttonStyle: option.value });
-                const primaryProps = getMyPageButtonProps(optionTheme, "primary");
-                const secondaryProps = getMyPageButtonProps(
-                  optionTheme,
-                  "secondary",
-                );
-                const styleMeta = {
-                  solid: { label: "Solido", description: "Mais forte." },
-                  soft: { label: "Soft", description: "Mais suave." },
-                  outline: { label: "Outline", description: "Mais leve." },
-                }[option.value] || {
-                  label: option.label,
-                  description: option.description,
-                };
+                const buttonProps = getMyPageButtonProps(optionTheme, "primary");
 
                 return (
                   <StudioChoiceCard
                     key={option.value}
                     active={draftDesign.buttonStyle === option.value}
-                    label={styleMeta.label}
-                    description={styleMeta.description}
+                    label={option.label}
+                    description={option.description}
                     onClick={() => updateDesignField("buttonStyle", option.value)}
                   >
                     <div
@@ -547,16 +587,10 @@ export default function MyPageDesignStudioPage() {
                       style={optionTheme.softSurfaceStyle}
                     >
                       <div
-                        className={cls(primaryProps.className, "w-full justify-center")}
-                        style={primaryProps.style}
+                        className={cls(buttonProps.className, "w-full justify-center")}
+                        style={buttonProps.style}
                       >
-                        Principal
-                      </div>
-                      <div
-                        className={cls(secondaryProps.className, "w-full justify-center")}
-                        style={secondaryProps.style}
-                      >
-                        Secundario
+                        Abrir pagina
                       </div>
                     </div>
                   </StudioChoiceCard>
@@ -565,8 +599,8 @@ export default function MyPageDesignStudioPage() {
             </div>
           </div>
 
-          <div className="space-y-3">
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+          <div>
+            <div className="mb-3 text-sm font-semibold text-slate-950 dark:text-white">
               Forma
             </div>
             <div className="grid gap-4 lg:grid-cols-3">
@@ -626,12 +660,59 @@ export default function MyPageDesignStudioPage() {
     );
   }
 
+  function renderSecondaryLinksSection() {
+    return (
+      <SectionShell
+        eyebrow="Redes"
+        title="Links secundarios"
+        description="Escolha se suas redes aparecem em texto, icone ou icone com nome."
+      >
+        <div className="grid gap-4 lg:grid-cols-3">
+          {MY_PAGE_SECONDARY_LINK_STYLE_OPTIONS.map((option) => {
+            const optionTheme = getOptionTheme({
+              secondaryLinksStyle: option.value,
+            });
+
+            return (
+              <StudioChoiceCard
+                key={option.value}
+                active={draftDesign.secondaryLinksStyle === option.value}
+                label={option.label}
+                description={option.description}
+                onClick={() => updateDesignField("secondaryLinksStyle", option.value)}
+              >
+                <div
+                  className="space-y-3 rounded-[24px] border p-4"
+                  style={optionTheme.softSurfaceStyle}
+                >
+                  <div className="text-sm font-semibold" style={optionTheme.titleStyle}>
+                    Redes sociais
+                  </div>
+                  <MyPageSecondaryLinks
+                    theme={optionTheme}
+                    links={SECONDARY_LINK_STYLE_SAMPLES}
+                    interactive={false}
+                    className="mt-0 justify-start"
+                  />
+                </div>
+              </StudioChoiceCard>
+            );
+          })}
+        </div>
+
+        <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/80 p-4 text-sm text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+          O preview mostra o estilo em tempo real. Para aparecer no link publico, voce ainda precisa ter links secundarios ativos em Links.
+        </div>
+      </SectionShell>
+    );
+  }
+
   function renderColorsSection() {
     return (
       <SectionShell
         eyebrow="Cor"
-        title="Acento"
-        description="A cor principal de destaque da pagina."
+        title="Escolha a paleta"
+        description="Mude destaques, CTA e selecao sem quebrar o tema."
       >
         <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
           {MY_PAGE_ACCENT_PALETTE_OPTIONS.map((option) => {
@@ -643,35 +724,27 @@ export default function MyPageDesignStudioPage() {
                 key={option.value}
                 active={draftDesign.accentPalette === option.value}
                 label={option.label}
-                description="CTA e foco."
+                description={option.value}
                 onClick={() => updateDesignField("accentPalette", option.value)}
               >
                 <div
-                  className="space-y-4 rounded-[24px] border p-4"
-                  style={optionTheme.surfaceStyle}
+                  className="space-y-3 rounded-[24px] border p-4"
+                  style={optionTheme.softSurfaceStyle}
                 >
                   <div className="flex items-center gap-3">
                     <span
-                      className="inline-flex h-12 w-12 rounded-full border border-white/70 shadow-sm"
+                      className="inline-flex h-10 w-10 rounded-full border border-white/50 shadow-sm"
                       style={{ background: option.swatch }}
                     />
-                    <div>
-                      <div
-                        className="text-sm font-semibold"
-                        style={{ color: optionTheme.preset.text }}
-                      >
-                        {option.label}
-                      </div>
-                      <div className="text-xs" style={optionTheme.mutedTextStyle}>
-                        Destaque e selecao
-                      </div>
+                    <div className="text-sm font-semibold" style={optionTheme.titleStyle}>
+                      {option.label}
                     </div>
                   </div>
                   <div
                     className={cls(buttonProps.className, "w-full justify-center")}
                     style={buttonProps.style}
                   >
-                    Ver pagina
+                    CTA principal
                   </div>
                 </div>
               </StudioChoiceCard>
@@ -685,10 +758,11 @@ export default function MyPageDesignStudioPage() {
   function renderActiveSection() {
     if (activeSection === "header") return renderHeaderSection();
     if (activeSection === "theme") return renderThemeSection();
-    if (activeSection === "wallpaper") return renderWallpaperSection();
+    if (activeSection === "background") return renderBackgroundSection();
     if (activeSection === "text") return renderTextSection();
-    if (activeSection === "buttons") return renderButtonsSection();
-    return renderColorsSection();
+    if (activeSection === "secondary-links") return renderSecondaryLinksSection();
+    if (activeSection === "colors") return renderColorsSection();
+    return renderButtonsSection();
   }
 
   return (
@@ -696,12 +770,12 @@ export default function MyPageDesignStudioPage() {
       <Card variant="quiet">
         <CardBody className="flex flex-col gap-4 p-4 sm:p-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="space-y-1">
-            <div className="text-2xl font-black tracking-[-0.04em] text-slate-950 dark:text-white">
-              Design
-            </div>
-            <div className="text-sm text-slate-600 dark:text-slate-300">
-              Edite e compare em tempo real.
-            </div>
+              <div className="text-2xl font-black tracking-[-0.04em] text-slate-950 dark:text-white">
+                Design
+              </div>
+              <div className="text-sm text-slate-600 dark:text-slate-300">
+                Tema base com overrides ao vivo.
+              </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">

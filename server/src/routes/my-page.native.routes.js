@@ -29,16 +29,17 @@ import {
 
 const router = Router();
 
-const DEFAULT_COVER_STYLE = "ocean";
+const DEFAULT_COVER_STYLE = "clean_light";
 const DEFAULT_SHOP = { productIds: [] };
 const DEFAULT_DESIGN = {
-  themePreset: "ocean",
+  themePreset: "clean_light",
   brandLayout: "classic",
   accentPalette: "sky",
   backgroundStyle: "halo",
   fontPreset: "inter",
   buttonStyle: "solid",
   buttonRadius: "rounded",
+  secondaryLinksStyle: "text",
 };
 const BUTTON_TYPE_LABELS = {
   whatsapp: "Fale no WhatsApp",
@@ -49,14 +50,151 @@ const BUTTON_TYPE_LABELS = {
   payment_link: "Pagar proposta",
 };
 const QUOTE_REQUEST_STATUSES = ["new", "in_progress", "converted", "archived"];
-const MY_PAGE_THEME_PRESETS = ["ocean", "sunset", "graphite"];
+const MY_PAGE_THEME_PRESETS = [
+  "premium_dark",
+  "clean_light",
+  "creator_gradient",
+  "business_storefront",
+  "editorial_luxury",
+  "bold_conversion",
+  "agate",
+  "air",
+  "aura",
+  "blocks",
+  "twilight",
+  "vox",
+  "cobalt_blaze",
+  "violet_punch",
+  "solar_pop",
+  "midnight_prism",
+];
 const MY_PAGE_BRAND_LAYOUTS = ["classic", "hero"];
-const MY_PAGE_ACCENT_PALETTES = ["sky", "emerald", "rose", "violet"];
-const MY_PAGE_BACKGROUND_STYLES = ["halo", "mesh", "spotlight"];
-const MY_PAGE_FONT_PRESETS = ["inter", "manrope", "jakarta"];
+const MY_PAGE_ACCENT_PALETTES = [
+  "sky",
+  "emerald",
+  "rose",
+  "violet",
+  "amber",
+  "teal",
+  "coral",
+  "slate",
+];
+const MY_PAGE_BACKGROUND_STYLES = [
+  "halo",
+  "mesh",
+  "spotlight",
+  "velvet",
+  "grid",
+  "bloom",
+];
+const MY_PAGE_FONT_PRESETS = ["inter", "manrope", "jakarta", "editorial"];
 const MY_PAGE_BUTTON_STYLES = ["solid", "soft", "outline"];
 const MY_PAGE_BUTTON_RADII = ["square", "rounded", "pill"];
+const MY_PAGE_SECONDARY_LINK_STYLES = ["text", "icon", "icon_text"];
 const MY_PAGE_AVATAR_MODES = ["keep", "upload", "url", "remove"];
+const LEGACY_THEME_PRESET_MAP = {
+  ocean: "clean_light",
+  sunset: "creator_gradient",
+  graphite: "premium_dark",
+};
+const MY_PAGE_THEME_PRESET_DEFAULTS = {
+  premium_dark: {
+    accentPalette: "teal",
+    backgroundStyle: "velvet",
+    fontPreset: "manrope",
+    buttonStyle: "solid",
+  },
+  clean_light: {
+    accentPalette: "slate",
+    backgroundStyle: "halo",
+    fontPreset: "inter",
+    buttonStyle: "solid",
+  },
+  creator_gradient: {
+    accentPalette: "violet",
+    backgroundStyle: "mesh",
+    fontPreset: "jakarta",
+    buttonStyle: "solid",
+  },
+  business_storefront: {
+    accentPalette: "emerald",
+    backgroundStyle: "grid",
+    fontPreset: "manrope",
+    buttonStyle: "solid",
+  },
+  editorial_luxury: {
+    accentPalette: "amber",
+    backgroundStyle: "spotlight",
+    fontPreset: "editorial",
+    buttonStyle: "outline",
+  },
+  bold_conversion: {
+    accentPalette: "coral",
+    backgroundStyle: "spotlight",
+    fontPreset: "manrope",
+    buttonStyle: "solid",
+  },
+  agate: {
+    accentPalette: "teal",
+    backgroundStyle: "mesh",
+    fontPreset: "jakarta",
+    buttonStyle: "soft",
+  },
+  air: {
+    accentPalette: "sky",
+    backgroundStyle: "halo",
+    fontPreset: "inter",
+    buttonStyle: "outline",
+  },
+  aura: {
+    accentPalette: "violet",
+    backgroundStyle: "bloom",
+    fontPreset: "jakarta",
+    buttonStyle: "soft",
+  },
+  blocks: {
+    accentPalette: "coral",
+    backgroundStyle: "grid",
+    fontPreset: "manrope",
+    buttonStyle: "solid",
+  },
+  twilight: {
+    accentPalette: "violet",
+    backgroundStyle: "velvet",
+    fontPreset: "editorial",
+    buttonStyle: "outline",
+  },
+  vox: {
+    accentPalette: "rose",
+    backgroundStyle: "spotlight",
+    fontPreset: "manrope",
+    buttonStyle: "solid",
+  },
+  cobalt_blaze: {
+    accentPalette: "sky",
+    backgroundStyle: "bloom",
+    fontPreset: "jakarta",
+    buttonStyle: "solid",
+  },
+  violet_punch: {
+    accentPalette: "violet",
+    backgroundStyle: "mesh",
+    fontPreset: "jakarta",
+    buttonStyle: "solid",
+  },
+  solar_pop: {
+    accentPalette: "coral",
+    backgroundStyle: "bloom",
+    fontPreset: "manrope",
+    buttonStyle: "solid",
+  },
+  midnight_prism: {
+    accentPalette: "violet",
+    backgroundStyle: "velvet",
+    fontPreset: "manrope",
+    buttonStyle: "soft",
+  },
+};
 
 const myPageUploadDir = path.resolve(process.cwd(), "uploads", "my-page");
 fs.mkdirSync(myPageUploadDir, { recursive: true });
@@ -202,14 +340,15 @@ function buildDefaultShop() {
 }
 
 function buildDefaultDesign(coverStyle = DEFAULT_COVER_STYLE) {
-  const mappedTheme =
-    MY_PAGE_THEME_PRESETS.includes(String(coverStyle || "").trim())
-      ? String(coverStyle || "").trim()
-      : DEFAULT_DESIGN.themePreset;
-
+  const themePreset = sanitizeThemePreset(coverStyle, DEFAULT_DESIGN.themePreset);
+  const presetDefaults =
+    MY_PAGE_THEME_PRESET_DEFAULTS[themePreset] ||
+    MY_PAGE_THEME_PRESET_DEFAULTS[DEFAULT_DESIGN.themePreset] ||
+    {};
   return {
     ...DEFAULT_DESIGN,
-    themePreset: mappedTheme,
+    ...presetDefaults,
+    themePreset,
     brandLayout: DEFAULT_DESIGN.brandLayout,
   };
 }
@@ -290,6 +429,14 @@ function sanitizeEnum(value, allowed, fallback) {
   return allowed.includes(normalized) ? normalized : fallback;
 }
 
+function sanitizeThemePreset(value, fallback = DEFAULT_DESIGN.themePreset) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  const mapped = LEGACY_THEME_PRESET_MAP[normalized] || normalized;
+  return MY_PAGE_THEME_PRESETS.includes(mapped) ? mapped : fallback;
+}
+
 function maybeUploadMyPageAvatar(req, res, next) {
   const contentType = String(req.headers["content-type"] || "").toLowerCase();
   if (!contentType.includes("multipart/form-data")) {
@@ -299,13 +446,13 @@ function maybeUploadMyPageAvatar(req, res, next) {
 }
 
 function sanitizeDesign(design = {}, coverStyle = DEFAULT_COVER_STYLE) {
-  const fallback = buildDefaultDesign(coverStyle);
+  const themePreset = sanitizeThemePreset(
+    design?.themePreset || coverStyle,
+    DEFAULT_DESIGN.themePreset,
+  );
+  const fallback = buildDefaultDesign(themePreset);
   return {
-    themePreset: sanitizeEnum(
-      design?.themePreset,
-      MY_PAGE_THEME_PRESETS,
-      fallback.themePreset,
-    ),
+    themePreset,
     brandLayout: sanitizeEnum(
       design?.brandLayout,
       MY_PAGE_BRAND_LAYOUTS,
@@ -335,6 +482,11 @@ function sanitizeDesign(design = {}, coverStyle = DEFAULT_COVER_STYLE) {
       design?.buttonRadius,
       MY_PAGE_BUTTON_RADII,
       fallback.buttonRadius,
+    ),
+    secondaryLinksStyle: sanitizeEnum(
+      design?.secondaryLinksStyle,
+      MY_PAGE_SECONDARY_LINK_STYLES,
+      fallback.secondaryLinksStyle,
     ),
   };
 }
@@ -1168,12 +1320,15 @@ router.put(
     page.description = sanitizeText(req.body?.description, 400);
     page.avatarUrl = sanitizeUrl(req.body?.avatarUrl);
     page.coverStyle =
-      sanitizeText(req.body?.coverStyle, 40) || DEFAULT_COVER_STYLE;
+      sanitizeText(req.body?.coverStyle, 40) ||
+      page.coverStyle ||
+      DEFAULT_COVER_STYLE;
     page.whatsappPhone = sanitizePhone(req.body?.whatsappPhone);
     page.buttons = sanitizeButtons(req.body?.buttons, page.whatsappPhone);
     page.socialLinks = sanitizeSocialLinks(req.body?.socialLinks);
     page.shop = sanitizeShop(req.body?.shop);
     page.design = sanitizeDesign(req.body?.design, page.coverStyle);
+    page.coverStyle = page.design?.themePreset || DEFAULT_COVER_STYLE;
 
     await page.save();
     return res.json({ ok: true, page: serializePage(page) });

@@ -46,7 +46,12 @@ const MyPageShopSchema = new mongoose.Schema(
 
 const MyPageDesignSchema = new mongoose.Schema(
   {
-    themePreset: { type: String, default: "ocean", trim: true, maxlength: 40 },
+    themePreset: {
+      type: String,
+      default: "clean_light",
+      trim: true,
+      maxlength: 40,
+    },
     brandLayout: {
       type: String,
       default: "classic",
@@ -75,6 +80,12 @@ const MyPageDesignSchema = new mongoose.Schema(
     buttonRadius: {
       type: String,
       default: "rounded",
+      trim: true,
+      maxlength: 40,
+    },
+    secondaryLinksStyle: {
+      type: String,
+      default: "text",
       trim: true,
       maxlength: 40,
     },
@@ -109,7 +120,7 @@ const MyPageSchema = new mongoose.Schema(
     subtitle: { type: String, default: "", trim: true, maxlength: 160 },
     description: { type: String, default: "", trim: true, maxlength: 400 },
     avatarUrl: { type: String, default: "", trim: true, maxlength: 2000 },
-    coverStyle: { type: String, default: "ocean", trim: true, maxlength: 40 },
+    coverStyle: { type: String, default: "clean_light", trim: true, maxlength: 40 },
     whatsappPhone: { type: String, default: "", trim: true, maxlength: 30 },
     isPublished: { type: Boolean, default: false },
     buttons: { type: [MyPageButtonSchema], default: () => [] },
@@ -118,13 +129,14 @@ const MyPageSchema = new mongoose.Schema(
     design: {
       type: MyPageDesignSchema,
       default: () => ({
-        themePreset: "ocean",
+        themePreset: "clean_light",
         brandLayout: "classic",
         accentPalette: "sky",
         backgroundStyle: "halo",
         fontPreset: "inter",
         buttonStyle: "solid",
         buttonRadius: "rounded",
+        secondaryLinksStyle: "text",
       }),
     },
   },

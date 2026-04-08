@@ -238,8 +238,11 @@ export default function PublicMyPageScheduleV2() {
               ) : null}
             </MyPagePublicCard>
           ) : (
-            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-              <MyPagePublicCard theme={theme}>
+            <div className={theme?.layout?.formLayoutClassName}>
+              <MyPagePublicCard
+                theme={theme}
+                className={theme?.layout?.formCardClassName}
+              >
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
                     <label className="text-xs font-semibold" style={theme.mutedTextStyle}>
@@ -341,7 +344,10 @@ export default function PublicMyPageScheduleV2() {
                 )}
               </MyPagePublicCard>
 
-              <MyPagePublicCard theme={theme} className="lg:sticky lg:top-6">
+              <MyPagePublicCard
+                theme={theme}
+                className={theme?.layout?.summaryCardClassName}
+              >
                 <div
                   className="text-[11px] font-bold uppercase tracking-[0.18em]"
                   style={theme.mutedTextStyle}
