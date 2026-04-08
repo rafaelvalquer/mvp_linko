@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Circle,
@@ -8,16 +8,19 @@ import {
   Link2,
   Palette,
   Paintbrush2,
+  Pipette,
   Rows3,
   RotateCcw,
   Square,
   Type,
   UserRound,
+  X,
 } from "lucide-react";
 import { saveMyPageDesign } from "../app/myPageApi.js";
 import Card, { CardBody } from "../components/appui/Card.jsx";
 import Button from "../components/appui/Button.jsx";
 import Badge from "../components/appui/Badge.jsx";
+import ModalShell from "../components/appui/ModalShell.jsx";
 import MyPageMobilePreview from "../components/my-page/MyPageMobilePreview.jsx";
 import {
   MyPagePublicAvatar,
@@ -36,7 +39,9 @@ import {
   MY_PAGE_FONT_PRESET_OPTIONS,
   MY_PAGE_SECONDARY_LINK_STYLE_OPTIONS,
   MY_PAGE_THEME_PRESET_OPTIONS,
+  mixHexColors,
   normalizeMyPageDesign,
+  normalizeHexColor,
 } from "../components/my-page/myPageTheme.js";
 
 const PREVIEW_MODES = [
@@ -111,6 +116,110 @@ const SECONDARY_LINK_STYLE_SAMPLES = [
 
 function cls(...parts) {
   return parts.filter(Boolean).join(" ");
+}
+
+function clampNumber(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function hexToRgb(hex) {
+  const normalized = normalizeHexColor(hex);
+  return {
+    r: Number.parseInt(normalized.slice(1, 3), 16),
+    g: Number.parseInt(normalized.slice(3, 5), 16),
+    b: Number.parseInt(normalized.slice(5, 7), 16),
+  };
+}
+
+function rgbToHex(r, g, b) {
+  return `#${[r, g, b]
+    .map((channel) =>
+      clampNumber(Math.round(channel), 0, 255)
+        .toString(16)
+        .padStart(2, "0"),
+    )
+    .join("")}`.toUpperCase();
+}
+
+function rgbToHsv({ r, g, b }) {
+  const red = r / 255;
+  const green = g / 255;
+  const blue = b / 255;
+  const max = Math.max(red, green, blue);
+  const min = Math.min(red, green, blue);
+  const delta = max - min;
+  let hue = 0;
+
+  if (delta) {
+    if (max === red) hue = ((green - blue) / delta) % 6;
+    else if (max === green) hue = (blue - red) / delta + 2;
+    else hue = (red - green) / delta + 4;
+    hue *= 60;
+    if (hue < 0) hue += 360;
+  }
+
+  const saturation = max === 0 ? 0 : delta / max;
+  return {
+    hue,
+    saturation: saturation * 100,
+    value: max * 100,
+  };
+}
+
+function hsvToRgb({ hue, saturation, value }) {
+  const safeHue = ((Number(hue) || 0) % 360 + 360) % 360;
+  const safeSaturation = clampNumber(Number(saturation) || 0, 0, 100) / 100;
+  const safeValue = clampNumber(Number(value) || 0, 0, 100) / 100;
+  const chroma = safeValue * safeSaturation;
+  const section = safeHue / 60;
+  const second = chroma * (1 - Math.abs((section % 2) - 1));
+  const match = safeValue - chroma;
+  let red = 0;
+  let green = 0;
+  let blue = 0;
+
+  if (section >= 0 && section < 1) {
+    red = chroma;
+    green = second;
+  } else if (section < 2) {
+    red = second;
+    green = chroma;
+  } else if (section < 3) {
+    green = chroma;
+    blue = second;
+  } else if (section < 4) {
+    green = second;
+    blue = chroma;
+  } else if (section < 5) {
+    red = second;
+    blue = chroma;
+  } else {
+    red = chroma;
+    blue = second;
+  }
+
+  return {
+    r: (red + match) * 255,
+    g: (green + match) * 255,
+    b: (blue + match) * 255,
+  };
+}
+
+function createBackgroundPickerState(hex) {
+  const normalized = normalizeHexColor(hex);
+  const { hue, saturation, value } = rgbToHsv(hexToRgb(normalized));
+  return {
+    hex: normalized,
+    hue,
+    saturation,
+    value,
+  };
+}
+
+function uniqueColors(items = []) {
+  return Array.from(
+    new Set(items.map((item) => normalizeHexColor(item)).filter(Boolean)),
+  );
 }
 
 function StudioSectionButton({ section, active, onClick }) {
@@ -206,9 +315,15 @@ export default function MyPageDesignStudioPage() {
   const navigate = useNavigate();
   const { page, setPage, setErr, setPreviewPage, setPreviewDirty } =
     useMyPageContext();
+  const backgroundPanelRef = useRef(null);
   const [saving, setSaving] = useState(false);
   const [previewMode, setPreviewMode] = useState("home");
   const [activeSection, setActiveSection] = useState("theme");
+  const [backgroundColorModalOpen, setBackgroundColorModalOpen] = useState(false);
+  const [backgroundPicker, setBackgroundPicker] = useState(() =>
+    createBackgroundPickerState("#A1C9D1"),
+  );
+  const [backgroundHexInput, setBackgroundHexInput] = useState("#A1C9D1");
 
   const savedDesign = useMemo(
     () => normalizeMyPageDesign(page?.design || {}, page?.coverStyle),
@@ -265,6 +380,7 @@ export default function MyPageDesignStudioPage() {
       themePreset: presetDefaults.themePreset,
       accentPalette: presetDefaults.accentPalette,
       backgroundStyle: presetDefaults.backgroundStyle,
+      backgroundColor: presetDefaults.backgroundColor,
       fontPreset: presetDefaults.fontPreset,
       buttonStyle: presetDefaults.buttonStyle,
     }));
@@ -300,6 +416,66 @@ export default function MyPageDesignStudioPage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  function openBackgroundColorModal() {
+    const nextHex = normalizeHexColor(draftDesign.backgroundColor);
+    setBackgroundPicker(createBackgroundPickerState(nextHex));
+    setBackgroundHexInput(nextHex);
+    setBackgroundColorModalOpen(true);
+  }
+
+  function closeBackgroundColorModal() {
+    setBackgroundColorModalOpen(false);
+  }
+
+  function applyBackgroundHex(nextHex, fallback = backgroundPicker.hex) {
+    const normalized = normalizeHexColor(nextHex, fallback);
+    setBackgroundPicker(createBackgroundPickerState(normalized));
+    setBackgroundHexInput(normalized);
+  }
+
+  function updateBackgroundPicker(partial) {
+    setBackgroundPicker((prev) => {
+      const next = { ...prev, ...partial };
+      const normalizedHex = rgbToHex(
+        ...Object.values(
+          hsvToRgb({
+            hue: next.hue,
+            saturation: next.saturation,
+            value: next.value,
+          }),
+        ),
+      );
+      setBackgroundHexInput(normalizedHex);
+      return { ...next, hex: normalizedHex };
+    });
+  }
+
+  function updateBackgroundFromPointer(event) {
+    const bounds = backgroundPanelRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+
+    const x = clampNumber(event.clientX - bounds.left, 0, bounds.width);
+    const y = clampNumber(event.clientY - bounds.top, 0, bounds.height);
+    updateBackgroundPicker({
+      saturation: (x / bounds.width) * 100,
+      value: 100 - (y / bounds.height) * 100,
+    });
+  }
+
+  async function handleEyeDropper() {
+    try {
+      if (typeof window === "undefined" || !("EyeDropper" in window)) return;
+      const picker = new window.EyeDropper();
+      const result = await picker.open();
+      applyBackgroundHex(result?.sRGBHex, backgroundPicker.hex);
+    } catch {}
+  }
+
+  function applyBackgroundColorSelection() {
+    updateDesignField("backgroundColor", backgroundPicker.hex);
+    closeBackgroundColorModal();
   }
 
   function renderHeaderSection() {
@@ -415,6 +591,7 @@ export default function MyPageDesignStudioPage() {
               themePreset: option.value,
               accentPalette: presetDefaults.accentPalette,
               backgroundStyle: presetDefaults.backgroundStyle,
+              backgroundColor: presetDefaults.backgroundColor,
               fontPreset: presetDefaults.fontPreset,
               buttonStyle: presetDefaults.buttonStyle,
             });
@@ -482,10 +659,10 @@ export default function MyPageDesignStudioPage() {
     return (
       <SectionShell
         eyebrow="Fundo"
-        title="Escolha a atmosfera"
-        description="Mude a textura do fundo sem alterar as dimensoes da bio."
+        title="Escolha o estilo do fundo"
+        description="Combine textura e cor base para mudar a atmosfera da pagina."
       >
-        <div className="grid gap-4 lg:grid-cols-3">
+        <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
           {MY_PAGE_BACKGROUND_STYLE_OPTIONS.map((option) => {
             const optionTheme = getOptionTheme({ backgroundStyle: option.value });
 
@@ -508,6 +685,36 @@ export default function MyPageDesignStudioPage() {
               </StudioChoiceCard>
             );
           })}
+        </div>
+
+        <div className="rounded-[28px] border border-slate-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-white/5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-4">
+              <button
+                type="button"
+                onClick={openBackgroundColorModal}
+                className="inline-flex h-14 w-14 shrink-0 rounded-[18px] border border-slate-200 shadow-sm transition hover:scale-[1.02] dark:border-white/10"
+                style={{ background: draftDesign.backgroundColor }}
+                aria-label="Editar cor do fundo"
+              />
+              <div className="space-y-1">
+                <div className="text-sm font-semibold text-slate-950 dark:text-white">
+                  Cor do fundo
+                </div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">
+                  Base usada por Fill, Gradient, Blur e Pattern.
+                </div>
+                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                  {draftDesign.backgroundColor}
+                </div>
+              </div>
+            </div>
+
+            <Button type="button" variant="secondary" onClick={openBackgroundColorModal}>
+              <Palette className="h-4 w-4" />
+              Escolher cor
+            </Button>
+          </div>
         </div>
       </SectionShell>
     );
@@ -607,7 +814,7 @@ export default function MyPageDesignStudioPage() {
               {MY_PAGE_BUTTON_RADIUS_OPTIONS.map((option) => {
                 const icons = {
                   square: Square,
-                  rounded: CircleDot,
+                  round: CircleDot,
                   pill: Circle,
                 };
                 const Icon = icons[option.value] || CircleDot;
@@ -765,6 +972,23 @@ export default function MyPageDesignStudioPage() {
     return renderButtonsSection();
   }
 
+  const currentAccentSwatch =
+    MY_PAGE_ACCENT_PALETTE_OPTIONS.find(
+      (option) => option.value === draftDesign.accentPalette,
+    )?.swatch || "#2563EB";
+  const backgroundThemeDefaults = getMyPageThemePresetDefaults(draftDesign.themePreset);
+  const backgroundSuggestions = uniqueColors([
+    draftDesign.backgroundColor,
+    backgroundThemeDefaults.backgroundColor,
+    currentAccentSwatch,
+    mixHexColors(draftDesign.backgroundColor, "#FFFFFF", 0.32),
+    mixHexColors(draftDesign.backgroundColor, "#000000", 0.18),
+    mixHexColors(currentAccentSwatch, "#FFFFFF", 0.18),
+  ]);
+  const hueGradient =
+    "linear-gradient(90deg,#ff0000 0%,#ffff00 16%,#00ff00 33%,#00ffff 50%,#0000ff 66%,#ff00ff 83%,#ff0000 100%)";
+  const saturationPanelBackground = `linear-gradient(to top, rgba(0,0,0,1), rgba(0,0,0,0)), linear-gradient(to right, #ffffff, hsl(${backgroundPicker.hue} 100% 50%))`;
+
   return (
     <div className="space-y-5">
       <Card variant="quiet">
@@ -862,6 +1086,130 @@ export default function MyPageDesignStudioPage() {
           </Card>
         </div>
       </div>
+
+      <ModalShell
+        open={backgroundColorModalOpen}
+        onClose={closeBackgroundColorModal}
+        panelClassName="max-w-[420px]"
+      >
+        <Card className="border border-white/60 bg-white/96 shadow-[0_40px_90px_-44px_rgba(15,23,42,0.45)] dark:border-white/10 dark:bg-slate-950/94">
+          <CardBody className="space-y-5 p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <div className="text-xl font-black tracking-[-0.03em] text-slate-950 dark:text-white">
+                  Cor do fundo
+                </div>
+                <div className="text-sm text-slate-500 dark:text-slate-400">
+                  Escolha a base para o estilo do fundo.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeBackgroundColorModal}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:text-slate-950 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-white/15 dark:hover:text-white"
+                aria-label="Fechar"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div
+                ref={backgroundPanelRef}
+                role="presentation"
+                onPointerDown={updateBackgroundFromPointer}
+                onPointerMove={(event) => {
+                  if (event.buttons !== 1) return;
+                  updateBackgroundFromPointer(event);
+                }}
+                className="relative h-52 cursor-crosshair overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-inner dark:border-white/10"
+                style={{ background: saturationPanelBackground }}
+              >
+                <div
+                  className="pointer-events-none absolute h-6 w-6 rounded-full border-[3px] border-white shadow-[0_0_0_1px_rgba(15,23,42,0.18)]"
+                  style={{
+                    left: `${backgroundPicker.saturation}%`,
+                    top: `${100 - backgroundPicker.value}%`,
+                    transform: "translate(-50%, -50%)",
+                  }}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <input
+                  type="range"
+                  min="0"
+                  max="360"
+                  step="1"
+                  value={backgroundPicker.hue}
+                  onChange={(event) =>
+                    updateBackgroundPicker({ hue: Number(event.target.value) })
+                  }
+                  className="h-3 w-full cursor-pointer appearance-none rounded-full"
+                  style={{ background: hueGradient }}
+                />
+              </div>
+
+              <div className="flex items-center gap-3">
+                <input
+                  type="text"
+                  value={backgroundHexInput}
+                  onChange={(event) => setBackgroundHexInput(event.target.value.toUpperCase())}
+                  onBlur={() => applyBackgroundHex(backgroundHexInput, backgroundPicker.hex)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      applyBackgroundHex(backgroundHexInput, backgroundPicker.hex);
+                    }
+                  }}
+                  className="h-12 flex-1 rounded-[18px] border border-slate-200 bg-white px-4 text-sm font-semibold tracking-[0.04em] uppercase text-slate-950 outline-none transition focus:border-sky-300 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                />
+                <button
+                  type="button"
+                  onClick={handleEyeDropper}
+                  disabled={typeof window === "undefined" || !("EyeDropper" in window)}
+                  className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 transition hover:border-slate-300 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-white/15 dark:hover:text-white"
+                  aria-label="Capturar cor"
+                >
+                  <Pipette className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="space-y-3 border-t border-slate-200/80 pt-4 dark:border-white/10">
+                <div className="text-sm font-semibold text-slate-950 dark:text-white">
+                  Sugeridas
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  {backgroundSuggestions.map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      onClick={() => applyBackgroundHex(color, backgroundPicker.hex)}
+                      className={cls(
+                        "inline-flex h-11 w-11 rounded-full border-2 shadow-sm transition hover:scale-[1.04]",
+                        backgroundPicker.hex === color
+                          ? "border-slate-950 dark:border-white"
+                          : "border-white/80 dark:border-slate-900",
+                      )}
+                      style={{ background: color }}
+                      aria-label={`Usar cor ${color}`}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 border-t border-slate-200/80 pt-4 dark:border-white/10 sm:flex-row sm:justify-end">
+              <Button type="button" variant="secondary" onClick={closeBackgroundColorModal}>
+                Cancelar
+              </Button>
+              <Button type="button" onClick={applyBackgroundColorSelection}>
+                Aplicar
+              </Button>
+            </div>
+          </CardBody>
+        </Card>
+      </ModalShell>
     </div>
   );
 }

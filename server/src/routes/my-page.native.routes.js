@@ -35,10 +35,11 @@ const DEFAULT_DESIGN = {
   themePreset: "clean_light",
   brandLayout: "classic",
   accentPalette: "sky",
-  backgroundStyle: "halo",
+  backgroundStyle: "fill",
+  backgroundColor: "#E2E8F0",
   fontPreset: "inter",
   buttonStyle: "solid",
-  buttonRadius: "rounded",
+  buttonRadius: "round",
   secondaryLinksStyle: "text",
 };
 const BUTTON_TYPE_LABELS = {
@@ -80,16 +81,14 @@ const MY_PAGE_ACCENT_PALETTES = [
   "slate",
 ];
 const MY_PAGE_BACKGROUND_STYLES = [
-  "halo",
-  "mesh",
-  "spotlight",
-  "velvet",
-  "grid",
-  "bloom",
+  "fill",
+  "gradient",
+  "blur",
+  "pattern",
 ];
 const MY_PAGE_FONT_PRESETS = ["inter", "manrope", "jakarta", "editorial"];
 const MY_PAGE_BUTTON_STYLES = ["solid", "soft", "outline"];
-const MY_PAGE_BUTTON_RADII = ["square", "rounded", "pill"];
+const MY_PAGE_BUTTON_RADII = ["square", "round", "pill"];
 const MY_PAGE_SECONDARY_LINK_STYLES = ["text", "icon", "icon_text"];
 const MY_PAGE_AVATAR_MODES = ["keep", "upload", "url", "remove"];
 const LEGACY_THEME_PRESET_MAP = {
@@ -97,100 +96,127 @@ const LEGACY_THEME_PRESET_MAP = {
   sunset: "creator_gradient",
   graphite: "premium_dark",
 };
+const LEGACY_BACKGROUND_STYLE_MAP = {
+  halo: "fill",
+  spotlight: "fill",
+  mesh: "gradient",
+  bloom: "blur",
+  velvet: "blur",
+  grid: "pattern",
+};
+const LEGACY_BUTTON_RADIUS_MAP = {
+  rounded: "round",
+};
 const MY_PAGE_THEME_PRESET_DEFAULTS = {
   premium_dark: {
     accentPalette: "teal",
-    backgroundStyle: "velvet",
+    backgroundStyle: "blur",
+    backgroundColor: "#0B1220",
     fontPreset: "manrope",
     buttonStyle: "solid",
   },
   clean_light: {
     accentPalette: "slate",
-    backgroundStyle: "halo",
+    backgroundStyle: "fill",
+    backgroundColor: "#E2E8F0",
     fontPreset: "inter",
     buttonStyle: "solid",
   },
   creator_gradient: {
     accentPalette: "violet",
-    backgroundStyle: "mesh",
+    backgroundStyle: "gradient",
+    backgroundColor: "#A855F7",
     fontPreset: "jakarta",
     buttonStyle: "solid",
   },
   business_storefront: {
     accentPalette: "emerald",
-    backgroundStyle: "grid",
+    backgroundStyle: "pattern",
+    backgroundColor: "#14B8A6",
     fontPreset: "manrope",
     buttonStyle: "solid",
   },
   editorial_luxury: {
     accentPalette: "amber",
-    backgroundStyle: "spotlight",
+    backgroundStyle: "fill",
+    backgroundColor: "#D6A351",
     fontPreset: "editorial",
     buttonStyle: "outline",
   },
   bold_conversion: {
     accentPalette: "coral",
-    backgroundStyle: "spotlight",
+    backgroundStyle: "fill",
+    backgroundColor: "#FB923C",
     fontPreset: "manrope",
     buttonStyle: "solid",
   },
   agate: {
     accentPalette: "teal",
-    backgroundStyle: "mesh",
+    backgroundStyle: "gradient",
+    backgroundColor: "#5AA89B",
     fontPreset: "jakarta",
     buttonStyle: "soft",
   },
   air: {
     accentPalette: "sky",
-    backgroundStyle: "halo",
+    backgroundStyle: "fill",
+    backgroundColor: "#A1C9D1",
     fontPreset: "inter",
     buttonStyle: "outline",
   },
   aura: {
     accentPalette: "violet",
-    backgroundStyle: "bloom",
+    backgroundStyle: "blur",
+    backgroundColor: "#B085FF",
     fontPreset: "jakarta",
     buttonStyle: "soft",
   },
   blocks: {
     accentPalette: "coral",
-    backgroundStyle: "grid",
+    backgroundStyle: "pattern",
+    backgroundColor: "#F59E0B",
     fontPreset: "manrope",
     buttonStyle: "solid",
   },
   twilight: {
     accentPalette: "violet",
-    backgroundStyle: "velvet",
+    backgroundStyle: "blur",
+    backgroundColor: "#46318A",
     fontPreset: "editorial",
     buttonStyle: "outline",
   },
   vox: {
     accentPalette: "rose",
-    backgroundStyle: "spotlight",
+    backgroundStyle: "fill",
+    backgroundColor: "#1E293B",
     fontPreset: "manrope",
     buttonStyle: "solid",
   },
   cobalt_blaze: {
     accentPalette: "sky",
-    backgroundStyle: "bloom",
+    backgroundStyle: "blur",
+    backgroundColor: "#2F6BEA",
     fontPreset: "jakarta",
     buttonStyle: "solid",
   },
   violet_punch: {
     accentPalette: "violet",
-    backgroundStyle: "mesh",
+    backgroundStyle: "gradient",
+    backgroundColor: "#8B3DFF",
     fontPreset: "jakarta",
     buttonStyle: "solid",
   },
   solar_pop: {
     accentPalette: "coral",
-    backgroundStyle: "bloom",
+    backgroundStyle: "blur",
+    backgroundColor: "#25B4D2",
     fontPreset: "manrope",
     buttonStyle: "solid",
   },
   midnight_prism: {
     accentPalette: "violet",
-    backgroundStyle: "velvet",
+    backgroundStyle: "blur",
+    backgroundColor: "#101A3B",
     fontPreset: "manrope",
     buttonStyle: "soft",
   },
@@ -437,6 +463,42 @@ function sanitizeThemePreset(value, fallback = DEFAULT_DESIGN.themePreset) {
   return MY_PAGE_THEME_PRESETS.includes(mapped) ? mapped : fallback;
 }
 
+function sanitizeHexColor(value, fallback = DEFAULT_DESIGN.backgroundColor) {
+  const raw = String(value || "").trim();
+  if (!raw) return fallback;
+
+  const withHash = raw.startsWith("#") ? raw : `#${raw}`;
+  if (/^#[0-9a-f]{3}$/i.test(withHash)) {
+    const [, r, g, b] = withHash;
+    return `#${r}${r}${g}${g}${b}${b}`.toUpperCase();
+  }
+
+  if (/^#[0-9a-f]{6}$/i.test(withHash)) {
+    return withHash.toUpperCase();
+  }
+
+  return fallback;
+}
+
+function sanitizeBackgroundStyle(
+  value,
+  fallback = DEFAULT_DESIGN.backgroundStyle,
+) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  const mapped = LEGACY_BACKGROUND_STYLE_MAP[normalized] || normalized;
+  return MY_PAGE_BACKGROUND_STYLES.includes(mapped) ? mapped : fallback;
+}
+
+function sanitizeButtonRadius(value, fallback = DEFAULT_DESIGN.buttonRadius) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  const mapped = LEGACY_BUTTON_RADIUS_MAP[normalized] || normalized;
+  return MY_PAGE_BUTTON_RADII.includes(mapped) ? mapped : fallback;
+}
+
 function maybeUploadMyPageAvatar(req, res, next) {
   const contentType = String(req.headers["content-type"] || "").toLowerCase();
   if (!contentType.includes("multipart/form-data")) {
@@ -463,10 +525,13 @@ function sanitizeDesign(design = {}, coverStyle = DEFAULT_COVER_STYLE) {
       MY_PAGE_ACCENT_PALETTES,
       fallback.accentPalette,
     ),
-    backgroundStyle: sanitizeEnum(
+    backgroundStyle: sanitizeBackgroundStyle(
       design?.backgroundStyle,
-      MY_PAGE_BACKGROUND_STYLES,
       fallback.backgroundStyle,
+    ),
+    backgroundColor: sanitizeHexColor(
+      design?.backgroundColor,
+      fallback.backgroundColor,
     ),
     fontPreset: sanitizeEnum(
       design?.fontPreset,
@@ -478,9 +543,8 @@ function sanitizeDesign(design = {}, coverStyle = DEFAULT_COVER_STYLE) {
       MY_PAGE_BUTTON_STYLES,
       fallback.buttonStyle,
     ),
-    buttonRadius: sanitizeEnum(
+    buttonRadius: sanitizeButtonRadius(
       design?.buttonRadius,
-      MY_PAGE_BUTTON_RADII,
       fallback.buttonRadius,
     ),
     secondaryLinksStyle: sanitizeEnum(

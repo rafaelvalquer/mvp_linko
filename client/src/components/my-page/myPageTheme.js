@@ -2,10 +2,11 @@ export const MY_PAGE_DESIGN_DEFAULTS = {
   themePreset: "clean_light",
   brandLayout: "classic",
   accentPalette: "sky",
-  backgroundStyle: "halo",
+  backgroundStyle: "fill",
+  backgroundColor: "#E2E8F0",
   fontPreset: "inter",
   buttonStyle: "solid",
-  buttonRadius: "rounded",
+  buttonRadius: "round",
   secondaryLinksStyle: "text",
 };
 
@@ -117,12 +118,10 @@ export const MY_PAGE_BRAND_LAYOUT_OPTIONS = [
 ];
 
 export const MY_PAGE_BACKGROUND_STYLE_OPTIONS = [
-  { value: "halo", label: "Halo", description: "Luz suave." },
-  { value: "mesh", label: "Mesh", description: "Mistura de tons." },
-  { value: "spotlight", label: "Spot", description: "Foco no topo." },
-  { value: "velvet", label: "Velvet", description: "Profundo e premium." },
-  { value: "grid", label: "Grid", description: "Geometrico." },
-  { value: "bloom", label: "Bloom", description: "Brilho artistico." },
+  { value: "fill", label: "Fill", description: "Base solida com profundidade." },
+  { value: "gradient", label: "Gradient", description: "Transicao suave de tons." },
+  { value: "blur", label: "Blur", description: "Blobs e glow macio." },
+  { value: "pattern", label: "Pattern", description: "Textura com desenho leve." },
 ];
 
 export const MY_PAGE_FONT_PRESET_OPTIONS = [
@@ -148,7 +147,7 @@ export const MY_PAGE_BUTTON_STYLE_OPTIONS = [
 
 export const MY_PAGE_BUTTON_RADIUS_OPTIONS = [
   { value: "square", label: "Reta", description: "Borda baixa." },
-  { value: "rounded", label: "Arred.", description: "Equilibrada." },
+  { value: "round", label: "Round", description: "Curva media." },
   { value: "pill", label: "Pill", description: "Maxima." },
 ];
 
@@ -166,7 +165,8 @@ const THEME_PRESETS = {
   premium_dark: {
     defaults: {
       accentPalette: "teal",
-      backgroundStyle: "velvet",
+      backgroundStyle: "blur",
+      backgroundColor: "#0B1220",
       fontPreset: "manrope",
       buttonStyle: "solid",
     },
@@ -200,7 +200,8 @@ const THEME_PRESETS = {
   clean_light: {
     defaults: {
       accentPalette: "slate",
-      backgroundStyle: "halo",
+      backgroundStyle: "fill",
+      backgroundColor: "#E2E8F0",
       fontPreset: "inter",
       buttonStyle: "solid",
     },
@@ -234,7 +235,8 @@ const THEME_PRESETS = {
   creator_gradient: {
     defaults: {
       accentPalette: "violet",
-      backgroundStyle: "mesh",
+      backgroundStyle: "gradient",
+      backgroundColor: "#A855F7",
       fontPreset: "jakarta",
       buttonStyle: "solid",
     },
@@ -268,7 +270,8 @@ const THEME_PRESETS = {
   business_storefront: {
     defaults: {
       accentPalette: "emerald",
-      backgroundStyle: "grid",
+      backgroundStyle: "pattern",
+      backgroundColor: "#14B8A6",
       fontPreset: "manrope",
       buttonStyle: "solid",
     },
@@ -302,7 +305,8 @@ const THEME_PRESETS = {
   editorial_luxury: {
     defaults: {
       accentPalette: "amber",
-      backgroundStyle: "spotlight",
+      backgroundStyle: "fill",
+      backgroundColor: "#D6A351",
       fontPreset: "editorial",
       buttonStyle: "outline",
     },
@@ -336,7 +340,8 @@ const THEME_PRESETS = {
   bold_conversion: {
     defaults: {
       accentPalette: "coral",
-      backgroundStyle: "spotlight",
+      backgroundStyle: "fill",
+      backgroundColor: "#FB923C",
       fontPreset: "manrope",
       buttonStyle: "solid",
     },
@@ -370,7 +375,8 @@ const THEME_PRESETS = {
   agate: {
     defaults: {
       accentPalette: "teal",
-      backgroundStyle: "mesh",
+      backgroundStyle: "gradient",
+      backgroundColor: "#5AA89B",
       fontPreset: "jakarta",
       buttonStyle: "soft",
     },
@@ -404,7 +410,8 @@ const THEME_PRESETS = {
   air: {
     defaults: {
       accentPalette: "sky",
-      backgroundStyle: "halo",
+      backgroundStyle: "fill",
+      backgroundColor: "#A1C9D1",
       fontPreset: "inter",
       buttonStyle: "outline",
     },
@@ -438,7 +445,8 @@ const THEME_PRESETS = {
   aura: {
     defaults: {
       accentPalette: "violet",
-      backgroundStyle: "bloom",
+      backgroundStyle: "blur",
+      backgroundColor: "#B085FF",
       fontPreset: "jakarta",
       buttonStyle: "soft",
     },
@@ -472,7 +480,8 @@ const THEME_PRESETS = {
   blocks: {
     defaults: {
       accentPalette: "coral",
-      backgroundStyle: "grid",
+      backgroundStyle: "pattern",
+      backgroundColor: "#F59E0B",
       fontPreset: "manrope",
       buttonStyle: "solid",
     },
@@ -506,7 +515,8 @@ const THEME_PRESETS = {
   twilight: {
     defaults: {
       accentPalette: "violet",
-      backgroundStyle: "velvet",
+      backgroundStyle: "blur",
+      backgroundColor: "#46318A",
       fontPreset: "editorial",
       buttonStyle: "outline",
     },
@@ -540,7 +550,8 @@ const THEME_PRESETS = {
   vox: {
     defaults: {
       accentPalette: "rose",
-      backgroundStyle: "spotlight",
+      backgroundStyle: "fill",
+      backgroundColor: "#1E293B",
       fontPreset: "manrope",
       buttonStyle: "solid",
     },
@@ -574,7 +585,8 @@ const THEME_PRESETS = {
   cobalt_blaze: {
     defaults: {
       accentPalette: "sky",
-      backgroundStyle: "bloom",
+      backgroundStyle: "blur",
+      backgroundColor: "#2F6BEA",
       fontPreset: "jakarta",
       buttonStyle: "solid",
     },
@@ -608,7 +620,8 @@ const THEME_PRESETS = {
   violet_punch: {
     defaults: {
       accentPalette: "violet",
-      backgroundStyle: "mesh",
+      backgroundStyle: "gradient",
+      backgroundColor: "#8B3DFF",
       fontPreset: "jakarta",
       buttonStyle: "solid",
     },
@@ -642,7 +655,8 @@ const THEME_PRESETS = {
   solar_pop: {
     defaults: {
       accentPalette: "coral",
-      backgroundStyle: "bloom",
+      backgroundStyle: "blur",
+      backgroundColor: "#25B4D2",
       fontPreset: "manrope",
       buttonStyle: "solid",
     },
@@ -676,7 +690,8 @@ const THEME_PRESETS = {
   midnight_prism: {
     defaults: {
       accentPalette: "violet",
-      backgroundStyle: "velvet",
+      backgroundStyle: "blur",
+      backgroundColor: "#101A3B",
       fontPreset: "manrope",
       buttonStyle: "soft",
     },
@@ -717,15 +732,19 @@ const FONT_FAMILIES = {
 };
 
 const BUTTON_RADIUS_CLASSNAMES = {
-  square: "rounded-[16px]",
-  rounded: "rounded-[24px]",
+  square: "rounded-[12px]",
+  round: "rounded-[18px]",
   pill: "rounded-full",
 };
 
 const BUTTON_ICON_RADIUS_CLASSNAMES = {
-  square: "rounded-[14px]",
-  rounded: "rounded-[18px]",
+  square: "rounded-[10px]",
+  round: "rounded-[14px]",
   pill: "rounded-full",
+};
+
+const LEGACY_BUTTON_RADIUS_MAP = {
+  rounded: "round",
 };
 
 const LEGACY_THEME_PRESET_MAP = {
@@ -918,9 +937,92 @@ const MY_PAGE_API_BASE =
   import.meta.env.VITE_API_BASE || "http://localhost:8011/api";
 
 const MY_PAGE_DESIGN_KEYS = Object.keys(MY_PAGE_DESIGN_DEFAULTS);
+const LEGACY_BACKGROUND_STYLE_MAP = {
+  halo: "fill",
+  spotlight: "fill",
+  mesh: "gradient",
+  bloom: "blur",
+  velvet: "blur",
+  grid: "pattern",
+};
 
 function escapeCssUrl(value) {
   return String(value || "").replace(/["\\\n\r]/g, "\\$&");
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+export function normalizeHexColor(
+  value,
+  fallback = MY_PAGE_DESIGN_DEFAULTS.backgroundColor,
+) {
+  const raw = String(value || "").trim();
+  if (!raw) return fallback;
+
+  const withHash = raw.startsWith("#") ? raw : `#${raw}`;
+  if (/^#[0-9a-f]{3}$/i.test(withHash)) {
+    const [, r, g, b] = withHash;
+    return `#${r}${r}${g}${g}${b}${b}`.toUpperCase();
+  }
+
+  if (/^#[0-9a-f]{6}$/i.test(withHash)) {
+    return withHash.toUpperCase();
+  }
+
+  return fallback;
+}
+
+function hexToRgb(value) {
+  const hex = normalizeHexColor(value);
+  return {
+    r: Number.parseInt(hex.slice(1, 3), 16),
+    g: Number.parseInt(hex.slice(3, 5), 16),
+    b: Number.parseInt(hex.slice(5, 7), 16),
+  };
+}
+
+function rgbToHex(r, g, b) {
+  return `#${[r, g, b]
+    .map((channel) =>
+      clamp(Math.round(channel), 0, 255).toString(16).padStart(2, "0"),
+    )
+    .join("")}`.toUpperCase();
+}
+
+export function mixHexColors(from, to, amount = 0.5) {
+  const left = hexToRgb(from);
+  const right = hexToRgb(to);
+  const weight = clamp(Number(amount) || 0, 0, 1);
+
+  return rgbToHex(
+    left.r + (right.r - left.r) * weight,
+    left.g + (right.g - left.g) * weight,
+    left.b + (right.b - left.b) * weight,
+  );
+}
+
+function alphaColor(hex, alpha) {
+  const { r, g, b } = hexToRgb(hex);
+  return `rgba(${r}, ${g}, ${b}, ${clamp(Number(alpha) || 0, 0, 1)})`;
+}
+
+function buildBackgroundPalette(backgroundColor) {
+  const base = normalizeHexColor(backgroundColor);
+  return {
+    base,
+    top: mixHexColors(base, "#FFFFFF", 0.16),
+    light: mixHexColors(base, "#FFFFFF", 0.34),
+    wash: mixHexColors(base, "#FFFFFF", 0.56),
+    dark: mixHexColors(base, "#000000", 0.2),
+    deep: mixHexColors(base, "#020617", 0.38),
+    line: alphaColor(mixHexColors(base, "#FFFFFF", 0.72), 0.22),
+    glow: alphaColor(base, 0.34),
+    glowSoft: alphaColor(mixHexColors(base, "#FFFFFF", 0.18), 0.18),
+    haze: alphaColor(mixHexColors(base, "#FFFFFF", 0.28), 0.22),
+    mist: alphaColor(mixHexColors(base, "#FFFFFF", 0.46), 0.32),
+  };
 }
 
 export function resolveMyPageMediaUrl(value) {
@@ -968,6 +1070,11 @@ export function getMyPageThemePresetDefaults(themePreset) {
     backgroundStyle:
       preset?.defaults?.backgroundStyle ||
       MY_PAGE_DESIGN_DEFAULTS.backgroundStyle,
+    backgroundColor:
+      normalizeHexColor(
+        preset?.defaults?.backgroundColor,
+        MY_PAGE_DESIGN_DEFAULTS.backgroundColor,
+      ) || MY_PAGE_DESIGN_DEFAULTS.backgroundColor,
     fontPreset: preset?.defaults?.fontPreset || MY_PAGE_DESIGN_DEFAULTS.fontPreset,
     buttonStyle:
       preset?.defaults?.buttonStyle || MY_PAGE_DESIGN_DEFAULTS.buttonStyle,
@@ -1028,9 +1135,15 @@ export function normalizeMyPageDesign(
       presetDefaults.accentPalette,
     ),
     backgroundStyle: valueFromOptions(
-      design?.backgroundStyle,
+      LEGACY_BACKGROUND_STYLE_MAP[String(design?.backgroundStyle || "")
+        .trim()
+        .toLowerCase()] || design?.backgroundStyle,
       MY_PAGE_BACKGROUND_STYLE_OPTIONS.map((item) => item.value),
       presetDefaults.backgroundStyle,
+    ),
+    backgroundColor: normalizeHexColor(
+      design?.backgroundColor,
+      presetDefaults.backgroundColor,
     ),
     fontPreset: valueFromOptions(
       design?.fontPreset,
@@ -1043,7 +1156,9 @@ export function normalizeMyPageDesign(
       presetDefaults.buttonStyle,
     ),
     buttonRadius: valueFromOptions(
-      design?.buttonRadius,
+      LEGACY_BUTTON_RADIUS_MAP[String(design?.buttonRadius || "")
+        .trim()
+        .toLowerCase()] || design?.buttonRadius,
       MY_PAGE_BUTTON_RADIUS_OPTIONS.map((item) => item.value),
       MY_PAGE_DESIGN_DEFAULTS.buttonRadius,
     ),
@@ -1055,38 +1170,32 @@ export function normalizeMyPageDesign(
   };
 }
 
-function buildBackground(preset, accent, backgroundStyle) {
-  const gradientBase = `linear-gradient(180deg, ${preset.pageFrom} 0%, ${preset.pageTo} 52%, ${preset.pageEnd} 100%)`;
+function buildBackground(_preset, _accent, backgroundStyle, backgroundColor) {
+  const palette = buildBackgroundPalette(backgroundColor);
+  const fillBase = `linear-gradient(180deg, ${palette.light} 0%, ${palette.base} 54%, ${palette.dark} 100%)`;
 
-  if (backgroundStyle === "mesh") {
-    return `radial-gradient(circle at 16% 18%, ${accent.tint}, transparent 30%), radial-gradient(circle at 86% 14%, ${preset.ornamentA}, transparent 32%), radial-gradient(circle at 50% 96%, ${preset.ornamentB}, transparent 28%), ${gradientBase}`;
+  if (backgroundStyle === "gradient") {
+    return `linear-gradient(145deg, ${palette.wash} 0%, ${palette.light} 26%, ${palette.base} 58%, ${palette.deep} 100%)`;
   }
 
-  if (backgroundStyle === "spotlight") {
-    return `radial-gradient(circle at 50% -4%, ${accent.tintSoft}, transparent 36%), radial-gradient(circle at 50% 18%, ${preset.ornamentA}, transparent 42%), ${gradientBase}`;
+  if (backgroundStyle === "blur") {
+    return `radial-gradient(circle at 18% 18%, ${palette.mist}, transparent 28%), radial-gradient(circle at 82% 14%, ${palette.glow}, transparent 30%), radial-gradient(circle at 50% 86%, ${palette.glowSoft}, transparent 24%), ${fillBase}`;
   }
 
-  if (backgroundStyle === "velvet") {
-    return `radial-gradient(circle at 20% 18%, ${preset.ornamentA}, transparent 28%), radial-gradient(circle at 80% 10%, ${accent.tint}, transparent 28%), linear-gradient(135deg, transparent 0%, ${preset.ornamentC} 100%), ${gradientBase}`;
+  if (backgroundStyle === "pattern") {
+    return `repeating-linear-gradient(90deg, transparent 0 34px, ${palette.line} 34px 35px), repeating-linear-gradient(180deg, transparent 0 34px, ${palette.line} 34px 35px), radial-gradient(circle at 18% 18%, ${palette.haze}, transparent 24%), ${fillBase}`;
   }
 
-  if (backgroundStyle === "grid") {
-    return `linear-gradient(transparent 0%, transparent 100%), repeating-linear-gradient(90deg, transparent 0 34px, ${preset.border} 34px 35px), repeating-linear-gradient(180deg, transparent 0 34px, ${preset.border} 34px 35px), radial-gradient(circle at 14% 14%, ${accent.tintSoft}, transparent 24%), ${gradientBase}`;
-  }
-
-  if (backgroundStyle === "bloom") {
-    return `radial-gradient(circle at 18% 18%, ${accent.tint}, transparent 30%), radial-gradient(circle at 82% 12%, ${accent.tintSoft}, transparent 28%), radial-gradient(circle at 50% 88%, ${preset.ornamentA}, transparent 24%), ${gradientBase}`;
-  }
-
-  return `radial-gradient(circle at 12% 16%, ${accent.tintSoft}, transparent 28%), radial-gradient(circle at 86% 12%, ${preset.ornamentA}, transparent 30%), radial-gradient(circle at 50% 90%, ${preset.ornamentC}, transparent 22%), ${gradientBase}`;
+  return fillBase;
 }
 
-function buildHeroBackground(preset, accent, backgroundStyle, imageUrl) {
+function buildHeroBackground(preset, accent, backgroundStyle, backgroundColor, imageUrl) {
   const safeUrl = escapeCssUrl(imageUrl);
   return `linear-gradient(180deg, ${preset.heroOverlayFrom} 0%, ${preset.heroOverlayTo} 100%), url("${safeUrl}") center/cover no-repeat, ${buildBackground(
     preset,
     accent,
     backgroundStyle,
+    backgroundColor,
   )}`;
 }
 
@@ -1284,8 +1393,19 @@ export function getMyPageTheme(pageOrDesign = {}) {
   const rootStyle = {
     minHeight: "100vh",
     background: usesHeroLayout
-      ? buildHeroBackground(preset, accent, design.backgroundStyle, avatarUrl)
-      : buildBackground(preset, accent, design.backgroundStyle),
+      ? buildHeroBackground(
+          preset,
+          accent,
+          design.backgroundStyle,
+          design.backgroundColor,
+          avatarUrl,
+        )
+      : buildBackground(
+          preset,
+          accent,
+          design.backgroundStyle,
+          design.backgroundColor,
+        ),
     color: preset.text,
     fontFamily,
   };
@@ -1337,10 +1457,10 @@ export function getMyPageTheme(pageOrDesign = {}) {
     titleStyle: { color: preset.text, fontFamily: headingFontFamily },
     buttonRadiusClassName:
       BUTTON_RADIUS_CLASSNAMES[design.buttonRadius] ||
-      BUTTON_RADIUS_CLASSNAMES.rounded,
+      BUTTON_RADIUS_CLASSNAMES.round,
     buttonIconRadiusClassName:
       BUTTON_ICON_RADIUS_CLASSNAMES[design.buttonRadius] ||
-      BUTTON_ICON_RADIUS_CLASSNAMES.rounded,
+      BUTTON_ICON_RADIUS_CLASSNAMES.round,
     rootStyle,
     heroMediaStyle: usesHeroLayout
       ? buildHeroMediaStyle(preset, accent, avatarUrl)
@@ -1378,7 +1498,7 @@ export function getMyPageButtonProps(theme, variant = "primary") {
       theme?.layout?.buttonBaseClassName || BASE_LAYOUT.buttonBaseClassName,
       theme?.layout?.buttonPaddingClassName || BASE_LAYOUT.buttonPaddingClassName,
       theme?.layout?.buttonTextClassName || BASE_LAYOUT.buttonTextClassName,
-      theme?.buttonRadiusClassName || BUTTON_RADIUS_CLASSNAMES.rounded,
+      theme?.buttonRadiusClassName || BUTTON_RADIUS_CLASSNAMES.round,
       variant === "secondary" ? "shadow-none" : "",
     ].join(" "),
     style,
