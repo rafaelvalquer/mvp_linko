@@ -11,6 +11,8 @@ import {
   Pipette,
   Rows3,
   RotateCcw,
+  ShoppingBag,
+  Sparkles,
   Square,
   Type,
   UserRound,
@@ -24,19 +26,28 @@ import ModalShell from "../components/appui/ModalShell.jsx";
 import MyPageMobilePreview from "../components/my-page/MyPageMobilePreview.jsx";
 import {
   MyPagePublicAvatar,
+  MyPageBackgroundOverlay,
+  getMyPageButtonIcon,
+  getMyPageButtonMetaLabel,
   MyPageSecondaryLinks,
 } from "../components/my-page/MyPagePublicUi.jsx";
 import { useMyPageContext } from "../components/my-page/useMyPageContext.js";
 import {
+  getMyPageHomeButtonProps,
   getMyPageButtonProps,
   getMyPageThemePresetDefaults,
   getMyPageTheme,
-  MY_PAGE_ACCENT_PALETTE_OPTIONS,
+  MY_PAGE_ANIMATION_PRESET_OPTIONS,
+  MY_PAGE_BACKGROUND_GRADIENT_DIRECTION_OPTIONS,
+  MY_PAGE_BACKGROUND_PATTERN_VARIANT_OPTIONS,
   MY_PAGE_BACKGROUND_STYLE_OPTIONS,
   MY_PAGE_BRAND_LAYOUT_OPTIONS,
+  MY_PAGE_PRIMARY_BUTTON_LAYOUT_OPTIONS,
   MY_PAGE_BUTTON_RADIUS_OPTIONS,
   MY_PAGE_BUTTON_STYLE_OPTIONS,
   MY_PAGE_FONT_PRESET_OPTIONS,
+  MY_PAGE_SECONDARY_LINK_ALIGN_OPTIONS,
+  MY_PAGE_SECONDARY_LINK_SIZE_OPTIONS,
   MY_PAGE_SECONDARY_LINK_STYLE_OPTIONS,
   MY_PAGE_THEME_PRESET_OPTIONS,
   mixHexColors,
@@ -84,6 +95,11 @@ const DESIGN_SECTIONS = [
     icon: Link2,
   },
   {
+    key: "animation",
+    label: "Animacao",
+    icon: Sparkles,
+  },
+  {
     key: "colors",
     label: "Cor",
     icon: Palette,
@@ -113,6 +129,36 @@ const SECONDARY_LINK_STYLE_SAMPLES = [
     enabled: true,
   },
 ];
+
+const PRIMARY_BUTTON_LAYOUT_SAMPLES = [
+  {
+    id: "whatsapp",
+    label: "Falar no WhatsApp",
+    type: "whatsapp",
+  },
+  {
+    id: "catalog",
+    label: "Ver catalogo",
+    type: "catalog",
+  },
+];
+
+const COLOR_FIELD_OPTIONS = [
+  { key: "backgroundColor", label: "Fundo" },
+  { key: "buttonColor", label: "Botoes" },
+  { key: "buttonTextColor", label: "Texto do botao" },
+  { key: "pageTextColor", label: "Texto da pagina" },
+  { key: "titleTextColor", label: "Texto dos titulos" },
+];
+
+function buildColorInputValues(design = {}) {
+  return Object.fromEntries(
+    COLOR_FIELD_OPTIONS.map((field) => [
+      field.key,
+      normalizeHexColor(design?.[field.key], "#000000"),
+    ]),
+  );
+}
 
 function cls(...parts) {
   return parts.filter(Boolean).join(" ");
@@ -218,8 +264,22 @@ function createBackgroundPickerState(hex) {
 
 function uniqueColors(items = []) {
   return Array.from(
-    new Set(items.map((item) => normalizeHexColor(item)).filter(Boolean)),
+    new Set(
+      items
+        .map((item) => String(item || "").trim())
+        .filter(Boolean)
+        .map((item) => normalizeHexColor(item))
+        .filter(Boolean),
+    ),
   );
+}
+
+function iconForPrimaryButtonSample(type) {
+  return getMyPageButtonIcon(type);
+}
+
+function primaryButtonMetaLabel(type) {
+  return getMyPageButtonMetaLabel(type);
 }
 
 function StudioSectionButton({ section, active, onClick }) {
@@ -315,21 +375,25 @@ export default function MyPageDesignStudioPage() {
   const navigate = useNavigate();
   const { page, setPage, setErr, setPreviewPage, setPreviewDirty } =
     useMyPageContext();
-  const backgroundPanelRef = useRef(null);
+  const colorPanelRef = useRef(null);
   const [saving, setSaving] = useState(false);
   const [previewMode, setPreviewMode] = useState("home");
   const [activeSection, setActiveSection] = useState("theme");
-  const [backgroundColorModalOpen, setBackgroundColorModalOpen] = useState(false);
-  const [backgroundPicker, setBackgroundPicker] = useState(() =>
+  const [colorModalOpen, setColorModalOpen] = useState(false);
+  const [activeColorField, setActiveColorField] = useState("backgroundColor");
+  const [colorPicker, setColorPicker] = useState(() =>
     createBackgroundPickerState("#A1C9D1"),
   );
-  const [backgroundHexInput, setBackgroundHexInput] = useState("#A1C9D1");
+  const [colorHexInput, setColorHexInput] = useState("#A1C9D1");
 
   const savedDesign = useMemo(
     () => normalizeMyPageDesign(page?.design || {}, page?.coverStyle),
     [page?.coverStyle, page?.design],
   );
   const [draftDesign, setDraftDesign] = useState(savedDesign);
+  const [colorInputValues, setColorInputValues] = useState(() =>
+    buildColorInputValues(savedDesign),
+  );
 
   const savedDesignKey = useMemo(() => JSON.stringify(savedDesign), [savedDesign]);
   const draftDesignKey = useMemo(() => JSON.stringify(draftDesign), [draftDesign]);
@@ -343,6 +407,10 @@ export default function MyPageDesignStudioPage() {
   useEffect(() => {
     setDraftDesign(savedDesign);
   }, [savedDesign, savedDesignKey]);
+
+  useEffect(() => {
+    setColorInputValues(buildColorInputValues(draftDesign));
+  }, [draftDesignKey]);
 
   useEffect(() => {
     if (!page) return;
@@ -381,6 +449,12 @@ export default function MyPageDesignStudioPage() {
       accentPalette: presetDefaults.accentPalette,
       backgroundStyle: presetDefaults.backgroundStyle,
       backgroundColor: presetDefaults.backgroundColor,
+      buttonColor: presetDefaults.buttonColor,
+      buttonTextColor: presetDefaults.buttonTextColor,
+      pageTextColor: presetDefaults.pageTextColor,
+      titleTextColor: presetDefaults.titleTextColor,
+      backgroundGradientDirection: presetDefaults.backgroundGradientDirection,
+      backgroundPatternVariant: presetDefaults.backgroundPatternVariant,
       fontPreset: presetDefaults.fontPreset,
       buttonStyle: presetDefaults.buttonStyle,
     }));
@@ -418,25 +492,30 @@ export default function MyPageDesignStudioPage() {
     }
   }
 
-  function openBackgroundColorModal() {
-    const nextHex = normalizeHexColor(draftDesign.backgroundColor);
-    setBackgroundPicker(createBackgroundPickerState(nextHex));
-    setBackgroundHexInput(nextHex);
-    setBackgroundColorModalOpen(true);
+  function openColorModal(fieldKey = "backgroundColor") {
+    const themeDefaults = getMyPageThemePresetDefaults(draftDesign.themePreset);
+    const nextHex = normalizeHexColor(
+      draftDesign?.[fieldKey],
+      themeDefaults?.[fieldKey] || draftDesign.backgroundColor,
+    );
+    setActiveColorField(fieldKey);
+    setColorPicker(createBackgroundPickerState(nextHex));
+    setColorHexInput(nextHex);
+    setColorModalOpen(true);
   }
 
-  function closeBackgroundColorModal() {
-    setBackgroundColorModalOpen(false);
+  function closeColorModal() {
+    setColorModalOpen(false);
   }
 
-  function applyBackgroundHex(nextHex, fallback = backgroundPicker.hex) {
+  function applyColorHex(nextHex, fallback = colorPicker.hex) {
     const normalized = normalizeHexColor(nextHex, fallback);
-    setBackgroundPicker(createBackgroundPickerState(normalized));
-    setBackgroundHexInput(normalized);
+    setColorPicker(createBackgroundPickerState(normalized));
+    setColorHexInput(normalized);
   }
 
-  function updateBackgroundPicker(partial) {
-    setBackgroundPicker((prev) => {
+  function updateColorPicker(partial) {
+    setColorPicker((prev) => {
       const next = { ...prev, ...partial };
       const normalizedHex = rgbToHex(
         ...Object.values(
@@ -447,18 +526,18 @@ export default function MyPageDesignStudioPage() {
           }),
         ),
       );
-      setBackgroundHexInput(normalizedHex);
+      setColorHexInput(normalizedHex);
       return { ...next, hex: normalizedHex };
     });
   }
 
-  function updateBackgroundFromPointer(event) {
-    const bounds = backgroundPanelRef.current?.getBoundingClientRect();
+  function updateColorFromPointer(event) {
+    const bounds = colorPanelRef.current?.getBoundingClientRect();
     if (!bounds) return;
 
     const x = clampNumber(event.clientX - bounds.left, 0, bounds.width);
     const y = clampNumber(event.clientY - bounds.top, 0, bounds.height);
-    updateBackgroundPicker({
+    updateColorPicker({
       saturation: (x / bounds.width) * 100,
       value: 100 - (y / bounds.height) * 100,
     });
@@ -469,13 +548,36 @@ export default function MyPageDesignStudioPage() {
       if (typeof window === "undefined" || !("EyeDropper" in window)) return;
       const picker = new window.EyeDropper();
       const result = await picker.open();
-      applyBackgroundHex(result?.sRGBHex, backgroundPicker.hex);
+      applyColorHex(result?.sRGBHex, colorPicker.hex);
     } catch {}
   }
 
-  function applyBackgroundColorSelection() {
-    updateDesignField("backgroundColor", backgroundPicker.hex);
-    closeBackgroundColorModal();
+  function applyColorSelection() {
+    updateDesignField(activeColorField, colorPicker.hex);
+    setColorInputValues((prev) => ({
+      ...prev,
+      [activeColorField]: colorPicker.hex,
+    }));
+    closeColorModal();
+  }
+
+  function updateColorInputValue(fieldKey, nextValue) {
+    setColorInputValues((prev) => ({
+      ...prev,
+      [fieldKey]: nextValue.toUpperCase(),
+    }));
+  }
+
+  function commitColorInputValue(fieldKey) {
+    const normalized = normalizeHexColor(
+      colorInputValues[fieldKey],
+      draftDesign?.[fieldKey],
+    );
+    updateDesignField(fieldKey, normalized);
+    setColorInputValues((prev) => ({
+      ...prev,
+      [fieldKey]: normalized,
+    }));
   }
 
   function renderHeaderSection() {
@@ -518,7 +620,7 @@ export default function MyPageDesignStudioPage() {
                       <div className="space-y-1">
                         <div
                           className="text-sm font-semibold"
-                          style={{ color: optionTheme.preset.text }}
+                          style={optionTheme.headingStyle}
                         >
                           Hero de fundo
                         </div>
@@ -540,7 +642,7 @@ export default function MyPageDesignStudioPage() {
                       <div className="space-y-1">
                         <div
                           className="text-sm font-semibold"
-                          style={{ color: optionTheme.preset.text }}
+                          style={optionTheme.headingStyle}
                         >
                           Avatar redondo
                         </div>
@@ -583,18 +685,24 @@ export default function MyPageDesignStudioPage() {
         eyebrow="Tema"
         title="Escolha um preset"
         description="O tema aplica um ponto de partida completo para cor, fundo, fonte e botoes."
-      >
-        <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-          {MY_PAGE_THEME_PRESET_OPTIONS.map((option) => {
-            const presetDefaults = getMyPageThemePresetDefaults(option.value);
-            const optionTheme = getOptionTheme({
-              themePreset: option.value,
-              accentPalette: presetDefaults.accentPalette,
-              backgroundStyle: presetDefaults.backgroundStyle,
-              backgroundColor: presetDefaults.backgroundColor,
-              fontPreset: presetDefaults.fontPreset,
-              buttonStyle: presetDefaults.buttonStyle,
-            });
+        >
+          <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+            {MY_PAGE_THEME_PRESET_OPTIONS.map((option) => {
+              const presetDefaults = getMyPageThemePresetDefaults(option.value);
+              const optionTheme = getOptionTheme({
+                themePreset: option.value,
+                accentPalette: presetDefaults.accentPalette,
+                backgroundStyle: presetDefaults.backgroundStyle,
+                backgroundColor: presetDefaults.backgroundColor,
+                buttonColor: presetDefaults.buttonColor,
+                buttonTextColor: presetDefaults.buttonTextColor,
+                pageTextColor: presetDefaults.pageTextColor,
+                titleTextColor: presetDefaults.titleTextColor,
+                backgroundGradientDirection: presetDefaults.backgroundGradientDirection,
+                backgroundPatternVariant: presetDefaults.backgroundPatternVariant,
+                fontPreset: presetDefaults.fontPreset,
+                buttonStyle: presetDefaults.buttonStyle,
+              });
             const buttonProps = getMyPageButtonProps(optionTheme, "primary");
 
             return (
@@ -633,9 +741,6 @@ export default function MyPageDesignStudioPage() {
                       >
                         Minha Pagina
                       </div>
-                      <div className="mt-1 text-xs" style={optionTheme.mutedTextStyle}>
-                        Visual base do preset.
-                      </div>
                     </div>
                     <div className="mt-4 w-full">
                       <div
@@ -656,66 +761,128 @@ export default function MyPageDesignStudioPage() {
   }
 
   function renderBackgroundSection() {
-    return (
+      return (
       <SectionShell
         eyebrow="Fundo"
         title="Escolha o estilo do fundo"
-        description="Combine textura e cor base para mudar a atmosfera da pagina."
+        description="Defina o estilo, a direcao e a textura do fundo."
       >
-        <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
-          {MY_PAGE_BACKGROUND_STYLE_OPTIONS.map((option) => {
-            const optionTheme = getOptionTheme({ backgroundStyle: option.value });
+          <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
+            {MY_PAGE_BACKGROUND_STYLE_OPTIONS.map((option) => {
+              const optionTheme = getOptionTheme({ backgroundStyle: option.value });
 
-            return (
-              <StudioChoiceCard
-                key={option.value}
-                active={draftDesign.backgroundStyle === option.value}
-                label={option.label}
-                description={option.description}
-                onClick={() => updateDesignField("backgroundStyle", option.value)}
-              >
-                <div
-                  className="h-28 rounded-[22px] border"
-                  style={{
-                    ...optionTheme.rootStyle,
-                    minHeight: "112px",
-                    backgroundAttachment: "scroll",
-                  }}
-                />
-              </StudioChoiceCard>
-            );
-          })}
-        </div>
+              return (
+                <StudioChoiceCard
+                  key={option.value}
+                  active={draftDesign.backgroundStyle === option.value}
+                  label={option.label}
+                  description={option.description}
+                  onClick={() => updateDesignField("backgroundStyle", option.value)}
+                >
+                  <BackgroundOptionPreview theme={optionTheme} />
+                </StudioChoiceCard>
+              );
+            })}
+          </div>
 
-        <div className="rounded-[28px] border border-slate-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-white/5">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-4">
-              <button
-                type="button"
-                onClick={openBackgroundColorModal}
-                className="inline-flex h-14 w-14 shrink-0 rounded-[18px] border border-slate-200 shadow-sm transition hover:scale-[1.02] dark:border-white/10"
-                style={{ background: draftDesign.backgroundColor }}
-                aria-label="Editar cor do fundo"
-              />
+          {draftDesign.backgroundStyle === "gradient" ? (
+            <div className="space-y-4 rounded-[28px] border border-slate-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-white/5">
               <div className="space-y-1">
                 <div className="text-sm font-semibold text-slate-950 dark:text-white">
-                  Cor do fundo
+                  Direcao
                 </div>
                 <div className="text-xs text-slate-500 dark:text-slate-400">
-                  Base usada por Fill, Gradient, Blur e Pattern.
-                </div>
-                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-                  {draftDesign.backgroundColor}
+                  Escolha como a transicao da cor base acontece na pagina.
                 </div>
               </div>
-            </div>
 
-            <Button type="button" variant="secondary" onClick={openBackgroundColorModal}>
-              <Palette className="h-4 w-4" />
-              Escolher cor
-            </Button>
-          </div>
-        </div>
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {MY_PAGE_BACKGROUND_GRADIENT_DIRECTION_OPTIONS.map((option) => {
+                  const optionTheme = getOptionTheme({
+                    backgroundStyle: "gradient",
+                    backgroundGradientDirection: option.value,
+                  });
+
+                  return (
+                    <StudioChoiceCard
+                      key={option.value}
+                      active={draftDesign.backgroundGradientDirection === option.value}
+                      label={option.label}
+                      description={option.description}
+                      onClick={() =>
+                        updateDesignField("backgroundGradientDirection", option.value)
+                      }
+                    >
+                      <BackgroundOptionPreview
+                        theme={optionTheme}
+                        heightClassName="h-24"
+                        minHeight="96px"
+                      >
+                        <div className="absolute inset-x-3 bottom-3">
+                          <div
+                            className="inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em]"
+                            style={optionTheme.softSurfaceStyle}
+                          >
+                            {option.label}
+                          </div>
+                        </div>
+                      </BackgroundOptionPreview>
+                    </StudioChoiceCard>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          {draftDesign.backgroundStyle === "pattern" ? (
+            <div className="space-y-4 rounded-[28px] border border-slate-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-white/5">
+              <div className="space-y-1">
+                <div className="text-sm font-semibold text-slate-950 dark:text-white">
+                  Pattern
+                </div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">
+                  Escolha o desenho da textura sem mudar a cor base.
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                {MY_PAGE_BACKGROUND_PATTERN_VARIANT_OPTIONS.map((option) => {
+                  const optionTheme = getOptionTheme({
+                    backgroundStyle: "pattern",
+                    backgroundPatternVariant: option.value,
+                  });
+
+                  return (
+                    <StudioChoiceCard
+                      key={option.value}
+                      active={draftDesign.backgroundPatternVariant === option.value}
+                      label={option.label}
+                      description={option.description}
+                      onClick={() =>
+                        updateDesignField("backgroundPatternVariant", option.value)
+                      }
+                    >
+                      <BackgroundOptionPreview
+                        theme={optionTheme}
+                        heightClassName="h-24"
+                        minHeight="96px"
+                      >
+                        <div className="absolute inset-x-3 bottom-3">
+                          <div
+                            className="inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em]"
+                            style={optionTheme.softSurfaceStyle}
+                          >
+                            {option.label}
+                          </div>
+                        </div>
+                      </BackgroundOptionPreview>
+                    </StudioChoiceCard>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
       </SectionShell>
     );
   }
@@ -752,9 +919,6 @@ export default function MyPageDesignStudioPage() {
                   <div className="text-sm font-semibold" style={optionTheme.headingStyle}>
                     Minha Pagina
                   </div>
-                  <div className="text-xs leading-5" style={optionTheme.mutedTextStyle}>
-                    Tipografia aplicada em todo o publico.
-                  </div>
                 </div>
               </StudioChoiceCard>
             );
@@ -768,10 +932,37 @@ export default function MyPageDesignStudioPage() {
     return (
       <SectionShell
         eyebrow="Botao"
-        title="Acabamento e forma"
-        description="Combine estilo visual e formato sem alterar a estrutura da pagina."
+        title="Acabamento, forma e hierarquia"
+        description="Defina o peso visual dos CTAs sem mudar a logica da pagina."
       >
         <div className="space-y-6">
+          <div>
+            <div className="mb-3 text-sm font-semibold text-slate-950 dark:text-white">
+              Layout
+            </div>
+            <div className="grid gap-4 lg:grid-cols-3">
+              {MY_PAGE_PRIMARY_BUTTON_LAYOUT_OPTIONS.map((option) => {
+                const optionTheme = getOptionTheme({
+                  primaryButtonsLayout: option.value,
+                });
+
+                return (
+                  <StudioChoiceCard
+                    key={option.value}
+                    active={draftDesign.primaryButtonsLayout === option.value}
+                    label={option.label}
+                    description={option.description}
+                    onClick={() =>
+                      updateDesignField("primaryButtonsLayout", option.value)
+                    }
+                  >
+                    <PrimaryButtonLayoutPreview theme={optionTheme} />
+                  </StudioChoiceCard>
+                );
+              })}
+            </div>
+          </div>
+
           <div>
             <div className="mb-3 text-sm font-semibold text-slate-950 dark:text-white">
               Estilo
@@ -797,7 +988,7 @@ export default function MyPageDesignStudioPage() {
                         className={cls(buttonProps.className, "w-full justify-center")}
                         style={buttonProps.style}
                       >
-                        Abrir pagina
+                        CTA principal
                       </div>
                     </div>
                   </StudioChoiceCard>
@@ -845,7 +1036,7 @@ export default function MyPageDesignStudioPage() {
                         </span>
                         <span
                           className="text-sm font-semibold"
-                          style={{ color: optionTheme.preset.text }}
+                          style={optionTheme.headingStyle}
                         >
                           {option.label}
                         </span>
@@ -872,39 +1063,122 @@ export default function MyPageDesignStudioPage() {
       <SectionShell
         eyebrow="Redes"
         title="Links secundarios"
-        description="Escolha se suas redes aparecem em texto, icone ou icone com nome."
+        description="Controle conteudo, tamanho e alinhamento das redes na home."
       >
-        <div className="grid gap-4 lg:grid-cols-3">
-          {MY_PAGE_SECONDARY_LINK_STYLE_OPTIONS.map((option) => {
-            const optionTheme = getOptionTheme({
-              secondaryLinksStyle: option.value,
-            });
+        <div className="space-y-6">
+          <div>
+            <div className="mb-3 text-sm font-semibold text-slate-950 dark:text-white">
+              Conteudo
+            </div>
+            <div className="grid gap-4 lg:grid-cols-3">
+              {MY_PAGE_SECONDARY_LINK_STYLE_OPTIONS.map((option) => {
+                const optionTheme = getOptionTheme({
+                  secondaryLinksStyle: option.value,
+                });
 
-            return (
-              <StudioChoiceCard
-                key={option.value}
-                active={draftDesign.secondaryLinksStyle === option.value}
-                label={option.label}
-                description={option.description}
-                onClick={() => updateDesignField("secondaryLinksStyle", option.value)}
-              >
-                <div
-                  className="space-y-3 rounded-[24px] border p-4"
-                  style={optionTheme.softSurfaceStyle}
-                >
-                  <div className="text-sm font-semibold" style={optionTheme.titleStyle}>
-                    Redes sociais
-                  </div>
-                  <MyPageSecondaryLinks
-                    theme={optionTheme}
-                    links={SECONDARY_LINK_STYLE_SAMPLES}
-                    interactive={false}
-                    className="mt-0 justify-start"
-                  />
-                </div>
-              </StudioChoiceCard>
-            );
-          })}
+                return (
+                  <StudioChoiceCard
+                    key={option.value}
+                    active={draftDesign.secondaryLinksStyle === option.value}
+                    label={option.label}
+                    description={option.description}
+                    onClick={() => updateDesignField("secondaryLinksStyle", option.value)}
+                  >
+                    <div
+                      className="space-y-3 rounded-[24px] border p-4"
+                      style={optionTheme.softSurfaceStyle}
+                    >
+                      <div className="text-sm font-semibold" style={optionTheme.titleStyle}>
+                        Redes sociais
+                      </div>
+                      <MyPageSecondaryLinks
+                        theme={optionTheme}
+                        links={SECONDARY_LINK_STYLE_SAMPLES}
+                        interactive={false}
+                        className="mt-0"
+                      />
+                    </div>
+                  </StudioChoiceCard>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-3 text-sm font-semibold text-slate-950 dark:text-white">
+              Tamanho
+            </div>
+            <div className="grid gap-4 lg:grid-cols-2">
+              {MY_PAGE_SECONDARY_LINK_SIZE_OPTIONS.map((option) => {
+                const optionTheme = getOptionTheme({
+                  secondaryLinksSize: option.value,
+                });
+
+                return (
+                  <StudioChoiceCard
+                    key={option.value}
+                    active={draftDesign.secondaryLinksSize === option.value}
+                    label={option.label}
+                    description={option.description}
+                    onClick={() => updateDesignField("secondaryLinksSize", option.value)}
+                  >
+                    <div
+                      className="space-y-3 rounded-[24px] border p-4"
+                      style={optionTheme.softSurfaceStyle}
+                    >
+                      <div className="text-sm font-semibold" style={optionTheme.titleStyle}>
+                        Escala das redes
+                      </div>
+                      <MyPageSecondaryLinks
+                        theme={optionTheme}
+                        links={SECONDARY_LINK_STYLE_SAMPLES}
+                        interactive={false}
+                        className="mt-0"
+                      />
+                    </div>
+                  </StudioChoiceCard>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-3 text-sm font-semibold text-slate-950 dark:text-white">
+              Alinhamento
+            </div>
+            <div className="grid gap-4 lg:grid-cols-2">
+              {MY_PAGE_SECONDARY_LINK_ALIGN_OPTIONS.map((option) => {
+                const optionTheme = getOptionTheme({
+                  secondaryLinksAlign: option.value,
+                });
+
+                return (
+                  <StudioChoiceCard
+                    key={option.value}
+                    active={draftDesign.secondaryLinksAlign === option.value}
+                    label={option.label}
+                    description={option.description}
+                    onClick={() => updateDesignField("secondaryLinksAlign", option.value)}
+                  >
+                    <div
+                      className="space-y-3 rounded-[24px] border p-4"
+                      style={optionTheme.softSurfaceStyle}
+                    >
+                      <div className="text-sm font-semibold" style={optionTheme.titleStyle}>
+                        Posicao do bloco
+                      </div>
+                      <MyPageSecondaryLinks
+                        theme={optionTheme}
+                        links={SECONDARY_LINK_STYLE_SAMPLES}
+                        interactive={false}
+                        className="mt-0"
+                      />
+                    </div>
+                  </StudioChoiceCard>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/80 p-4 text-sm text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
@@ -914,49 +1188,81 @@ export default function MyPageDesignStudioPage() {
     );
   }
 
-  function renderColorsSection() {
+  function renderAnimationSection() {
     return (
       <SectionShell
-        eyebrow="Cor"
-        title="Escolha a paleta"
-        description="Mude destaques, CTA e selecao sem quebrar o tema."
+        eyebrow="Animacao"
+        title="Movimento no publico"
+        description="Escolha o ritmo visual de entrada da pagina publica."
       >
-        <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
-          {MY_PAGE_ACCENT_PALETTE_OPTIONS.map((option) => {
-            const optionTheme = getOptionTheme({ accentPalette: option.value });
-            const buttonProps = getMyPageButtonProps(optionTheme, "primary");
+        <div className="grid gap-4 lg:grid-cols-3">
+          {MY_PAGE_ANIMATION_PRESET_OPTIONS.map((option) => {
+            const optionTheme = getOptionTheme({
+              animationPreset: option.value,
+            });
 
             return (
               <StudioChoiceCard
                 key={option.value}
-                active={draftDesign.accentPalette === option.value}
+                active={draftDesign.animationPreset === option.value}
                 label={option.label}
-                description={option.value}
-                onClick={() => updateDesignField("accentPalette", option.value)}
+                description={option.description}
+                onClick={() => updateDesignField("animationPreset", option.value)}
               >
-                <div
-                  className="space-y-3 rounded-[24px] border p-4"
-                  style={optionTheme.softSurfaceStyle}
-                >
-                  <div className="flex items-center gap-3">
-                    <span
-                      className="inline-flex h-10 w-10 rounded-full border border-white/50 shadow-sm"
-                      style={{ background: option.swatch }}
-                    />
-                    <div className="text-sm font-semibold" style={optionTheme.titleStyle}>
-                      {option.label}
-                    </div>
-                  </div>
-                  <div
-                    className={cls(buttonProps.className, "w-full justify-center")}
-                    style={buttonProps.style}
-                  >
-                    CTA principal
-                  </div>
-                </div>
+                <AnimationChoicePreview theme={optionTheme} />
               </StudioChoiceCard>
             );
           })}
+        </div>
+      </SectionShell>
+    );
+  }
+
+  function renderColorsSection() {
+    return (
+      <SectionShell
+        eyebrow="Cor"
+        title="Ajuste cada cor do publico"
+        description="Controle fundo, botoes e textos com liberdade total em cima do tema."
+      >
+        <div className="space-y-4">
+          {COLOR_FIELD_OPTIONS.map((field) => (
+            <div
+              key={field.key}
+              className="rounded-[28px] border border-slate-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-white/5"
+            >
+              <label className="mb-3 block text-sm font-semibold text-slate-950 dark:text-white">
+                {field.label}
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={colorInputValues[field.key] || ""}
+                  onChange={(event) =>
+                    updateColorInputValue(field.key, event.target.value)
+                  }
+                  onBlur={() => commitColorInputValue(field.key)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      commitColorInputValue(field.key);
+                    }
+                  }}
+                  className="h-14 w-full rounded-[18px] border border-slate-200 bg-white px-4 pr-16 text-sm font-semibold tracking-[0.04em] uppercase text-slate-950 outline-none transition focus:border-sky-300 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                />
+                <button
+                  type="button"
+                  onClick={() => openColorModal(field.key)}
+                  className="absolute right-3 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 rounded-full border border-slate-300 shadow-sm transition hover:scale-[1.04] dark:border-white/20"
+                  style={{
+                    background: draftDesign[field.key],
+                    boxShadow: "0 0 0 3px rgba(255,255,255,0.7)",
+                  }}
+                  aria-label={`Editar ${field.label}`}
+                />
+              </div>
+            </div>
+          ))}
         </div>
       </SectionShell>
     );
@@ -968,26 +1274,32 @@ export default function MyPageDesignStudioPage() {
     if (activeSection === "background") return renderBackgroundSection();
     if (activeSection === "text") return renderTextSection();
     if (activeSection === "secondary-links") return renderSecondaryLinksSection();
+    if (activeSection === "animation") return renderAnimationSection();
     if (activeSection === "colors") return renderColorsSection();
     return renderButtonsSection();
   }
 
-  const currentAccentSwatch =
-    MY_PAGE_ACCENT_PALETTE_OPTIONS.find(
-      (option) => option.value === draftDesign.accentPalette,
-    )?.swatch || "#2563EB";
-  const backgroundThemeDefaults = getMyPageThemePresetDefaults(draftDesign.themePreset);
-  const backgroundSuggestions = uniqueColors([
-    draftDesign.backgroundColor,
-    backgroundThemeDefaults.backgroundColor,
-    currentAccentSwatch,
-    mixHexColors(draftDesign.backgroundColor, "#FFFFFF", 0.32),
-    mixHexColors(draftDesign.backgroundColor, "#000000", 0.18),
-    mixHexColors(currentAccentSwatch, "#FFFFFF", 0.18),
+  const colorThemeDefaults = getMyPageThemePresetDefaults(draftDesign.themePreset);
+  const activeColorMeta =
+    COLOR_FIELD_OPTIONS.find((field) => field.key === activeColorField) ||
+    COLOR_FIELD_OPTIONS[0];
+  const activeColorValue = normalizeHexColor(
+    draftDesign?.[activeColorField],
+    colorThemeDefaults?.[activeColorField],
+  );
+  const colorSuggestions = uniqueColors([
+    activeColorValue,
+    colorThemeDefaults?.[activeColorField],
+    ...COLOR_FIELD_OPTIONS.flatMap((field) => [
+      draftDesign?.[field.key],
+      colorThemeDefaults?.[field.key],
+    ]),
+    mixHexColors(activeColorValue, "#FFFFFF", 0.18),
+    mixHexColors(activeColorValue, "#000000", 0.14),
   ]);
   const hueGradient =
     "linear-gradient(90deg,#ff0000 0%,#ffff00 16%,#00ff00 33%,#00ffff 50%,#0000ff 66%,#ff00ff 83%,#ff0000 100%)";
-  const saturationPanelBackground = `linear-gradient(to top, rgba(0,0,0,1), rgba(0,0,0,0)), linear-gradient(to right, #ffffff, hsl(${backgroundPicker.hue} 100% 50%))`;
+  const saturationPanelBackground = `linear-gradient(to top, rgba(0,0,0,1), rgba(0,0,0,0)), linear-gradient(to right, #ffffff, hsl(${colorPicker.hue} 100% 50%))`;
 
   return (
     <div className="space-y-5">
@@ -1087,25 +1399,21 @@ export default function MyPageDesignStudioPage() {
         </div>
       </div>
 
-      <ModalShell
-        open={backgroundColorModalOpen}
-        onClose={closeBackgroundColorModal}
-        panelClassName="max-w-[420px]"
-      >
+      <ModalShell open={colorModalOpen} onClose={closeColorModal} panelClassName="max-w-[420px]">
         <Card className="border border-white/60 bg-white/96 shadow-[0_40px_90px_-44px_rgba(15,23,42,0.45)] dark:border-white/10 dark:bg-slate-950/94">
           <CardBody className="space-y-5 p-5">
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-1">
                 <div className="text-xl font-black tracking-[-0.03em] text-slate-950 dark:text-white">
-                  Cor do fundo
+                  {activeColorMeta.label}
                 </div>
                 <div className="text-sm text-slate-500 dark:text-slate-400">
-                  Escolha a base para o estilo do fundo.
+                  Ajuste essa cor com precisao e aplique no preview ao vivo.
                 </div>
               </div>
               <button
                 type="button"
-                onClick={closeBackgroundColorModal}
+                onClick={closeColorModal}
                 className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:text-slate-950 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-white/15 dark:hover:text-white"
                 aria-label="Fechar"
               >
@@ -1115,12 +1423,12 @@ export default function MyPageDesignStudioPage() {
 
             <div className="space-y-4">
               <div
-                ref={backgroundPanelRef}
+                ref={colorPanelRef}
                 role="presentation"
-                onPointerDown={updateBackgroundFromPointer}
+                onPointerDown={updateColorFromPointer}
                 onPointerMove={(event) => {
                   if (event.buttons !== 1) return;
-                  updateBackgroundFromPointer(event);
+                  updateColorFromPointer(event);
                 }}
                 className="relative h-52 cursor-crosshair overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-inner dark:border-white/10"
                 style={{ background: saturationPanelBackground }}
@@ -1128,8 +1436,8 @@ export default function MyPageDesignStudioPage() {
                 <div
                   className="pointer-events-none absolute h-6 w-6 rounded-full border-[3px] border-white shadow-[0_0_0_1px_rgba(15,23,42,0.18)]"
                   style={{
-                    left: `${backgroundPicker.saturation}%`,
-                    top: `${100 - backgroundPicker.value}%`,
+                    left: `${colorPicker.saturation}%`,
+                    top: `${100 - colorPicker.value}%`,
                     transform: "translate(-50%, -50%)",
                   }}
                 />
@@ -1141,9 +1449,9 @@ export default function MyPageDesignStudioPage() {
                   min="0"
                   max="360"
                   step="1"
-                  value={backgroundPicker.hue}
+                  value={colorPicker.hue}
                   onChange={(event) =>
-                    updateBackgroundPicker({ hue: Number(event.target.value) })
+                    updateColorPicker({ hue: Number(event.target.value) })
                   }
                   className="h-3 w-full cursor-pointer appearance-none rounded-full"
                   style={{ background: hueGradient }}
@@ -1153,13 +1461,13 @@ export default function MyPageDesignStudioPage() {
               <div className="flex items-center gap-3">
                 <input
                   type="text"
-                  value={backgroundHexInput}
-                  onChange={(event) => setBackgroundHexInput(event.target.value.toUpperCase())}
-                  onBlur={() => applyBackgroundHex(backgroundHexInput, backgroundPicker.hex)}
+                  value={colorHexInput}
+                  onChange={(event) => setColorHexInput(event.target.value.toUpperCase())}
+                  onBlur={() => applyColorHex(colorHexInput, colorPicker.hex)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
                       event.preventDefault();
-                      applyBackgroundHex(backgroundHexInput, backgroundPicker.hex);
+                      applyColorHex(colorHexInput, colorPicker.hex);
                     }
                   }}
                   className="h-12 flex-1 rounded-[18px] border border-slate-200 bg-white px-4 text-sm font-semibold tracking-[0.04em] uppercase text-slate-950 outline-none transition focus:border-sky-300 dark:border-white/10 dark:bg-white/5 dark:text-white"
@@ -1180,14 +1488,14 @@ export default function MyPageDesignStudioPage() {
                   Sugeridas
                 </div>
                 <div className="flex flex-wrap gap-3">
-                  {backgroundSuggestions.map((color) => (
+                  {colorSuggestions.map((color) => (
                     <button
                       key={color}
                       type="button"
-                      onClick={() => applyBackgroundHex(color, backgroundPicker.hex)}
+                      onClick={() => applyColorHex(color, colorPicker.hex)}
                       className={cls(
                         "inline-flex h-11 w-11 rounded-full border-2 shadow-sm transition hover:scale-[1.04]",
-                        backgroundPicker.hex === color
+                        colorPicker.hex === color
                           ? "border-slate-950 dark:border-white"
                           : "border-white/80 dark:border-slate-900",
                       )}
@@ -1200,16 +1508,170 @@ export default function MyPageDesignStudioPage() {
             </div>
 
             <div className="flex flex-col gap-3 border-t border-slate-200/80 pt-4 dark:border-white/10 sm:flex-row sm:justify-end">
-              <Button type="button" variant="secondary" onClick={closeBackgroundColorModal}>
+              <Button type="button" variant="secondary" onClick={closeColorModal}>
                 Cancelar
               </Button>
-              <Button type="button" onClick={applyBackgroundColorSelection}>
+              <Button type="button" onClick={applyColorSelection}>
                 Aplicar
               </Button>
             </div>
           </CardBody>
         </Card>
       </ModalShell>
+    </div>
+  );
+}
+
+function BackgroundOptionPreview({
+  theme,
+  heightClassName = "h-28",
+  minHeight = "112px",
+  children = null,
+}) {
+  return (
+    <div
+      className={cls(
+        "relative overflow-hidden rounded-[22px] border",
+        heightClassName,
+      )}
+      style={{
+        ...theme.rootStyle,
+        minHeight,
+        backgroundAttachment: "scroll",
+      }}
+    >
+      <MyPageBackgroundOverlay theme={theme} />
+      {children ? <div className="relative z-10">{children}</div> : null}
+    </div>
+  );
+}
+
+function PrimaryButtonLayoutPreview({ theme }) {
+  return (
+    <div
+      className="space-y-3 rounded-[24px] border p-4"
+      style={theme.softSurfaceStyle}
+    >
+      {PRIMARY_BUTTON_LAYOUT_SAMPLES.map((button, index) => {
+        const Icon = iconForPrimaryButtonSample(button.type);
+        const variant = index === 0 ? "primary" : "secondary";
+        const { buttonProps, layout } = getMyPageHomeButtonProps(theme, variant, {
+          preview: true,
+        });
+
+        return (
+          <div
+            key={button.id}
+            className={cls(buttonProps.className, "w-full justify-between")}
+            style={buttonProps.style}
+          >
+            <div className={layout.innerClassName}>
+              <div
+                className={cls(
+                  "flex shrink-0 items-center justify-center border",
+                  theme.buttonIconRadiusClassName,
+                  layout.iconWrapClassName,
+                )}
+                style={layout.iconStyle}
+              >
+                <Icon className={layout.iconClassName} />
+              </div>
+              <div className={layout.contentClassName}>
+                {layout.showMeta ? (
+                  <div className={layout.metaClassName} style={theme.mutedTextStyle}>
+                    {primaryButtonMetaLabel(button.type)}
+                  </div>
+                ) : null}
+                <div className={layout.titleClassName}>{button.label}</div>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function AnimationChoicePreview({ theme }) {
+  const preset = theme?.design?.animationPreset || "subtle";
+  const profile =
+    preset === "impact"
+      ? {
+          rows: [
+            { width: "100%", offset: 22, opacity: 1, align: "right", ghosts: [26, 14] },
+            { width: "90%", offset: 18, opacity: 0.88, align: "right", ghosts: [22, 10] },
+            { width: "82%", offset: 14, opacity: 0.7, align: "right", ghosts: [18, 8] },
+          ],
+        }
+      : preset === "strong"
+      ? {
+          rows: [
+            { width: "100%", offset: 0, opacity: 1, align: "left", ghosts: [] },
+            { width: "90%", offset: 7, opacity: 0.86, align: "left", ghosts: [] },
+            { width: "78%", offset: 14, opacity: 0.66, align: "left", ghosts: [] },
+          ],
+        }
+      : preset === "off"
+        ? {
+            rows: [
+              { width: "100%", offset: 0, opacity: 1, align: "left", ghosts: [] },
+              { width: "100%", offset: 0, opacity: 0.72, align: "left", ghosts: [] },
+              { width: "100%", offset: 0, opacity: 0.5, align: "left", ghosts: [] },
+            ],
+          }
+        : {
+            rows: [
+              { width: "100%", offset: 0, opacity: 1, align: "left", ghosts: [] },
+              { width: "95%", offset: 3, opacity: 0.82, align: "left", ghosts: [] },
+              { width: "90%", offset: 6, opacity: 0.62, align: "left", ghosts: [] },
+            ],
+          };
+
+  return (
+    <div
+      className="rounded-[24px] border p-4"
+      style={theme.softSurfaceStyle}
+    >
+      <div
+        className="space-y-2 rounded-[18px] border p-3"
+        style={theme.activeCardStyle}
+      >
+        {profile.rows.map((row, index) => (
+          <div
+            key={index}
+            className={cls(
+              "relative flex h-8 transition-all duration-200",
+              row.align === "right" ? "justify-end" : "justify-start",
+            )}
+          >
+            {row.ghosts?.map((ghost, ghostIndex) => (
+              <div
+                key={`${index}:${ghostIndex}`}
+                className="absolute inset-y-0 rounded-[14px] border"
+                style={{
+                  width: row.width,
+                  opacity: 0.16 - ghostIndex * 0.04,
+                  ...(row.align === "right"
+                    ? { right: `${ghost}px` }
+                    : { left: `${ghost}px` }),
+                  ...theme.softSurfaceStyle,
+                }}
+              />
+            ))}
+            <div
+              className="relative h-8 rounded-[14px] border"
+              style={{
+                width: row.width,
+                opacity: row.opacity,
+                ...(row.align === "right"
+                  ? { marginRight: `${row.offset}px` }
+                  : { marginLeft: `${row.offset}%` }),
+                ...(index === 0 ? theme.primaryButtonStyle : theme.softSurfaceStyle),
+              }}
+            />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

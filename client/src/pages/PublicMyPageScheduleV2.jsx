@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { CalendarDays, CheckCircle2, Clock3, MessageCircle } from "lucide-react";
+import { CalendarDays, CheckCircle2, Clock3 } from "lucide-react";
 import {
   bookPublicMyPageSchedule,
   getPublicMyPage,
@@ -15,6 +15,7 @@ import {
   MyPagePublicFooter,
   MyPagePublicHero,
   MyPagePublicScreen,
+  MyPageWhatsAppIcon,
 } from "../components/my-page/MyPagePublicUi.jsx";
 
 function today() {
@@ -156,7 +157,10 @@ export default function PublicMyPageScheduleV2() {
               >
                 <CheckCircle2 className="h-8 w-8" />
               </div>
-              <div className="mt-5 text-2xl font-black tracking-[-0.04em]">
+              <div
+                className="mt-5 text-2xl font-black tracking-[-0.04em]"
+                style={theme.titleStyle}
+              >
                 Horario reservado
               </div>
               <div className="mt-3 text-sm leading-7" style={theme.mutedTextStyle}>
@@ -180,7 +184,7 @@ export default function PublicMyPageScheduleV2() {
                       )
                     }
                   >
-                    <MessageCircle className="h-4 w-4" />
+                    <MyPageWhatsAppIcon className="h-4 w-4" />
                     Falar no WhatsApp
                   </button>
                 ) : null}
@@ -214,7 +218,9 @@ export default function PublicMyPageScheduleV2() {
             </MyPagePublicCard>
           ) : !scheduleAvailable ? (
             <MyPagePublicCard theme={theme} className="text-center">
-              <div className="text-lg font-semibold">Agenda indisponivel</div>
+              <div className="text-lg font-semibold" style={theme.headingStyle}>
+                Agenda indisponivel
+              </div>
               <div className="mt-2 text-sm" style={theme.mutedTextStyle}>
                 Esta pagina ainda nao possui horarios livres.
               </div>
@@ -231,7 +237,7 @@ export default function PublicMyPageScheduleV2() {
                       )
                     }
                   >
-                    <MessageCircle className="h-4 w-4" />
+                    <MyPageWhatsAppIcon className="h-4 w-4" />
                     Falar no WhatsApp
                   </button>
                 </div>
@@ -325,7 +331,7 @@ export default function PublicMyPageScheduleV2() {
                             "px-4 py-4",
                           )}
                         >
-                          <div className="text-lg font-semibold">
+                          <div className="text-lg font-semibold" style={theme.headingStyle}>
                             {fmtRange(slot.startAt, slot.endAt)}
                           </div>
                           <div className="mt-2 text-xs" style={theme.mutedTextStyle}>
@@ -358,7 +364,10 @@ export default function PublicMyPageScheduleV2() {
                 <div
                   {...getPublicSelectableCardProps(theme, false, "mt-4 px-4 py-4")}
                 >
-                  <div className="flex items-center gap-2 text-sm font-semibold">
+                  <div
+                    className="flex items-center gap-2 text-sm font-semibold"
+                    style={theme.headingStyle}
+                  >
                     <Clock3 className="h-4 w-4" />
                     <span>
                       {selectedSlot
@@ -402,7 +411,7 @@ export default function PublicMyPageScheduleV2() {
                         )
                       }
                     >
-                      <MessageCircle className="h-4 w-4" />
+                      <MyPageWhatsAppIcon className="h-4 w-4" />
                       Falar no WhatsApp
                     </button>
                   </div>

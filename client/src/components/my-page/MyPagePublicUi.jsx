@@ -1,4 +1,12 @@
-import { Link2 } from "lucide-react";
+import {
+  CalendarDays,
+  CreditCard,
+  FileText,
+  Link2,
+  ShoppingBag,
+} from "lucide-react";
+import { motion } from "framer-motion";
+import { FaWhatsapp } from "react-icons/fa";
 import {
   FaFacebookF,
   FaGlobe,
@@ -7,6 +15,7 @@ import {
   FaYoutube,
 } from "react-icons/fa6";
 import {
+  getMyPageSecondaryLinksLayout,
   getMyPageButtonProps,
   getMyPageSelectableCardProps,
   getMyPageSurfaceProps,
@@ -16,6 +25,26 @@ import {
 
 export function cls(...parts) {
   return parts.filter(Boolean).join(" ");
+}
+
+export const MyPageWhatsAppIcon = FaWhatsapp;
+
+export function getMyPageButtonIcon(type) {
+  if (type === "whatsapp") return MyPageWhatsAppIcon;
+  if (type === "public_schedule") return CalendarDays;
+  if (type === "public_offer") return FileText;
+  if (type === "catalog") return ShoppingBag;
+  if (type === "payment_link") return CreditCard;
+  return Link2;
+}
+
+export function getMyPageButtonMetaLabel(type) {
+  if (type === "whatsapp") return "WhatsApp";
+  if (type === "public_schedule") return "Agenda";
+  if (type === "public_offer") return "Orcamento";
+  if (type === "catalog") return "Catalogo";
+  if (type === "payment_link") return "Pagamento";
+  return "Link";
 }
 
 export function getPublicButtonProps(theme, variant = "primary", className = "") {
@@ -43,16 +72,41 @@ export function MyPagePublicScreen({ page, maxWidth = "", children }) {
   const maxWidthClass = maxWidth || theme?.layout?.pageMaxWidthClassName || "max-w-6xl";
 
   return (
-    <div className="min-h-screen px-4 py-5 sm:px-6 lg:px-8" style={theme.rootStyle}>
+    <div
+      className="relative min-h-screen overflow-hidden px-4 py-5 sm:px-6 lg:px-8"
+      style={theme.rootStyle}
+    >
+      <MyPageBackgroundOverlay theme={theme} />
       <div
         className={cls(
-          "mx-auto",
+          "relative z-10 mx-auto",
           maxWidthClass,
           theme?.layout?.screenGapClassName || "space-y-6",
         )}
       >
         {typeof children === "function" ? children(theme) : children}
       </div>
+    </div>
+  );
+}
+
+export function MyPageBackgroundOverlay({ theme, className = "" }) {
+  if (!Array.isArray(theme?.backgroundOverlayItems) || !theme.backgroundOverlayItems.length) {
+    return null;
+  }
+
+  return (
+    <div className={cls("pointer-events-none absolute inset-0 overflow-hidden", className)}>
+      {theme.backgroundOverlayItems.map((item) => (
+        <div
+          key={item.key}
+          className="absolute"
+          style={{
+            transform: "translate3d(0,0,0)",
+            ...item.style,
+          }}
+        />
+      ))}
     </div>
   );
 }
@@ -215,7 +269,11 @@ export function MyPagePublicFooter({ theme }) {
   return <div className="pt-1" style={theme.mutedTextStyle} />;
 }
 
-export function MyPagePublicLoadingSplash({ theme, className = "" }) {
+export function MyPagePublicLoadingSplash({
+  theme,
+  motionPreset,
+  className = "",
+}) {
   const accentBackground =
     theme?.primaryButtonStyle?.background ||
     theme?.activeCardStyle?.background ||
@@ -223,6 +281,40 @@ export function MyPagePublicLoadingSplash({ theme, className = "" }) {
   const softBackground =
     theme?.softSurfaceStyle?.background ||
     "linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.05))";
+  const isImpact = motionPreset?.key === "impact" && motionPreset?.enabled !== false;
+  const isStrong = motionPreset?.key === "strong" && motionPreset?.enabled !== false;
+  const isOff = motionPreset?.enabled === false || motionPreset?.key === "off";
+  const orbAnimate = isOff
+    ? undefined
+    : isImpact
+      ? { scale: [1, 1.18, 0.94, 1.04, 1], opacity: [0.24, 0.5, 0.2, 0.34, 0.24] }
+      : isStrong
+      ? { scale: [1, 1.12, 0.97, 1], opacity: [0.2, 0.38, 0.18, 0.2] }
+      : { scale: [1, 1.05, 1], opacity: [0.18, 0.28, 0.18] };
+  const orbTransition = isImpact
+    ? { duration: 1.8, repeat: Infinity, ease: "easeInOut" }
+    : isStrong
+    ? { duration: 2.1, repeat: Infinity, ease: "easeInOut" }
+    : { duration: 2.9, repeat: Infinity, ease: "easeInOut" };
+  const ringAnimate = isOff
+    ? undefined
+    : isImpact
+      ? { scale: [1, 1.14, 0.96, 1.02, 1], opacity: [0.28, 0.52, 0.22, 0.3, 0.28] }
+      : isStrong
+      ? { scale: [1, 1.08, 0.98, 1], opacity: [0.24, 0.42, 0.22, 0.24] }
+      : { scale: [1, 1.04, 1], opacity: [0.18, 0.3, 0.18] };
+  const skeletonAnimate = isOff
+    ? undefined
+    : isImpact
+      ? { opacity: [0.44, 1, 0.44], scaleX: [0.96, 1.02, 0.96], y: [0, -2, 0] }
+      : isStrong
+      ? { opacity: [0.5, 1, 0.5], scaleX: [0.985, 1, 0.985] }
+      : { opacity: [0.68, 0.96, 0.68] };
+  const skeletonTransition = isImpact
+    ? { duration: 1.2, repeat: Infinity, ease: "easeInOut" }
+    : isStrong
+    ? { duration: 1.6, repeat: Infinity, ease: "easeInOut" }
+    : { duration: 2.1, repeat: Infinity, ease: "easeInOut" };
 
   return (
     <MyPagePublicCard
@@ -230,52 +322,64 @@ export function MyPagePublicLoadingSplash({ theme, className = "" }) {
       className={cls(theme?.layout?.homeCardClassName, "relative overflow-hidden", className)}
     >
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div
-          className="absolute left-1/2 top-16 h-40 w-40 -translate-x-1/2 rounded-full blur-3xl animate-pulse"
-          style={{ background: accentBackground, opacity: 0.24 }}
-        />
-        <div
-          className="absolute right-8 top-24 h-28 w-28 rounded-full blur-3xl animate-pulse"
-          style={{
-            background: softBackground,
-            opacity: 0.4,
-            animationDelay: "240ms",
-          }}
-        />
-        <div
-          className="absolute bottom-16 left-10 h-24 w-24 rounded-full blur-3xl animate-pulse"
+        <motion.div
+          className="absolute left-1/2 top-16 h-40 w-40 -translate-x-1/2 rounded-full blur-3xl"
           style={{
             background: accentBackground,
-            opacity: 0.14,
-            animationDelay: "480ms",
+            opacity: isImpact ? 0.36 : isStrong ? 0.3 : 0.24,
           }}
+          animate={orbAnimate}
+          transition={orbTransition}
+        />
+        <motion.div
+          className="absolute right-8 top-24 h-28 w-28 rounded-full blur-3xl"
+          style={{
+            background: softBackground,
+            opacity: isImpact ? 0.56 : isStrong ? 0.5 : 0.4,
+          }}
+          animate={orbAnimate}
+          transition={{ ...orbTransition, delay: 0.18 }}
+        />
+        <motion.div
+          className="absolute bottom-16 left-10 h-24 w-24 rounded-full blur-3xl"
+          style={{
+            background: accentBackground,
+            opacity: isImpact ? 0.26 : isStrong ? 0.18 : 0.14,
+          }}
+          animate={orbAnimate}
+          transition={{ ...orbTransition, delay: 0.36 }}
         />
       </div>
 
       <div className="relative flex min-h-[540px] flex-col items-center justify-center px-6 py-10 text-center sm:px-10">
         <div className="relative mb-8">
-          <div
-            className="absolute inset-[-12px] rounded-full border animate-pulse"
+          <motion.div
+            className="absolute inset-[-12px] rounded-full border"
             style={{ borderColor: theme?.activeCardStyle?.borderColor || theme?.dividerStyle?.borderColor, opacity: 0.4 }}
+            animate={ringAnimate}
+            transition={orbTransition}
           />
-          <div
-            className="absolute inset-[-26px] rounded-full border animate-pulse"
+          <motion.div
+            className="absolute inset-[-26px] rounded-full border"
             style={{
               borderColor: theme?.dividerStyle?.borderColor || theme?.softSurfaceStyle?.borderColor,
               opacity: 0.22,
-              animationDelay: "180ms",
             }}
+            animate={ringAnimate}
+            transition={{ ...orbTransition, delay: 0.14 }}
           />
           <div
             className="relative flex h-24 w-24 items-center justify-center rounded-full border shadow-[0_24px_50px_-28px_rgba(15,23,42,0.45)]"
             style={theme?.activeCardStyle || theme?.softSurfaceStyle}
           >
-            <div
-              className="h-10 w-10 rounded-full animate-pulse"
+            <motion.div
+              className="h-10 w-10 rounded-full"
               style={{
                 background: accentBackground,
                 opacity: 0.95,
               }}
+              animate={orbAnimate}
+              transition={{ ...orbTransition, delay: 0.08 }}
             />
           </div>
         </div>
@@ -291,17 +395,23 @@ export function MyPagePublicLoadingSplash({ theme, className = "" }) {
         </div>
 
         <div className="mt-8 w-full max-w-sm space-y-3">
-          <div
-            className="h-4 w-40 rounded-full animate-pulse mx-auto"
+          <motion.div
+            className="mx-auto h-4 w-40 rounded-full"
             style={{ background: softBackground, opacity: 0.9 }}
+            animate={skeletonAnimate}
+            transition={skeletonTransition}
           />
-          <div
-            className="h-3 w-56 rounded-full animate-pulse mx-auto"
-            style={{ background: softBackground, opacity: 0.72, animationDelay: "120ms" }}
+          <motion.div
+            className="mx-auto h-3 w-56 rounded-full"
+            style={{ background: softBackground, opacity: 0.72 }}
+            animate={skeletonAnimate}
+            transition={{ ...skeletonTransition, delay: 0.1 }}
           />
-          <div
-            className="h-14 w-full rounded-[24px] border animate-pulse"
+          <motion.div
+            className="h-14 w-full rounded-[24px] border"
             style={theme?.primaryButtonStyle}
+            animate={skeletonAnimate}
+            transition={{ ...skeletonTransition, delay: 0.18 }}
           />
         </div>
       </div>
@@ -323,18 +433,25 @@ function resolveSecondaryLinkIcon(platform) {
   return FaGlobe;
 }
 
-function SecondaryLinkContent({ theme, item }) {
+function SecondaryLinkContent({ theme, item, layout }) {
   const label = normalizeSecondaryLinkLabel(item);
   const style = theme?.design?.secondaryLinksStyle || "text";
   const Icon = resolveSecondaryLinkIcon(item?.platform);
 
   if (style === "icon") {
-    return <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />;
+    return <Icon className={cls(layout.iconClassName, "shrink-0")} aria-hidden="true" />;
   }
 
   return (
-    <span className="inline-flex min-w-0 items-center gap-2">
-      {style === "icon_text" ? <Icon className="h-4 w-4 shrink-0" aria-hidden="true" /> : null}
+    <span
+      className={cls(
+        "inline-flex min-w-0 items-center",
+        layout.contentClassName,
+      )}
+    >
+      {style === "icon_text" ? (
+        <Icon className={cls(layout.iconClassName, "shrink-0")} aria-hidden="true" />
+      ) : null}
       <span className="truncate">{label}</span>
     </span>
   );
@@ -352,6 +469,7 @@ export function MyPageSecondaryLinks({
         (item) => item?.enabled === true && item?.url && normalizeSecondaryLinkLabel(item),
       )
     : [];
+  const layout = getMyPageSecondaryLinksLayout(theme);
 
   if (!items.length) return null;
 
@@ -360,8 +478,8 @@ export function MyPageSecondaryLinks({
     theme,
     "secondary",
     cls(
-      "px-3 py-2 text-xs font-semibold",
-      iconOnly ? "h-10 w-10 justify-center px-0" : "justify-center",
+      layout.itemClassName,
+      iconOnly ? layout.iconOnlyClassName : "justify-center",
       itemClassName,
     ),
   );
@@ -369,7 +487,8 @@ export function MyPageSecondaryLinks({
   return (
     <div
       className={cls(
-        theme?.layout?.homeSecondaryLinksClassName || "mt-6 flex flex-wrap justify-center gap-2",
+        theme?.layout?.homeSecondaryLinksClassName || "mt-6 flex flex-wrap gap-2",
+        layout.containerClassName,
         className,
       )}
     >
@@ -391,14 +510,14 @@ export function MyPageSecondaryLinks({
               rel="noreferrer"
               aria-label={label}
             >
-              <SecondaryLinkContent theme={theme} item={item} />
+              <SecondaryLinkContent theme={theme} item={item} layout={layout} />
             </a>
           );
         }
 
         return (
           <div {...sharedProps} aria-label={label}>
-            <SecondaryLinkContent theme={theme} item={item} />
+            <SecondaryLinkContent theme={theme} item={item} layout={layout} />
           </div>
         );
       })}

@@ -53,17 +53,46 @@ export function saveMyPageLinks(payload) {
   });
 }
 
+export function saveMyPageAvatar(payload = {}) {
+  const avatarMode = String(payload?.avatarMode || "").trim().toLowerCase();
+  const avatarFile = payload?.avatarFile || null;
+  const hasAvatarFile =
+    typeof File !== "undefined" && avatarFile instanceof File;
+
+  if (avatarMode === "upload" || hasAvatarFile) {
+    const formData = new FormData();
+    formData.set("avatarMode", "upload");
+    if (hasAvatarFile) {
+      formData.set("avatarFile", avatarFile);
+    }
+
+    return api("/my-page/avatar", {
+      method: "PUT",
+      body: formData,
+    });
+  }
+
+  return api("/my-page/avatar", {
+    method: "PUT",
+    body: JSON.stringify({
+      avatarMode,
+      avatarUrl: payload?.avatarUrl || "",
+    }),
+  });
+}
+
 export function getMyPageShopProducts(q = "") {
   const qs = q ? `?q=${encodeURIComponent(q)}` : "";
   return api(`/my-page/shop/products${qs}`);
 }
 
-export function saveMyPageShop(productIds = []) {
+export function saveMyPageShop(productIds = [], showPrices = true) {
   return api("/my-page/shop", {
     method: "PUT",
     body: JSON.stringify({
       shop: {
         productIds: Array.isArray(productIds) ? productIds : [],
+        showPrices: showPrices !== false,
       },
     }),
   });

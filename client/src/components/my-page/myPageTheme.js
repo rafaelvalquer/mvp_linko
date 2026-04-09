@@ -4,10 +4,20 @@ export const MY_PAGE_DESIGN_DEFAULTS = {
   accentPalette: "sky",
   backgroundStyle: "fill",
   backgroundColor: "#E2E8F0",
+  buttonColor: "#0F172A",
+  buttonTextColor: "#FFFFFF",
+  pageTextColor: "#64748B",
+  titleTextColor: "#0F172A",
+  backgroundGradientDirection: "linear_up",
+  backgroundPatternVariant: "grid",
   fontPreset: "inter",
   buttonStyle: "solid",
   buttonRadius: "round",
+  primaryButtonsLayout: "stack",
   secondaryLinksStyle: "text",
+  secondaryLinksSize: "medium",
+  secondaryLinksAlign: "center",
+  animationPreset: "subtle",
 };
 
 export const MY_PAGE_THEME_PRESET_OPTIONS = [
@@ -104,6 +114,10 @@ export const MY_PAGE_ACCENT_PALETTE_OPTIONS = [
   { value: "slate", label: "Slate", swatch: "#334155" },
 ];
 
+const ACCENT_SWATCHES = Object.fromEntries(
+  MY_PAGE_ACCENT_PALETTE_OPTIONS.map((option) => [option.value, option.swatch]),
+);
+
 export const MY_PAGE_BRAND_LAYOUT_OPTIONS = [
   {
     value: "classic",
@@ -118,10 +132,35 @@ export const MY_PAGE_BRAND_LAYOUT_OPTIONS = [
 ];
 
 export const MY_PAGE_BACKGROUND_STYLE_OPTIONS = [
-  { value: "fill", label: "Fill", description: "Base solida com profundidade." },
-  { value: "gradient", label: "Gradient", description: "Transicao suave de tons." },
+  { value: "fill", label: "Fill", description: "Cor solida na pagina inteira." },
+  { value: "gradient", label: "Gradient", description: "Transicao da cor base." },
   { value: "blur", label: "Blur", description: "Blobs e glow macio." },
   { value: "pattern", label: "Pattern", description: "Textura com desenho leve." },
+];
+
+export const MY_PAGE_BACKGROUND_GRADIENT_DIRECTION_OPTIONS = [
+  {
+    value: "linear_up",
+    label: "Linear up",
+    description: "A cor forte nasce embaixo e sobe no gradiente.",
+  },
+  {
+    value: "linear_down",
+    label: "Linear down",
+    description: "A cor forte nasce em cima e desce no gradiente.",
+  },
+  {
+    value: "radial",
+    label: "Radial",
+    description: "A cor forte nasce no centro e expande.",
+  },
+];
+
+export const MY_PAGE_BACKGROUND_PATTERN_VARIANT_OPTIONS = [
+  { value: "grid", label: "Grid", description: "Grade leve do pattern atual." },
+  { value: "morph", label: "Morph", description: "Blocos deformados em alpha." },
+  { value: "organic", label: "Organic", description: "Formas fluidas e suaves." },
+  { value: "matrix", label: "Matrix", description: "Ritmo tecnico e digital." },
 ];
 
 export const MY_PAGE_FONT_PRESET_OPTIONS = [
@@ -151,6 +190,24 @@ export const MY_PAGE_BUTTON_RADIUS_OPTIONS = [
   { value: "pill", label: "Pill", description: "Maxima." },
 ];
 
+export const MY_PAGE_PRIMARY_BUTTON_LAYOUT_OPTIONS = [
+  {
+    value: "stack",
+    label: "Stack",
+    description: "Pilha vertical classica e equilibrada.",
+  },
+  {
+    value: "cards",
+    label: "Cards",
+    description: "CTAs mais altos e com hierarquia mais forte.",
+  },
+  {
+    value: "minimal",
+    label: "Minimal",
+    description: "Mais leve, editorial e objetivo.",
+  },
+];
+
 export const MY_PAGE_SECONDARY_LINK_STYLE_OPTIONS = [
   { value: "text", label: "Texto", description: "Mostra so o nome." },
   { value: "icon", label: "Icone", description: "Mostra so o icone." },
@@ -158,6 +215,47 @@ export const MY_PAGE_SECONDARY_LINK_STYLE_OPTIONS = [
     value: "icon_text",
     label: "Icone + texto",
     description: "Mostra o icone com o nome.",
+  },
+];
+
+export const MY_PAGE_SECONDARY_LINK_SIZE_OPTIONS = [
+  { value: "small", label: "Pequeno", description: "Chip mais compacto." },
+  { value: "medium", label: "Medio", description: "Tamanho padrao." },
+];
+
+export const MY_PAGE_SECONDARY_LINK_ALIGN_OPTIONS = [
+  {
+    value: "center",
+    label: "Centralizado",
+    description: "Mantem as redes centralizadas.",
+  },
+  {
+    value: "left",
+    label: "Esquerda",
+    description: "Alinha o bloco de redes a esquerda.",
+  },
+];
+
+export const MY_PAGE_ANIMATION_PRESET_OPTIONS = [
+  {
+    value: "subtle",
+    label: "Suave",
+    description: "Entrada leve e refinada.",
+  },
+  {
+    value: "strong",
+    label: "Marcante",
+    description: "Camadas com mais deslocamento visual.",
+  },
+  {
+    value: "impact",
+    label: "Impacto",
+    description: "CTAs entram da direita com mais presenca.",
+  },
+  {
+    value: "off",
+    label: "Desligada",
+    description: "Composicao estatica e direta.",
   },
 ];
 
@@ -747,6 +845,163 @@ const LEGACY_BUTTON_RADIUS_MAP = {
   rounded: "round",
 };
 
+const HOME_PRIMARY_BUTTON_LAYOUTS = {
+  stack: {
+    containerClassName: "mt-7 space-y-3",
+    previewContainerClassName: "space-y-2.5",
+    buttonClassName: "min-h-[76px] px-5 py-4",
+    previewButtonClassName: "min-h-[58px] px-4 py-3",
+    innerClassName: "flex min-w-0 flex-1 items-center gap-4",
+    previewInnerClassName: "flex min-w-0 flex-1 items-center gap-3",
+    contentClassName: "min-w-0 flex-1",
+    iconWrapClassName: "h-12 w-12",
+    previewIconWrapClassName: "h-10 w-10",
+    iconClassName: "h-5 w-5",
+    previewIconClassName: "h-4 w-4",
+    titleClassName: "truncate text-base font-semibold",
+    previewTitleClassName: "truncate text-sm font-semibold",
+    actionMode: "text",
+    actionClassName: "text-sm font-semibold",
+    previewActionClassName: "text-[11px] font-semibold",
+    showMeta: false,
+    iconSurface: "soft",
+    buttonStyle: {},
+    previewButtonStyle: {},
+  },
+  cards: {
+    containerClassName: "mt-7 space-y-3.5",
+    previewContainerClassName: "space-y-3",
+    buttonClassName: "min-h-[96px] items-stretch px-5 py-5",
+    previewButtonClassName: "min-h-[72px] items-stretch px-4 py-4",
+    innerClassName: "flex min-w-0 flex-1 items-center gap-4",
+    previewInnerClassName: "flex min-w-0 flex-1 items-center gap-3",
+    contentClassName: "min-w-0 flex-1",
+    iconWrapClassName: "h-14 w-14 shadow-[0_18px_38px_-28px_rgba(15,23,42,0.35)]",
+    previewIconWrapClassName: "h-11 w-11",
+    iconClassName: "h-5 w-5",
+    previewIconClassName: "h-4 w-4",
+    titleClassName: "truncate text-base font-bold tracking-[-0.02em]",
+    previewTitleClassName: "truncate text-sm font-bold",
+    metaClassName: "mb-1 text-[10px] font-bold uppercase tracking-[0.18em]",
+    previewMetaClassName: "mb-1 text-[9px] font-bold uppercase tracking-[0.16em]",
+    actionMode: "pill",
+    actionClassName:
+      "inline-flex items-center justify-center rounded-full px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.14em]",
+    previewActionClassName:
+      "inline-flex items-center justify-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em]",
+    showMeta: true,
+    iconSurface: "accent",
+    actionSurface: "soft",
+    buttonStyle: {},
+    previewButtonStyle: {},
+  },
+  minimal: {
+    containerClassName: "mt-6 space-y-2.5",
+    previewContainerClassName: "space-y-2",
+    buttonClassName: "min-h-[60px] px-4 py-3",
+    previewButtonClassName: "min-h-[50px] px-3.5 py-2.5",
+    innerClassName: "flex min-w-0 flex-1 items-center gap-3",
+    previewInnerClassName: "flex min-w-0 flex-1 items-center gap-2.5",
+    contentClassName: "min-w-0 flex-1",
+    iconWrapClassName: "h-10 w-10 border-transparent",
+    previewIconWrapClassName: "h-8 w-8 border-transparent",
+    iconClassName: "h-4 w-4",
+    previewIconClassName: "h-3.5 w-3.5",
+    titleClassName: "truncate text-sm font-semibold",
+    previewTitleClassName: "truncate text-[13px] font-semibold",
+    actionMode: "text",
+    actionClassName:
+      "text-[11px] font-bold uppercase tracking-[0.18em] opacity-80",
+    previewActionClassName:
+      "text-[10px] font-bold uppercase tracking-[0.16em] opacity-75",
+    showMeta: false,
+    iconSurface: "muted",
+    buttonStyle: { boxShadow: "none" },
+    previewButtonStyle: { boxShadow: "none" },
+  },
+};
+
+const SECONDARY_LINK_SIZE_CONFIG = {
+  small: {
+    itemClassName: "px-2.5 py-1.5 text-[11px] font-semibold",
+    iconOnlyClassName: "h-9 w-9 justify-center px-0",
+    contentClassName: "gap-1.5",
+    iconClassName: "h-3.5 w-3.5",
+  },
+  medium: {
+    itemClassName: "px-3 py-2 text-xs font-semibold",
+    iconOnlyClassName: "h-10 w-10 justify-center px-0",
+    contentClassName: "gap-2",
+    iconClassName: "h-4 w-4",
+  },
+};
+
+const SECONDARY_LINK_ALIGN_CLASSNAMES = {
+  center: "justify-center",
+  left: "justify-start",
+};
+
+const MY_PAGE_MOTION_PRESETS = {
+  subtle: {
+    distance: 16,
+    scale: 0.99,
+    duration: 0.38,
+    stagger: 0.05,
+    hoverY: -2,
+    hoverScale: 1.008,
+    loadingScale: 0.992,
+    loadingDuration: 0.3,
+    ease: [0.22, 1, 0.36, 1],
+  },
+  strong: {
+    distance: 28,
+    scale: 0.972,
+    duration: 0.5,
+    stagger: 0.085,
+    hoverY: -4,
+    hoverScale: 1.018,
+    loadingScale: 0.982,
+    loadingDuration: 0.42,
+    ease: [0.18, 1, 0.24, 1],
+  },
+  impact: {
+    distance: 18,
+    scale: 0.976,
+    duration: 0.42,
+    stagger: 0.06,
+    hoverY: -4,
+    hoverScale: 1.018,
+    tapScale: 0.985,
+    loadingScale: 0.94,
+    loadingDuration: 0.36,
+    loadingExitScale: 1.03,
+    loadingExitY: -10,
+    loadingExitDuration: 0.22,
+    itemY: 16,
+    itemScale: 0.994,
+    buttonEnterX: 42,
+    buttonEnterScale: 0.985,
+    buttonDuration: 0.34,
+    buttonStagger: 0.06,
+    buttonEase: [0.16, 1, 0.3, 1],
+    buttonHoverShadow:
+      "0 18px 34px -24px rgba(15,23,42,0.26), 0 12px 22px -24px rgba(59,130,246,0.22)",
+    buttonTransitionDuration: 0.14,
+    ease: [0.16, 1, 0.3, 1],
+  },
+  off: {
+    distance: 0,
+    scale: 1,
+    duration: 0,
+    stagger: 0,
+    hoverY: 0,
+    hoverScale: 1,
+    loadingScale: 1,
+    loadingDuration: 0,
+    ease: "linear",
+  },
+};
+
 const LEGACY_THEME_PRESET_MAP = {
   ocean: "clean_light",
   sunset: "creator_gradient",
@@ -758,7 +1013,7 @@ const BASE_LAYOUT = {
   softSurfaceClassName: "rounded-[26px] border p-4",
   selectableCardClassName: "rounded-[24px] border px-4 py-4 text-left transition",
   buttonBaseClassName:
-    "inline-flex items-center justify-center gap-2 border transition duration-200 hover:-translate-y-[1px] hover:brightness-[1.02]",
+    "inline-flex items-center justify-center gap-2 border transition-[filter,box-shadow,transform] duration-200 will-change-transform hover:brightness-[1.02]",
   buttonPaddingClassName: "px-5 py-3.5",
   buttonTextClassName: "text-sm font-semibold",
   pageMaxWidthClassName: "max-w-5xl",
@@ -950,6 +1205,10 @@ function escapeCssUrl(value) {
   return String(value || "").replace(/["\\\n\r]/g, "\\$&");
 }
 
+function joinClassNames(...parts) {
+  return parts.filter(Boolean).join(" ");
+}
+
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -991,6 +1250,116 @@ function rgbToHex(r, g, b) {
     .join("")}`.toUpperCase();
 }
 
+function rgbToHsv({ r, g, b }) {
+  const red = r / 255;
+  const green = g / 255;
+  const blue = b / 255;
+  const max = Math.max(red, green, blue);
+  const min = Math.min(red, green, blue);
+  const delta = max - min;
+  let hue = 0;
+
+  if (delta) {
+    if (max === red) hue = ((green - blue) / delta) % 6;
+    else if (max === green) hue = (blue - red) / delta + 2;
+    else hue = (red - green) / delta + 4;
+    hue *= 60;
+    if (hue < 0) hue += 360;
+  }
+
+  const saturation = max === 0 ? 0 : delta / max;
+  return {
+    hue,
+    saturation: saturation * 100,
+    value: max * 100,
+  };
+}
+
+function hsvToRgb({ hue, saturation, value }) {
+  const safeHue = ((Number(hue) || 0) % 360 + 360) % 360;
+  const safeSaturation = clamp(Number(saturation) || 0, 0, 100) / 100;
+  const safeValue = clamp(Number(value) || 0, 0, 100) / 100;
+  const chroma = safeValue * safeSaturation;
+  const section = safeHue / 60;
+  const second = chroma * (1 - Math.abs((section % 2) - 1));
+  const match = safeValue - chroma;
+  let red = 0;
+  let green = 0;
+  let blue = 0;
+
+  if (section >= 0 && section < 1) {
+    red = chroma;
+    green = second;
+  } else if (section < 2) {
+    red = second;
+    green = chroma;
+  } else if (section < 3) {
+    green = chroma;
+    blue = second;
+  } else if (section < 4) {
+    green = second;
+    blue = chroma;
+  } else if (section < 5) {
+    red = second;
+    blue = chroma;
+  } else {
+    red = chroma;
+    blue = second;
+  }
+
+  return {
+    r: (red + match) * 255,
+    g: (green + match) * 255,
+    b: (blue + match) * 255,
+  };
+}
+
+function lightenHex(hex, amount = 0.1) {
+  const hsv = rgbToHsv(hexToRgb(hex));
+  return rgbToHex(
+    ...Object.values(
+      hsvToRgb({
+        hue: hsv.hue,
+        saturation: clamp(hsv.saturation - amount * 18, 0, 100),
+        value: clamp(hsv.value + amount * 100, 0, 100),
+      }),
+    ),
+  );
+}
+
+function darkenHex(hex, amount = 0.1) {
+  const hsv = rgbToHsv(hexToRgb(hex));
+  return rgbToHex(
+    ...Object.values(
+      hsvToRgb({
+        hue: hsv.hue,
+        saturation: clamp(hsv.saturation + amount * 8, 0, 100),
+        value: clamp(hsv.value - amount * 100, 0, 100),
+      }),
+    ),
+  );
+}
+
+function getRelativeLuminance(hex) {
+  const { r, g, b } = hexToRgb(hex);
+  const toLinear = (channel) => {
+    const normalized = channel / 255;
+    return normalized <= 0.03928
+      ? normalized / 12.92
+      : ((normalized + 0.055) / 1.055) ** 2.4;
+  };
+
+  return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+}
+
+function isDarkColor(hex) {
+  return getRelativeLuminance(hex) < 0.34;
+}
+
+function getReadableTextColor(hex, light = "#FFFFFF", dark = "#0F172A") {
+  return isDarkColor(hex) ? light : dark;
+}
+
 export function mixHexColors(from, to, amount = 0.5) {
   const left = hexToRgb(from);
   const right = hexToRgb(to);
@@ -1012,16 +1381,51 @@ function buildBackgroundPalette(backgroundColor) {
   const base = normalizeHexColor(backgroundColor);
   return {
     base,
-    top: mixHexColors(base, "#FFFFFF", 0.16),
-    light: mixHexColors(base, "#FFFFFF", 0.34),
-    wash: mixHexColors(base, "#FFFFFF", 0.56),
-    dark: mixHexColors(base, "#000000", 0.2),
-    deep: mixHexColors(base, "#020617", 0.38),
-    line: alphaColor(mixHexColors(base, "#FFFFFF", 0.72), 0.22),
+    top: lightenHex(base, 0.08),
+    light: lightenHex(base, 0.18),
+    wash: lightenHex(base, 0.28),
+    dark: darkenHex(base, 0.12),
+    deep: darkenHex(base, 0.24),
+    line: alphaColor(lightenHex(base, 0.34), 0.22),
     glow: alphaColor(base, 0.34),
-    glowSoft: alphaColor(mixHexColors(base, "#FFFFFF", 0.18), 0.18),
-    haze: alphaColor(mixHexColors(base, "#FFFFFF", 0.28), 0.22),
-    mist: alphaColor(mixHexColors(base, "#FFFFFF", 0.46), 0.32),
+    glowSoft: alphaColor(lightenHex(base, 0.12), 0.18),
+    haze: alphaColor(lightenHex(base, 0.2), 0.22),
+    mist: alphaColor(lightenHex(base, 0.28), 0.32),
+    lineStrong: alphaColor(lightenHex(base, 0.4), 0.34),
+    mesh: alphaColor(lightenHex(base, 0.32), 0.18),
+    dot: alphaColor(lightenHex(base, 0.5), 0.28),
+    shadow: alphaColor(darkenHex(base, 0.2), 0.18),
+  };
+}
+
+function buildThemeColorDefaults(preset) {
+  const fallbackButtonColor =
+    ACCENT_SWATCHES[preset?.defaults?.accentPalette] ||
+    preset?.accentFrom ||
+    MY_PAGE_DESIGN_DEFAULTS.buttonColor;
+  const buttonColor = normalizeHexColor(
+    preset?.defaults?.buttonColor || fallbackButtonColor,
+    MY_PAGE_DESIGN_DEFAULTS.buttonColor,
+  );
+
+  return {
+    backgroundColor: normalizeHexColor(
+      preset?.defaults?.backgroundColor,
+      MY_PAGE_DESIGN_DEFAULTS.backgroundColor,
+    ),
+    buttonColor,
+    buttonTextColor: normalizeHexColor(
+      preset?.defaults?.buttonTextColor,
+      getReadableTextColor(buttonColor, "#FFFFFF", "#111827"),
+    ),
+    pageTextColor: normalizeHexColor(
+      preset?.defaults?.pageTextColor,
+      preset?.muted || MY_PAGE_DESIGN_DEFAULTS.pageTextColor,
+    ),
+    titleTextColor: normalizeHexColor(
+      preset?.defaults?.titleTextColor,
+      preset?.text || MY_PAGE_DESIGN_DEFAULTS.titleTextColor,
+    ),
   };
 }
 
@@ -1048,6 +1452,38 @@ function valueFromOptions(value, options, fallback) {
   return options.includes(normalized) ? normalized : fallback;
 }
 
+function resolvePrimaryButtonLayout(value) {
+  return valueFromOptions(
+    value,
+    MY_PAGE_PRIMARY_BUTTON_LAYOUT_OPTIONS.map((item) => item.value),
+    MY_PAGE_DESIGN_DEFAULTS.primaryButtonsLayout,
+  );
+}
+
+function resolveSecondaryLinksSize(value) {
+  return valueFromOptions(
+    value,
+    MY_PAGE_SECONDARY_LINK_SIZE_OPTIONS.map((item) => item.value),
+    MY_PAGE_DESIGN_DEFAULTS.secondaryLinksSize,
+  );
+}
+
+function resolveSecondaryLinksAlign(value) {
+  return valueFromOptions(
+    value,
+    MY_PAGE_SECONDARY_LINK_ALIGN_OPTIONS.map((item) => item.value),
+    MY_PAGE_DESIGN_DEFAULTS.secondaryLinksAlign,
+  );
+}
+
+function resolveAnimationPreset(value) {
+  return valueFromOptions(
+    value,
+    MY_PAGE_ANIMATION_PRESET_OPTIONS.map((item) => item.value),
+    MY_PAGE_DESIGN_DEFAULTS.animationPreset,
+  );
+}
+
 function normalizeThemePreset(value, fallback = MY_PAGE_DESIGN_DEFAULTS.themePreset) {
   const normalized = String(value || "")
     .trim()
@@ -1063,6 +1499,7 @@ function normalizeThemePreset(value, fallback = MY_PAGE_DESIGN_DEFAULTS.themePre
 export function getMyPageThemePresetDefaults(themePreset) {
   const presetKey = normalizeThemePreset(themePreset);
   const preset = THEME_PRESETS[presetKey] || THEME_PRESETS.clean_light;
+  const colorDefaults = buildThemeColorDefaults(preset);
   return {
     themePreset: presetKey,
     accentPalette:
@@ -1075,9 +1512,24 @@ export function getMyPageThemePresetDefaults(themePreset) {
         preset?.defaults?.backgroundColor,
         MY_PAGE_DESIGN_DEFAULTS.backgroundColor,
       ) || MY_PAGE_DESIGN_DEFAULTS.backgroundColor,
+    buttonColor: colorDefaults.buttonColor,
+    buttonTextColor: colorDefaults.buttonTextColor,
+    pageTextColor: colorDefaults.pageTextColor,
+    titleTextColor: colorDefaults.titleTextColor,
+    backgroundGradientDirection:
+      preset?.defaults?.backgroundGradientDirection ||
+      MY_PAGE_DESIGN_DEFAULTS.backgroundGradientDirection,
+    backgroundPatternVariant:
+      preset?.defaults?.backgroundPatternVariant ||
+      MY_PAGE_DESIGN_DEFAULTS.backgroundPatternVariant,
     fontPreset: preset?.defaults?.fontPreset || MY_PAGE_DESIGN_DEFAULTS.fontPreset,
     buttonStyle:
       preset?.defaults?.buttonStyle || MY_PAGE_DESIGN_DEFAULTS.buttonStyle,
+    primaryButtonsLayout: MY_PAGE_DESIGN_DEFAULTS.primaryButtonsLayout,
+    secondaryLinksStyle: MY_PAGE_DESIGN_DEFAULTS.secondaryLinksStyle,
+    secondaryLinksSize: MY_PAGE_DESIGN_DEFAULTS.secondaryLinksSize,
+    secondaryLinksAlign: MY_PAGE_DESIGN_DEFAULTS.secondaryLinksAlign,
+    animationPreset: MY_PAGE_DESIGN_DEFAULTS.animationPreset,
   };
 }
 
@@ -1145,6 +1597,32 @@ export function normalizeMyPageDesign(
       design?.backgroundColor,
       presetDefaults.backgroundColor,
     ),
+    buttonColor: normalizeHexColor(
+      design?.buttonColor,
+      presetDefaults.buttonColor,
+    ),
+    buttonTextColor: normalizeHexColor(
+      design?.buttonTextColor,
+      presetDefaults.buttonTextColor,
+    ),
+    pageTextColor: normalizeHexColor(
+      design?.pageTextColor,
+      presetDefaults.pageTextColor,
+    ),
+    titleTextColor: normalizeHexColor(
+      design?.titleTextColor,
+      presetDefaults.titleTextColor,
+    ),
+    backgroundGradientDirection: valueFromOptions(
+      design?.backgroundGradientDirection,
+      MY_PAGE_BACKGROUND_GRADIENT_DIRECTION_OPTIONS.map((item) => item.value),
+      MY_PAGE_DESIGN_DEFAULTS.backgroundGradientDirection,
+    ),
+    backgroundPatternVariant: valueFromOptions(
+      design?.backgroundPatternVariant,
+      MY_PAGE_BACKGROUND_PATTERN_VARIANT_OPTIONS.map((item) => item.value),
+      MY_PAGE_DESIGN_DEFAULTS.backgroundPatternVariant,
+    ),
     fontPreset: valueFromOptions(
       design?.fontPreset,
       MY_PAGE_FONT_PRESET_OPTIONS.map((item) => item.value),
@@ -1162,40 +1640,459 @@ export function normalizeMyPageDesign(
       MY_PAGE_BUTTON_RADIUS_OPTIONS.map((item) => item.value),
       MY_PAGE_DESIGN_DEFAULTS.buttonRadius,
     ),
+    primaryButtonsLayout: valueFromOptions(
+      design?.primaryButtonsLayout,
+      MY_PAGE_PRIMARY_BUTTON_LAYOUT_OPTIONS.map((item) => item.value),
+      MY_PAGE_DESIGN_DEFAULTS.primaryButtonsLayout,
+    ),
     secondaryLinksStyle: valueFromOptions(
       design?.secondaryLinksStyle,
       MY_PAGE_SECONDARY_LINK_STYLE_OPTIONS.map((item) => item.value),
       MY_PAGE_DESIGN_DEFAULTS.secondaryLinksStyle,
     ),
+    secondaryLinksSize: valueFromOptions(
+      design?.secondaryLinksSize,
+      MY_PAGE_SECONDARY_LINK_SIZE_OPTIONS.map((item) => item.value),
+      MY_PAGE_DESIGN_DEFAULTS.secondaryLinksSize,
+    ),
+    secondaryLinksAlign: valueFromOptions(
+      design?.secondaryLinksAlign,
+      MY_PAGE_SECONDARY_LINK_ALIGN_OPTIONS.map((item) => item.value),
+      MY_PAGE_DESIGN_DEFAULTS.secondaryLinksAlign,
+    ),
+    animationPreset: valueFromOptions(
+      design?.animationPreset,
+      MY_PAGE_ANIMATION_PRESET_OPTIONS.map((item) => item.value),
+      MY_PAGE_DESIGN_DEFAULTS.animationPreset,
+    ),
   };
 }
 
-function buildBackground(_preset, _accent, backgroundStyle, backgroundColor) {
+function resolveHomeButtonElementStyle(theme, surfaceKind) {
+  if (surfaceKind === "accent") {
+    return {
+      ...theme.activeCardStyle,
+      boxShadow: "none",
+    };
+  }
+
+  if (surfaceKind === "muted") {
+    return {
+      borderColor: theme?.dividerStyle?.borderColor,
+      background: "transparent",
+      color: theme?.preset?.text,
+      boxShadow: "none",
+    };
+  }
+
+  return {
+    ...theme.softSurfaceStyle,
+    boxShadow: "none",
+  };
+}
+
+export function getMyPageHomeButtonLayout(theme, { preview = false } = {}) {
+  const layoutKey = resolvePrimaryButtonLayout(theme?.design?.primaryButtonsLayout);
+  const config =
+    HOME_PRIMARY_BUTTON_LAYOUTS[layoutKey] || HOME_PRIMARY_BUTTON_LAYOUTS.stack;
+
+  return {
+    key: layoutKey,
+    actionMode: config.actionMode,
+    showMeta: config.showMeta === true,
+    containerClassName: preview
+      ? config.previewContainerClassName || config.containerClassName
+      : config.containerClassName,
+    buttonClassName: preview
+      ? config.previewButtonClassName || config.buttonClassName
+      : config.buttonClassName,
+    buttonStyle: preview
+      ? config.previewButtonStyle || config.buttonStyle || {}
+      : config.buttonStyle || {},
+    innerClassName: preview
+      ? config.previewInnerClassName || config.innerClassName
+      : config.innerClassName,
+    contentClassName: config.contentClassName,
+    iconWrapClassName: preview
+      ? config.previewIconWrapClassName || config.iconWrapClassName
+      : config.iconWrapClassName,
+    iconClassName: preview
+      ? config.previewIconClassName || config.iconClassName
+      : config.iconClassName,
+    titleClassName: preview
+      ? config.previewTitleClassName || config.titleClassName
+      : config.titleClassName,
+    metaClassName: preview
+      ? config.previewMetaClassName || config.metaClassName || ""
+      : config.metaClassName || "",
+    actionClassName: preview
+      ? config.previewActionClassName || config.actionClassName
+      : config.actionClassName,
+    iconStyle: resolveHomeButtonElementStyle(theme, config.iconSurface),
+    actionStyle: config.actionSurface
+      ? resolveHomeButtonElementStyle(theme, config.actionSurface)
+      : null,
+  };
+}
+
+export function getMyPageHomeButtonProps(
+  theme,
+  variant = "primary",
+  options = {},
+) {
+  const buttonProps = getMyPageButtonProps(theme, variant);
+  const layout = getMyPageHomeButtonLayout(theme, options);
+
+  return {
+    buttonProps: {
+      className: joinClassNames(
+        buttonProps.className,
+        theme?.layout?.homeButtonClassName,
+        layout.buttonClassName,
+      ),
+      style: {
+        ...buttonProps.style,
+        ...layout.buttonStyle,
+      },
+    },
+    layout,
+  };
+}
+
+export function getMyPageSecondaryLinksLayout(theme) {
+  const size = resolveSecondaryLinksSize(theme?.design?.secondaryLinksSize);
+  const align = resolveSecondaryLinksAlign(theme?.design?.secondaryLinksAlign);
+  const sizeConfig =
+    SECONDARY_LINK_SIZE_CONFIG[size] || SECONDARY_LINK_SIZE_CONFIG.medium;
+
+  return {
+    size,
+    align,
+    containerClassName:
+      SECONDARY_LINK_ALIGN_CLASSNAMES[align] ||
+      SECONDARY_LINK_ALIGN_CLASSNAMES.center,
+    itemClassName: sizeConfig.itemClassName,
+    iconOnlyClassName: sizeConfig.iconOnlyClassName,
+    contentClassName: sizeConfig.contentClassName,
+    iconClassName: sizeConfig.iconClassName,
+  };
+}
+
+export function getMyPageMotionPreset(themeOrDesign, reduceMotion = false) {
+  const source = resolveThemeSource(themeOrDesign);
+  const design = normalizeMyPageDesign(source.design || {}, source.coverStyle);
+  const presetKey = resolveAnimationPreset(design.animationPreset);
+  const preset = MY_PAGE_MOTION_PRESETS[presetKey] || MY_PAGE_MOTION_PRESETS.subtle;
+
+  if (reduceMotion || presetKey === "off") {
+    return {
+      key: presetKey,
+      enabled: false,
+      switchInitial: false,
+      switchAnimate: { opacity: 1, y: 0, scale: 1 },
+      switchExit: { opacity: 1, y: 0, scale: 1 },
+      switchTransition: { duration: 0 },
+      loadingInitial: false,
+      loadingAnimate: { opacity: 1, y: 0, scale: 1 },
+      loadingExit: { opacity: 1, y: 0, scale: 1 },
+      loadingTransition: { duration: 0 },
+      containerVariants: {
+        hidden: {},
+        visible: { transition: { staggerChildren: 0 } },
+      },
+      itemVariants: {
+        hidden: { opacity: 1, y: 0, scale: 1 },
+        visible: { opacity: 1, y: 0, scale: 1, transition: { duration: 0 } },
+      },
+      primaryButtonsWrapperVariants: {
+        hidden: {},
+        visible: {},
+      },
+      primaryButtonVariants: {
+        hidden: { opacity: 1, x: 0, y: 0, scale: 1 },
+        visible: { opacity: 1, x: 0, y: 0, scale: 1, transition: { duration: 0 } },
+      },
+      buttonHover: undefined,
+      buttonTap: undefined,
+      buttonTransition: { duration: 0 },
+    };
+  }
+
+  return {
+    key: presetKey,
+    enabled: true,
+    switchInitial: {
+      opacity: 0,
+      y: preset.distance,
+      scale: preset.scale,
+    },
+    switchAnimate: {
+      opacity: 1,
+      y: 0,
+      scale: 1,
+    },
+    switchExit: {
+      opacity: 0,
+      y: -Math.max(10, Math.round(preset.distance * 0.5)),
+      scale: 0.992,
+    },
+    switchTransition: {
+      duration: preset.duration,
+      ease: preset.ease,
+    },
+    loadingInitial: {
+      opacity: 0,
+      y: Math.round(preset.distance * 0.7),
+      scale: preset.loadingScale,
+    },
+    loadingAnimate: {
+      opacity: 1,
+      y: 0,
+      scale: 1,
+    },
+    loadingExit: {
+      opacity: 0,
+      y:
+        presetKey === "impact"
+          ? preset.loadingExitY
+          : -Math.max(10, Math.round(preset.distance * 0.5)),
+      scale:
+        presetKey === "impact"
+          ? preset.loadingExitScale
+          : presetKey === "strong"
+            ? 1.012
+            : 0.996,
+    },
+    loadingTransition: {
+      duration:
+        presetKey === "impact"
+          ? preset.loadingExitDuration
+          : preset.loadingDuration,
+      ease: preset.ease,
+    },
+    containerVariants: {
+      hidden: {},
+      visible: {
+        transition: {
+          staggerChildren: preset.stagger,
+          delayChildren: 0.04,
+        },
+      },
+    },
+    itemVariants: {
+      hidden: {
+        opacity: 0,
+        y: presetKey === "impact" ? preset.itemY : preset.distance,
+        scale: presetKey === "impact" ? preset.itemScale : preset.scale,
+      },
+      visible: {
+        opacity: 1,
+        y: 0,
+        scale: 1,
+        transition: {
+          duration: preset.duration,
+          ease: preset.ease,
+        },
+      },
+    },
+    primaryButtonsWrapperVariants:
+      presetKey === "impact"
+        ? {
+            hidden: {},
+            visible: {
+              transition: {
+                staggerChildren: preset.buttonStagger,
+                delayChildren: 0.02,
+              },
+            },
+          }
+        : {
+            hidden: {
+              opacity: 0,
+              y: preset.distance,
+              scale: preset.scale,
+            },
+            visible: {
+              opacity: 1,
+              y: 0,
+              scale: 1,
+              transition: {
+                duration: preset.duration,
+                ease: preset.ease,
+              },
+            },
+          },
+    primaryButtonVariants:
+      presetKey === "impact"
+        ? {
+            hidden: {
+              opacity: 0,
+              x: preset.buttonEnterX,
+              scale: preset.buttonEnterScale,
+            },
+            visible: (index = 0) => ({
+              opacity: 1,
+              x: 0,
+              scale: 1,
+              transition: {
+                duration: preset.buttonDuration,
+                ease: preset.buttonEase,
+              },
+            }),
+          }
+        : {
+            hidden: { opacity: 1, x: 0, scale: 1 },
+            visible: { opacity: 1, x: 0, scale: 1, transition: { duration: 0 } },
+          },
+    buttonHover: {
+      y: preset.hoverY,
+      scale: preset.hoverScale,
+      ...(presetKey === "impact" ? { boxShadow: preset.buttonHoverShadow } : {}),
+    },
+    buttonTap: {
+      scale: preset.tapScale || 0.992,
+    },
+    buttonTransition: {
+      duration: preset.buttonTransitionDuration || 0.22,
+      ease: preset.ease,
+    },
+  };
+}
+
+function buildPatternBackground(palette, patternVariant, fillBase) {
+  const variant = valueFromOptions(
+    patternVariant,
+    MY_PAGE_BACKGROUND_PATTERN_VARIANT_OPTIONS.map((item) => item.value),
+    MY_PAGE_DESIGN_DEFAULTS.backgroundPatternVariant,
+  );
+
+  if (variant === "morph") {
+    return `linear-gradient(142deg, transparent 0 24%, ${palette.mesh} 24% 32%, transparent 32% 100%), radial-gradient(160px 88px at 18% 22%, ${palette.haze} 0 54%, transparent 57%), radial-gradient(128px 72px at 72% 24%, ${palette.glowSoft} 0 52%, transparent 55%), radial-gradient(152px 82px at 54% 72%, ${palette.mist} 0 46%, transparent 49%), radial-gradient(104px 58px at 88% 78%, ${palette.line} 0 42%, transparent 45%), ${fillBase}`;
+  }
+
+  if (variant === "organic") {
+    return `radial-gradient(160px 100px at 12% 18%, ${palette.haze} 0 46%, transparent 49%), radial-gradient(190px 104px at 82% 20%, ${palette.glowSoft} 0 44%, transparent 47%), radial-gradient(172px 96px at 30% 82%, ${palette.mist} 0 42%, transparent 45%), radial-gradient(148px 80px at 86% 76%, ${palette.mesh} 0 36%, transparent 39%), ${fillBase}`;
+  }
+
+  if (variant === "matrix") {
+    return `linear-gradient(180deg, ${palette.shadow} 0%, transparent 28%), repeating-linear-gradient(90deg, transparent 0 17px, ${palette.line} 17px 18px), repeating-linear-gradient(180deg, transparent 0 17px, ${palette.line} 17px 18px), radial-gradient(circle at 1px 1px, ${palette.dot} 0 1.4px, transparent 1.6px) 0 0 / 18px 18px repeat, ${fillBase}`;
+  }
+
+  return `repeating-linear-gradient(90deg, transparent 0 34px, ${palette.line} 34px 35px), repeating-linear-gradient(180deg, transparent 0 34px, ${palette.line} 34px 35px), radial-gradient(circle at 18% 18%, ${palette.haze}, transparent 24%), ${fillBase}`;
+}
+
+function buildGradientBackground(palette, gradientDirection) {
+  const direction = valueFromOptions(
+    gradientDirection,
+    MY_PAGE_BACKGROUND_GRADIENT_DIRECTION_OPTIONS.map((item) => item.value),
+    MY_PAGE_DESIGN_DEFAULTS.backgroundGradientDirection,
+  );
+
+  if (direction === "linear_down") {
+    return `linear-gradient(180deg, ${palette.base} 0%, ${palette.top} 34%, ${palette.light} 72%, ${palette.wash} 100%)`;
+  }
+
+  if (direction === "radial") {
+    return `radial-gradient(circle at 50% 50%, ${palette.base} 0%, ${palette.top} 34%, ${palette.light} 68%, ${palette.wash} 100%)`;
+  }
+
+  return `linear-gradient(180deg, ${palette.wash} 0%, ${palette.light} 36%, ${palette.top} 68%, ${palette.base} 100%)`;
+}
+
+function buildBackgroundOverlayItems(backgroundStyle, palette) {
+  if (backgroundStyle !== "blur") return [];
+
+  return [
+    {
+      key: "blur-a",
+      style: {
+        width: "48%",
+        height: "30%",
+        left: "-10%",
+        top: "8%",
+        borderRadius: "999px",
+        background: `radial-gradient(circle at 38% 38%, ${palette.mist} 0%, ${palette.haze} 44%, transparent 76%)`,
+        filter: "blur(44px)",
+        opacity: 0.96,
+      },
+    },
+    {
+      key: "blur-b",
+      style: {
+        width: "42%",
+        height: "28%",
+        right: "-8%",
+        top: "18%",
+        borderRadius: "999px",
+        background: `radial-gradient(circle at 50% 45%, ${palette.glow} 0%, ${palette.glowSoft} 48%, transparent 78%)`,
+        filter: "blur(56px)",
+        opacity: 0.88,
+      },
+    },
+    {
+      key: "blur-c",
+      style: {
+        width: "52%",
+        height: "32%",
+        left: "24%",
+        bottom: "-8%",
+        borderRadius: "999px",
+        background: `radial-gradient(circle at 50% 42%, ${palette.lineStrong} 0%, ${palette.mesh} 46%, transparent 80%)`,
+        filter: "blur(52px)",
+        opacity: 0.78,
+      },
+    },
+  ];
+}
+
+function buildBackground(
+  _preset,
+  _accent,
+  backgroundStyle,
+  backgroundColor,
+  backgroundGradientDirection,
+  backgroundPatternVariant,
+) {
   const palette = buildBackgroundPalette(backgroundColor);
-  const fillBase = `linear-gradient(180deg, ${palette.light} 0%, ${palette.base} 54%, ${palette.dark} 100%)`;
+  const fillBase = palette.base;
+  const tonalBase = `linear-gradient(180deg, ${palette.light} 0%, ${palette.base} 54%, ${palette.dark} 100%)`;
 
   if (backgroundStyle === "gradient") {
-    return `linear-gradient(145deg, ${palette.wash} 0%, ${palette.light} 26%, ${palette.base} 58%, ${palette.deep} 100%)`;
+    return buildGradientBackground(palette, backgroundGradientDirection);
   }
 
   if (backgroundStyle === "blur") {
-    return `radial-gradient(circle at 18% 18%, ${palette.mist}, transparent 28%), radial-gradient(circle at 82% 14%, ${palette.glow}, transparent 30%), radial-gradient(circle at 50% 86%, ${palette.glowSoft}, transparent 24%), ${fillBase}`;
+    return fillBase;
   }
 
   if (backgroundStyle === "pattern") {
-    return `repeating-linear-gradient(90deg, transparent 0 34px, ${palette.line} 34px 35px), repeating-linear-gradient(180deg, transparent 0 34px, ${palette.line} 34px 35px), radial-gradient(circle at 18% 18%, ${palette.haze}, transparent 24%), ${fillBase}`;
+    return buildPatternBackground(
+      palette,
+      backgroundPatternVariant,
+      tonalBase,
+    );
   }
 
   return fillBase;
 }
 
-function buildHeroBackground(preset, accent, backgroundStyle, backgroundColor, imageUrl) {
+function buildHeroBackground(
+  preset,
+  accent,
+  backgroundStyle,
+  backgroundColor,
+  backgroundGradientDirection,
+  backgroundPatternVariant,
+  imageUrl,
+) {
   const safeUrl = escapeCssUrl(imageUrl);
   return `linear-gradient(180deg, ${preset.heroOverlayFrom} 0%, ${preset.heroOverlayTo} 100%), url("${safeUrl}") center/cover no-repeat, ${buildBackground(
     preset,
     accent,
     backgroundStyle,
     backgroundColor,
+    backgroundGradientDirection,
+    backgroundPatternVariant,
   )}`;
 }
 
@@ -1213,13 +2110,11 @@ function buildHeroMediaStyle(preset, accent, imageUrl) {
 }
 
 function buildPrimaryButtonStyle(preset, accent, buttonStyle, fontFamily) {
-  const isDarkTheme = String(preset.text || "").toLowerCase() === "#f8fafc";
-
   if (buttonStyle === "soft") {
     return {
       border: `1px solid ${accent.border}`,
-      color: preset.text,
-      background: `linear-gradient(180deg, ${accent.tintSoft}, ${preset.surfaceFrom})`,
+      color: accent.contrast,
+      background: `linear-gradient(180deg, ${accent.tintSoft}, ${accent.tint})`,
       boxShadow: `0 18px 38px -28px ${accent.glow}`,
       fontFamily,
     };
@@ -1228,8 +2123,8 @@ function buildPrimaryButtonStyle(preset, accent, buttonStyle, fontFamily) {
   if (buttonStyle === "outline") {
     return {
       border: `1px solid ${accent.border}`,
-      color: isDarkTheme ? accent.softText : accent.from,
-      background: isDarkTheme ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.76)",
+      color: accent.contrast,
+      background: alphaColor(accent.from, 0.12),
       boxShadow: "none",
       fontFamily,
     };
@@ -1247,19 +2142,19 @@ function buildPrimaryButtonStyle(preset, accent, buttonStyle, fontFamily) {
 function buildSecondaryButtonStyle(preset, accent, buttonStyle, fontFamily) {
   if (buttonStyle === "soft") {
     return {
-      border: `1px solid ${preset.strongBorder}`,
-      color: preset.text,
-      background: `linear-gradient(180deg, ${preset.softSurfaceFrom}, ${preset.softSurfaceTo})`,
-      boxShadow: "none",
+      border: `1px solid ${accent.border}`,
+      color: accent.contrast,
+      background: `linear-gradient(180deg, ${accent.tintSoft}, ${alphaColor(accent.to, 0.18)})`,
+      boxShadow: `0 14px 30px -26px ${accent.glow}`,
       fontFamily,
     };
   }
 
   if (buttonStyle === "outline") {
     return {
-      border: `1px solid ${preset.strongBorder}`,
-      color: preset.text,
-      background: `linear-gradient(180deg, ${preset.surfaceFrom}, ${preset.surfaceTo})`,
+      border: `1px solid ${accent.border}`,
+      color: accent.contrast,
+      background: alphaColor(accent.from, 0.08),
       boxShadow: "none",
       fontFamily,
     };
@@ -1267,9 +2162,9 @@ function buildSecondaryButtonStyle(preset, accent, buttonStyle, fontFamily) {
 
   return {
     border: `1px solid ${accent.border}`,
-    color: preset.text,
-    background: `linear-gradient(180deg, ${preset.surfaceFrom}, ${preset.softSurfaceTo})`,
-    boxShadow: "none",
+    color: accent.contrast,
+    background: `linear-gradient(180deg, ${accent.from}, ${accent.to})`,
+    boxShadow: `0 16px 34px -28px ${accent.glow}`,
     fontFamily,
   };
 }
@@ -1299,114 +2194,66 @@ export function getMyPageTheme(pageOrDesign = {}) {
         preset.headingFontFamily ||
         fontFamily;
   const usesHeroLayout = design.brandLayout === "hero" && !!avatarUrl;
+  const titleTextColor = normalizeHexColor(
+    design.titleTextColor,
+    preset.text || MY_PAGE_DESIGN_DEFAULTS.titleTextColor,
+  );
+  const pageTextColor = normalizeHexColor(
+    design.pageTextColor,
+    preset.muted || MY_PAGE_DESIGN_DEFAULTS.pageTextColor,
+  );
+  const accentBase = normalizeHexColor(
+    design.buttonColor,
+    ACCENT_SWATCHES[design.accentPalette] ||
+      preset.accentFrom ||
+      MY_PAGE_DESIGN_DEFAULTS.buttonColor,
+  );
+  const accentContrast = normalizeHexColor(
+    design.buttonTextColor,
+    getReadableTextColor(accentBase, "#FFFFFF", "#111827"),
+  );
+  const accentTextColor = mixHexColors(accentBase, titleTextColor, 0.38);
   const accent = {
-    from:
-      {
-        sky: "#2563eb",
-        emerald: "#059669",
-        rose: "#e11d48",
-        violet: "#7c3aed",
-        amber: "#92400e",
-        teal: "#0f766e",
-        coral: "#ea580c",
-        slate: "#0f172a",
-      }[design.accentPalette] || preset.accentFrom,
-    to:
-      {
-        sky: "#0ea5e9",
-        emerald: "#14b8a6",
-        rose: "#f43f5e",
-        violet: "#a855f7",
-        amber: "#d97706",
-        teal: "#14b8a6",
-        coral: "#f97316",
-        slate: "#334155",
-      }[design.accentPalette] || preset.accentTo,
-    contrast:
-      {
-        sky: "#eff6ff",
-        emerald: "#ecfdf5",
-        rose: "#fff1f2",
-        violet: "#faf5ff",
-        amber: "#fff7ed",
-        teal: "#ecfeff",
-        coral: "#fff7ed",
-        slate: "#f8fafc",
-      }[design.accentPalette] || preset.accentContrast,
-    tint:
-      {
-        sky: "rgba(37,99,235,0.18)",
-        emerald: "rgba(5,150,105,0.18)",
-        rose: "rgba(225,29,72,0.18)",
-        violet: "rgba(124,58,237,0.18)",
-        amber: "rgba(217,119,6,0.18)",
-        teal: "rgba(15,118,110,0.18)",
-        coral: "rgba(249,115,22,0.18)",
-        slate: "rgba(51,65,85,0.16)",
-      }[design.accentPalette] || preset.accentTint,
-    tintSoft:
-      {
-        sky: "rgba(14,165,233,0.12)",
-        emerald: "rgba(20,184,166,0.12)",
-        rose: "rgba(244,63,94,0.12)",
-        violet: "rgba(168,85,247,0.12)",
-        amber: "rgba(251,191,36,0.12)",
-        teal: "rgba(20,184,166,0.12)",
-        coral: "rgba(251,146,60,0.12)",
-        slate: "rgba(100,116,139,0.1)",
-      }[design.accentPalette] || preset.accentTint,
-    border:
-      {
-        sky: "rgba(59,130,246,0.22)",
-        emerald: "rgba(16,185,129,0.24)",
-        rose: "rgba(244,63,94,0.24)",
-        violet: "rgba(139,92,246,0.24)",
-        amber: "rgba(217,119,6,0.24)",
-        teal: "rgba(45,212,191,0.24)",
-        coral: "rgba(249,115,22,0.24)",
-        slate: "rgba(71,85,105,0.2)",
-      }[design.accentPalette] || preset.accentBorder,
-    softText:
-      {
-        sky: "#dbeafe",
-        emerald: "#a7f3d0",
-        rose: "#fecdd3",
-        violet: "#e9d5ff",
-        amber: "#fde68a",
-        teal: "#99f6e4",
-        coral: "#fdba74",
-        slate: "#cbd5e1",
-      }[design.accentPalette] || preset.accentText,
-    glow:
-      {
-        sky: "rgba(37,99,235,0.32)",
-        emerald: "rgba(5,150,105,0.3)",
-        rose: "rgba(225,29,72,0.3)",
-        violet: "rgba(124,58,237,0.3)",
-        amber: "rgba(180,83,9,0.28)",
-        teal: "rgba(20,184,166,0.28)",
-        coral: "rgba(234,88,12,0.28)",
-        slate: "rgba(15,23,42,0.22)",
-      }[design.accentPalette] || preset.accentTint,
+    from: accentBase,
+    to: isDarkColor(accentBase)
+      ? lightenHex(accentBase, 0.14)
+      : darkenHex(accentBase, 0.08),
+    contrast: accentContrast,
+    tint: alphaColor(accentBase, 0.18),
+    tintSoft: alphaColor(lightenHex(accentBase, 0.08), 0.14),
+    border: alphaColor(mixHexColors(accentBase, accentContrast, 0.18), 0.34),
+    softText: accentTextColor,
+    glow: alphaColor(accentBase, isDarkColor(accentBase) ? 0.34 : 0.28),
   };
+  const backgroundPalette = buildBackgroundPalette(design.backgroundColor);
+  const backgroundOverlayItems = buildBackgroundOverlayItems(
+    design.backgroundStyle,
+    backgroundPalette,
+  );
+  const shouldUseHeroPageBackground =
+    usesHeroLayout && design.backgroundStyle !== "blur";
 
   const rootStyle = {
     minHeight: "100vh",
-    background: usesHeroLayout
-      ? buildHeroBackground(
-          preset,
-          accent,
-          design.backgroundStyle,
-          design.backgroundColor,
-          avatarUrl,
-        )
+    background: shouldUseHeroPageBackground
+        ? buildHeroBackground(
+            preset,
+            accent,
+            design.backgroundStyle,
+            design.backgroundColor,
+            design.backgroundGradientDirection,
+            design.backgroundPatternVariant,
+            avatarUrl,
+          )
       : buildBackground(
           preset,
           accent,
           design.backgroundStyle,
           design.backgroundColor,
+          design.backgroundGradientDirection,
+          design.backgroundPatternVariant,
         ),
-    color: preset.text,
+    color: pageTextColor,
     fontFamily,
   };
 
@@ -1424,7 +2271,7 @@ export function getMyPageTheme(pageOrDesign = {}) {
   };
 
   const accentTextStyle = { color: accent.softText };
-  const mutedTextStyle = { color: preset.muted };
+  const mutedTextStyle = { color: pageTextColor };
   const dividerStyle = { borderColor: preset.border };
   const previewFrameStyle = {
     borderColor: preset.strongBorder,
@@ -1453,8 +2300,8 @@ export function getMyPageTheme(pageOrDesign = {}) {
     accent,
     fontFamily,
     headingFontFamily,
-    headingStyle: { fontFamily: headingFontFamily },
-    titleStyle: { color: preset.text, fontFamily: headingFontFamily },
+    headingStyle: { color: titleTextColor, fontFamily: headingFontFamily },
+    titleStyle: { color: titleTextColor, fontFamily: headingFontFamily },
     buttonRadiusClassName:
       BUTTON_RADIUS_CLASSNAMES[design.buttonRadius] ||
       BUTTON_RADIUS_CLASSNAMES.round,
@@ -1462,6 +2309,7 @@ export function getMyPageTheme(pageOrDesign = {}) {
       BUTTON_ICON_RADIUS_CLASSNAMES[design.buttonRadius] ||
       BUTTON_ICON_RADIUS_CLASSNAMES.round,
     rootStyle,
+    backgroundOverlayItems,
     heroMediaStyle: usesHeroLayout
       ? buildHeroMediaStyle(preset, accent, avatarUrl)
       : null,
@@ -1474,14 +2322,14 @@ export function getMyPageTheme(pageOrDesign = {}) {
     inputStyle: {
       background: preset.inputBg,
       borderColor: preset.border,
-      color: preset.text,
+      color: pageTextColor,
       fontFamily,
     },
     primaryButtonStyle,
     secondaryButtonStyle,
     activeCardStyle: {
       borderColor: accent.border,
-      background: `linear-gradient(180deg, ${accent.tint}, ${preset.softSurfaceTo})`,
+      background: `linear-gradient(180deg, ${accent.tint}, ${alphaColor(accent.to, 0.14)})`,
       fontFamily,
     },
   };

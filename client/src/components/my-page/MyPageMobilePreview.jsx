@@ -1,5 +1,14 @@
-import { CalendarDays, CreditCard, FileText, ShoppingBag } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
+  CalendarDays,
+  CreditCard,
+  FileText,
+  Link2,
+  ShoppingBag,
+} from "lucide-react";
+import {
+  getMyPageHomeButtonProps,
+  getMyPageMotionPreset,
   getMyPageButtonProps,
   getMyPageSelectableCardProps,
   getMyPageSurfaceProps,
@@ -7,6 +16,9 @@ import {
 } from "./myPageTheme.js";
 import {
   MyPagePublicAvatar,
+  MyPageBackgroundOverlay,
+  getMyPageButtonIcon,
+  getMyPageButtonMetaLabel,
   MyPagePublicHeroMedia,
   MyPageSecondaryLinks,
 } from "./MyPagePublicUi.jsx";
@@ -15,12 +27,22 @@ function cls(...parts) {
   return parts.filter(Boolean).join(" ");
 }
 
-function PreviewButton({ children, theme, variant = "primary", className = "" }) {
-  const buttonProps = getMyPageButtonProps(theme, variant);
+function PreviewButton({
+  children,
+  theme,
+  variant = "primary",
+  className = "",
+  buttonProps = null,
+}) {
+  const resolvedButtonProps = buttonProps || getMyPageButtonProps(theme, variant);
   return (
     <div
-      className={cls(buttonProps.className, "w-full justify-between", className)}
-      style={buttonProps.style}
+      className={cls(
+        resolvedButtonProps.className,
+        "w-full justify-between",
+        className,
+      )}
+      style={resolvedButtonProps.style}
     >
       {children}
     </div>
@@ -143,10 +165,13 @@ function DeviceShell({ theme, studio = false, children }) {
           <div className="h-1.5 w-20 rounded-full bg-white/20" />
         </div>
         <div
-          className="overflow-hidden rounded-[30px] border border-white/10"
+          className="relative overflow-hidden rounded-[30px] border border-white/10"
           style={screenStyle}
         >
-          <div className={cls("space-y-4", studio ? "p-5" : "p-4")}>{children}</div>
+          <MyPageBackgroundOverlay theme={theme} />
+          <div className={cls("relative z-10 space-y-4", studio ? "p-5" : "p-4")}>
+            {children}
+          </div>
         </div>
       </div>
     </div>
@@ -159,14 +184,33 @@ export default function MyPageMobilePreview({
   variant = "default",
 }) {
   const theme = getMyPageTheme(page || {});
+  const shouldReduceMotion = useReducedMotion();
+  const motionPreset = getMyPageMotionPreset(theme, shouldReduceMotion);
   const isStudio = variant === "studio";
   const buttons = (page?.buttons || [])
     .filter((button) => button.enabled)
     .slice(0, isStudio ? 4 : 3);
   const shopCount = Number(page?.summary?.selectedProductsCount || 0);
+  const previewContentKey = [
+    mode,
+    theme?.design?.animationPreset,
+    theme?.design?.primaryButtonsLayout,
+    theme?.design?.secondaryLinksStyle,
+    theme?.design?.secondaryLinksSize,
+    theme?.design?.secondaryLinksAlign,
+  ].join(":");
 
   return (
     <DeviceShell theme={theme} studio={isStudio}>
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={previewContentKey}
+          initial={motionPreset.switchInitial}
+          animate={motionPreset.switchAnimate}
+          exit={motionPreset.switchExit}
+          transition={motionPreset.switchTransition}
+          className="space-y-4"
+        >
       {mode === "catalog" ? (
         <PreviewCard
           theme={theme}
@@ -200,6 +244,7 @@ export default function MyPageMobilePreview({
                             "truncate font-semibold",
                             isStudio ? "text-base" : "text-sm",
                           )}
+                          style={theme.headingStyle}
                         >
                           Produto do shop
                         </div>
@@ -376,16 +421,22 @@ export default function MyPageMobilePreview({
               </div>
             </div>
 
-            <div className={theme?.layout?.previewButtonsClassName || "space-y-2"}>
+            <motion.div
+              className={theme?.layout?.previewButtonsClassName || "space-y-2"}
+              initial="hidden"
+              animate="visible"
+              variants={motionPreset.primaryButtonsWrapperVariants}
+            >
               {buttons.length ? (
                 buttons.map((button, index) => (
-                  <PreviewButton
+                  <HomePreviewButton
                     key={button.id}
                     theme={theme}
-                    variant={resolveHomeButtonVariant(theme, button, index)}
-                  >
-                    <span className="truncate">{button.label}</span>
-                  </PreviewButton>
+                    button={button}
+                    index={index}
+                    preview={isStudio}
+                    motionPreset={motionPreset}
+                  />
                 ))
               ) : (
                 <PreviewCard
@@ -396,7 +447,7 @@ export default function MyPageMobilePreview({
                   Ative pelo menos um CTA em Links.
                 </PreviewCard>
               )}
-            </div>
+            </motion.div>
 
             <MyPageSecondaryLinks
               theme={theme}
@@ -406,6 +457,44 @@ export default function MyPageMobilePreview({
           </div>
         </PreviewCard>
       ) : null}
+        </motion.div>
+      </AnimatePresence>
     </DeviceShell>
+  );
+}
+
+function HomePreviewButton({ theme, button, index, preview, motionPreset }) {
+  const variant = resolveHomeButtonVariant(theme, button, index);
+  const Icon = getMyPageButtonIcon(button.type);
+  const { buttonProps, layout } = getMyPageHomeButtonProps(theme, variant, {
+    preview,
+  });
+
+  return (
+    <motion.div variants={motionPreset.primaryButtonVariants} custom={index}>
+      <PreviewButton theme={theme} buttonProps={buttonProps}>
+        <div className={layout.innerClassName}>
+          <div
+            className={cls(
+              "flex shrink-0 items-center justify-center border",
+              theme.buttonIconRadiusClassName,
+              layout.iconWrapClassName,
+            )}
+            style={layout.iconStyle}
+          >
+            <Icon className={layout.iconClassName} />
+          </div>
+
+          <div className={layout.contentClassName}>
+            {layout.showMeta ? (
+              <div className={layout.metaClassName} style={theme.mutedTextStyle}>
+                {getMyPageButtonMetaLabel(button.type)}
+              </div>
+            ) : null}
+            <div className={layout.titleClassName}>{button.label}</div>
+          </div>
+        </div>
+      </PreviewButton>
+    </motion.div>
   );
 }

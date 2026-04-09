@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { CreditCard, MessageCircle, Search } from "lucide-react";
+import { CreditCard, Search } from "lucide-react";
 import {
   getPublicMyPage,
   resolvePublicMyPagePayment,
@@ -13,6 +13,7 @@ import {
   MyPagePublicFooter,
   MyPagePublicHero,
   MyPagePublicScreen,
+  MyPageWhatsAppIcon,
 } from "../components/my-page/MyPagePublicUi.jsx";
 
 export default function PublicMyPagePayV2() {
@@ -136,7 +137,7 @@ export default function PublicMyPagePayV2() {
                         )
                       }
                     >
-                      <MessageCircle className="h-4 w-4" />
+                      <MyPageWhatsAppIcon className="h-4 w-4" />
                       Falar no WhatsApp
                     </button>
                   ) : null}

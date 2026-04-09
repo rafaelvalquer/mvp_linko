@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { CheckCircle2, MessageCircle, ShoppingBag } from "lucide-react";
+import { CheckCircle2, ShoppingBag } from "lucide-react";
 import {
   getPublicMyPageQuoteContext,
   submitPublicMyPageQuoteRequest,
@@ -14,6 +14,7 @@ import {
   MyPagePublicFooter,
   MyPagePublicHero,
   MyPagePublicScreen,
+  MyPageWhatsAppIcon,
 } from "../components/my-page/MyPagePublicUi.jsx";
 
 function fmtBRL(cents) {
@@ -132,7 +133,10 @@ export default function PublicMyPageQuoteV2() {
               >
                 <CheckCircle2 className="h-8 w-8" />
               </div>
-              <div className="mt-5 text-2xl font-black tracking-[-0.04em]">
+              <div
+                className="mt-5 text-2xl font-black tracking-[-0.04em]"
+                style={theme.titleStyle}
+              >
                 Pedido enviado com sucesso
               </div>
               <div className="mt-3 text-sm leading-7" style={theme.mutedTextStyle}>
@@ -155,7 +159,7 @@ export default function PublicMyPageQuoteV2() {
                       )
                     }
                   >
-                    <MessageCircle className="h-4 w-4" />
+                    <MyPageWhatsAppIcon className="h-4 w-4" />
                     Falar no WhatsApp
                   </button>
                 ) : null}
@@ -191,7 +195,7 @@ export default function PublicMyPageQuoteV2() {
                       )
                     }
                   >
-                    <MessageCircle className="h-4 w-4" />
+                    <MyPageWhatsAppIcon className="h-4 w-4" />
                     Falar no WhatsApp
                   </button>
                 ) : null
@@ -222,7 +226,9 @@ export default function PublicMyPageQuoteV2() {
                       )}
                       onClick={() => setRequestType("service")}
                     >
-                      <div className="text-sm font-semibold">Servico</div>
+                      <div className="text-sm font-semibold" style={theme.headingStyle}>
+                        Servico
+                      </div>
                       <div className="mt-1 text-xs leading-5" style={theme.mutedTextStyle}>
                         Projeto ou atendimento.
                       </div>
@@ -236,7 +242,9 @@ export default function PublicMyPageQuoteV2() {
                       )}
                       onClick={() => setRequestType("product")}
                     >
-                      <div className="text-sm font-semibold">Produto</div>
+                      <div className="text-sm font-semibold" style={theme.headingStyle}>
+                        Produto
+                      </div>
                       <div className="mt-1 text-xs leading-5" style={theme.mutedTextStyle}>
                         Itens do catalogo.
                       </div>
@@ -343,7 +351,9 @@ export default function PublicMyPageQuoteV2() {
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <div className="text-sm font-semibold">{product.name}</div>
+                            <div className="text-sm font-semibold" style={theme.headingStyle}>
+                              {product.name}
+                            </div>
                             <div className="mt-1 text-xs" style={theme.mutedTextStyle}>
                               {product.productId}
                             </div>
@@ -356,7 +366,7 @@ export default function PublicMyPageQuoteV2() {
                             Remover
                           </button>
                         </div>
-                        <div className="mt-3 text-sm font-semibold">
+                        <div className="mt-3 text-sm font-semibold" style={theme.headingStyle}>
                           {fmtBRL(product.priceCents)}
                         </div>
                       </div>
@@ -398,12 +408,14 @@ export default function PublicMyPageQuoteV2() {
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
-                              <div className="text-sm font-semibold">{product.name}</div>
+                              <div className="text-sm font-semibold" style={theme.headingStyle}>
+                                {product.name}
+                              </div>
                               <div className="mt-1 text-xs" style={theme.mutedTextStyle}>
                                 {product.productId || "Produto"}
                               </div>
                             </div>
-                            <div className="text-sm font-semibold">
+                            <div className="text-sm font-semibold" style={theme.headingStyle}>
                               {fmtBRL(product.priceCents)}
                             </div>
                           </div>

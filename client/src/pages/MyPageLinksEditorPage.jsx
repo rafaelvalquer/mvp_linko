@@ -3,22 +3,27 @@ import {
   ArrowDown,
   ArrowUp,
   Camera,
+  Check,
   ImagePlus,
   Link2,
-  MessageCircle,
   Plus,
   Trash2,
   Upload,
   UserRound,
   X,
 } from "lucide-react";
-import { saveMyPageLinks, getMyPageQuoteRequests } from "../app/myPageApi.js";
+import {
+  saveMyPageAvatar,
+  saveMyPageLinks,
+  getMyPageQuoteRequests,
+} from "../app/myPageApi.js";
 import Card, { CardBody, CardHeader } from "../components/appui/Card.jsx";
 import Button from "../components/appui/Button.jsx";
 import Badge from "../components/appui/Badge.jsx";
 import EmptyState from "../components/appui/EmptyState.jsx";
 import ModalShell from "../components/appui/ModalShell.jsx";
 import { Input, Textarea } from "../components/appui/Input.jsx";
+import { MyPageWhatsAppIcon } from "../components/my-page/MyPagePublicUi.jsx";
 import { useMyPageContext } from "../components/my-page/useMyPageContext.js";
 import { resolveMyPageMediaUrl } from "../components/my-page/myPageTheme.js";
 import {
@@ -44,7 +49,6 @@ const SOCIAL_PLATFORM_OPTIONS = [
   "Site",
 ];
 
-const EMPTY_AVATAR_DRAFT = { mode: "keep", file: null, url: "" };
 const EMPTY_AVATAR_EDITOR = {
   source: "upload",
   file: null,
@@ -71,19 +75,6 @@ function isNativeButtonType(type) {
   );
 }
 
-function buildAvatarEditorState(draft = EMPTY_AVATAR_DRAFT) {
-  if (draft?.mode === "upload" && draft?.file) {
-    return { source: "upload", file: draft.file, url: "", remove: false };
-  }
-  if (draft?.mode === "url") {
-    return { source: "url", file: null, url: draft.url || "", remove: false };
-  }
-  if (draft?.mode === "remove") {
-    return { source: "upload", file: null, url: "", remove: true };
-  }
-  return { ...EMPTY_AVATAR_EDITOR };
-}
-
 function useObjectUrl(file) {
   const [objectUrl, setObjectUrl] = useState("");
 
@@ -103,9 +94,9 @@ function useObjectUrl(file) {
 export default function MyPageLinksEditorPage() {
   const { page, setPage, setErr, setPreviewPage } = useMyPageContext();
   const [saving, setSaving] = useState(false);
+  const [avatarSaving, setAvatarSaving] = useState(false);
   const [quoteRequests, setQuoteRequests] = useState([]);
   const [requestsLoading, setRequestsLoading] = useState(true);
-  const [avatarDraft, setAvatarDraft] = useState(EMPTY_AVATAR_DRAFT);
   const [avatarModalOpen, setAvatarModalOpen] = useState(false);
   const [avatarEditor, setAvatarEditor] = useState(EMPTY_AVATAR_EDITOR);
   const [identityModalOpen, setIdentityModalOpen] = useState(false);
@@ -140,23 +131,14 @@ export default function MyPageLinksEditorPage() {
     () => quoteRequests.slice(0, 3),
     [quoteRequests],
   );
-  const avatarDraftFileUrl = useObjectUrl(
-    avatarDraft.mode === "upload" ? avatarDraft.file : null,
-  );
   const avatarEditorFileUrl = useObjectUrl(
     avatarEditor.source === "upload" ? avatarEditor.file : null,
   );
 
-  const currentAvatarUrl = useMemo(() => {
-    if (avatarDraft.mode === "remove") return "";
-    if (avatarDraft.mode === "upload" && avatarDraftFileUrl) {
-      return avatarDraftFileUrl;
-    }
-    if (avatarDraft.mode === "url") {
-      return resolveMyPageMediaUrl(avatarDraft.url);
-    }
-    return resolveMyPageMediaUrl(page?.avatarUrl);
-  }, [avatarDraft, avatarDraftFileUrl, page?.avatarUrl]);
+  const currentAvatarUrl = useMemo(
+    () => resolveMyPageMediaUrl(page?.avatarUrl),
+    [page?.avatarUrl],
+  );
 
   const modalAvatarUrl = useMemo(() => {
     if (avatarEditor.remove) return "";
@@ -168,14 +150,6 @@ export default function MyPageLinksEditorPage() {
     }
     return currentAvatarUrl;
   }, [avatarEditor, avatarEditorFileUrl, currentAvatarUrl]);
-
-  useEffect(() => {
-    if (avatarDraft.mode === "keep") {
-      setPreviewPage(null);
-      return;
-    }
-    setPreviewPage({ ...(page || {}), avatarUrl: currentAvatarUrl || "" });
-  }, [avatarDraft.mode, currentAvatarUrl, page, setPreviewPage]);
 
   useEffect(() => () => setPreviewPage(null), [setPreviewPage]);
 
@@ -271,11 +245,12 @@ export default function MyPageLinksEditorPage() {
   }
 
   function openAvatarModal() {
-    setAvatarEditor(buildAvatarEditorState(avatarDraft));
+    setAvatarEditor({ ...EMPTY_AVATAR_EDITOR });
     setAvatarModalOpen(true);
   }
 
   function closeAvatarModal() {
+    if (avatarSaving) return;
     setAvatarModalOpen(false);
     setAvatarEditor(EMPTY_AVATAR_EDITOR);
   }
@@ -304,35 +279,55 @@ export default function MyPageLinksEditorPage() {
     closeIdentityModal();
   }
 
-  function handleApplyAvatar() {
-    if (avatarEditor.remove) {
-      setAvatarDraft({ mode: "remove", file: null, url: "" });
-      closeAvatarModal();
-      return;
-    }
+  async function handleApplyAvatar() {
+    let payload = null;
 
-    if (
+    if (avatarEditor.remove) {
+      payload = { avatarMode: "remove" };
+    } else if (
       avatarEditor.source === "upload" &&
       typeof File !== "undefined" &&
       avatarEditor.file instanceof File
     ) {
-      setAvatarDraft({ mode: "upload", file: avatarEditor.file, url: "" });
+      payload = {
+        avatarMode: "upload",
+        avatarFile: avatarEditor.file,
+      };
+    } else if (avatarEditor.source === "url" && avatarEditor.url.trim()) {
+      payload = {
+        avatarMode: "url",
+        avatarUrl: avatarEditor.url.trim(),
+      };
+    }
+
+    if (!payload) {
       closeAvatarModal();
       return;
     }
 
-    if (avatarEditor.source === "url" && avatarEditor.url.trim()) {
-      setAvatarDraft({
-        mode: "url",
-        file: null,
-        url: avatarEditor.url.trim(),
+    try {
+      setAvatarSaving(true);
+      setErr("");
+      const response = await saveMyPageAvatar(payload);
+      const nextPage = response?.page || null;
+
+      setPage((prev) => {
+        if (!nextPage) return prev;
+        if (!prev) return nextPage;
+        return {
+          ...prev,
+          avatarUrl: nextPage.avatarUrl || "",
+          updatedAt: nextPage.updatedAt || prev.updatedAt || null,
+        };
       });
-      closeAvatarModal();
-      return;
+      setPreviewPage(null);
+      setAvatarModalOpen(false);
+      setAvatarEditor(EMPTY_AVATAR_EDITOR);
+    } catch (error) {
+      setErr(error?.message || "Nao consegui salvar a imagem da pagina.");
+    } finally {
+      setAvatarSaving(false);
     }
-
-    setAvatarDraft(EMPTY_AVATAR_DRAFT);
-    closeAvatarModal();
   }
 
   async function handleSaveLinks() {
@@ -349,15 +344,8 @@ export default function MyPageLinksEditorPage() {
         socialLinks: page?.socialLinks || [],
       };
 
-      if (avatarDraft.mode !== "keep") {
-        payload.avatarMode = avatarDraft.mode;
-        if (avatarDraft.mode === "url") payload.avatarUrl = avatarDraft.url || "";
-        if (avatarDraft.mode === "upload") payload.avatarFile = avatarDraft.file;
-      }
-
       const response = await saveMyPageLinks(payload);
       setPage(response?.page || null);
-      setAvatarDraft(EMPTY_AVATAR_DRAFT);
       setPreviewPage(null);
     } catch (error) {
       setErr(error?.message || "Nao consegui salvar os links da sua pagina.");
@@ -376,6 +364,26 @@ export default function MyPageLinksEditorPage() {
 
   return (
     <>
+      <Card variant="quiet">
+        <CardBody className="flex flex-col gap-4 p-4 sm:p-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="space-y-1">
+            <div className="text-2xl font-black tracking-[-0.04em] text-slate-950 dark:text-white">
+              Links
+            </div>
+            <div className="text-sm text-slate-600 dark:text-slate-300">
+              Identidade, botoes principais e links secundarios da sua pagina.
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="button" disabled={saving} onClick={handleSaveLinks}>
+              <Check className="h-4 w-4" />
+              {saving ? "Salvando..." : "Salvar Links"}
+            </Button>
+          </div>
+        </CardBody>
+      </Card>
+
       <Card>
         <CardHeader
           title="Identidade"
@@ -445,7 +453,7 @@ export default function MyPageLinksEditorPage() {
                     className="inline-flex min-w-[220px] items-center gap-3 rounded-[22px] border border-slate-200/80 bg-white/90 px-4 py-3 text-left shadow-[0_14px_34px_-26px_rgba(15,23,42,0.2)] transition hover:border-emerald-300 hover:bg-emerald-50/70 dark:border-white/10 dark:bg-white/[0.05] dark:hover:border-emerald-300/30 dark:hover:bg-emerald-400/10"
                   >
                     <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-500 text-white">
-                      <MessageCircle className="h-4 w-4" />
+                      <MyPageWhatsAppIcon className="h-4 w-4" />
                     </span>
                     <span className="min-w-0">
                       <span className="block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
@@ -797,13 +805,6 @@ export default function MyPageLinksEditorPage() {
         </CardBody>
       </Card>
 
-      <div className="flex justify-end">
-        <Button type="button" disabled={saving} onClick={handleSaveLinks}>
-          <MessageCircle className="h-4 w-4" />
-          {saving ? "Salvando..." : "Salvar Links"}
-        </Button>
-      </div>
-
       <ModalShell
         open={avatarModalOpen}
         onClose={closeAvatarModal}
@@ -821,6 +822,7 @@ export default function MyPageLinksEditorPage() {
             </div>
             <button
               type="button"
+              disabled={avatarSaving}
               onClick={closeAvatarModal}
               className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200/80 bg-white/90 text-slate-500 transition hover:border-slate-300 hover:text-slate-950 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-white/20 dark:hover:text-white"
               aria-label="Fechar modal"
@@ -844,11 +846,12 @@ export default function MyPageLinksEditorPage() {
                   </div>
                 )}
               </div>
-              {(modalAvatarUrl || page?.avatarUrl || avatarDraft.mode !== "keep") && (
+              {(modalAvatarUrl || currentAvatarUrl) && (
                 <Button
                   type="button"
                   variant="ghost"
                   className="w-full"
+                  disabled={avatarSaving}
                   onClick={() =>
                     setAvatarEditor((prev) => ({
                       ...prev,
@@ -867,6 +870,7 @@ export default function MyPageLinksEditorPage() {
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
+                  disabled={avatarSaving}
                   onClick={() =>
                     setAvatarEditor((prev) => ({
                       ...prev,
@@ -886,6 +890,7 @@ export default function MyPageLinksEditorPage() {
                 </button>
                 <button
                   type="button"
+                  disabled={avatarSaving}
                   onClick={() =>
                     setAvatarEditor((prev) => ({
                       ...prev,
@@ -917,6 +922,7 @@ export default function MyPageLinksEditorPage() {
                     <input
                       type="file"
                       accept="image/*"
+                      disabled={avatarSaving}
                       onChange={(event) =>
                         setAvatarEditor((prev) => ({
                           ...prev,
@@ -940,6 +946,7 @@ export default function MyPageLinksEditorPage() {
                   <div className="mt-4">
                     <Input
                       value={avatarEditor.url}
+                      disabled={avatarSaving}
                       onChange={(event) =>
                         setAvatarEditor((prev) => ({
                           ...prev,
@@ -961,12 +968,17 @@ export default function MyPageLinksEditorPage() {
           </div>
 
           <div className="mt-6 flex items-center justify-end gap-2">
-            <Button type="button" variant="secondary" onClick={closeAvatarModal}>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={avatarSaving}
+              onClick={closeAvatarModal}
+            >
               Cancelar
             </Button>
-            <Button type="button" onClick={handleApplyAvatar}>
+            <Button type="button" disabled={avatarSaving} onClick={handleApplyAvatar}>
               <ImagePlus className="h-4 w-4" />
-              Aplicar
+              {avatarSaving ? "Aplicando..." : "Aplicar"}
             </Button>
           </div>
         </div>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { MessageCircle, Search, ShoppingBag } from "lucide-react";
+import { Search, ShoppingBag } from "lucide-react";
 import { getPublicMyPageCatalog } from "../app/myPageApi.js";
 import { imageSrc } from "../app/productsApi.js";
 import { Input } from "../components/appui/Input.jsx";
@@ -11,6 +11,7 @@ import {
   MyPagePublicFooter,
   MyPagePublicHero,
   MyPagePublicScreen,
+  MyPageWhatsAppIcon,
 } from "../components/my-page/MyPagePublicUi.jsx";
 
 function fmtBRL(cents) {
@@ -59,6 +60,7 @@ export default function PublicMyPageCatalogV2() {
   const whatsappButton = (page?.buttons || []).find(
     (button) => button.type === "whatsapp",
   );
+  const showCatalogPrices = page?.shop?.showPrices !== false;
 
   return (
     <MyPagePublicScreen page={page}>
@@ -86,7 +88,7 @@ export default function PublicMyPageCatalogV2() {
                         )
                       }
                     >
-                      <MessageCircle className="h-4 w-4" />
+                      <MyPageWhatsAppIcon className="h-4 w-4" />
                       Falar no WhatsApp
                     </button>
                   ) : null}
@@ -179,16 +181,28 @@ export default function PublicMyPageCatalogV2() {
                     >
                       {product.productId || "Produto"}
                     </div>
-                    <div className="mt-2 text-lg font-semibold">{product.name}</div>
+                    <div className="mt-2 text-lg font-semibold" style={theme.headingStyle}>
+                      {product.name}
+                    </div>
                     <div className="mt-2 text-sm leading-6" style={theme.mutedTextStyle}>
                       {product.description || "Disponivel no seu shop."}
                     </div>
                   </div>
 
-                  <div className={theme?.layout?.catalogActionsClassName}>
-                    <div className="text-xl font-black tracking-[-0.03em]">
-                      {fmtBRL(product.priceCents)}
-                    </div>
+                  <div
+                    className={cls(
+                      theme?.layout?.catalogActionsClassName,
+                      !showCatalogPrices && "justify-end",
+                    )}
+                  >
+                    {showCatalogPrices ? (
+                      <div
+                        className="text-xl font-black tracking-[-0.03em]"
+                        style={theme.titleStyle}
+                      >
+                        {fmtBRL(product.priceCents)}
+                      </div>
+                    ) : null}
                     <Link
                       to={`/u/${slug}/quote?productId=${encodeURIComponent(product._id || product.productId)}`}
                       {...getPublicButtonProps(theme, "primary")}
@@ -201,7 +215,7 @@ export default function PublicMyPageCatalogV2() {
             </div>
           ) : (
             <MyPagePublicCard theme={theme} className="text-center">
-              <div className="text-lg font-semibold">
+              <div className="text-lg font-semibold" style={theme.headingStyle}>
                 {query ? "Nenhum produto encontrado" : "Catalogo ainda vazio"}
               </div>
               <div className="mt-2 text-sm" style={theme.mutedTextStyle}>

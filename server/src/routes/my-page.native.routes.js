@@ -30,17 +30,27 @@ import {
 const router = Router();
 
 const DEFAULT_COVER_STYLE = "clean_light";
-const DEFAULT_SHOP = { productIds: [] };
+const DEFAULT_SHOP = { productIds: [], showPrices: true };
 const DEFAULT_DESIGN = {
   themePreset: "clean_light",
   brandLayout: "classic",
   accentPalette: "sky",
   backgroundStyle: "fill",
   backgroundColor: "#E2E8F0",
+  buttonColor: "#0F172A",
+  buttonTextColor: "#FFFFFF",
+  pageTextColor: "#64748B",
+  titleTextColor: "#0F172A",
+  backgroundGradientDirection: "linear_up",
+  backgroundPatternVariant: "grid",
   fontPreset: "inter",
   buttonStyle: "solid",
   buttonRadius: "round",
+  primaryButtonsLayout: "stack",
   secondaryLinksStyle: "text",
+  secondaryLinksSize: "medium",
+  secondaryLinksAlign: "center",
+  animationPreset: "subtle",
 };
 const BUTTON_TYPE_LABELS = {
   whatsapp: "Fale no WhatsApp",
@@ -80,16 +90,41 @@ const MY_PAGE_ACCENT_PALETTES = [
   "coral",
   "slate",
 ];
+const MY_PAGE_ACCENT_SWATCHES = {
+  sky: "#2563EB",
+  emerald: "#059669",
+  rose: "#E11D48",
+  violet: "#7C3AED",
+  amber: "#D97706",
+  teal: "#0F766E",
+  coral: "#EA580C",
+  slate: "#0F172A",
+};
 const MY_PAGE_BACKGROUND_STYLES = [
   "fill",
   "gradient",
   "blur",
   "pattern",
 ];
+const MY_PAGE_BACKGROUND_GRADIENT_DIRECTIONS = [
+  "linear_up",
+  "linear_down",
+  "radial",
+];
+const MY_PAGE_BACKGROUND_PATTERN_VARIANTS = [
+  "grid",
+  "morph",
+  "organic",
+  "matrix",
+];
 const MY_PAGE_FONT_PRESETS = ["inter", "manrope", "jakarta", "editorial"];
 const MY_PAGE_BUTTON_STYLES = ["solid", "soft", "outline"];
 const MY_PAGE_BUTTON_RADII = ["square", "round", "pill"];
+const MY_PAGE_PRIMARY_BUTTON_LAYOUTS = ["stack", "cards", "minimal"];
 const MY_PAGE_SECONDARY_LINK_STYLES = ["text", "icon", "icon_text"];
+const MY_PAGE_SECONDARY_LINK_SIZES = ["small", "medium"];
+const MY_PAGE_SECONDARY_LINK_ALIGNS = ["center", "left"];
+const MY_PAGE_ANIMATION_PRESETS = ["subtle", "strong", "impact", "off"];
 const MY_PAGE_AVATAR_MODES = ["keep", "upload", "url", "remove"];
 const LEGACY_THEME_PRESET_MAP = {
   ocean: "clean_light",
@@ -362,7 +397,7 @@ function buildDefaultButtons(whatsappPhone = "") {
 }
 
 function buildDefaultShop() {
-  return { ...DEFAULT_SHOP, productIds: [] };
+  return { ...DEFAULT_SHOP, productIds: [], showPrices: true };
 }
 
 function buildDefaultDesign(coverStyle = DEFAULT_COVER_STYLE) {
@@ -371,9 +406,11 @@ function buildDefaultDesign(coverStyle = DEFAULT_COVER_STYLE) {
     MY_PAGE_THEME_PRESET_DEFAULTS[themePreset] ||
     MY_PAGE_THEME_PRESET_DEFAULTS[DEFAULT_DESIGN.themePreset] ||
     {};
+  const colorDefaults = buildThemeColorDefaults(themePreset, presetDefaults);
   return {
     ...DEFAULT_DESIGN,
     ...presetDefaults,
+    ...colorDefaults,
     themePreset,
     brandLayout: DEFAULT_DESIGN.brandLayout,
   };
@@ -445,6 +482,7 @@ function sanitizeSocialLinks(items = []) {
 function sanitizeShop(shop = {}) {
   return {
     productIds: sanitizeObjectIdList(shop?.productIds, 300),
+    showPrices: shop?.showPrices !== false,
   };
 }
 
@@ -480,6 +518,58 @@ function sanitizeHexColor(value, fallback = DEFAULT_DESIGN.backgroundColor) {
   return fallback;
 }
 
+function getHexLuminance(hex) {
+  const normalized = sanitizeHexColor(hex, "#000000");
+  const red = Number.parseInt(normalized.slice(1, 3), 16) / 255;
+  const green = Number.parseInt(normalized.slice(3, 5), 16) / 255;
+  const blue = Number.parseInt(normalized.slice(5, 7), 16) / 255;
+  const toLinear = (channel) =>
+    channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+
+  return (
+    0.2126 * toLinear(red) +
+    0.7152 * toLinear(green) +
+    0.0722 * toLinear(blue)
+  );
+}
+
+function getReadableTextColor(hex, light = "#FFFFFF", dark = "#0F172A") {
+  return getHexLuminance(hex) < 0.34 ? light : dark;
+}
+
+function buildThemeColorDefaults(themePreset, presetDefaults = {}) {
+  const accentKey =
+    presetDefaults?.accentPalette && MY_PAGE_ACCENT_PALETTES.includes(presetDefaults.accentPalette)
+      ? presetDefaults.accentPalette
+      : DEFAULT_DESIGN.accentPalette;
+  const backgroundColor = sanitizeHexColor(
+    presetDefaults?.backgroundColor,
+    DEFAULT_DESIGN.backgroundColor,
+  );
+  const buttonColor = sanitizeHexColor(
+    MY_PAGE_ACCENT_SWATCHES[accentKey],
+    DEFAULT_DESIGN.buttonColor,
+  );
+  const titleTextColor =
+    themePreset === "premium_dark" ||
+    themePreset === "twilight" ||
+    themePreset === "vox" ||
+    themePreset === "midnight_prism"
+      ? "#F8FAFC"
+      : "#0F172A";
+
+  return {
+    backgroundColor,
+    buttonColor,
+    buttonTextColor: getReadableTextColor(buttonColor, "#FFFFFF", "#111827"),
+    pageTextColor:
+      titleTextColor === "#F8FAFC"
+        ? "#CBD5E1"
+        : "#64748B",
+    titleTextColor,
+  };
+}
+
 function sanitizeBackgroundStyle(
   value,
   fallback = DEFAULT_DESIGN.backgroundStyle,
@@ -489,6 +579,28 @@ function sanitizeBackgroundStyle(
     .toLowerCase();
   const mapped = LEGACY_BACKGROUND_STYLE_MAP[normalized] || normalized;
   return MY_PAGE_BACKGROUND_STYLES.includes(mapped) ? mapped : fallback;
+}
+
+function sanitizeBackgroundPatternVariant(
+  value,
+  fallback = DEFAULT_DESIGN.backgroundPatternVariant,
+) {
+  return sanitizeEnum(
+    value,
+    MY_PAGE_BACKGROUND_PATTERN_VARIANTS,
+    fallback,
+  );
+}
+
+function sanitizeBackgroundGradientDirection(
+  value,
+  fallback = DEFAULT_DESIGN.backgroundGradientDirection,
+) {
+  return sanitizeEnum(
+    value,
+    MY_PAGE_BACKGROUND_GRADIENT_DIRECTIONS,
+    fallback,
+  );
 }
 
 function sanitizeButtonRadius(value, fallback = DEFAULT_DESIGN.buttonRadius) {
@@ -533,6 +645,30 @@ function sanitizeDesign(design = {}, coverStyle = DEFAULT_COVER_STYLE) {
       design?.backgroundColor,
       fallback.backgroundColor,
     ),
+    buttonColor: sanitizeHexColor(
+      design?.buttonColor,
+      fallback.buttonColor,
+    ),
+    buttonTextColor: sanitizeHexColor(
+      design?.buttonTextColor,
+      fallback.buttonTextColor,
+    ),
+    pageTextColor: sanitizeHexColor(
+      design?.pageTextColor,
+      fallback.pageTextColor,
+    ),
+    titleTextColor: sanitizeHexColor(
+      design?.titleTextColor,
+      fallback.titleTextColor,
+    ),
+    backgroundGradientDirection: sanitizeBackgroundGradientDirection(
+      design?.backgroundGradientDirection,
+      fallback.backgroundGradientDirection,
+    ),
+    backgroundPatternVariant: sanitizeBackgroundPatternVariant(
+      design?.backgroundPatternVariant,
+      fallback.backgroundPatternVariant,
+    ),
     fontPreset: sanitizeEnum(
       design?.fontPreset,
       MY_PAGE_FONT_PRESETS,
@@ -547,10 +683,30 @@ function sanitizeDesign(design = {}, coverStyle = DEFAULT_COVER_STYLE) {
       design?.buttonRadius,
       fallback.buttonRadius,
     ),
+    primaryButtonsLayout: sanitizeEnum(
+      design?.primaryButtonsLayout,
+      MY_PAGE_PRIMARY_BUTTON_LAYOUTS,
+      fallback.primaryButtonsLayout,
+    ),
     secondaryLinksStyle: sanitizeEnum(
       design?.secondaryLinksStyle,
       MY_PAGE_SECONDARY_LINK_STYLES,
       fallback.secondaryLinksStyle,
+    ),
+    secondaryLinksSize: sanitizeEnum(
+      design?.secondaryLinksSize,
+      MY_PAGE_SECONDARY_LINK_SIZES,
+      fallback.secondaryLinksSize,
+    ),
+    secondaryLinksAlign: sanitizeEnum(
+      design?.secondaryLinksAlign,
+      MY_PAGE_SECONDARY_LINK_ALIGNS,
+      fallback.secondaryLinksAlign,
+    ),
+    animationPreset: sanitizeEnum(
+      design?.animationPreset,
+      MY_PAGE_ANIMATION_PRESETS,
+      fallback.animationPreset,
     ),
   };
 }
@@ -602,8 +758,10 @@ function serializePage(pageDoc) {
     targetUrl: resolveButtonTarget(page, button),
   }));
   const socialLinks = sortByOrder(page.socialLinks || []);
+  const sanitizedShop = sanitizeShop(page.shop || {});
   const shop = {
     productIds: resolvePageShopProductIds(page),
+    showPrices: sanitizedShop.showPrices !== false,
   };
   const design = sanitizeDesign(page.design || {}, page.coverStyle);
 
@@ -1410,6 +1568,10 @@ router.put(
       req.body || {},
       "avatarMode",
     );
+    const hasAvatarUrl = Object.prototype.hasOwnProperty.call(
+      req.body || {},
+      "avatarUrl",
+    );
     const avatarMode = sanitizeEnum(
       req.body?.avatarMode,
       MY_PAGE_AVATAR_MODES,
@@ -1441,8 +1603,46 @@ router.put(
       }
     } else if (req.file) {
       page.avatarUrl = `/uploads/my-page/${req.file.filename}`;
-    } else {
+    } else if (hasAvatarUrl) {
       page.avatarUrl = sanitizeUrl(req.body?.avatarUrl);
+    }
+
+    await page.save();
+    return res.json({ ok: true, page: serializePage(page) });
+  }),
+);
+
+router.put(
+  "/my-page/avatar",
+  requireMyPageSettingsAccess,
+  maybeUploadMyPageAvatar,
+  asyncHandler(async (req, res) => {
+    const { page } = await loadWorkspacePage(req);
+    const avatarMode = sanitizeEnum(req.body?.avatarMode, MY_PAGE_AVATAR_MODES, "");
+
+    if (!avatarMode || avatarMode === "keep") {
+      return res
+        .status(400)
+        .json({ ok: false, error: "Modo de avatar invalido." });
+    }
+
+    if (avatarMode === "remove") {
+      page.avatarUrl = "";
+    } else if (avatarMode === "url") {
+      const avatarUrl = sanitizeUrl(req.body?.avatarUrl);
+      if (!avatarUrl) {
+        return res
+          .status(400)
+          .json({ ok: false, error: "Informe uma URL valida para a imagem." });
+      }
+      page.avatarUrl = avatarUrl;
+    } else if (avatarMode === "upload") {
+      if (!req.file) {
+        return res
+          .status(400)
+          .json({ ok: false, error: "Selecione uma imagem para enviar." });
+      }
+      page.avatarUrl = `/uploads/my-page/${req.file.filename}`;
     }
 
     await page.save();
@@ -1486,7 +1686,8 @@ router.put(
   requireMyPageSettingsAccess,
   asyncHandler(async (req, res) => {
     const { page } = await loadWorkspacePage(req);
-    const requestedIds = sanitizeShop(req.body?.shop).productIds;
+    const nextShop = sanitizeShop(req.body?.shop);
+    const requestedIds = nextShop.productIds;
     const validProducts = requestedIds.length
       ? await Product.find({
           workspaceId: req.tenantId,
@@ -1500,6 +1701,7 @@ router.put(
 
     page.shop = {
       productIds: validProducts.map((product) => String(product._id)),
+      showPrices: nextShop.showPrices !== false,
     };
 
     await page.save();

@@ -40,6 +40,7 @@ const MyPageSocialLinkSchema = new mongoose.Schema(
 const MyPageShopSchema = new mongoose.Schema(
   {
     productIds: { type: [String], default: () => [] },
+    showPrices: { type: Boolean, default: true },
   },
   { _id: false },
 );
@@ -76,6 +77,42 @@ const MyPageDesignSchema = new mongoose.Schema(
       trim: true,
       maxlength: 7,
     },
+    buttonColor: {
+      type: String,
+      default: "#0F172A",
+      trim: true,
+      maxlength: 7,
+    },
+    buttonTextColor: {
+      type: String,
+      default: "#FFFFFF",
+      trim: true,
+      maxlength: 7,
+    },
+    pageTextColor: {
+      type: String,
+      default: "#64748B",
+      trim: true,
+      maxlength: 7,
+    },
+    titleTextColor: {
+      type: String,
+      default: "#0F172A",
+      trim: true,
+      maxlength: 7,
+    },
+    backgroundGradientDirection: {
+      type: String,
+      default: "linear_up",
+      trim: true,
+      maxlength: 40,
+    },
+    backgroundPatternVariant: {
+      type: String,
+      default: "grid",
+      trim: true,
+      maxlength: 40,
+    },
     fontPreset: { type: String, default: "inter", trim: true, maxlength: 40 },
     buttonStyle: {
       type: String,
@@ -89,9 +126,33 @@ const MyPageDesignSchema = new mongoose.Schema(
       trim: true,
       maxlength: 40,
     },
+    primaryButtonsLayout: {
+      type: String,
+      default: "stack",
+      trim: true,
+      maxlength: 40,
+    },
     secondaryLinksStyle: {
       type: String,
       default: "text",
+      trim: true,
+      maxlength: 40,
+    },
+    secondaryLinksSize: {
+      type: String,
+      default: "medium",
+      trim: true,
+      maxlength: 40,
+    },
+    secondaryLinksAlign: {
+      type: String,
+      default: "center",
+      trim: true,
+      maxlength: 40,
+    },
+    animationPreset: {
+      type: String,
+      default: "subtle",
       trim: true,
       maxlength: 40,
     },
@@ -131,7 +192,10 @@ const MyPageSchema = new mongoose.Schema(
     isPublished: { type: Boolean, default: false },
     buttons: { type: [MyPageButtonSchema], default: () => [] },
     socialLinks: { type: [MyPageSocialLinkSchema], default: () => [] },
-    shop: { type: MyPageShopSchema, default: () => ({ productIds: [] }) },
+    shop: {
+      type: MyPageShopSchema,
+      default: () => ({ productIds: [], showPrices: true }),
+    },
     design: {
       type: MyPageDesignSchema,
       default: () => ({
@@ -140,10 +204,20 @@ const MyPageSchema = new mongoose.Schema(
         accentPalette: "sky",
         backgroundStyle: "fill",
         backgroundColor: "#E2E8F0",
+        buttonColor: "#0F172A",
+        buttonTextColor: "#FFFFFF",
+        pageTextColor: "#64748B",
+        titleTextColor: "#0F172A",
+        backgroundGradientDirection: "linear_up",
+        backgroundPatternVariant: "grid",
         fontPreset: "inter",
         buttonStyle: "solid",
         buttonRadius: "round",
+        primaryButtonsLayout: "stack",
         secondaryLinksStyle: "text",
+        secondaryLinksSize: "medium",
+        secondaryLinksAlign: "center",
+        animationPreset: "subtle",
       }),
     },
   },

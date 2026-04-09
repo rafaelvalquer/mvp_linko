@@ -31,6 +31,7 @@ export default function MyPageShopPage() {
   const [modalSearch, setModalSearch] = useState("");
   const [modalItems, setModalItems] = useState([]);
   const [draftSelectedIds, setDraftSelectedIds] = useState([]);
+  const [draftShowPrices, setDraftShowPrices] = useState(true);
 
   async function loadProducts(query = "") {
     const response = await getMyPageShopProducts(query);
@@ -82,10 +83,22 @@ export default function MyPageShopPage() {
     };
   }, [modalOpen, modalSearch, setErr]);
 
+  useEffect(() => {
+    setDraftShowPrices(page?.shop?.showPrices !== false);
+  }, [page?.shop?.showPrices]);
+
   const selectedProducts = useMemo(
     () => items.filter((item) => item.selected === true),
     [items],
   );
+  const persistedSelectedIds = useMemo(
+    () =>
+      Array.isArray(page?.shop?.productIds)
+        ? page.shop.productIds.filter(Boolean)
+        : [],
+    [page?.shop?.productIds],
+  );
+  const showPricesDirty = draftShowPrices !== (page?.shop?.showPrices !== false);
 
   const selectedDraftSet = useMemo(
     () => new Set(draftSelectedIds),
@@ -106,17 +119,20 @@ export default function MyPageShopPage() {
     );
   }
 
-  async function handleSaveShop() {
+  async function persistShop(productIds = [], options = {}) {
+    const { closeModal = false } = options;
     try {
       setSaving(true);
       setErr("");
       const response = await saveMyPageShop(
-        draftSelectedIds.filter(Boolean),
+        Array.isArray(productIds) ? productIds.filter(Boolean) : [],
+        draftShowPrices,
       );
       setPage(response?.page || null);
+      setDraftShowPrices(response?.page?.shop?.showPrices !== false);
       const refreshedItems = await loadProducts("");
       setItems(refreshedItems);
-      setModalOpen(false);
+      if (closeModal) setModalOpen(false);
     } catch (error) {
       setErr(error?.message || "Nao consegui salvar os produtos do shop.");
     } finally {
@@ -124,23 +140,20 @@ export default function MyPageShopPage() {
     }
   }
 
+  async function handleSaveShop() {
+    await persistShop(draftSelectedIds, { closeModal: true });
+  }
+
+  async function handleSaveShowPrices() {
+    await persistShop(persistedSelectedIds);
+  }
+
   async function handleRemoveSelected(id) {
-    try {
-      setSaving(true);
-      setErr("");
-      const nextIds = selectedProducts
-        .map((item) => item._id)
-        .filter(Boolean)
-        .filter((item) => item !== id);
-      const response = await saveMyPageShop(nextIds);
-      setPage(response?.page || null);
-      const refreshedItems = await loadProducts("");
-      setItems(refreshedItems);
-    } catch (error) {
-      setErr(error?.message || "Nao consegui atualizar o shop.");
-    } finally {
-      setSaving(false);
-    }
+    const nextIds = selectedProducts
+      .map((item) => item._id)
+      .filter(Boolean)
+      .filter((item) => item !== id);
+    await persistShop(nextIds);
   }
 
   return (
@@ -175,6 +188,48 @@ export default function MyPageShopPage() {
               </div>
               <div className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-100">
                 Usa essa mesma curadoria de produtos
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-[24px] border border-slate-200/80 bg-white/90 p-4 shadow-[0_18px_36px_-28px_rgba(15,23,42,0.14)] dark:border-white/10 dark:bg-white/5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="space-y-1">
+                <div className="text-sm font-semibold text-slate-950 dark:text-white">
+                  Mostrar valor dos produtos
+                </div>
+                <div className="text-sm text-slate-600 dark:text-slate-300">
+                  Controla se o catalogo publico exibe o preco de cada item.
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <label className="inline-flex cursor-pointer items-center gap-3 self-start sm:self-auto">
+                  <span className="relative inline-flex h-7 w-12 items-center">
+                    <input
+                      type="checkbox"
+                      className="peer sr-only"
+                      checked={draftShowPrices}
+                      onChange={(event) =>
+                        setDraftShowPrices(event.target.checked)
+                      }
+                    />
+                    <span className="absolute inset-0 rounded-full bg-slate-300 transition peer-checked:bg-emerald-500 dark:bg-slate-700 dark:peer-checked:bg-emerald-400" />
+                    <span className="absolute left-1 h-5 w-5 rounded-full bg-white shadow-sm transition peer-checked:translate-x-5" />
+                  </span>
+                  <span className="text-sm font-semibold text-slate-700 dark:text-slate-100">
+                    {draftShowPrices ? "Ativo" : "Oculto"}
+                  </span>
+                </label>
+
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={saving || !showPricesDirty}
+                  onClick={handleSaveShowPrices}
+                >
+                  {saving ? "Salvando..." : "Salvar"}
+                </Button>
               </div>
             </div>
           </div>
