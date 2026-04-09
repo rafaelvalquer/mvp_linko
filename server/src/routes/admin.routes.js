@@ -16,6 +16,7 @@ import { getSystemHealthSnapshot, getSystemServicesStatus } from "../services/sy
 import { resolveWorkspaceNotificationContext } from "../services/notificationSettings.js";
 import { getWhatsAppGatewayMonitorSnapshot } from "../services/waGateway.js";
 import { isMasterAdminEmail } from "../utils/masterAdmin.js";
+import { deleteWorkspaceAccountForAdmin } from "../services/admin/deleteWorkspaceAccount.service.js";
 
 const r = Router();
 
@@ -578,6 +579,66 @@ r.get(
         owner: serializeOwner(item.owner),
       })),
       pagination: buildPagination(total, page, limit),
+    });
+  }),
+);
+
+r.delete(
+  "/admin/workspaces/:workspaceId/account",
+  asyncHandler(async (req, res) => {
+    const workspaceId = parseObjectId(req.params.workspaceId);
+    if (!workspaceId) {
+      return res.status(400).json({
+        ok: false,
+        error: "Workspace invalido.",
+        code: "workspace_id_invalid",
+      });
+    }
+
+    const workspace = await Workspace.findById(workspaceId)
+      .select("_id name slug")
+      .lean();
+
+    if (!workspace) {
+      return res.status(404).json({
+        ok: false,
+        error: "Workspace nao encontrado.",
+        code: "workspace_not_found",
+      });
+    }
+
+    const expectedSlug = String(workspace.slug || "").trim();
+    const confirmationText = String(req.body?.confirmationText || "").trim();
+
+    if (!expectedSlug) {
+      return res.status(400).json({
+        ok: false,
+        error: "Workspace sem slug. Exclusao bloqueada.",
+        code: "workspace_slug_missing",
+      });
+    }
+
+    if (confirmationText !== expectedSlug) {
+      return res.status(400).json({
+        ok: false,
+        error: "Digite o slug do workspace exatamente para confirmar a exclusao.",
+        code: "workspace_delete_confirmation_mismatch",
+      });
+    }
+
+    const accountDeletion = await deleteWorkspaceAccountForAdmin(workspaceId);
+
+    if (!accountDeletion) {
+      return res.status(404).json({
+        ok: false,
+        error: "Workspace nao encontrado.",
+        code: "workspace_not_found",
+      });
+    }
+
+    return res.json({
+      ok: true,
+      accountDeletion,
     });
   }),
 );

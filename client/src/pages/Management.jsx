@@ -9,6 +9,7 @@ import {
   RefreshCw,
   Server,
   ShieldCheck,
+  Trash2,
   Users,
 } from "lucide-react";
 
@@ -26,6 +27,7 @@ import {
   getAdminServices,
   getAdminWhatsAppGatewayMonitor,
   getAdminTenantDiagnostics,
+  deleteAdminWorkspaceAccount,
   listAdminClients,
   listAdminUsers,
   listAdminWhatsAppMessageLogs,
@@ -404,6 +406,26 @@ function PaginationBar({ pagination, onPageChange }) {
   );
 }
 
+function InlineNotice({ message, tone = "success" }) {
+  const { isDark } = useThemeToggle();
+  if (!message) return null;
+
+  const classes =
+    tone === "error"
+      ? isDark
+        ? "border-red-400/20 bg-red-400/10 text-red-200"
+        : "border-red-200 bg-red-50 text-red-700"
+      : isDark
+        ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-200"
+        : "border-emerald-200 bg-emerald-50 text-emerald-700";
+
+  return (
+    <div className={`rounded-2xl border px-4 py-3 text-sm ${classes}`}>
+      {message}
+    </div>
+  );
+}
+
 function DeliveryStateCell({ item }) {
   const { isDark } = useThemeToggle();
   const label = item?.deliveryState
@@ -557,10 +579,157 @@ function DetailModal({ detail, onClose }) {
   );
 }
 
+function WorkspaceDeleteModal({
+  workspace,
+  confirmationText,
+  onConfirmationChange,
+  onClose,
+  onConfirm,
+  submitting,
+  error,
+}) {
+  const { isDark } = useThemeToggle();
+  const expectedSlug = String(workspace?.slug || "").trim();
+  const canConfirm =
+    !!expectedSlug && confirmationText === expectedSlug && !submitting;
+
+  return (
+    <ModalShell
+      open={!!workspace}
+      onClose={onClose}
+      locked={submitting}
+      panelClassName="max-w-2xl"
+    >
+      <div
+        className={`rounded-[32px] border ${isDark ? "border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.98),rgba(8,15,30,0.95))]" : "border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(241,245,249,0.92))]"} shadow-[0_30px_90px_-50px_rgba(15,23,42,0.75)]`}
+      >
+        <div
+          className={`flex items-center justify-between gap-3 border-b px-6 py-5 ${isDark ? "border-white/10" : "border-slate-200/80"}`}
+        >
+          <div>
+            <div
+              className={`text-[11px] font-bold uppercase tracking-[0.22em] ${isDark ? "text-rose-300/80" : "text-rose-600"}`}
+            >
+              Exclusao permanente
+            </div>
+            <h3
+              className={`mt-2 text-xl font-black tracking-tight ${isDark ? "text-white" : "text-slate-950"}`}
+            >
+              Excluir conta
+            </h3>
+          </div>
+          <Button variant="secondary" onClick={onClose} disabled={submitting}>
+            Cancelar
+          </Button>
+        </div>
+
+        <div className="space-y-5 px-6 py-5">
+          <div
+            className={`rounded-2xl border px-4 py-4 ${isDark ? "border-rose-400/20 bg-rose-400/10 text-rose-100" : "border-rose-200 bg-rose-50 text-rose-800"}`}
+          >
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+              <div className="space-y-1">
+                <div className="font-semibold">
+                  Essa acao apaga a conta inteira e nao pode ser desfeita.
+                </div>
+                <div className="text-sm opacity-90">
+                  Workspace, usuarios, clientes, vendas, produtos, Minha Pagina,
+                  automacoes, mensagens e logs serao removidos de forma permanente.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div
+              className={`rounded-2xl border px-4 py-3 ${isDark ? "border-white/10 bg-white/5 text-slate-200" : "border-slate-200 bg-slate-50 text-slate-700"}`}
+            >
+              <div
+                className={`text-[11px] font-bold uppercase tracking-[0.18em] ${isDark ? "text-slate-400" : "text-slate-500"}`}
+              >
+                Workspace
+              </div>
+              <div className="mt-2 font-semibold">{workspace?.name || "--"}</div>
+              <div className={isDark ? "mt-1 text-xs text-slate-400" : "mt-1 text-xs text-slate-500"}>
+                /{expectedSlug || "--"}
+              </div>
+            </div>
+
+            <div
+              className={`rounded-2xl border px-4 py-3 ${isDark ? "border-white/10 bg-white/5 text-slate-200" : "border-slate-200 bg-slate-50 text-slate-700"}`}
+            >
+              <div
+                className={`text-[11px] font-bold uppercase tracking-[0.18em] ${isDark ? "text-slate-400" : "text-slate-500"}`}
+              >
+                Owner
+              </div>
+              <div className="mt-2 font-semibold">
+                {workspace?.owner?.name || "--"}
+              </div>
+              <div className={isDark ? "mt-1 text-xs text-slate-400" : "mt-1 text-xs text-slate-500"}>
+                {workspace?.owner?.email || "--"}
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div
+              className={`mb-2 text-[11px] font-bold uppercase tracking-[0.18em] ${isDark ? "text-slate-400" : "text-slate-500"}`}
+            >
+              Confirmacao
+            </div>
+            <div
+              className={`mb-3 text-sm ${isDark ? "text-slate-300" : "text-slate-600"}`}
+            >
+              Digite o slug do workspace para confirmar a exclusao:
+              <span className={`ml-1 font-semibold ${isDark ? "text-white" : "text-slate-900"}`}>
+                {expectedSlug || "--"}
+              </span>
+            </div>
+            <Input
+              value={confirmationText}
+              onChange={(event) => onConfirmationChange(event.target.value)}
+              placeholder="Digite o slug exatamente como acima"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              disabled={submitting}
+            />
+          </div>
+
+          <InlineError message={error} />
+
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <Button variant="secondary" onClick={onClose} disabled={submitting}>
+              Cancelar
+            </Button>
+            <Button
+              variant="danger"
+              onClick={onConfirm}
+              disabled={!canConfirm}
+            >
+              <Trash2 className="h-4 w-4" />
+              {submitting ? "Excluindo..." : "Excluir conta"}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </ModalShell>
+  );
+}
+
 export default function Management() {
   const { isDark } = useThemeToggle();
   const [refreshKey, setRefreshKey] = useState(0);
   const [detail, setDetail] = useState(null);
+  const [workspaceDeleteTarget, setWorkspaceDeleteTarget] = useState(null);
+  const [workspaceDeleteConfirmation, setWorkspaceDeleteConfirmation] =
+    useState("");
+  const [workspaceDeleteSubmitting, setWorkspaceDeleteSubmitting] =
+    useState(false);
+  const [workspaceDeleteError, setWorkspaceDeleteError] = useState("");
+  const [workspaceActionFeedback, setWorkspaceActionFeedback] = useState(null);
   const [diagnosticWorkspaceId, setDiagnosticWorkspaceId] = useState("");
   const [diagnosticTab, setDiagnosticTab] = useState("overview");
   const [diagnosticFlash, setDiagnosticFlash] = useState("");
@@ -725,6 +894,15 @@ export default function Management() {
     return () => window.clearTimeout(timeoutId);
   }, [diagnosticFlash]);
 
+  useEffect(() => {
+    if (!workspaceActionFeedback?.message) return undefined;
+    const timeoutId = window.setTimeout(
+      () => setWorkspaceActionFeedback(null),
+      3600,
+    );
+    return () => window.clearTimeout(timeoutId);
+  }, [workspaceActionFeedback]);
+
   const handleRefreshAll = useCallback(() => {
     beginManualRefreshingAll();
     setRefreshKey((current) => current + 1);
@@ -773,6 +951,92 @@ export default function Management() {
     setDiagnosticWorkspaceId(String(workspaceId || ""));
     setDiagnosticTab("overview");
     scrollToSection("tenant-diagnostics");
+  }
+
+  function openWorkspaceDeleteModal(workspace) {
+    setWorkspaceDeleteTarget(workspace);
+    setWorkspaceDeleteConfirmation("");
+    setWorkspaceDeleteError("");
+  }
+
+  function closeWorkspaceDeleteModal(force = false) {
+    if (workspaceDeleteSubmitting && !force) return;
+    setWorkspaceDeleteTarget(null);
+    setWorkspaceDeleteConfirmation("");
+    setWorkspaceDeleteError("");
+  }
+
+  function clearDeletedWorkspaceFilters(workspaceId) {
+    const normalizedId = String(workspaceId || "");
+
+    setUserParams((current) =>
+      String(current.workspaceId || "") === normalizedId
+        ? { ...current, page: 1, workspaceId: "" }
+        : current,
+    );
+    setClientParams((current) =>
+      String(current.workspaceId || "") === normalizedId
+        ? { ...current, page: 1, workspaceId: "" }
+        : current,
+    );
+    setOutboxParams((current) =>
+      String(current.workspaceId || "") === normalizedId
+        ? { ...current, page: 1, workspaceId: "" }
+        : current,
+    );
+    setMessageLogParams((current) =>
+      String(current.workspaceId || "") === normalizedId
+        ? { ...current, page: 1, workspaceId: "" }
+        : current,
+    );
+  }
+
+  async function handleDeleteWorkspaceAccount() {
+    const target = workspaceDeleteTarget;
+    const workspaceId = String(target?._id || "");
+    const expectedSlug = String(target?.slug || "").trim();
+
+    if (!workspaceId || !expectedSlug) {
+      setWorkspaceDeleteError("Workspace sem slug valido. Exclusao bloqueada.");
+      return;
+    }
+
+    if (workspaceDeleteConfirmation !== expectedSlug) {
+      setWorkspaceDeleteError(
+        "Digite o slug do workspace exatamente para confirmar a exclusao.",
+      );
+      return;
+    }
+
+    setWorkspaceDeleteSubmitting(true);
+    setWorkspaceDeleteError("");
+
+    try {
+      const response = await deleteAdminWorkspaceAccount(
+        workspaceId,
+        workspaceDeleteConfirmation,
+      );
+
+      if (String(diagnosticWorkspaceId || "") === workspaceId) {
+        setDiagnosticWorkspaceId("");
+        setDiagnosticTab("overview");
+        setDiagnosticFlash("");
+      }
+
+      clearDeletedWorkspaceFilters(workspaceId);
+      closeWorkspaceDeleteModal(true);
+      setWorkspaceActionFeedback({
+        tone: "success",
+        message: `Conta /${response?.accountDeletion?.slug || expectedSlug} excluida com sucesso.`,
+      });
+      handleRefreshAll();
+    } catch (error) {
+      setWorkspaceDeleteError(
+        error?.message || "Falha ao excluir a conta selecionada.",
+      );
+    } finally {
+      setWorkspaceDeleteSubmitting(false);
+    }
   }
 
   function applyUserWorkspaceFilter(workspaceId) {
@@ -1165,6 +1429,10 @@ export default function Management() {
               </FilterRow>
 
               <InlineError message={workspacesState.error} />
+              <InlineNotice
+                message={workspaceActionFeedback?.message}
+                tone={workspaceActionFeedback?.tone}
+              />
 
               {workspacesState.loading && workspaces.length === 0 ? (
                 <Skeleton className="h-72 rounded-2xl" />
@@ -1180,7 +1448,7 @@ export default function Management() {
                         <th className="pb-3 font-semibold">Plano</th>
                         <th className="pb-3 font-semibold">Contagens</th>
                         <th className="pb-3 font-semibold">Ultima atividade</th>
-                        <th className="pb-3 font-semibold text-right">Diagnostico</th>
+                        <th className="pb-3 font-semibold text-right">Acoes</th>
                       </tr>
                     </thead>
                     <tbody className={isDark ? "divide-y divide-white/10" : "divide-y divide-slate-200/80"}>
@@ -1220,13 +1488,28 @@ export default function Management() {
                             </div>
                           </td>
                           <td className="py-3 text-right">
-                            <Button
-                              variant="secondary"
-                              onClick={() => openTenantDiagnostics(workspace._id)}
-                            >
-                              <Eye className="h-4 w-4" />
-                              Diagnosticar
-                            </Button>
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                variant="secondary"
+                                onClick={() => openTenantDiagnostics(workspace._id)}
+                              >
+                                <Eye className="h-4 w-4" />
+                                Diagnosticar
+                              </Button>
+                              <Button
+                                variant="danger"
+                                onClick={() => openWorkspaceDeleteModal(workspace)}
+                                disabled={!workspace.slug}
+                                title={
+                                  workspace.slug
+                                    ? "Excluir conta"
+                                    : "Workspace sem slug. Exclusao indisponivel."
+                                }
+                              >
+                                <Trash2 className="h-4 w-4" />
+                                Excluir conta
+                              </Button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -1749,6 +2032,15 @@ export default function Management() {
       </div>
 
       <DetailModal detail={detail} onClose={() => setDetail(null)} />
+      <WorkspaceDeleteModal
+        workspace={workspaceDeleteTarget}
+        confirmationText={workspaceDeleteConfirmation}
+        onConfirmationChange={setWorkspaceDeleteConfirmation}
+        onClose={closeWorkspaceDeleteModal}
+        onConfirm={handleDeleteWorkspaceAccount}
+        submitting={workspaceDeleteSubmitting}
+        error={workspaceDeleteError}
+      />
     </Shell>
   );
 }

@@ -29,6 +29,13 @@ export function listAdminWorkspaces(params = {}) {
   return api(`/admin/workspaces${toQueryString(params)}`);
 }
 
+export function deleteAdminWorkspaceAccount(workspaceId, confirmationText) {
+  return api(`/admin/workspaces/${workspaceId}/account`, {
+    method: "DELETE",
+    body: JSON.stringify({ confirmationText }),
+  });
+}
+
 export function listAdminUsers(params = {}) {
   return api(`/admin/users${toQueryString(params)}`);
 }
