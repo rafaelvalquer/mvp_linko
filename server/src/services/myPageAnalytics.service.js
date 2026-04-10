@@ -111,6 +111,75 @@ function getGeoPayloadMessage(payload) {
   return clampText(payload.message || errorValue || payload.reason || "", 240);
 }
 
+function buildGeoProviderUrls(normalizedIp) {
+  const explicitProviderUrl = String(
+    process.env.MY_PAGE_GEO_PROVIDER_URL || "",
+  ).trim();
+  const candidates = [
+    explicitProviderUrl,
+    `https://ipapi.co/${encodeURIComponent(normalizedIp)}/json/`,
+    `https://ipwho.is/${encodeURIComponent(normalizedIp)}`,
+  ].filter(Boolean);
+
+  return candidates.filter(
+    (candidate, index) => candidates.indexOf(candidate) === index,
+  );
+}
+
+function parseGeoPayload(payload) {
+  return {
+    countryCode: clampText(
+      payload?.country_code || payload?.countryCode || payload?.country || "",
+      16,
+    ),
+    countryName: clampText(
+      payload?.country_name || payload?.countryName || payload?.country || "",
+      120,
+    ),
+    region: clampText(
+      payload?.region || payload?.region_name || payload?.regionName || "",
+      120,
+    ),
+    city: clampText(payload?.city || "", 120),
+  };
+}
+
+function hasMinimumGeoFields(value) {
+  return Boolean(
+    value &&
+      value.countryCode &&
+      value.countryCode !== "unknown" &&
+      value.countryName &&
+      value.countryName !== "Desconhecido",
+  );
+}
+
+function buildGeoFailureReason({
+  response = null,
+  payloadSuccess = null,
+  payloadMessage = "",
+  value = null,
+  error = null,
+}) {
+  if (error) return clampText(error?.message || String(error), 240);
+  if (response && !response.ok) {
+    return clampText(
+      `http_${response.status}${payloadMessage ? `:${payloadMessage}` : ""}`,
+      240,
+    );
+  }
+  if (payloadSuccess === false) {
+    return clampText(
+      `payload_error${payloadMessage ? `:${payloadMessage}` : ""}`,
+      240,
+    );
+  }
+  if (!hasMinimumGeoFields(value)) {
+    return "missing_geo_fields";
+  }
+  return "unknown_failure";
+}
+
 function clampText(value, max = 120) {
   return String(value || "")
     .trim()
@@ -260,47 +329,32 @@ async function fetchGeoForIp(ip, userAgent = "") {
     };
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), GEO_REQUEST_TIMEOUT_MS);
-  const providerUrl =
-    String(process.env.MY_PAGE_GEO_PROVIDER_URL || "").trim() ||
-    `https://ipapi.co/${encodeURIComponent(normalizedIp)}/json/`;
+  const providerUrls = buildGeoProviderUrls(normalizedIp);
+  const attemptedProviders = [];
+  let lastFailureReason = "unknown_failure";
 
-  logGeoDebug("lookup:provider-request", {
-    normalizedIp,
-    providerUrl,
-  });
+  for (let index = 0; index < providerUrls.length; index += 1) {
+    const providerUrl = providerUrls[index];
+    const nextProviderUrl = providerUrls[index + 1] || "";
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), GEO_REQUEST_TIMEOUT_MS);
 
-  try {
-    const response = await fetch(providerUrl, {
-      headers: { Accept: "application/json" },
-      signal: controller.signal,
+    logGeoDebug("lookup:provider-request", {
+      normalizedIp,
+      providerUrl,
     });
-    const payload = await response.json().catch(() => ({}));
-    const payloadSuccess = getGeoPayloadSuccess(payload);
-    const value =
-      response.ok && payload && payloadSuccess !== false
-        ? {
-            countryCode: clampText(
-              payload.country_code ||
-                payload.countryCode ||
-                payload.country ||
-                "unknown",
-              16,
-            ),
-            countryName: clampText(
-              payload.country_name ||
-                payload.countryName ||
-                payload.country ||
-                "Desconhecido",
-              120,
-            ),
-            region: clampText(
-              payload.region || payload.region_name || payload.regionName || "",
-              120,
-            ),
-            city: clampText(payload.city || "", 120),
-          }
+
+    try {
+      const response = await fetch(providerUrl, {
+        headers: { Accept: "application/json" },
+        signal: controller.signal,
+      });
+      const payload = await response.json().catch(() => ({}));
+      const payloadSuccess = getGeoPayloadSuccess(payload);
+      const payloadMessage = getGeoPayloadMessage(payload);
+      const parsedValue = parseGeoPayload(payload);
+      const value = hasMinimumGeoFields(parsedValue)
+        ? parsedValue
         : {
             countryCode: "unknown",
             countryName: "Desconhecido",
@@ -314,29 +368,60 @@ async function fetchGeoForIp(ip, userAgent = "") {
         status: response.status,
         ok: response.ok,
         payloadSuccess,
-        payloadMessage: getGeoPayloadMessage(payload),
+        payloadMessage,
         payloadBodyPreview: buildPayloadBodyPreview(payload),
         countryCode: value.countryCode || "unknown",
         region: value.region || "",
         city: value.city || "",
-    });
+      });
 
-    writeGeoCache(normalizedIp, value);
-    return {
-      ...value,
-      deviceType,
-      userAgent: clampText(userAgent, 1000),
-    };
-  } catch (error) {
-    logGeoDebug("lookup:provider-error", {
-      normalizedIp,
-      providerUrl,
-      error: error?.message || String(error),
-    });
-    return unknownGeo(deviceType, userAgent);
-  } finally {
-    clearTimeout(timeout);
+      attemptedProviders.push(providerUrl);
+      if (response.ok && payloadSuccess !== false && hasMinimumGeoFields(parsedValue)) {
+        writeGeoCache(normalizedIp, value);
+        return {
+          ...value,
+          deviceType,
+          userAgent: clampText(userAgent, 1000),
+        };
+      }
+
+      lastFailureReason = buildGeoFailureReason({
+        response,
+        payloadSuccess,
+        payloadMessage,
+        value: parsedValue,
+      });
+    } catch (error) {
+      attemptedProviders.push(providerUrl);
+      lastFailureReason = buildGeoFailureReason({ error });
+      logGeoDebug("lookup:provider-error", {
+        normalizedIp,
+        providerUrl,
+        error: error?.message || String(error),
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    if (nextProviderUrl) {
+      logGeoDebug("lookup:provider-fallback", {
+        normalizedIp,
+        fromProviderUrl: providerUrl,
+        toProviderUrl: nextProviderUrl,
+        reason: lastFailureReason,
+      });
+    }
   }
+
+  logGeoDebug("lookup:all-providers-failed", {
+    normalizedIp,
+    attemptedProviders,
+    reason: lastFailureReason,
+  });
+
+  const fallbackValue = unknownGeo(deviceType, userAgent);
+  writeGeoCache(normalizedIp, fallbackValue);
+  return fallbackValue;
 }
 
 function classifySourceBucket({
