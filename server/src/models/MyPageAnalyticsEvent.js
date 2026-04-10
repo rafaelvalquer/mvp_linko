@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 
 const MY_PAGE_ANALYTICS_EVENT_TYPES = [
   "page_view",
+  "geo_context_update",
   "block_view",
   "cta_click",
   "secondary_link_click",
@@ -102,6 +103,19 @@ const MyPageAnalyticsEventSchema = new mongoose.Schema(
     countryName: { type: String, default: "Desconhecido", trim: true, maxlength: 120 },
     region: { type: String, default: "", trim: true, maxlength: 120 },
     city: { type: String, default: "", trim: true, maxlength: 120 },
+    geoSource: {
+      type: String,
+      default: "unknown",
+      trim: true,
+      maxlength: 20,
+      index: true,
+    },
+    browserGeoStatus: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 20,
+    },
     blockKey: {
       type: String,
       default: "",

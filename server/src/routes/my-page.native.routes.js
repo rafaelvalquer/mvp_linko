@@ -1505,22 +1505,32 @@ router.get(
   }),
 );
 
-router.post(
-  "/my-page/public/:slug/analytics/event",
-  asyncHandler(async (req, res) => {
-    const page = await loadPublishedPageBySlug(req.params.slug);
-    const event = await recordMyPageAnalyticsEvent({
+  router.post(
+    "/my-page/public/:slug/analytics/event",
+    asyncHandler(async (req, res) => {
+      const page = await loadPublishedPageBySlug(req.params.slug);
+      const event = await recordMyPageAnalyticsEvent({
       page,
       req,
       payload: req.body || {},
     });
 
-    return res.status(201).json({
-      ok: true,
-      eventId: event?._id ? String(event._id) : null,
-    });
-  }),
-);
+      return res.status(201).json({
+        ok: true,
+        eventId: event?._id ? String(event._id) : null,
+        geo: event
+          ? {
+              countryCode: event.countryCode || "unknown",
+              countryName: event.countryName || "Desconhecido",
+              region: event.region || "",
+              city: event.city || "",
+              geoSource: event.geoSource || "unknown",
+              browserGeoStatus: event.browserGeoStatus || "",
+            }
+          : null,
+      });
+    }),
+  );
 
 router.post(
   "/my-page/public/:slug/quote",

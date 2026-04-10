@@ -19,6 +19,7 @@ const SOURCE_BUCKETS = [
 ];
 const EVENT_TYPES = new Set([
   "page_view",
+  "geo_context_update",
   "block_view",
   "cta_click",
   "secondary_link_click",
@@ -48,6 +49,14 @@ const TOUCH_EVENT_TYPES = new Set([
   "slot_select",
 ]);
 const CLICK_EVENT_TYPES = ["cta_click", "secondary_link_click"];
+const BROWSER_GEO_STATUSES = new Set([
+  "granted",
+  "denied",
+  "unavailable",
+  "timeout",
+  "error",
+  "pending",
+]);
 const GEO_DEBUG_ENABLED = /^(1|true|yes|on)$/i.test(
   String(process.env.MY_PAGE_GEO_DEBUG || "").trim(),
 );
@@ -118,7 +127,6 @@ function buildGeoProviderUrls(normalizedIp) {
   const candidates = [
     explicitProviderUrl,
     `https://ipapi.co/${encodeURIComponent(normalizedIp)}/json/`,
-    `https://ipwho.is/${encodeURIComponent(normalizedIp)}`,
   ].filter(Boolean);
 
   return candidates.filter(
@@ -209,6 +217,25 @@ function sanitizeLanguage(value) {
   return clampText(String(value || "").split(",")[0], 80);
 }
 
+function sanitizeBrowserGeoStatus(value) {
+  const key = clampText(value, 20).toLowerCase();
+  return BROWSER_GEO_STATUSES.has(key) ? key : "";
+}
+
+function sanitizeIsoDate(value) {
+  const text = clampText(value, 80);
+  if (!text) return "";
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString();
+}
+
+function sanitizeCoordinate(value, min, max) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  if (numeric < min || numeric > max) return null;
+  return numeric;
+}
+
 function normalizePageKind(value, fallback = "home") {
   const key = clampText(value, 40).toLowerCase();
   return PAGE_KINDS.has(key) ? key : fallback;
@@ -275,6 +302,7 @@ function unknownGeo(deviceType = "other", userAgent = "") {
     countryName: "Desconhecido",
     region: "",
     city: "",
+    geoSource: "unknown",
     deviceType,
     userAgent: clampText(userAgent, 1000),
   };
@@ -380,6 +408,7 @@ async function fetchGeoForIp(ip, userAgent = "") {
         writeGeoCache(normalizedIp, value);
         return {
           ...value,
+          geoSource: "ip",
           deviceType,
           userAgent: clampText(userAgent, 1000),
         };
@@ -422,6 +451,107 @@ async function fetchGeoForIp(ip, userAgent = "") {
   const fallbackValue = unknownGeo(deviceType, userAgent);
   writeGeoCache(normalizedIp, fallbackValue);
   return fallbackValue;
+}
+
+async function fetchGeoForCoordinates(lat, lng, userAgent = "") {
+  const latitude = sanitizeCoordinate(lat, -90, 90);
+  const longitude = sanitizeCoordinate(lng, -180, 180);
+  const deviceType = detectDeviceType(userAgent);
+  if (latitude === null || longitude === null) {
+    return unknownGeo(deviceType, userAgent);
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), GEO_REQUEST_TIMEOUT_MS);
+  const providerUrl =
+    "https://nominatim.openstreetmap.org/reverse" +
+    `?format=jsonv2&lat=${encodeURIComponent(latitude)}` +
+    `&lon=${encodeURIComponent(longitude)}&zoom=10&addressdetails=1`;
+
+  try {
+    const response = await fetch(providerUrl, {
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "mvp-linko-my-page-analytics/1.0",
+      },
+      signal: controller.signal,
+    });
+    const payload = await response.json().catch(() => ({}));
+    const address = payload?.address && typeof payload.address === "object"
+      ? payload.address
+      : {};
+    const value = {
+      countryCode: clampText(
+        String(address.country_code || "").toUpperCase(),
+        16,
+      ),
+      countryName: clampText(address.country || "", 120),
+      region: clampText(
+        address.state ||
+          address.region ||
+          address.state_district ||
+          address.county ||
+          "",
+        120,
+      ),
+      city: clampText(
+        address.city ||
+          address.town ||
+          address.village ||
+          address.municipality ||
+          address.county ||
+          "",
+        120,
+      ),
+      geoSource: "browser",
+    };
+
+    if (response.ok && hasMinimumGeoFields(value)) {
+      return {
+        ...value,
+        deviceType,
+        userAgent: clampText(userAgent, 1000),
+      };
+    }
+  } catch {
+    // Silent fallback to GeoIP.
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  return unknownGeo(deviceType, userAgent);
+}
+
+async function resolvePreferredGeo({ context, req, userAgent }) {
+  const browserGeoStatus = sanitizeBrowserGeoStatus(context?.browserGeoStatus);
+  if (browserGeoStatus === "granted") {
+    const directBrowserGeo = {
+      countryCode: clampText(
+        String(context?.browserGeoCountryCode || "").toUpperCase(),
+        16,
+      ),
+      countryName: clampText(context?.browserGeoCountry || "", 120),
+      region: clampText(context?.browserGeoRegion || "", 120),
+      city: clampText(context?.browserGeoCity || "", 120),
+      geoSource: "browser",
+      deviceType: detectDeviceType(userAgent),
+      userAgent: clampText(userAgent, 1000),
+    };
+    if (hasMinimumGeoFields(directBrowserGeo)) {
+      return directBrowserGeo;
+    }
+
+    const browserLookupGeo = await fetchGeoForCoordinates(
+      context?.browserGeoLat,
+      context?.browserGeoLng,
+      userAgent,
+    );
+    if (browserLookupGeo?.countryCode && browserLookupGeo.countryCode !== "unknown") {
+      return browserLookupGeo;
+    }
+  }
+
+  return fetchGeoForIp(extractRequestIp(req), userAgent);
 }
 
 function classifySourceBucket({
@@ -483,6 +613,17 @@ function sanitizeAnalyticsContext(input = {}) {
     utmCampaign: clampText(current.utmCampaign, 160),
     utmContent: clampText(current.utmContent, 160),
     utmTerm: clampText(current.utmTerm, 160),
+    browserGeoStatus: sanitizeBrowserGeoStatus(current.browserGeoStatus),
+    browserGeoCapturedAt: sanitizeIsoDate(current.browserGeoCapturedAt),
+    browserGeoCountryCode: clampText(
+      String(current.browserGeoCountryCode || "").toUpperCase(),
+      16,
+    ),
+    browserGeoCountry: clampText(current.browserGeoCountry, 120),
+    browserGeoRegion: clampText(current.browserGeoRegion, 120),
+    browserGeoCity: clampText(current.browserGeoCity, 120),
+    browserGeoLat: sanitizeCoordinate(current.browserGeoLat, -90, 90),
+    browserGeoLng: sanitizeCoordinate(current.browserGeoLng, -180, 180),
     qr:
       current.qr === true ||
       String(current.qr || "").trim() === "1" ||
@@ -545,6 +686,8 @@ function toAttributionSnapshot(snapshot = {}) {
       clampText(snapshot.countryName || "Desconhecido", 120) || "Desconhecido",
     region: clampText(snapshot.region, 120),
     city: clampText(snapshot.city, 120),
+    geoSource: clampText(snapshot.geoSource || "unknown", 20) || "unknown",
+    browserGeoStatus: sanitizeBrowserGeoStatus(snapshot.browserGeoStatus),
     referrer: sanitizeUrl(snapshot.referrer),
     language: sanitizeLanguage(snapshot.language),
     deviceType: ["mobile", "desktop", "tablet", "other"].includes(
@@ -653,6 +796,8 @@ function buildEventDocument({
     countryName: geo.countryName || "Desconhecido",
     region: geo.region || "",
     city: geo.city || "",
+    geoSource: clampText(geo.geoSource || "unknown", 20) || "unknown",
+    browserGeoStatus: payload.browserGeoStatus || "",
     blockKey: payload.blockKey,
     buttonKey: payload.buttonKey,
     buttonLabel: payload.buttonLabel,
@@ -697,7 +842,11 @@ export async function recordMyPageAnalyticsEvent({
     referrer: sanitizeUrl(req.headers.referer || ""),
     language: sanitizeLanguage(req.headers["accept-language"] || ""),
   };
-  const geo = await fetchGeoForIp(extractRequestIp(req), userAgent);
+  const geo = await resolvePreferredGeo({
+    context: normalized,
+    req,
+    userAgent,
+  });
   const event = buildEventDocument({
     page,
     payload: normalized,
@@ -727,10 +876,12 @@ export async function buildMyPageAttributionSnapshot({
     resolveSessionAcquisition(page._id, context.sessionId),
     resolveLastTouch(page._id, context.sessionId, eventAt),
   ]);
-  const geo = await fetchGeoForIp(
-    extractRequestIp(req),
-    clampText(req.headers["user-agent"], 1000),
-  );
+  const userAgent = clampText(req.headers["user-agent"], 1000);
+  const geo = await resolvePreferredGeo({
+    context,
+    req,
+    userAgent,
+  });
 
   return toAttributionSnapshot({
     visitorId: context.visitorId,
@@ -802,6 +953,16 @@ export async function buildMyPageAttributionSnapshot({
       geo.city || acquisition?.city || lastTouch?.city || "",
       120,
     ),
+    geoSource:
+      clampText(
+        geo.geoSource || acquisition?.geoSource || lastTouch?.geoSource || "unknown",
+        20,
+      ) || "unknown",
+    browserGeoStatus:
+      context.browserGeoStatus ||
+      sanitizeBrowserGeoStatus(lastTouch?.browserGeoStatus) ||
+      sanitizeBrowserGeoStatus(acquisition?.browserGeoStatus) ||
+      "",
     referrer:
       context.referrer ||
       acquisition?.referrer ||
@@ -1283,8 +1444,16 @@ export async function buildMyPageAnalyticsReport({
       {
         $match: {
           ...scopedMatch,
-          eventType: "page_view",
-          countryCode: { $ne: "" },
+          sessionId: { $ne: "" },
+          countryCode: { $nin: ["", "unknown"] },
+        },
+      },
+      { $sort: { eventAt: -1 } },
+      {
+        $group: {
+          _id: "$sessionId",
+          countryCode: { $first: "$countryCode" },
+          countryName: { $first: "$countryName" },
         },
       },
       {
@@ -1292,15 +1461,6 @@ export async function buildMyPageAnalyticsReport({
           _id: {
             countryCode: "$countryCode",
             countryName: "$countryName",
-            sessionId: "$sessionId",
-          },
-        },
-      },
-      {
-        $group: {
-          _id: {
-            countryCode: "$_id.countryCode",
-            countryName: "$_id.countryName",
           },
           visits: { $sum: 1 },
         },
