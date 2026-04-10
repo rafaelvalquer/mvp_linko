@@ -105,6 +105,10 @@ export function createApp() {
 
   app.use("/api", healthRoutes);
   app.use("/api", authRoutes);
+  // Keep my-page routes early because this router includes public endpoints
+  // under /api/my-page/public/* and some legacy routers mounted on /api
+  // still register root-level ensureAuth middleware.
+  app.use("/api", myPageRoutes);
   app.use("/api", agentWebRoutes);
   app.use("/api", offersRoutes);
   app.use("/api", recurringOffersRoutes);
@@ -115,7 +119,6 @@ export function createApp() {
   app.use("/api", settingsRoutes);
   app.use("/api", analyticsRoutes);
   app.use("/api", reportsRoutes);
-  app.use("/api", myPageRoutes);
   app.use("/api", userAutomationsRoutes);
   app.use("/api", billingStripeRoutes);
   app.use("/api", adminRoutes);
