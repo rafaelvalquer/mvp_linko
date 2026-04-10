@@ -48,6 +48,9 @@ const TOUCH_EVENT_TYPES = new Set([
   "slot_select",
 ]);
 const CLICK_EVENT_TYPES = ["cta_click", "secondary_link_click"];
+const GEO_DEBUG_ENABLED = /^(1|true|yes|on)$/i.test(
+  String(process.env.MY_PAGE_GEO_DEBUG || "").trim(),
+);
 const PRIVATE_IP_PATTERNS = [
   /^127\./,
   /^10\./,
@@ -76,6 +79,11 @@ const BLOCK_LABELS = {
 };
 
 const geoCache = new Map();
+
+function logGeoDebug(stage, details = {}) {
+  if (!GEO_DEBUG_ENABLED) return;
+  console.log("[my-page-geo]", stage, details);
+}
 
 function clampText(value, max = 120) {
   return String(value || "")
@@ -194,12 +202,31 @@ function writeGeoCache(ip, value) {
 async function fetchGeoForIp(ip, userAgent = "") {
   const normalizedIp = normalizeIp(ip);
   const deviceType = detectDeviceType(userAgent);
-  if (!normalizedIp || isPrivateIp(normalizedIp)) {
+  const privateIp = !normalizedIp || isPrivateIp(normalizedIp);
+
+  logGeoDebug("lookup:start", {
+    rawIp: String(ip || ""),
+    normalizedIp,
+    privateIp,
+    deviceType,
+  });
+
+  if (privateIp) {
+    logGeoDebug("lookup:skip-private", {
+      normalizedIp,
+      reason: !normalizedIp ? "empty_ip" : "private_ip",
+    });
     return unknownGeo(deviceType, userAgent);
   }
 
   const cached = readGeoCache(normalizedIp);
   if (cached) {
+    logGeoDebug("lookup:cache-hit", {
+      normalizedIp,
+      countryCode: cached.countryCode || "unknown",
+      region: cached.region || "",
+      city: cached.city || "",
+    });
     return {
       ...cached,
       deviceType,
@@ -212,6 +239,11 @@ async function fetchGeoForIp(ip, userAgent = "") {
   const providerUrl =
     String(process.env.MY_PAGE_GEO_PROVIDER_URL || "").trim() ||
     `https://ipwho.is/${encodeURIComponent(normalizedIp)}`;
+
+  logGeoDebug("lookup:provider-request", {
+    normalizedIp,
+    providerUrl,
+  });
 
   try {
     const response = await fetch(providerUrl, {
@@ -243,13 +275,28 @@ async function fetchGeoForIp(ip, userAgent = "") {
             city: "",
           };
 
+    logGeoDebug("lookup:provider-response", {
+      normalizedIp,
+      status: response.status,
+      ok: response.ok,
+      providerSuccess: payload?.success !== false,
+      countryCode: value.countryCode || "unknown",
+      region: value.region || "",
+      city: value.city || "",
+    });
+
     writeGeoCache(normalizedIp, value);
     return {
       ...value,
       deviceType,
       userAgent: clampText(userAgent, 1000),
     };
-  } catch {
+  } catch (error) {
+    logGeoDebug("lookup:provider-error", {
+      normalizedIp,
+      providerUrl,
+      error: error?.message || String(error),
+    });
     return unknownGeo(deviceType, userAgent);
   } finally {
     clearTimeout(timeout);
