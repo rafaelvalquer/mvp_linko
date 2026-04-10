@@ -6,6 +6,10 @@ import {
   getPublicMyPage,
   getPublicMyPageScheduleSlots,
 } from "../app/myPageApi.js";
+import {
+  buildMyPageConversionContext,
+  trackMyPageEvent,
+} from "../app/myPagePublicAnalytics.js";
 import { Input } from "../components/appui/Input.jsx";
 import {
   cls,
@@ -96,6 +100,7 @@ export default function PublicMyPageScheduleV2() {
   const dateInputRef = useRef(null);
   const didResolveInitialDateRef = useRef(false);
   const prefetchedSlotsRef = useRef(null);
+  const trackedScheduleRef = useRef("");
 
   useEffect(() => {
     setLoading(true);
@@ -220,6 +225,28 @@ export default function PublicMyPageScheduleV2() {
     [slots],
   );
 
+  useEffect(() => {
+    if (!page?._id) return;
+    const trackKey = `${slug}:${page._id}`;
+    if (trackedScheduleRef.current === trackKey) return;
+    trackedScheduleRef.current = trackKey;
+
+    void trackMyPageEvent(slug, {
+      eventType: "page_view",
+      pageKind: "schedule",
+    });
+    void trackMyPageEvent(slug, {
+      eventType: "schedule_view",
+      pageKind: "schedule",
+      blockKey: "schedule_slots",
+    });
+    void trackMyPageEvent(slug, {
+      eventType: "block_view",
+      pageKind: "schedule",
+      blockKey: "schedule_slots",
+    });
+  }, [page?._id, slug]);
+
   function openDatePicker() {
     const input = dateInputRef.current;
     if (!input) return;
@@ -242,10 +269,28 @@ export default function PublicMyPageScheduleV2() {
     try {
       setBookingBusy(true);
       setErr("");
+      void trackMyPageEvent(slug, {
+        eventType: "cta_click",
+        pageKind: "schedule",
+        blockKey: "schedule_slots",
+        buttonKey: "schedule_submit",
+        buttonLabel: "Confirmar agendamento",
+        buttonType: "public_schedule",
+        contentKind: "slot",
+        contentId: selectedSlot.startAt || "",
+        contentLabel: fmtRange(selectedSlot.startAt, selectedSlot.endAt),
+      });
+      const analyticsContext = buildMyPageConversionContext(slug, "schedule", {
+        blockKey: "schedule_slots",
+        contentKind: "slot",
+        contentId: selectedSlot.startAt || "",
+        contentLabel: fmtRange(selectedSlot.startAt, selectedSlot.endAt),
+      });
       const response = await bookPublicMyPageSchedule(slug, {
         ...form,
         startAt: selectedSlot.startAt,
         endAt: selectedSlot.endAt,
+        analyticsContext,
       });
       setBooking(response?.booking || null);
     } catch (error) {
@@ -253,6 +298,22 @@ export default function PublicMyPageScheduleV2() {
     } finally {
       setBookingBusy(false);
     }
+  }
+
+  function handleWhatsAppClick(targetUrl = "") {
+    if (!targetUrl) return;
+    void trackMyPageEvent(slug, {
+      eventType: "cta_click",
+      pageKind: "schedule",
+      blockKey: "schedule_slots",
+      buttonKey: "schedule_whatsapp",
+      buttonLabel: "Falar no WhatsApp",
+      buttonType: "whatsapp",
+      contentKind: "button",
+      contentId: "schedule_whatsapp",
+      contentLabel: "Falar no WhatsApp",
+    });
+    window.open(targetUrl, "_blank", "noopener,noreferrer");
   }
 
   if (booking) {
@@ -289,13 +350,7 @@ export default function PublicMyPageScheduleV2() {
                   <button
                     type="button"
                     {...getPublicButtonProps(theme, "primary")}
-                    onClick={() =>
-                      window.open(
-                        whatsappButton.targetUrl,
-                        "_blank",
-                        "noopener,noreferrer",
-                      )
-                    }
+                    onClick={() => handleWhatsAppClick(whatsappButton.targetUrl)}
                   >
                     <MyPageWhatsAppIcon className="h-4 w-4" />
                     Falar no WhatsApp
@@ -458,7 +513,20 @@ export default function PublicMyPageScheduleV2() {
                         <button
                           key={slot.startAt}
                           type="button"
-                          onClick={() => setSelectedSlot(slot)}
+                          onClick={() => {
+                            setSelectedSlot(slot);
+                            void trackMyPageEvent(slug, {
+                              eventType: "slot_select",
+                              pageKind: "schedule",
+                              blockKey: "schedule_slots",
+                              contentKind: "slot",
+                              contentId: slot.startAt || "",
+                              contentLabel: fmtRange(slot.startAt, slot.endAt),
+                              buttonKey: `slot_${slot.startAt || ""}`,
+                              buttonLabel: fmtRange(slot.startAt, slot.endAt),
+                              buttonType: "slot",
+                            });
+                          }}
                           {...getPublicSelectableCardProps(
                             theme,
                             active,
@@ -537,13 +605,7 @@ export default function PublicMyPageScheduleV2() {
                     <button
                       type="button"
                       {...getPublicButtonProps(theme, "secondary")}
-                      onClick={() =>
-                        window.open(
-                          whatsappButton.targetUrl,
-                          "_blank",
-                          "noopener,noreferrer",
-                        )
-                      }
+                      onClick={() => handleWhatsAppClick(whatsappButton.targetUrl)}
                     >
                       <MyPageWhatsAppIcon className="h-4 w-4" />
                       Falar no WhatsApp

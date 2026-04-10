@@ -26,6 +26,11 @@ import {
   mergeAgenda,
   resolveAgendaForDate,
 } from "../services/agendaSettings.js";
+import {
+  attachMyPageAttributionToOffer,
+  buildMyPageAttributionSnapshot,
+  recordMyPageAnalyticsEvent,
+} from "../services/myPageAnalytics.service.js";
 
 const router = Router();
 
@@ -1420,6 +1425,42 @@ function buildQuoteRequestPrefill(doc) {
   };
 }
 
+function hasAnalyticsIdentity(value) {
+  const current = value && typeof value === "object" ? value : {};
+  return (
+    String(current.visitorId || "").trim().length > 0 &&
+    String(current.sessionId || "").trim().length > 0
+  );
+}
+
+async function safeBuildAnalyticsSnapshot({
+  page,
+  req,
+  analyticsContext,
+  fallback = {},
+}) {
+  if (!hasAnalyticsIdentity(analyticsContext)) return null;
+  try {
+    return await buildMyPageAttributionSnapshot({
+      page,
+      req,
+      analyticsContext,
+      fallback,
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function safeRecordAnalyticsEvent(args) {
+  if (!hasAnalyticsIdentity(args?.payload)) return null;
+  try {
+    return await recordMyPageAnalyticsEvent(args);
+  } catch {
+    return null;
+  }
+}
+
 router.get(
   "/my-page/public/:slug",
   asyncHandler(async (req, res) => {
@@ -1465,9 +1506,30 @@ router.get(
 );
 
 router.post(
+  "/my-page/public/:slug/analytics/event",
+  asyncHandler(async (req, res) => {
+    const page = await loadPublishedPageBySlug(req.params.slug);
+    const event = await recordMyPageAnalyticsEvent({
+      page,
+      req,
+      payload: req.body || {},
+    });
+
+    return res.status(201).json({
+      ok: true,
+      eventId: event?._id ? String(event._id) : null,
+    });
+  }),
+);
+
+router.post(
   "/my-page/public/:slug/quote",
   asyncHandler(async (req, res) => {
     const page = await loadPublishedPageBySlug(req.params.slug);
+    const analyticsContext =
+      req.body?.analyticsContext && typeof req.body.analyticsContext === "object"
+        ? req.body.analyticsContext
+        : null;
     const customerName = sanitizeText(req.body?.customerName, 120);
     const customerWhatsApp = sanitizePhone(req.body?.customerWhatsApp);
     const customerEmail = sanitizeText(req.body?.customerEmail, 160);
@@ -1496,6 +1558,24 @@ router.post(
     const selectedProducts = selectedProductIds.length
       ? await listCatalogProductsForPage(page, { selectedIds: selectedProductIds })
       : [];
+    const analyticsSnapshot = await safeBuildAnalyticsSnapshot({
+      page,
+      req,
+      analyticsContext,
+      fallback: {
+        pageKind: "quote",
+        blockKey: "quote_form",
+        contentKind: requestType,
+        contentLabel:
+          requestType === "product"
+            ? selectedProducts.length === 1
+              ? selectedProducts[0]?.name || "Produto selecionado"
+              : selectedProducts.length > 1
+                ? "Produtos selecionados"
+                : "Pedido de produto"
+            : page.title || "Pedido de servico",
+      },
+    });
 
     const quoteRequest = await MyPageQuoteRequest.create({
       workspaceId: page.workspaceId,
@@ -1516,6 +1596,28 @@ router.post(
         priceCents: Number(product.priceCents || 0),
         imageUrl: product.imageUrl || "",
       })),
+      analyticsSnapshot,
+    });
+
+    await safeRecordAnalyticsEvent({
+      page,
+      req,
+      quoteRequestId: quoteRequest._id,
+      payload: {
+        ...(analyticsContext || {}),
+        eventType: "quote_submit",
+        pageKind: "quote",
+        blockKey: "quote_form",
+        contentKind: requestType,
+        contentLabel:
+          requestType === "product"
+            ? selectedProducts.length === 1
+              ? selectedProducts[0]?.name || "Produto selecionado"
+              : selectedProducts.length > 1
+                ? "Produtos selecionados"
+                : "Pedido de produto"
+            : page.title || "Pedido de servico",
+      },
     });
 
     return res.json({
@@ -1542,6 +1644,10 @@ router.post(
   "/my-page/public/:slug/schedule/book",
   asyncHandler(async (req, res) => {
     const page = await loadPublishedPageBySlug(req.params.slug);
+    const analyticsContext =
+      req.body?.analyticsContext && typeof req.body.analyticsContext === "object"
+        ? req.body.analyticsContext
+        : null;
     const customerName = sanitizeText(req.body?.customerName, 120);
     const customerWhatsApp = sanitizePhone(req.body?.customerWhatsApp);
     const requestedStart = req.body?.startAt ?? req.body?.start;
@@ -1595,6 +1701,21 @@ router.post(
       });
     }
 
+    const analyticsSnapshot = await safeBuildAnalyticsSnapshot({
+      page,
+      req,
+      analyticsContext,
+      fallback: {
+        pageKind: "schedule",
+        blockKey: "schedule_slots",
+        contentKind: "slot",
+        contentId: slot.startAt || "",
+        contentLabel: slot.startAt && slot.endAt
+          ? `${slot.startAt}__${slot.endAt}`
+          : page.title || "Agendamento",
+      },
+    });
+
     const booking = await Booking.create({
       workspaceId: page.workspaceId,
       ownerUserId: page.ownerUserId,
@@ -1610,10 +1731,29 @@ router.post(
       holdExpiresAt: null,
       customerName,
       customerWhatsApp,
+      analyticsSnapshot,
       payment: {
         provider: "MANUAL_PIX",
         amountCents: 0,
         status: "PENDING",
+      },
+    });
+
+    await safeRecordAnalyticsEvent({
+      page,
+      req,
+      bookingId: booking._id,
+      payload: {
+        ...(analyticsContext || {}),
+        eventType: "booking_submit",
+        pageKind: "schedule",
+        blockKey: "schedule_slots",
+        contentKind: "slot",
+        contentId: slot.startAt || "",
+        contentLabel:
+          slot.startAt && slot.endAt
+            ? `${slot.startAt}__${slot.endAt}`
+            : page.title || "Agendamento",
       },
     });
 
@@ -1631,6 +1771,10 @@ router.post(
   asyncHandler(async (req, res) => {
     const page = await loadPublishedPageBySlug(req.params.slug);
     const input = sanitizeText(req.body?.input, 400);
+    const analyticsContext =
+      req.body?.analyticsContext && typeof req.body.analyticsContext === "object"
+        ? req.body.analyticsContext
+        : null;
     if (!input) {
       return res.status(400).json({
         ok: false,
@@ -1667,6 +1811,29 @@ router.post(
         error:
           "Nao encontrei uma proposta valida para este codigo nesta pagina.",
       });
+    }
+
+    const analyticsSnapshot = await safeBuildAnalyticsSnapshot({
+      page,
+      req,
+      analyticsContext,
+      fallback: {
+        pageKind: "pay",
+        blockKey: "pay_panel",
+        buttonKey: "resolve_offer",
+        buttonLabel: "Abrir proposta",
+        buttonType: "payment_link",
+        contentKind: "offer",
+        contentId: String(offer._id || ""),
+        contentLabel: offer.title || offer.publicCode || "Proposta",
+      },
+    });
+    if (analyticsSnapshot) {
+      await attachMyPageAttributionToOffer({
+        offerId: offer._id,
+        snapshot: analyticsSnapshot,
+        merge: true,
+      }).catch(() => null);
     }
 
     return res.json({
@@ -1708,11 +1875,28 @@ router.post(
       userAgent: sanitizeText(req.headers["user-agent"], 1000),
     });
 
+    await safeRecordAnalyticsEvent({
+      page,
+      req,
+      payload: {
+        ...(req.body || {}),
+        eventType: "cta_click",
+        pageKind: "home",
+        blockKey: "primary_buttons",
+        buttonKey: button?.id || buttonId,
+        buttonLabel: button?.label || "",
+        buttonType: button?.type || "",
+        contentKind: "button",
+        contentId: button?.id || buttonId,
+        contentLabel: button?.label || "",
+      },
+    });
+
     return res.json({ ok: true });
   }),
 );
 
-router.use(ensureAuth, tenantFromUser);
+router.use(/^\/my-page(?!\/public(?:\/|$))/, ensureAuth, tenantFromUser);
 
 function requireMyPageSettingsAccess(req, _res, next) {
   try {

@@ -28,6 +28,7 @@ import {
 } from "../services/notificationSettings.js";
 import { cancelOfferByWorkspace } from "../services/offers/cancelOffer.service.js";
 import { createOfferFromPayload } from "../services/offers/createOffer.service.js";
+import { attachMyPageAttributionToOffer } from "../services/myPageAnalytics.service.js";
 import {
   confirmOfferPaymentByWorkspace,
   rejectOfferPaymentByWorkspace,
@@ -1064,7 +1065,7 @@ r.post(
       req.body?.myPageQuoteRequestId || "",
     ).trim();
     if (mongoose.Types.ObjectId.isValid(myPageQuoteRequestId)) {
-      await MyPageQuoteRequest.findOneAndUpdate(
+      const quoteRequest = await MyPageQuoteRequest.findOneAndUpdate(
         {
           _id: myPageQuoteRequestId,
           workspaceId: req.tenantId,
@@ -1075,8 +1076,16 @@ r.post(
             createdOfferId: offer._id,
           },
         },
-        { strict: false },
+        { strict: false, new: true },
       ).catch(() => null);
+
+      if (quoteRequest?.analyticsSnapshot) {
+        await attachMyPageAttributionToOffer({
+          offerId: offer._id,
+          snapshot: quoteRequest.analyticsSnapshot,
+          merge: true,
+        }).catch(() => null);
+      }
     }
 
     res.json({ ok: true, offer, publicUrl: `/p/${offer.publicToken}` });

@@ -155,10 +155,10 @@ export function bookPublicMyPageSchedule(slug, payload) {
   });
 }
 
-export function resolvePublicMyPagePayment(slug, input) {
+export function resolvePublicMyPagePayment(slug, input, analyticsContext = null) {
   return api(`/my-page/public/${encodeURIComponent(slug)}/pay/resolve`, {
     method: "POST",
-    body: JSON.stringify({ input }),
+    body: JSON.stringify({ input, analyticsContext }),
   });
 }
 

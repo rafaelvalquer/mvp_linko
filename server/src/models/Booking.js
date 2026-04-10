@@ -91,6 +91,10 @@ const BookingSchema = new mongoose.Schema(
 
     customerName: { type: String },
     customerWhatsApp: { type: String },
+    analyticsSnapshot: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
 
     cancelledAt: { type: Date, default: null },
     cancelledBy: {

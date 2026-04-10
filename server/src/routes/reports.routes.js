@@ -9,6 +9,7 @@ import {
   buildFeedbackSummary,
 } from "../services/feedbackReports.service.js";
 import { buildGeneralReportsSnapshot } from "../services/generalReports.service.js";
+import { buildMyPageAnalyticsReport } from "../services/myPageAnalytics.service.js";
 import {
   buildGeneralReportPdfBuffer,
   buildRecurringReportPdfBuffer,
@@ -41,6 +42,48 @@ function rangeInSaoPaulo(fromYMD, toYMD) {
 function daysBetween(a, b) {
   const ms = b.getTime() - a.getTime();
   return Math.ceil(ms / (24 * 60 * 60 * 1000));
+}
+
+function formatSaoPauloYMD(date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function addDaysToYMD(ymd, days) {
+  const base = new Date(`${ymd}T12:00:00-03:00`);
+  base.setDate(base.getDate() + Number(days || 0));
+  return formatSaoPauloYMD(base);
+}
+
+function resolveMyPageAnalyticsRange(rangeRaw, fromRaw, toRaw) {
+  const range = String(rangeRaw || "30d").trim().toLowerCase();
+  if (range === "custom") {
+    const fromYMD = parseYMD(fromRaw);
+    const toYMD = parseYMD(toRaw);
+    if (!fromYMD || !toYMD) return null;
+    return { range: "custom", fromYMD, toYMD };
+  }
+
+  const presetDays = {
+    "7d": 7,
+    "30d": 30,
+    "90d": 90,
+  };
+  const days = presetDays[range] || presetDays["30d"];
+  const toYMD = formatSaoPauloYMD(new Date());
+  const fromYMD = addDaysToYMD(toYMD, -(days - 1));
+  return {
+    range: presetDays[range] ? range : "30d",
+    fromYMD,
+    toYMD,
+  };
 }
 
 async function buildTenantScope(req, options = {}) {
@@ -333,6 +376,52 @@ r.get(
     });
 
     res.json({ ok: true, scope: scopeInfo.appliedScope, ...dashboard });
+  }),
+);
+
+r.get(
+  "/reports/my-page/analytics",
+  asyncHandler(async (req, res) => {
+    const resolvedRange = resolveMyPageAnalyticsRange(
+      req.query.range,
+      req.query.from,
+      req.query.to,
+    );
+
+    if (!resolvedRange) {
+      return res
+        .status(400)
+        .json({ ok: false, error: "Parametros de periodo invalidos" });
+    }
+
+    const { range, fromYMD, toYMD } = resolvedRange;
+    const { start, end } = rangeInSaoPaulo(fromYMD, toYMD);
+    const days = daysBetween(start, end);
+    if (days > MAX_DAYS + 1) {
+      return res.status(400).json({
+        ok: false,
+        error: `Periodo maximo excedido (${MAX_DAYS} dias)`,
+      });
+    }
+
+    const pageId = String(req.query.pageId || "all").trim() || "all";
+    const { scopeInfo } = await buildTenantScope(req);
+    const report = await buildMyPageAnalyticsReport({
+      tenantId: req.tenantId,
+      ownerUserId: scopeInfo.ownerUserId || null,
+      start,
+      end,
+      pageId,
+    });
+
+    res.json({
+      ok: true,
+      scope: scopeInfo.appliedScope,
+      range,
+      from: fromYMD,
+      to: toYMD,
+      ...report,
+    });
   }),
 );
 

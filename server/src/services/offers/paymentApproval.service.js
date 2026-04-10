@@ -16,6 +16,7 @@ import {
   notifyResponsibleSellerPixPaidWhatsApp,
   notifyResponsibleSellerPlatformConfirmedWhatsApp,
 } from "../workspaceUserWhatsApp.service.js";
+import { ensureMyPageSaleAttributedEvent } from "../myPageAnalytics.service.js";
 
 function normalizeStatus(value) {
   return String(value || "")
@@ -238,6 +239,7 @@ export async function confirmOfferPaymentByWorkspace({
     paymentStatus === "CONFIRMED" || paymentStatus === "PAID" || !!offer?.paidAt;
 
   if (alreadyConfirmed) {
+    await ensureMyPageSaleAttributedEvent(offer);
     const notify =
       offer?.notifyWhatsAppOnPaid === true
         ? await safeNotifyPaymentConfirmed(offer._id)
@@ -313,6 +315,7 @@ export async function confirmOfferPaymentByWorkspace({
   }
 
   const updated = await Offer.findById(offer._id).lean();
+  await ensureMyPageSaleAttributedEvent(updated);
   const notify =
     updated?.notifyWhatsAppOnPaid === true
       ? await safeNotifyPaymentConfirmed(updated._id)

@@ -591,6 +591,7 @@ export function MyPageSecondaryLinks({
   interactive = true,
   className = "",
   itemClassName = "",
+  onLinkClick = null,
 }) {
   const items = Array.isArray(links)
     ? links.filter(
@@ -637,6 +638,11 @@ export function MyPageSecondaryLinks({
               target="_blank"
               rel="noreferrer"
               aria-label={label}
+              onClick={() => {
+                if (typeof onLinkClick === "function") {
+                  onLinkClick(item, index);
+                }
+              }}
             >
               <SecondaryLinkContent theme={theme} item={item} layout={layout} />
             </a>

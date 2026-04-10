@@ -1,10 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { CreditCard, Search } from "lucide-react";
 import {
   getPublicMyPage,
   resolvePublicMyPagePayment,
 } from "../app/myPageApi.js";
+import {
+  buildMyPageConversionContext,
+  trackMyPageEvent,
+} from "../app/myPagePublicAnalytics.js";
 import { Input } from "../components/appui/Input.jsx";
 import {
   getPublicSelectableCardProps,
@@ -23,6 +27,7 @@ export default function PublicMyPagePayV2() {
   const [err, setErr] = useState("");
   const [page, setPage] = useState(null);
   const [input, setInput] = useState("");
+  const trackedPayRef = useRef("");
 
   useEffect(() => {
     let active = true;
@@ -51,12 +56,56 @@ export default function PublicMyPagePayV2() {
     (button) => button.type === "whatsapp",
   );
 
+  useEffect(() => {
+    if (!page?._id) return;
+    const trackKey = `${slug}:${page._id}`;
+    if (trackedPayRef.current === trackKey) return;
+    trackedPayRef.current = trackKey;
+
+    void trackMyPageEvent(slug, {
+      eventType: "page_view",
+      pageKind: "pay",
+    });
+    void trackMyPageEvent(slug, {
+      eventType: "pay_view",
+      pageKind: "pay",
+      blockKey: "pay_panel",
+    });
+    void trackMyPageEvent(slug, {
+      eventType: "block_view",
+      pageKind: "pay",
+      blockKey: "pay_panel",
+    });
+  }, [page?._id, slug]);
+
   async function handleResolve(event) {
     event.preventDefault();
     try {
       setResolving(true);
       setErr("");
-      const response = await resolvePublicMyPagePayment(slug, input);
+      void trackMyPageEvent(slug, {
+        eventType: "cta_click",
+        pageKind: "pay",
+        blockKey: "pay_panel",
+        buttonKey: "resolve_offer",
+        buttonLabel: "Abrir proposta",
+        buttonType: "payment_link",
+        contentKind: "offer",
+        contentLabel: input,
+      });
+      const analyticsContext = buildMyPageConversionContext(slug, "pay", {
+        blockKey: "pay_panel",
+        buttonKey: "resolve_offer",
+        buttonLabel: "Abrir proposta",
+        buttonType: "payment_link",
+        contentKind: "offer",
+        contentLabel: input,
+      });
+      const response = await resolvePublicMyPagePayment(
+        slug,
+        input,
+        analyticsContext,
+      );
       if (response?.redirectUrl) {
         window.location.href = response.redirectUrl;
         return;
@@ -67,6 +116,22 @@ export default function PublicMyPagePayV2() {
     } finally {
       setResolving(false);
     }
+  }
+
+  function handleWhatsAppClick(targetUrl = "") {
+    if (!targetUrl) return;
+    void trackMyPageEvent(slug, {
+      eventType: "cta_click",
+      pageKind: "pay",
+      blockKey: "pay_panel",
+      buttonKey: "pay_whatsapp",
+      buttonLabel: "Falar no WhatsApp",
+      buttonType: "whatsapp",
+      contentKind: "button",
+      contentId: "pay_whatsapp",
+      contentLabel: "Falar no WhatsApp",
+    });
+    window.open(targetUrl, "_blank", "noopener,noreferrer");
   }
 
   return (
@@ -129,13 +194,7 @@ export default function PublicMyPagePayV2() {
                     <button
                       type="button"
                       {...getPublicButtonProps(theme, "secondary")}
-                      onClick={() =>
-                        window.open(
-                          whatsappButton.targetUrl,
-                          "_blank",
-                          "noopener,noreferrer",
-                        )
-                      }
+                      onClick={() => handleWhatsAppClick(whatsappButton.targetUrl)}
                     >
                       <MyPageWhatsAppIcon className="h-4 w-4" />
                       Falar no WhatsApp

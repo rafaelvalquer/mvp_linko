@@ -1,7 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useParams } from "react-router-dom";
 import { getPublicMyPage, trackPublicMyPageClick } from "../app/myPageApi.js";
+import {
+  getMyPageAnalyticsContext,
+  rememberMyPageLastTouch,
+  trackMyPageEvent,
+} from "../app/myPagePublicAnalytics.js";
 import {
   cls,
   getMyPageButtonIcon,
@@ -31,6 +36,7 @@ export default function PublicMyPageV2() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [page, setPage] = useState(null);
+  const trackedHomeRef = useRef("");
 
   useEffect(() => {
     let active = true;
@@ -58,15 +64,72 @@ export default function PublicMyPageV2() {
   const buttons = useMemo(() => page?.buttons || [], [page?.buttons]);
   const socialLinks = useMemo(() => page?.socialLinks || [], [page?.socialLinks]);
 
+  useEffect(() => {
+    if (!page?._id) return;
+    const trackKey = `${slug}:${page._id}`;
+    if (trackedHomeRef.current === trackKey) return;
+    trackedHomeRef.current = trackKey;
+
+    void trackMyPageEvent(slug, {
+      eventType: "page_view",
+      pageKind: "home",
+    });
+    void trackMyPageEvent(slug, {
+      eventType: "block_view",
+      pageKind: "home",
+      blockKey: "hero",
+    });
+    if (buttons.length) {
+      void trackMyPageEvent(slug, {
+        eventType: "block_view",
+        pageKind: "home",
+        blockKey: "primary_buttons",
+      });
+    }
+    if (socialLinks.length) {
+      void trackMyPageEvent(slug, {
+        eventType: "block_view",
+        pageKind: "home",
+        blockKey: "secondary_links",
+      });
+    }
+  }, [buttons.length, page?._id, slug, socialLinks.length]);
+
   async function handleButtonClick(button) {
     if (!button?.targetUrl) return;
+    const analyticsContext = getMyPageAnalyticsContext(slug, "home", {
+      blockKey: "primary_buttons",
+      buttonKey: button.id || "",
+      buttonLabel: button.label || "",
+      buttonType: button.type || "",
+      contentKind: "button",
+      contentId: button.id || "",
+      contentLabel: button.label || "",
+    });
+    rememberMyPageLastTouch(slug, analyticsContext);
     try {
       await trackPublicMyPageClick(slug, {
         buttonId: button.id,
         referrer: document.referrer || "",
+        ...analyticsContext,
       });
     } catch {}
     window.location.href = button.targetUrl;
+  }
+
+  function handleSecondaryLinkClick(item, index) {
+    const label = String(item?.label || item?.platform || "Link").trim();
+    void trackMyPageEvent(slug, {
+      eventType: "secondary_link_click",
+      pageKind: "home",
+      blockKey: "secondary_links",
+      buttonKey: item?.id || item?.platform || `secondary_${index}`,
+      buttonLabel: label,
+      buttonType: item?.platform || "link",
+      contentKind: "link",
+      contentId: item?.id || item?.platform || "",
+      contentLabel: label,
+    });
   }
 
   return (
@@ -98,6 +161,7 @@ export default function PublicMyPageV2() {
                   buttons={buttons}
                   socialLinks={socialLinks}
                   onButtonClick={handleButtonClick}
+                  onSecondaryLinkClick={handleSecondaryLinkClick}
                 />
               )}
             </AnimatePresence>
@@ -117,6 +181,7 @@ function HomeContent({
   buttons,
   socialLinks,
   onButtonClick,
+  onSecondaryLinkClick,
 }) {
   return (
     <motion.div
@@ -193,7 +258,11 @@ function HomeContent({
               </motion.div>
 
               <motion.div variants={motionPreset.itemVariants}>
-                <MyPageSecondaryLinks theme={theme} links={socialLinks} />
+                <MyPageSecondaryLinks
+                  theme={theme}
+                  links={socialLinks}
+                  onLinkClick={onSecondaryLinkClick}
+                />
               </motion.div>
             </>
           )}

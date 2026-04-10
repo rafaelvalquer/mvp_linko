@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { Search, ShoppingBag } from "lucide-react";
 import { getPublicMyPageCatalog } from "../app/myPageApi.js";
+import { trackMyPageEvent } from "../app/myPagePublicAnalytics.js";
 import { imageSrc } from "../app/productsApi.js";
 import { Input } from "../components/appui/Input.jsx";
 import {
@@ -30,6 +31,7 @@ export default function PublicMyPageCatalogV2() {
   const [err, setErr] = useState("");
   const [page, setPage] = useState(null);
   const [products, setProducts] = useState([]);
+  const trackedCatalogRef = useRef("");
 
   useEffect(() => {
     let active = true;
@@ -62,6 +64,39 @@ export default function PublicMyPageCatalogV2() {
   );
   const showCatalogPrices = page?.shop?.showPrices !== false;
 
+  useEffect(() => {
+    if (!page?._id) return;
+    const trackKey = `${slug}:${page._id}:${query}`;
+    if (trackedCatalogRef.current === trackKey) return;
+    trackedCatalogRef.current = trackKey;
+
+    void trackMyPageEvent(slug, {
+      eventType: "page_view",
+      pageKind: "catalog",
+    });
+    void trackMyPageEvent(slug, {
+      eventType: "block_view",
+      pageKind: "catalog",
+      blockKey: "catalog_items",
+    });
+  }, [page?._id, query, slug]);
+
+  function handleWhatsAppClick() {
+    if (!whatsappButton?.targetUrl) return;
+    void trackMyPageEvent(slug, {
+      eventType: "cta_click",
+      pageKind: "catalog",
+      blockKey: "catalog_items",
+      buttonKey: whatsappButton.id || "catalog_whatsapp",
+      buttonLabel: whatsappButton.label || "Falar no WhatsApp",
+      buttonType: whatsappButton.type || "whatsapp",
+      contentKind: "button",
+      contentId: whatsappButton.id || "",
+      contentLabel: whatsappButton.label || "Falar no WhatsApp",
+    });
+    window.open(whatsappButton.targetUrl, "_blank", "noopener,noreferrer");
+  }
+
   return (
     <MyPagePublicScreen page={page}>
       {(theme) => (
@@ -80,13 +115,7 @@ export default function PublicMyPageCatalogV2() {
                     <button
                       type="button"
                       {...getPublicButtonProps(theme, "secondary")}
-                      onClick={() =>
-                        window.open(
-                          whatsappButton.targetUrl,
-                          "_blank",
-                          "noopener,noreferrer",
-                        )
-                      }
+                      onClick={handleWhatsAppClick}
                     >
                       <MyPageWhatsAppIcon className="h-4 w-4" />
                       Falar no WhatsApp
@@ -95,6 +124,19 @@ export default function PublicMyPageCatalogV2() {
                   <Link
                     to={`/u/${slug}/quote`}
                     {...getPublicButtonProps(theme, "primary")}
+                    onClick={() =>
+                      void trackMyPageEvent(slug, {
+                        eventType: "cta_click",
+                        pageKind: "catalog",
+                        blockKey: "catalog_items",
+                        buttonKey: "catalog_quote",
+                        buttonLabel: "Pedir orcamento",
+                        buttonType: "public_offer",
+                        contentKind: "button",
+                        contentId: "catalog_quote",
+                        contentLabel: "Pedir orcamento",
+                      })
+                    }
                   >
                     <ShoppingBag className="h-4 w-4" />
                     Pedir orcamento
@@ -206,6 +248,19 @@ export default function PublicMyPageCatalogV2() {
                     <Link
                       to={`/u/${slug}/quote?productId=${encodeURIComponent(product._id || product.productId)}`}
                       {...getPublicButtonProps(theme, "primary")}
+                      onClick={() =>
+                        void trackMyPageEvent(slug, {
+                          eventType: "catalog_item_open",
+                          pageKind: "catalog",
+                          blockKey: "catalog_items",
+                          buttonKey: `product_quote_${product._id || product.productId}`,
+                          buttonLabel: product.name || "Produto",
+                          buttonType: "public_offer",
+                          contentKind: "product",
+                          contentId: product._id || product.productId || "",
+                          contentLabel: product.name || "Produto",
+                        })
+                      }
                     >
                       Orcamento
                     </Link>

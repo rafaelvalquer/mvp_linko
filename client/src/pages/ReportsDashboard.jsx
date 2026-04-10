@@ -375,6 +375,9 @@ export default function ReportsDashboard() {
               <Link to="/reports/feedback">
                 <Button variant="secondary">Satisfação</Button>
               </Link>
+              <Link to="/reports/my-page">
+                <Button variant="secondary">Minha Pagina</Button>
+              </Link>
               <Button variant="secondary" onClick={() => load()} disabled={applying}>
                 {applying ? "Atualizando..." : "Atualizar"}
               </Button>

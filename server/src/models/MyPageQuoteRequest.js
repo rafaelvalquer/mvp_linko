@@ -58,6 +58,10 @@ const MyPageQuoteRequestSchema = new mongoose.Schema(
       type: [QuoteRequestProductSchema],
       default: () => [],
     },
+    analyticsSnapshot: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
     createdOfferId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Offer",

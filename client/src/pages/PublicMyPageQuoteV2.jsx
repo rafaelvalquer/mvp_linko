@@ -1,10 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { CheckCircle2, ShoppingBag } from "lucide-react";
 import {
   getPublicMyPageQuoteContext,
   submitPublicMyPageQuoteRequest,
 } from "../app/myPageApi.js";
+import {
+  buildMyPageConversionContext,
+  trackMyPageEvent,
+} from "../app/myPagePublicAnalytics.js";
 import { Input, Textarea } from "../components/appui/Input.jsx";
 import {
   cls,
@@ -38,6 +42,7 @@ export default function PublicMyPageQuoteV2() {
   const [products, setProducts] = useState([]);
   const [selectedIds, setSelectedIds] = useState([]);
   const [requestType, setRequestType] = useState("service");
+  const trackedQuoteRef = useRef("");
   const [form, setForm] = useState({
     customerName: "",
     customerWhatsApp: "",
@@ -81,6 +86,28 @@ export default function PublicMyPageQuoteV2() {
     (button) => button.type === "whatsapp",
   );
 
+  useEffect(() => {
+    if (!page?._id) return;
+    const trackKey = `${slug}:${page._id}:${productIdsKey}`;
+    if (trackedQuoteRef.current === trackKey) return;
+    trackedQuoteRef.current = trackKey;
+
+    void trackMyPageEvent(slug, {
+      eventType: "page_view",
+      pageKind: "quote",
+    });
+    void trackMyPageEvent(slug, {
+      eventType: "quote_form_view",
+      pageKind: "quote",
+      blockKey: "quote_form",
+    });
+    void trackMyPageEvent(slug, {
+      eventType: "block_view",
+      pageKind: "quote",
+      blockKey: "quote_form",
+    });
+  }, [page?._id, productIdsKey, slug]);
+
   const selectedProducts = useMemo(
     () =>
       products.filter((product) =>
@@ -95,6 +122,17 @@ export default function PublicMyPageQuoteV2() {
       prev.includes(key) ? prev.filter((item) => item !== key) : [...prev, key],
     );
     setRequestType("product");
+    void trackMyPageEvent(slug, {
+      eventType: "catalog_item_open",
+      pageKind: "quote",
+      blockKey: "quote_form",
+      contentKind: "product",
+      contentId: key,
+      contentLabel: product?.name || "Produto",
+      buttonKey: `quote_product_${key}`,
+      buttonLabel: product?.name || "Produto",
+      buttonType: "product",
+    });
   }
 
   async function handleSubmit(event) {
@@ -102,10 +140,40 @@ export default function PublicMyPageQuoteV2() {
     try {
       setSubmitting(true);
       setErr("");
+      void trackMyPageEvent(slug, {
+        eventType: "cta_click",
+        pageKind: "quote",
+        blockKey: "quote_form",
+        buttonKey: "quote_submit",
+        buttonLabel: "Enviar pedido",
+        buttonType: "public_offer",
+        contentKind: requestType,
+        contentLabel:
+          requestType === "product"
+            ? selectedProducts.length === 1
+              ? selectedProducts[0]?.name || "Produto selecionado"
+              : selectedProducts.length > 1
+                ? "Produtos selecionados"
+                : "Pedido de produto"
+            : page?.title || "Pedido de servico",
+      });
+      const analyticsContext = buildMyPageConversionContext(slug, "quote", {
+        blockKey: "quote_form",
+        contentKind: requestType,
+        contentLabel:
+          requestType === "product"
+            ? selectedProducts.length === 1
+              ? selectedProducts[0]?.name || "Produto selecionado"
+              : selectedProducts.length > 1
+                ? "Produtos selecionados"
+                : "Pedido de produto"
+            : page?.title || "Pedido de servico",
+      });
       const response = await submitPublicMyPageQuoteRequest(slug, {
         ...form,
         requestType,
         selectedProductIds: selectedIds,
+        analyticsContext,
       });
       setSuccess({
         request: response?.request || null,
@@ -116,6 +184,22 @@ export default function PublicMyPageQuoteV2() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function handleWhatsAppClick(targetUrl = "", label = "Falar no WhatsApp") {
+    if (!targetUrl) return;
+    void trackMyPageEvent(slug, {
+      eventType: "cta_click",
+      pageKind: success ? "quote" : "quote",
+      blockKey: "quote_form",
+      buttonKey: "quote_whatsapp",
+      buttonLabel: label,
+      buttonType: "whatsapp",
+      contentKind: "button",
+      contentId: "quote_whatsapp",
+      contentLabel: label,
+    });
+    window.open(targetUrl, "_blank", "noopener,noreferrer");
   }
 
   if (success) {
@@ -151,13 +235,7 @@ export default function PublicMyPageQuoteV2() {
                   <button
                     type="button"
                     {...getPublicButtonProps(theme, "primary")}
-                    onClick={() =>
-                      window.open(
-                        success.whatsappUrl,
-                        "_blank",
-                        "noopener,noreferrer",
-                      )
-                    }
+                    onClick={() => handleWhatsAppClick(success.whatsappUrl)}
                   >
                     <MyPageWhatsAppIcon className="h-4 w-4" />
                     Falar no WhatsApp
@@ -187,13 +265,7 @@ export default function PublicMyPageQuoteV2() {
                   <button
                     type="button"
                     {...getPublicButtonProps(theme, "secondary")}
-                    onClick={() =>
-                      window.open(
-                        whatsappButton.targetUrl,
-                        "_blank",
-                        "noopener,noreferrer",
-                      )
-                    }
+                    onClick={() => handleWhatsAppClick(whatsappButton.targetUrl)}
                   >
                     <MyPageWhatsAppIcon className="h-4 w-4" />
                     Falar no WhatsApp

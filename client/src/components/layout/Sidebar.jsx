@@ -832,8 +832,8 @@ export default function Sidebar({
                 className={`overflow-hidden transition-all duration-300 ease-out ${
                   !collapsed && isReportsOpen
                     ? canUseRecurringFeatures
-                      ? "mt-1 max-h-48 opacity-100"
-                      : "mt-1 max-h-32 opacity-100"
+                      ? "mt-1 max-h-64 opacity-100"
+                      : "mt-1 max-h-48 opacity-100"
                     : "mt-0 max-h-0 opacity-0"
                 }`}
               >
@@ -857,6 +857,16 @@ export default function Sidebar({
                     onNavigate={onNavigate}
                   >
                     Satisfação
+                  </SidebarItem>
+
+                  <SidebarItem
+                    to="/reports/my-page"
+                    collapsed={collapsed}
+                    indent
+                    isDark={isDark}
+                    onNavigate={onNavigate}
+                  >
+                    Minha Pagina
                   </SidebarItem>
 
                   {canUseRecurringFeatures ? (

@@ -15,6 +15,7 @@ import Booking from "../../models/Booking.js";
 import { MyPage } from "../../models/MyPage.js";
 import { MyPageClick } from "../../models/MyPageClick.js";
 import { MyPageQuoteRequest } from "../../models/MyPageQuoteRequest.js";
+import { MyPageAnalyticsEvent } from "../../models/MyPageAnalyticsEvent.js";
 import { UserAutomation } from "../../models/UserAutomation.js";
 import { WhatsAppOutbox } from "../../models/WhatsAppOutbox.js";
 import { MessageLog } from "../../models/MessageLog.js";
@@ -306,6 +307,16 @@ export async function deleteWorkspaceAccountForAdmin(workspaceId) {
       { workspaceId },
       myPageIds.length ? { pageId: { $in: myPageIds } } : null,
       userIds.length ? { ownerUserId: { $in: userIds } } : null,
+    ]),
+  );
+
+  deletedCounts.myPageAnalyticsEvents = await deleteManyWithCount(
+    MyPageAnalyticsEvent,
+    buildOrQuery([
+      { workspaceId },
+      myPageIds.length ? { pageId: { $in: myPageIds } } : null,
+      userIds.length ? { ownerUserId: { $in: userIds } } : null,
+      offerIds.length ? { offerId: { $in: offerIds } } : null,
     ]),
   );
 

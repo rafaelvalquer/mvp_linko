@@ -1,5 +1,6 @@
 // src/app/api.js
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8011/api";
+export const API_BASE =
+  import.meta.env.VITE_API_BASE || "http://localhost:8011/api";
 
 // cache em memória para GET (opcional) – útil se algum endpoint insistir em 304
 const _memCache = new Map();
