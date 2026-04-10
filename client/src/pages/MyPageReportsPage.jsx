@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ComposableMap,
@@ -599,6 +599,81 @@ function GeoPieTooltip({ active, payload }) {
   );
 }
 
+function GeoHoverTooltip({ item, mode, position }) {
+  const { isDark } = useThemeToggle();
+  if (!item || !position) return null;
+  const tooltipWidth = 208;
+  const tooltipHeight = 124;
+  const offsetX = 14;
+  const offsetY = 14;
+  const containerWidth = Number(position.containerWidth || 0);
+  const containerHeight = Number(position.containerHeight || 0);
+  const cursorX = Number(position.x || 0);
+  const cursorY = Number(position.y || 0);
+  const maxLeft = Math.max(12, containerWidth - tooltipWidth - 12);
+  const maxTop = Math.max(12, containerHeight - tooltipHeight - 12);
+  const preferredRightLeft = cursorX + offsetX;
+  const preferredLeftLeft = cursorX - tooltipWidth - offsetX;
+  const preferredTop = cursorY - tooltipHeight - offsetY;
+  const preferredBottom = cursorY + offsetY;
+  const left =
+    preferredRightLeft <= maxLeft
+      ? Math.max(12, preferredRightLeft)
+      : Math.max(12, Math.min(maxLeft, preferredLeftLeft));
+  const top =
+    preferredTop >= 12
+      ? preferredTop
+      : Math.max(12, Math.min(maxTop, preferredBottom));
+
+  const title =
+    mode === "world"
+      ? item.countryName || item.countryCode || "Desconhecido"
+      : getStateDisplayName(item.state);
+
+  return (
+    <div
+      className={[
+        "pointer-events-none absolute z-20 w-52 rounded-[20px] border px-3 py-3 text-xs shadow-xl",
+        isDark
+          ? "border-white/10 bg-slate-950/96 text-slate-100"
+          : "border-slate-200 bg-white/96 text-slate-700",
+      ].join(" ")}
+      style={{
+        left,
+        top,
+      }}
+    >
+      <div className="font-semibold text-slate-950 dark:text-white">{title}</div>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+            Visitas
+          </div>
+          <div className="mt-1 font-bold">{number(item.visits)}</div>
+        </div>
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+            Cliques
+          </div>
+          <div className="mt-1 font-bold">{number(item.clicks)}</div>
+        </div>
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+            Leads
+          </div>
+          <div className="mt-1 font-bold">{number(item.leads)}</div>
+        </div>
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+            Vendas
+          </div>
+          <div className="mt-1 font-bold">{number(item.sales)}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function GeoMiniList({
   title,
   subtitle,
@@ -683,15 +758,16 @@ function GeographyMap({
   coverageStartedAt = null,
 }) {
   const { isDark } = useThemeToggle();
+  const mapContainerRef = useRef(null);
   const [mode, setMode] = useState("world");
   const [selectedCountryKey, setSelectedCountryKey] = useState("");
   const [selectedStateKey, setSelectedStateKey] = useState("");
-  const [hoveredItem, setHoveredItem] = useState(null);
+  const [hoveredGeoMeta, setHoveredGeoMeta] = useState(null);
 
   useEffect(() => {
     setSelectedCountryKey("");
     setSelectedStateKey("");
-    setHoveredItem(null);
+    setHoveredGeoMeta(null);
   }, [mode]);
 
   const countryMap = useMemo(
@@ -788,10 +864,7 @@ function GeographyMap({
     [activeMapRows],
   );
 
-  const insightItem =
-    hoveredItem ||
-    (mode === "world" ? selectedCountry : selectedState) ||
-    null;
+  const insightItem = mode === "world" ? selectedCountry : selectedState;
   const geoTitle = mode === "world" ? "Mapa mundi" : "Brasil por estado";
   const geoSubtitle =
     mode === "world"
@@ -804,6 +877,19 @@ function GeographyMap({
     mode === "world"
       ? "Paises com maior volume recente."
       : "Estados brasileiros com maior volume recente.";
+
+  function buildHoverPosition(event, item) {
+    const container = mapContainerRef.current;
+    if (!item || !container) return null;
+    const rect = container.getBoundingClientRect();
+    return {
+      item,
+      x: Number(event?.clientX || 0) - rect.left,
+      y: Number(event?.clientY || 0) - rect.top,
+      containerWidth: rect.width,
+      containerHeight: rect.height,
+    };
+  }
 
   return (
     <Card className="rounded-[24px]">
@@ -875,95 +961,109 @@ function GeographyMap({
                     onClick={() => {
                       setSelectedCountryKey("");
                       setSelectedStateKey("");
-                      setHoveredItem(null);
+                      setHoveredGeoMeta(null);
                     }}
                   >
                     Limpar foco
                   </Button>
                 )}
               </div>
-              <ComposableMap
-                projection={mode === "world" ? undefined : "geoMercator"}
-                projectionConfig={
-                  mode === "world"
-                    ? { scale: 150 }
-                    : {
-                        scale: 620,
-                        center: [-54, -15],
-                      }
-                }
-                className="h-[360px] w-full"
-              >
-                <Geographies geography={mode === "world" ? GEO_URL : BRAZIL_GEO_URL}>
-                  {({ geographies }) =>
-                    geographies.map((geo) => {
-                      const geoName =
-                        geo?.properties?.name ||
-                        geo?.properties?.NAME ||
-                        geo?.properties?.admin ||
-                        "";
-                      const item =
-                        mode === "world"
-                          ? countryMap.get(normalizeCountryName(geoName))
-                          : stateMap.get(normalizeStateName(geoName));
-                      const isSelected =
-                        mode === "world"
-                          ? selectedCountryKey &&
-                            selectedCountryKey === normalizeCountryName(geoName)
-                          : selectedStateKey &&
-                            selectedStateKey === normalizeStateName(geoName);
-                      return (
-                        <Geography
-                          key={geo.rsmKey}
-                          geography={geo}
-                          onMouseEnter={() => setHoveredItem(item || null)}
-                          onMouseLeave={() => setHoveredItem(null)}
-                          onClick={() => {
-                            if (!item) return;
-                            if (mode === "world") {
-                              const nextKey = normalizeCountryName(
-                                item.countryName || item.countryCode || geoName,
-                              );
-                              setSelectedCountryKey((current) =>
+              <div ref={mapContainerRef} className="relative">
+                <ComposableMap
+                  projection={mode === "world" ? undefined : "geoMercator"}
+                  projectionConfig={
+                    mode === "world"
+                      ? { scale: 150 }
+                      : {
+                          scale: 620,
+                          center: [-54, -15],
+                        }
+                  }
+                  className="h-[360px] w-full"
+                >
+                  <Geographies geography={mode === "world" ? GEO_URL : BRAZIL_GEO_URL}>
+                    {({ geographies }) =>
+                      geographies.map((geo) => {
+                        const geoName =
+                          geo?.properties?.name ||
+                          geo?.properties?.NAME ||
+                          geo?.properties?.admin ||
+                          "";
+                        const item =
+                          mode === "world"
+                            ? countryMap.get(normalizeCountryName(geoName))
+                            : stateMap.get(normalizeStateName(geoName));
+                        const isSelected =
+                          mode === "world"
+                            ? selectedCountryKey &&
+                              selectedCountryKey === normalizeCountryName(geoName)
+                            : selectedStateKey &&
+                              selectedStateKey === normalizeStateName(geoName);
+                        return (
+                          <Geography
+                            key={geo.rsmKey}
+                            geography={geo}
+                            onMouseEnter={(event) => {
+                              if (!item) return;
+                              setHoveredGeoMeta(buildHoverPosition(event, item));
+                            }}
+                            onMouseMove={(event) => {
+                              if (!item) return;
+                              setHoveredGeoMeta(buildHoverPosition(event, item));
+                            }}
+                            onMouseLeave={() => setHoveredGeoMeta(null)}
+                            onClick={() => {
+                              if (!item) return;
+                              if (mode === "world") {
+                                const nextKey = normalizeCountryName(
+                                  item.countryName || item.countryCode || geoName,
+                                );
+                                setSelectedCountryKey((current) =>
+                                  current === nextKey ? "" : nextKey,
+                                );
+                                return;
+                              }
+                              const nextKey = normalizeStateName(item.state || geoName);
+                              setSelectedStateKey((current) =>
                                 current === nextKey ? "" : nextKey,
                               );
-                              return;
-                            }
-                            const nextKey = normalizeStateName(item.state || geoName);
-                            setSelectedStateKey((current) =>
-                              current === nextKey ? "" : nextKey,
-                            );
-                          }}
-                          style={{
-                            default: {
-                              fill: isSelected
-                                ? isDark
-                                  ? "rgba(125,211,252,0.82)"
-                                  : "#0EA5E9"
-                                : getCountryFill(item?.clicks, maxClicks, isDark),
-                              stroke: isDark ? "rgba(255,255,255,0.1)" : "#CBD5E1",
-                              strokeWidth: isSelected ? 1.2 : 0.6,
-                              outline: "none",
-                              cursor: item ? "pointer" : "default",
-                            },
-                            hover: {
-                              fill: isDark ? "rgba(56,189,248,0.72)" : "#38BDF8",
-                              stroke: isDark ? "rgba(255,255,255,0.16)" : "#94A3B8",
-                              strokeWidth: 0.9,
-                              outline: "none",
-                              cursor: item ? "pointer" : "default",
-                            },
-                            pressed: {
-                              fill: isDark ? "rgba(56,189,248,0.82)" : "#0EA5E9",
-                              outline: "none",
-                            },
-                          }}
-                        />
-                      );
-                    })
-                  }
-                </Geographies>
-              </ComposableMap>
+                            }}
+                            style={{
+                              default: {
+                                fill: isSelected
+                                  ? isDark
+                                    ? "rgba(125,211,252,0.82)"
+                                    : "#0EA5E9"
+                                  : getCountryFill(item?.clicks, maxClicks, isDark),
+                                stroke: isDark ? "rgba(255,255,255,0.1)" : "#CBD5E1",
+                                strokeWidth: isSelected ? 1.2 : 0.6,
+                                outline: "none",
+                                cursor: item ? "pointer" : "default",
+                              },
+                              hover: {
+                                fill: isDark ? "rgba(56,189,248,0.72)" : "#38BDF8",
+                                stroke: isDark ? "rgba(255,255,255,0.16)" : "#94A3B8",
+                                strokeWidth: 0.9,
+                                outline: "none",
+                                cursor: item ? "pointer" : "default",
+                              },
+                              pressed: {
+                                fill: isDark ? "rgba(56,189,248,0.82)" : "#0EA5E9",
+                                outline: "none",
+                              },
+                            }}
+                          />
+                        );
+                      })
+                    }
+                  </Geographies>
+                </ComposableMap>
+                <GeoHoverTooltip
+                  item={hoveredGeoMeta?.item || null}
+                  mode={mode}
+                  position={hoveredGeoMeta}
+                />
+              </div>
             </div>
 
             <div className="space-y-5">
@@ -1016,8 +1116,8 @@ function GeographyMap({
                 ) : (
                   <div className="mt-4 text-sm text-slate-500 dark:text-slate-400">
                     {mode === "world"
-                      ? "Passe o mouse ou clique em um pais para ver detalhes."
-                      : "Passe o mouse ou clique em um estado para aprofundar a leitura."}
+                      ? "Clique em um pais para fixar o contexto e ver detalhes."
+                      : "Clique em um estado para fixar o contexto e aprofundar a leitura."}
                   </div>
                 )}
               </div>

@@ -1282,9 +1282,8 @@ export async function buildMyPageAnalyticsReport({
     funnelIntentSessions,
     funnelMidSessions,
     deviceSessionRows,
-    countryVisitRows,
+    visitGeoRows,
     countryClickRows,
-    stateVisitRows,
     stateClickRows,
     cityClickRows,
   ] = await Promise.all([
@@ -1486,15 +1485,7 @@ export async function buildMyPageAnalyticsReport({
           _id: "$sessionId",
           countryCode: { $first: "$countryCode" },
           countryName: { $first: "$countryName" },
-        },
-      },
-      {
-        $group: {
-          _id: {
-            countryCode: "$countryCode",
-            countryName: "$countryName",
-          },
-          visits: { $sum: 1 },
+          region: { $first: "$region" },
         },
       },
     ]),
@@ -1510,33 +1501,6 @@ export async function buildMyPageAnalyticsReport({
         $group: {
           _id: { countryCode: "$countryCode", countryName: "$countryName" },
           clicks: { $sum: 1 },
-        },
-      },
-    ]),
-    MyPageAnalyticsEvent.aggregate([
-      {
-        $match: {
-          ...scopedMatch,
-          sessionId: { $ne: "" },
-          countryCode: "BR",
-          region: { $ne: "" },
-        },
-      },
-      { $sort: { eventAt: -1 } },
-      {
-        $group: {
-          _id: "$sessionId",
-          region: { $first: "$region" },
-          countryCode: { $first: "$countryCode" },
-        },
-      },
-      {
-        $group: {
-          _id: {
-            state: "$region",
-            countryCode: "$countryCode",
-          },
-          visits: { $sum: 1 },
         },
       },
     ]),
@@ -1993,16 +1957,36 @@ export async function buildMyPageAnalyticsReport({
   });
 
   const countryMap = new Map();
-  for (const row of countryVisitRows || []) {
-    const key = String(row?._id?.countryCode || "unknown");
-    countryMap.set(key, {
+  const stateMap = new Map();
+  for (const row of visitGeoRows || []) {
+    const key = String(row?.countryCode || "unknown");
+    const currentCountry = countryMap.get(key) || {
       countryCode: key,
-      countryName: row?._id?.countryName || "Desconhecido",
-      visits: Number(row?.visits || 0),
+      countryName: row?.countryName || "Desconhecido",
+      visits: 0,
       clicks: 0,
       leads: 0,
       sales: 0,
-    });
+    };
+    currentCountry.visits += 1;
+    if (!currentCountry.countryName && row?.countryName) {
+      currentCountry.countryName = row.countryName;
+    }
+    countryMap.set(key, currentCountry);
+
+    if (key !== "BR") continue;
+    const state = clampText(row?.region, 120);
+    if (!state) continue;
+    const currentState = stateMap.get(state) || {
+      state,
+      countryCode: "BR",
+      visits: 0,
+      clicks: 0,
+      leads: 0,
+      sales: 0,
+    };
+    currentState.visits += 1;
+    stateMap.set(state, currentState);
   }
   for (const row of countryClickRows || []) {
     const key = String(row?._id?.countryCode || "unknown");
@@ -2066,20 +2050,6 @@ export async function buildMyPageAnalyticsReport({
   const countries = Array.from(countryMap.values())
     .sort((a, b) => b.clicks - a.clicks || b.visits - a.visits)
     .slice(0, 60);
-
-  const stateMap = new Map();
-  for (const row of stateVisitRows || []) {
-    const state = clampText(row?._id?.state, 120);
-    if (!state) continue;
-    stateMap.set(state, {
-      state,
-      countryCode: row?._id?.countryCode || "BR",
-      visits: Number(row?.visits || 0),
-      clicks: 0,
-      leads: 0,
-      sales: 0,
-    });
-  }
   for (const row of stateClickRows || []) {
     const state = clampText(row?._id?.state, 120);
     if (!state) continue;
