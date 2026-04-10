@@ -1227,7 +1227,14 @@ export async function buildMyPageAnalyticsReport({
       topProducts: [],
       topPages: [],
       funnel: [],
-      geography: { countries: [], cities: [] },
+      deviceBreakdown: {
+        totalSessions: 0,
+        desktop: 0,
+        mobile: 0,
+        tablet: 0,
+        other: 0,
+      },
+      geography: { countries: [], states: [], cities: [] },
       notices: [getCoverageNotice(null)],
       coverage: { startedAt: null },
     };
@@ -1274,8 +1281,11 @@ export async function buildMyPageAnalyticsReport({
     funnelClickSessions,
     funnelIntentSessions,
     funnelMidSessions,
+    deviceSessionRows,
     countryVisitRows,
     countryClickRows,
+    stateVisitRows,
+    stateClickRows,
     cityClickRows,
   ] = await Promise.all([
     MyPageAnalyticsEvent.distinct("sessionId", {
@@ -1444,6 +1454,28 @@ export async function buildMyPageAnalyticsReport({
       {
         $match: {
           ...scopedMatch,
+          eventType: "page_view",
+          sessionId: { $ne: "" },
+        },
+      },
+      { $sort: { eventAt: -1 } },
+      {
+        $group: {
+          _id: "$sessionId",
+          deviceType: { $first: "$deviceType" },
+        },
+      },
+      {
+        $group: {
+          _id: "$deviceType",
+          sessions: { $sum: 1 },
+        },
+      },
+    ]),
+    MyPageAnalyticsEvent.aggregate([
+      {
+        $match: {
+          ...scopedMatch,
           sessionId: { $ne: "" },
           countryCode: { $nin: ["", "unknown"] },
         },
@@ -1477,6 +1509,49 @@ export async function buildMyPageAnalyticsReport({
       {
         $group: {
           _id: { countryCode: "$countryCode", countryName: "$countryName" },
+          clicks: { $sum: 1 },
+        },
+      },
+    ]),
+    MyPageAnalyticsEvent.aggregate([
+      {
+        $match: {
+          ...scopedMatch,
+          sessionId: { $ne: "" },
+          countryCode: "BR",
+          region: { $ne: "" },
+        },
+      },
+      { $sort: { eventAt: -1 } },
+      {
+        $group: {
+          _id: "$sessionId",
+          region: { $first: "$region" },
+          countryCode: { $first: "$countryCode" },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            state: "$region",
+            countryCode: "$countryCode",
+          },
+          visits: { $sum: 1 },
+        },
+      },
+    ]),
+    MyPageAnalyticsEvent.aggregate([
+      {
+        $match: {
+          ...scopedMatch,
+          eventType: { $in: CLICK_EVENT_TYPES },
+          countryCode: "BR",
+          region: { $ne: "" },
+        },
+      },
+      {
+        $group: {
+          _id: { state: "$region", countryCode: "$countryCode" },
           clicks: { $sum: 1 },
         },
       },
@@ -1616,6 +1691,22 @@ export async function buildMyPageAnalyticsReport({
     sales: sourceSaleMap.get(sourceBucket) || 0,
     revenueCents: sourceRevenueMap.get(sourceBucket) || 0,
   }));
+
+  const deviceBreakdown = {
+    totalSessions: visitSessions.length,
+    desktop: 0,
+    mobile: 0,
+    tablet: 0,
+    other: 0,
+  };
+  for (const row of deviceSessionRows || []) {
+    const key = ["desktop", "mobile", "tablet", "other"].includes(
+      String(row?._id || ""),
+    )
+      ? String(row?._id || "")
+      : "other";
+    deviceBreakdown[key] += Number(row?.sessions || 0);
+  }
 
   const topButtons = (topButtonsRows || []).map((row) => ({
     buttonKey: row?._id?.buttonKey || "",
@@ -1976,6 +2067,83 @@ export async function buildMyPageAnalyticsReport({
     .sort((a, b) => b.clicks - a.clicks || b.visits - a.visits)
     .slice(0, 60);
 
+  const stateMap = new Map();
+  for (const row of stateVisitRows || []) {
+    const state = clampText(row?._id?.state, 120);
+    if (!state) continue;
+    stateMap.set(state, {
+      state,
+      countryCode: row?._id?.countryCode || "BR",
+      visits: Number(row?.visits || 0),
+      clicks: 0,
+      leads: 0,
+      sales: 0,
+    });
+  }
+  for (const row of stateClickRows || []) {
+    const state = clampText(row?._id?.state, 120);
+    if (!state) continue;
+    const current = stateMap.get(state) || {
+      state,
+      countryCode: row?._id?.countryCode || "BR",
+      visits: 0,
+      clicks: 0,
+      leads: 0,
+      sales: 0,
+    };
+    current.clicks = Number(row?.clicks || 0);
+    stateMap.set(state, current);
+  }
+  for (const request of quoteRequestsForRange) {
+    if (!hasDetailedSnapshot(request?.analyticsSnapshot)) continue;
+    const snapshot = toAttributionSnapshot(request?.analyticsSnapshot);
+    if (snapshot.countryCode !== "BR" || !snapshot.region) continue;
+    const current = stateMap.get(snapshot.region) || {
+      state: snapshot.region,
+      countryCode: "BR",
+      visits: 0,
+      clicks: 0,
+      leads: 0,
+      sales: 0,
+    };
+    current.leads += 1;
+    stateMap.set(snapshot.region, current);
+  }
+  for (const booking of bookingsForRange) {
+    if (!hasDetailedSnapshot(booking?.analyticsSnapshot)) continue;
+    const snapshot = toAttributionSnapshot(booking?.analyticsSnapshot);
+    if (snapshot.countryCode !== "BR" || !snapshot.region) continue;
+    const current = stateMap.get(snapshot.region) || {
+      state: snapshot.region,
+      countryCode: "BR",
+      visits: 0,
+      clicks: 0,
+      leads: 0,
+      sales: 0,
+    };
+    current.leads += 1;
+    stateMap.set(snapshot.region, current);
+  }
+  for (const item of paidOffers) {
+    if (!hasDetailedSnapshot(item?.snapshot)) continue;
+    const snapshot = item?.snapshot || {};
+    if (snapshot.countryCode !== "BR" || !snapshot.region) continue;
+    const current = stateMap.get(snapshot.region) || {
+      state: snapshot.region,
+      countryCode: "BR",
+      visits: 0,
+      clicks: 0,
+      leads: 0,
+      sales: 0,
+    };
+    current.sales += 1;
+    stateMap.set(snapshot.region, current);
+  }
+
+  const states = Array.from(stateMap.values())
+    .sort((a, b) => b.clicks - a.clicks || b.visits - a.visits)
+    .slice(0, 40);
+
   const cities = (cityClickRows || [])
     .map((row) => ({
       city: row?._id?.city || "",
@@ -2001,7 +2169,8 @@ export async function buildMyPageAnalyticsReport({
     topProducts,
     topPages,
     funnel,
-    geography: { countries, cities },
+    deviceBreakdown,
+    geography: { countries, states, cities },
     notices: [getCoverageNotice(detailedTrackingStartedAt)],
     coverage: { startedAt: detailedTrackingStartedAt },
   };

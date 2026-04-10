@@ -7,6 +7,7 @@ import {
 } from "../app/myPageApi.js";
 import {
   buildMyPageConversionContext,
+  scheduleMyPageBrowserGeo,
   trackMyPageEvent,
 } from "../app/myPagePublicAnalytics.js";
 import { Input } from "../components/appui/Input.jsx";
@@ -76,6 +77,11 @@ export default function PublicMyPagePayV2() {
       pageKind: "pay",
       blockKey: "pay_panel",
     });
+  }, [page?._id, slug]);
+
+  useEffect(() => {
+    if (!page?._id) return undefined;
+    return scheduleMyPageBrowserGeo(slug, "pay");
   }, [page?._id, slug]);
 
   async function handleResolve(event) {

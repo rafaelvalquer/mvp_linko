@@ -22,6 +22,7 @@ const TOUCH_EVENT_TYPES = new Set([
   "slot_select",
 ]);
 const browserGeoRequestMap = new Map();
+const browserGeoPrimeMap = new Map();
 
 function nowMs() {
   return Date.now();
@@ -244,13 +245,8 @@ export function getMyPageAnalyticsContext(slug, pageKind = "home", extras = {}) 
   const utm = getCurrentUtmData();
   const currentExtras =
     extras && typeof extras === "object" ? { ...extras } : {};
-  const skipBrowserGeoEnsure = currentExtras.__skipBrowserGeoEnsure === true;
   delete currentExtras.__skipBrowserGeoEnsure;
   const browserGeo = readBrowserGeoRecord(slug, session.id);
-
-  if (!skipBrowserGeoEnsure) {
-    void ensureMyPageBrowserGeo(slug, pageKind);
-  }
 
   return {
     visitorId: visitor.id,
@@ -399,66 +395,84 @@ export function ensureMyPageBrowserGeo(slug, pageKind = "home") {
 
   const promise = new Promise((resolve) => {
     const startLookup = () => {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const capturedAt = new Date().toISOString();
-          void syncBrowserGeoEvent(
-            slug,
-            pageKind,
-            {
-              browserGeoStatus: "granted",
-              browserGeoCapturedAt: capturedAt,
-              browserGeoLat: Number(position?.coords?.latitude),
-              browserGeoLng: Number(position?.coords?.longitude),
-            },
-            session.id,
-          ).then(resolve);
-        },
-        (error) => {
-          const status = getBrowserGeoErrorStatus(error);
-          const capturedAt = new Date().toISOString();
-          void syncBrowserGeoEvent(
-            slug,
-            pageKind,
-            {
-              browserGeoStatus: status,
-              browserGeoCapturedAt: capturedAt,
-            },
-            session.id,
-          ).then(resolve);
-        },
-        {
-          enableHighAccuracy: false,
-          timeout: BROWSER_GEO_TIMEOUT_MS,
-          maximumAge: 0,
-        },
-      );
-    };
-
-    if (
-      navigator.permissions &&
-      typeof navigator.permissions.query === "function"
-    ) {
-      navigator.permissions
-        .query({ name: "geolocation" })
-        .then((result) => {
-          const state = String(result?.state || "").trim().toLowerCase();
-          if (state === "denied") {
+      try {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
             const capturedAt = new Date().toISOString();
             void syncBrowserGeoEvent(
               slug,
               pageKind,
               {
-                browserGeoStatus: "denied",
+                browserGeoStatus: "granted",
+                browserGeoCapturedAt: capturedAt,
+                browserGeoLat: Number(position?.coords?.latitude),
+                browserGeoLng: Number(position?.coords?.longitude),
+              },
+              session.id,
+            ).then(resolve);
+          },
+          (error) => {
+            const status = getBrowserGeoErrorStatus(error);
+            const capturedAt = new Date().toISOString();
+            void syncBrowserGeoEvent(
+              slug,
+              pageKind,
+              {
+                browserGeoStatus: status,
                 browserGeoCapturedAt: capturedAt,
               },
               session.id,
             ).then(resolve);
-            return;
-          }
-          startLookup();
-        })
-        .catch(startLookup);
+          },
+          {
+            enableHighAccuracy: false,
+            timeout: BROWSER_GEO_TIMEOUT_MS,
+            maximumAge: 0,
+          },
+        );
+      } catch {
+        const capturedAt = new Date().toISOString();
+        void syncBrowserGeoEvent(
+          slug,
+          pageKind,
+          {
+            browserGeoStatus: "error",
+            browserGeoCapturedAt: capturedAt,
+          },
+          session.id,
+        ).then(resolve);
+      }
+    };
+
+    try {
+      if (
+        navigator.permissions &&
+        typeof navigator.permissions.query === "function"
+      ) {
+        navigator.permissions
+          .query({ name: "geolocation" })
+          .then((result) => {
+            const state = String(result?.state || "").trim().toLowerCase();
+            if (state === "denied") {
+              const capturedAt = new Date().toISOString();
+              void syncBrowserGeoEvent(
+                slug,
+                pageKind,
+                {
+                  browserGeoStatus: "denied",
+                  browserGeoCapturedAt: capturedAt,
+                },
+                session.id,
+              ).then(resolve);
+              return;
+            }
+            startLookup();
+          })
+          .catch(startLookup);
+        return;
+      }
+    } catch {
+      startLookup();
       return;
     }
 
@@ -469,6 +483,51 @@ export function ensureMyPageBrowserGeo(slug, pageKind = "home") {
 
   browserGeoRequestMap.set(requestKey, promise);
   return promise;
+}
+
+export function scheduleMyPageBrowserGeo(
+  slug,
+  pageKind = "home",
+  delayMs = 650,
+) {
+  if (typeof window === "undefined") return () => {};
+  const key = `${String(slug || "").trim().toLowerCase()}:${String(pageKind || "home").trim().toLowerCase()}`;
+  if (browserGeoPrimeMap.has(key)) {
+    return browserGeoPrimeMap.get(key);
+  }
+
+  let cancelled = false;
+  let timeoutId = 0;
+  let idleId = 0;
+
+  const start = () => {
+    if (cancelled) return;
+    browserGeoPrimeMap.delete(key);
+    void ensureMyPageBrowserGeo(slug, pageKind);
+  };
+
+  const clear = () => {
+    cancelled = true;
+    if (timeoutId) window.clearTimeout(timeoutId);
+    if (idleId && typeof window.cancelIdleCallback === "function") {
+      window.cancelIdleCallback(idleId);
+    }
+    browserGeoPrimeMap.delete(key);
+  };
+
+  if (typeof window.requestIdleCallback === "function") {
+    idleId = window.requestIdleCallback(
+      () => {
+        timeoutId = window.setTimeout(start, delayMs);
+      },
+      { timeout: Math.max(delayMs, 1200) },
+    );
+  } else {
+    timeoutId = window.setTimeout(start, delayMs);
+  }
+
+  browserGeoPrimeMap.set(key, clear);
+  return clear;
 }
 
 export async function trackMyPageEvent(slug, payload = {}) {

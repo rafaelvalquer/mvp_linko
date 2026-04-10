@@ -8,6 +8,7 @@ import {
 } from "../app/myPageApi.js";
 import {
   buildMyPageConversionContext,
+  scheduleMyPageBrowserGeo,
   trackMyPageEvent,
 } from "../app/myPagePublicAnalytics.js";
 import { Input } from "../components/appui/Input.jsx";
@@ -245,6 +246,11 @@ export default function PublicMyPageScheduleV2() {
       pageKind: "schedule",
       blockKey: "schedule_slots",
     });
+  }, [page?._id, slug]);
+
+  useEffect(() => {
+    if (!page?._id) return undefined;
+    return scheduleMyPageBrowserGeo(slug, "schedule");
   }, [page?._id, slug]);
 
   function openDatePicker() {

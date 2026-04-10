@@ -5,6 +5,7 @@ import { getPublicMyPage, trackPublicMyPageClick } from "../app/myPageApi.js";
 import {
   getMyPageAnalyticsContext,
   rememberMyPageLastTouch,
+  scheduleMyPageBrowserGeo,
   trackMyPageEvent,
 } from "../app/myPagePublicAnalytics.js";
 import {
@@ -94,6 +95,11 @@ export default function PublicMyPageV2() {
       });
     }
   }, [buttons.length, page?._id, slug, socialLinks.length]);
+
+  useEffect(() => {
+    if (!page?._id) return undefined;
+    return scheduleMyPageBrowserGeo(slug, "home");
+  }, [page?._id, slug]);
 
   async function handleButtonClick(button) {
     if (!button?.targetUrl) return;

@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { Search, ShoppingBag } from "lucide-react";
 import { getPublicMyPageCatalog } from "../app/myPageApi.js";
-import { trackMyPageEvent } from "../app/myPagePublicAnalytics.js";
+import {
+  scheduleMyPageBrowserGeo,
+  trackMyPageEvent,
+} from "../app/myPagePublicAnalytics.js";
 import { imageSrc } from "../app/productsApi.js";
 import { Input } from "../components/appui/Input.jsx";
 import {
@@ -80,6 +83,11 @@ export default function PublicMyPageCatalogV2() {
       blockKey: "catalog_items",
     });
   }, [page?._id, query, slug]);
+
+  useEffect(() => {
+    if (!page?._id) return undefined;
+    return scheduleMyPageBrowserGeo(slug, "catalog");
+  }, [page?._id, slug]);
 
   function handleWhatsAppClick() {
     if (!whatsappButton?.targetUrl) return;

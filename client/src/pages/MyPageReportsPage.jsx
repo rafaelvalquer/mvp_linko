@@ -5,6 +5,18 @@ import {
   Geographies,
   Geography,
 } from "react-simple-maps";
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  PieChart,
+  Pie,
+  Cell,
+  Tooltip as RechartsTooltip,
+} from "recharts";
 import Shell from "../components/layout/Shell.jsx";
 import { listWorkspaceUsers } from "../app/authApi.js";
 import { useAuth } from "../app/AuthContext.jsx";
@@ -19,6 +31,18 @@ import useThemeToggle from "../app/useThemeToggle.js";
 
 const GEO_URL =
   "https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson";
+const BRAZIL_GEO_URL =
+  "https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson";
+const GEO_CHART_COLORS = [
+  "#2563EB",
+  "#0F766E",
+  "#F59E0B",
+  "#7C3AED",
+  "#DB2777",
+  "#0891B2",
+  "#EA580C",
+  "#16A34A",
+];
 const FUNNEL_HELP_TEXT = {
   page_view:
     "Sessoes que visualizaram alguma pagina publica da Minha Pagina no periodo.",
@@ -30,6 +54,18 @@ const FUNNEL_HELP_TEXT = {
     "Sessoes que enviaram um pedido de orcamento ou selecionaram um horario na agenda.",
   final_conversion:
     "Sessoes que geraram agendamento concluido ou venda atribuida a Minha Pagina.",
+};
+const DEVICE_LABELS = {
+  desktop: "Desktop",
+  mobile: "Mobile",
+  tablet: "Tablet",
+  other: "Outros",
+};
+const DEVICE_BAR_COLORS = {
+  desktop: "#2563EB",
+  mobile: "#0F766E",
+  tablet: "#F59E0B",
+  other: "#94A3B8",
 };
 
 function pad2(value) {
@@ -89,6 +125,87 @@ function normalizeCountryName(value) {
   };
 
   return aliases[base] || base;
+}
+
+const BRAZIL_STATE_LABELS = {
+  acre: "Acre",
+  alagoas: "Alagoas",
+  amapa: "Amapá",
+  amazonas: "Amazonas",
+  bahia: "Bahia",
+  ceara: "Ceará",
+  "distrito federal": "Distrito Federal",
+  "espirito santo": "Espírito Santo",
+  goias: "Goiás",
+  maranhao: "Maranhão",
+  "mato grosso": "Mato Grosso",
+  "mato grosso do sul": "Mato Grosso do Sul",
+  "minas gerais": "Minas Gerais",
+  para: "Pará",
+  paraiba: "Paraíba",
+  parana: "Paraná",
+  pernambuco: "Pernambuco",
+  piaui: "Piauí",
+  "rio de janeiro": "Rio de Janeiro",
+  "rio grande do norte": "Rio Grande do Norte",
+  "rio grande do sul": "Rio Grande do Sul",
+  rondonia: "Rondônia",
+  roraima: "Roraima",
+  "santa catarina": "Santa Catarina",
+  "sao paulo": "São Paulo",
+  sergipe: "Sergipe",
+  tocantins: "Tocantins",
+};
+
+const BRAZIL_STATE_ALIASES = {
+  ac: "acre",
+  al: "alagoas",
+  ap: "amapa",
+  am: "amazonas",
+  ba: "bahia",
+  ce: "ceara",
+  df: "distrito federal",
+  es: "espirito santo",
+  go: "goias",
+  ma: "maranhao",
+  mt: "mato grosso",
+  ms: "mato grosso do sul",
+  mg: "minas gerais",
+  pa: "para",
+  pb: "paraiba",
+  pr: "parana",
+  pe: "pernambuco",
+  pi: "piaui",
+  rj: "rio de janeiro",
+  rn: "rio grande do norte",
+  rs: "rio grande do sul",
+  ro: "rondonia",
+  rr: "roraima",
+  sc: "santa catarina",
+  sp: "sao paulo",
+  se: "sergipe",
+  to: "tocantins",
+  "state of sao paulo": "sao paulo",
+  "state of rio de janeiro": "rio de janeiro",
+  "state of minas gerais": "minas gerais",
+  "state of bahia": "bahia",
+};
+
+function normalizeStateName(value) {
+  const base = String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!base) return "";
+  return BRAZIL_STATE_ALIASES[base] || base;
+}
+
+function getStateDisplayName(value) {
+  const normalized = normalizeStateName(value);
+  return BRAZIL_STATE_LABELS[normalized] || String(value || "").trim() || "Estado";
 }
 
 function selectClassName(isDark) {
@@ -172,6 +289,171 @@ function TableCard({ title, subtitle, columns, rows, loading, emptyText }) {
           <EmptyState
             title="Sem dados suficientes"
             description={emptyText}
+          />
+        )}
+      </CardBody>
+    </Card>
+  );
+}
+
+function DeviceBreakdownTooltip({ active, payload }) {
+  const { isDark } = useThemeToggle();
+  if (!active || !payload?.length) return null;
+  const item = payload[0]?.payload;
+  if (!item) return null;
+
+  return (
+    <div
+      className={[
+        "rounded-2xl border px-3 py-2 text-xs shadow-lg",
+        isDark
+          ? "border-white/10 bg-slate-950 text-slate-100"
+          : "border-slate-200 bg-white text-slate-700",
+      ].join(" ")}
+    >
+      <div className="font-semibold">{item.label}</div>
+      <div className="mt-1">Sessoes: {number(item.sessions)}</div>
+      <div>Participacao: {percent(item.share)}</div>
+    </div>
+  );
+}
+
+function DeviceBreakdownCard({ deviceBreakdown, loading }) {
+  const { isDark } = useThemeToggle();
+  const totalSessions = Number(deviceBreakdown?.totalSessions || 0);
+  const chartData = ["desktop", "mobile", "tablet", "other"]
+    .map((key) => ({
+      key,
+      label: DEVICE_LABELS[key],
+      sessions: Number(deviceBreakdown?.[key] || 0),
+      fill: DEVICE_BAR_COLORS[key],
+    }))
+    .filter((item) => item.sessions > 0);
+
+  const chartDataWithShare = chartData.map((item) => ({
+    ...item,
+    share:
+      totalSessions > 0
+        ? Number(((item.sessions / totalSessions) * 100).toFixed(2))
+        : 0,
+  }));
+
+  return (
+    <Card className="rounded-[24px]">
+      <CardHeader
+        title="Desktop vs Mobile"
+        subtitle="Sessoes unicas por dispositivo no periodo."
+      />
+      <CardBody className="space-y-4">
+        {loading ? (
+          <div className="space-y-3">
+            <Skeleton className="h-16 w-full rounded-2xl" />
+            <Skeleton className="h-72 w-full rounded-[24px]" />
+          </div>
+        ) : chartDataWithShare.length ? (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div
+                className={[
+                  "rounded-[22px] border px-4 py-4",
+                  isDark
+                    ? "border-white/10 bg-white/[0.03]"
+                    : "border-slate-200/80 bg-slate-50/80",
+                ].join(" ")}
+              >
+                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                  Desktop
+                </div>
+                <div className="mt-2 text-2xl font-black tracking-[-0.03em] text-slate-950 dark:text-white">
+                  {number(deviceBreakdown?.desktop)}
+                </div>
+                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  {percent(
+                    totalSessions > 0
+                      ? (Number(deviceBreakdown?.desktop || 0) / totalSessions) * 100
+                      : 0,
+                  )}{" "}
+                  das sessoes
+                </div>
+              </div>
+              <div
+                className={[
+                  "rounded-[22px] border px-4 py-4",
+                  isDark
+                    ? "border-white/10 bg-white/[0.03]"
+                    : "border-slate-200/80 bg-slate-50/80",
+                ].join(" ")}
+              >
+                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                  Mobile
+                </div>
+                <div className="mt-2 text-2xl font-black tracking-[-0.03em] text-slate-950 dark:text-white">
+                  {number(deviceBreakdown?.mobile)}
+                </div>
+                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  {percent(
+                    totalSessions > 0
+                      ? (Number(deviceBreakdown?.mobile || 0) / totalSessions) * 100
+                      : 0,
+                  )}{" "}
+                  das sessoes
+                </div>
+              </div>
+            </div>
+
+            <div
+              className={[
+                "h-80 rounded-[24px] border p-3",
+                isDark
+                  ? "border-white/10 bg-white/[0.02]"
+                  : "border-slate-200/80 bg-white/80",
+              ].join(" ")}
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={chartDataWithShare}
+                  margin={{ top: 16, right: 12, left: -12, bottom: 0 }}
+                >
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke={isDark ? "rgba(255,255,255,0.08)" : "#E2E8F0"}
+                    vertical={false}
+                  />
+                  <XAxis
+                    dataKey="label"
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fill: isDark ? "#CBD5E1" : "#475569", fontSize: 12 }}
+                  />
+                  <YAxis
+                    allowDecimals={false}
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fill: isDark ? "#94A3B8" : "#64748B", fontSize: 12 }}
+                  />
+                  <RechartsTooltip content={<DeviceBreakdownTooltip />} />
+                  <Bar
+                    dataKey="sessions"
+                    radius={[12, 12, 0, 0]}
+                    maxBarSize={72}
+                    isAnimationActive={false}
+                  >
+                    {chartDataWithShare.map((item) => (
+                      <Cell key={item.key} fill={item.fill} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="text-xs text-slate-500 dark:text-slate-400">
+              Total considerado: {number(totalSessions)} sessoes com page view.
+            </div>
+          </>
+        ) : (
+          <EmptyState
+            title="Sem dados de dispositivo"
+            description="O grafico vai aparecer quando houver sessoes registradas com page view no periodo."
           />
         )}
       </CardBody>
@@ -296,174 +578,573 @@ function getCountryFill(clicks, maxClicks, isDark) {
   return `rgba(37,99,235,${Math.min(0.9, 0.12 + intensity * 0.88)})`;
 }
 
+function GeoPieTooltip({ active, payload }) {
+  const { isDark } = useThemeToggle();
+  if (!active || !payload?.length) return null;
+  const item = payload[0]?.payload;
+  if (!item) return null;
+  return (
+    <div
+      className={[
+        "rounded-2xl border px-3 py-2 text-xs shadow-lg",
+        isDark
+          ? "border-white/10 bg-slate-950 text-slate-100"
+          : "border-slate-200 bg-white text-slate-700",
+      ].join(" ")}
+    >
+      <div className="font-semibold">{item.label}</div>
+      <div className="mt-1">Cliques: {number(item.value)}</div>
+      <div>Participação: {percent(item.share)}</div>
+    </div>
+  );
+}
+
+function GeoMiniList({
+  title,
+  subtitle,
+  items = [],
+  loading = false,
+  emptyText,
+  onSelect = null,
+  selectedKey = "",
+  getItemKey = (item) => item?.key || "",
+  getItemLabel = (item) => item?.label || "",
+  getItemMeta = () => "",
+}) {
+  const { isDark } = useThemeToggle();
+
+  return (
+    <div
+      className={[
+        "rounded-[24px] border p-4",
+        isDark
+          ? "border-white/10 bg-white/[0.03]"
+          : "border-slate-200/80 bg-white/80",
+      ].join(" ")}
+    >
+      <div className="text-sm font-semibold text-slate-950 dark:text-white">{title}</div>
+      <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{subtitle}</div>
+      {loading ? (
+        <div className="mt-4 space-y-2">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <Skeleton key={index} className="h-12 w-full rounded-2xl" />
+          ))}
+        </div>
+      ) : items.length ? (
+        <div className="mt-4 space-y-2">
+          {items.map((item, index) => {
+            const key = getItemKey(item) || `${title}:${index}`;
+            const selected = selectedKey && selectedKey === key;
+            const Component = onSelect ? "button" : "div";
+            return (
+              <Component
+                key={key}
+                type={onSelect ? "button" : undefined}
+                onClick={onSelect ? () => onSelect(item) : undefined}
+                className={[
+                  "flex w-full items-center justify-between rounded-2xl border px-3 py-3 text-left transition",
+                  selected
+                    ? isDark
+                      ? "border-sky-400/40 bg-sky-500/10"
+                      : "border-sky-300 bg-sky-50"
+                    : isDark
+                      ? "border-white/8 bg-white/[0.02] hover:bg-white/[0.05]"
+                      : "border-slate-200/70 bg-slate-50/70 hover:bg-slate-100/80",
+                  onSelect ? "cursor-pointer" : "",
+                ].join(" ")}
+              >
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold text-slate-950 dark:text-white">
+                    {getItemLabel(item)}
+                  </div>
+                  <div className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
+                    {getItemMeta(item)}
+                  </div>
+                </div>
+                <div className="pl-3 text-sm font-bold text-slate-700 dark:text-slate-200">
+                  {number(item?.clicks)}
+                </div>
+              </Component>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="mt-4 text-sm text-slate-500 dark:text-slate-400">{emptyText}</div>
+      )}
+    </div>
+  );
+}
+
 function GeographyMap({
   countries = [],
+  states = [],
   cities = [],
   loading = false,
   coverageStartedAt = null,
 }) {
   const { isDark } = useThemeToggle();
-  const [hoveredCountry, setHoveredCountry] = useState(null);
+  const [mode, setMode] = useState("world");
+  const [selectedCountryKey, setSelectedCountryKey] = useState("");
+  const [selectedStateKey, setSelectedStateKey] = useState("");
+  const [hoveredItem, setHoveredItem] = useState(null);
 
-  const countryMap = useMemo(() => {
-    return new Map(
-      countries.map((item) => [
-        normalizeCountryName(item?.countryName || item?.countryCode || ""),
-        item,
-      ]),
-    );
-  }, [countries]);
+  useEffect(() => {
+    setSelectedCountryKey("");
+    setSelectedStateKey("");
+    setHoveredItem(null);
+  }, [mode]);
 
-  const maxClicks = useMemo(
-    () => Math.max(1, ...countries.map((item) => Number(item?.clicks || 0))),
+  const countryMap = useMemo(
+    () =>
+      new Map(
+        countries.map((item) => [
+          normalizeCountryName(item?.countryName || item?.countryCode || ""),
+          item,
+        ]),
+      ),
     [countries],
   );
+
+  const stateMap = useMemo(
+    () =>
+      new Map(
+        states.map((item) => [normalizeStateName(item?.state || ""), item]),
+      ),
+    [states],
+  );
+
+  const selectedCountry = useMemo(
+    () =>
+      countries.find(
+        (item) =>
+          normalizeCountryName(item?.countryName || item?.countryCode || "") ===
+          selectedCountryKey,
+      ) || null,
+    [countries, selectedCountryKey],
+  );
+
+  const selectedState = useMemo(
+    () =>
+      states.find((item) => normalizeStateName(item?.state || "") === selectedStateKey) ||
+      null,
+    [states, selectedStateKey],
+  );
+
+  const brazilCities = useMemo(
+    () => cities.filter((item) => String(item?.countryCode || "") === "BR"),
+    [cities],
+  );
+
+  const filteredCities = useMemo(() => {
+    if (mode === "world") {
+      if (!selectedCountry) return cities;
+      return cities.filter(
+        (item) =>
+          String(item?.countryCode || "") === String(selectedCountry.countryCode || "") ||
+          normalizeCountryName(item?.countryName || "") ===
+            normalizeCountryName(selectedCountry.countryName || ""),
+      );
+    }
+    if (!selectedState) return brazilCities;
+    return brazilCities.filter(
+      (item) => normalizeStateName(item?.region || "") === selectedStateKey,
+    );
+  }, [brazilCities, cities, mode, selectedCountry, selectedState, selectedStateKey]);
+
+  const pieData = useMemo(() => {
+    const source =
+      mode === "world"
+        ? countries
+        : selectedState
+          ? filteredCities
+          : states;
+    const total = source.reduce((sum, item) => sum + Number(item?.clicks || 0), 0);
+    return source
+      .filter((item) => Number(item?.clicks || 0) > 0)
+      .slice(0, 8)
+      .map((item, index) => ({
+        key:
+          mode === "world"
+            ? item?.countryCode || `country:${index}`
+            : selectedState
+              ? `${item?.city || "cidade"}:${index}`
+              : normalizeStateName(item?.state || ""),
+        label:
+          mode === "world"
+            ? item?.countryName || item?.countryCode || "Desconhecido"
+            : selectedState
+              ? item?.city || "Cidade"
+              : getStateDisplayName(item?.state),
+        value: Number(item?.clicks || 0),
+        share:
+          total > 0 ? Number(((Number(item?.clicks || 0) / total) * 100).toFixed(2)) : 0,
+        fill: GEO_CHART_COLORS[index % GEO_CHART_COLORS.length],
+      }));
+  }, [countries, filteredCities, mode, selectedState, states]);
+
+  const activeMapRows = mode === "world" ? countries : states;
+  const maxClicks = useMemo(
+    () => Math.max(1, ...activeMapRows.map((item) => Number(item?.clicks || 0))),
+    [activeMapRows],
+  );
+
+  const insightItem =
+    hoveredItem ||
+    (mode === "world" ? selectedCountry : selectedState) ||
+    null;
+  const geoTitle = mode === "world" ? "Mapa mundi" : "Brasil por estado";
+  const geoSubtitle =
+    mode === "world"
+      ? "Distribuicao visual dos cliques por pais."
+      : selectedState
+        ? `Distribuicao dos cliques em ${getStateDisplayName(selectedState.state)} com foco nas cidades.`
+        : "Distribuicao visual dos cliques por estado do Brasil.";
+  const topAreaTitle = mode === "world" ? "Top paises" : "Top estados";
+  const topAreaSubtitle =
+    mode === "world"
+      ? "Paises com maior volume recente."
+      : "Estados brasileiros com maior volume recente.";
 
   return (
     <Card className="rounded-[24px]">
       <CardHeader
-        title="Mapa mundi"
-        subtitle="Distribuicao visual dos cliques por pais."
+        title={geoTitle}
+        subtitle={geoSubtitle}
         right={
-          coverageStartedAt ? (
-            <Badge tone="INFO">
-              Tracking detalhado desde{" "}
-              {new Date(coverageStartedAt).toLocaleDateString("pt-BR")}
-            </Badge>
-          ) : null
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex rounded-2xl border border-slate-200 bg-white p-1 dark:border-white/10 dark:bg-white/[0.04]">
+              <button
+                type="button"
+                onClick={() => setMode("world")}
+                className={[
+                  "rounded-xl px-3 py-1.5 text-xs font-semibold transition",
+                  mode === "world"
+                    ? "bg-slate-950 text-white dark:bg-white dark:text-slate-950"
+                    : "text-slate-600 dark:text-slate-300",
+                ].join(" ")}
+              >
+                Mundo
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode("brazil")}
+                className={[
+                  "rounded-xl px-3 py-1.5 text-xs font-semibold transition",
+                  mode === "brazil"
+                    ? "bg-slate-950 text-white dark:bg-white dark:text-slate-950"
+                    : "text-slate-600 dark:text-slate-300",
+                ].join(" ")}
+              >
+                Brasil
+              </button>
+            </div>
+            {coverageStartedAt ? (
+              <Badge tone="INFO">
+                Tracking detalhado desde{" "}
+                {new Date(coverageStartedAt).toLocaleDateString("pt-BR")}
+              </Badge>
+            ) : null}
+          </div>
         }
       />
-      <CardBody className="grid gap-5 xl:grid-cols-[minmax(0,1.5fr)_320px]">
+      <CardBody className="space-y-5">
         {loading ? (
           <Skeleton className="h-[380px] w-full rounded-[28px]" />
         ) : (
-          <div className="overflow-hidden rounded-[28px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(248,250,252,0.88),rgba(255,255,255,0.72))] p-3 dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.6),rgba(2,6,23,0.45))]">
-            <ComposableMap
-              projectionConfig={{ scale: 150 }}
-              className="h-[340px] w-full"
-            >
-              <Geographies geography={GEO_URL}>
-                {({ geographies }) =>
-                  geographies.map((geo) => {
-                    const geoName =
-                      geo?.properties?.name ||
-                      geo?.properties?.NAME ||
-                      geo?.properties?.admin ||
-                      "";
-                    const country = countryMap.get(normalizeCountryName(geoName));
-                    return (
-                      <Geography
-                        key={geo.rsmKey}
-                        geography={geo}
-                        onMouseEnter={() => setHoveredCountry(country || null)}
-                        onMouseLeave={() => setHoveredCountry(null)}
-                        style={{
-                          default: {
-                            fill: getCountryFill(country?.clicks, maxClicks, isDark),
-                            stroke: isDark ? "rgba(255,255,255,0.08)" : "#CBD5E1",
-                            strokeWidth: 0.5,
-                            outline: "none",
-                          },
-                          hover: {
-                            fill: isDark ? "rgba(56,189,248,0.65)" : "#38BDF8",
-                            stroke: isDark ? "rgba(255,255,255,0.12)" : "#94A3B8",
-                            strokeWidth: 0.7,
-                            outline: "none",
-                          },
-                          pressed: {
-                            fill: isDark ? "rgba(56,189,248,0.75)" : "#0EA5E9",
-                            outline: "none",
-                          },
-                        }}
-                      />
-                    );
-                  })
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1.65fr)_360px]">
+            <div className="overflow-hidden rounded-[28px] border border-slate-200/80 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.16),transparent_36%),linear-gradient(180deg,rgba(248,250,252,0.96),rgba(255,255,255,0.72))] p-4 dark:border-white/10 dark:bg-[radial-gradient(circle_at_top,rgba(14,165,233,0.18),transparent_38%),linear-gradient(180deg,rgba(15,23,42,0.72),rgba(2,6,23,0.56))]">
+              <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                    Visual geografico
+                  </div>
+                  <div className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                    {mode === "world"
+                      ? selectedCountry
+                        ? `Pais ativo: ${selectedCountry.countryName || selectedCountry.countryCode}`
+                        : "Clique em um pais para filtrar as cidades ao lado."
+                      : selectedState
+                        ? `Estado ativo: ${getStateDisplayName(selectedState.state)}`
+                        : "Clique em um estado para focar nas cidades da regiao."}
+                  </div>
+                </div>
+                {(selectedCountryKey || selectedStateKey) && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setSelectedCountryKey("");
+                      setSelectedStateKey("");
+                      setHoveredItem(null);
+                    }}
+                  >
+                    Limpar foco
+                  </Button>
+                )}
+              </div>
+              <ComposableMap
+                projection={mode === "world" ? undefined : "geoMercator"}
+                projectionConfig={
+                  mode === "world"
+                    ? { scale: 150 }
+                    : {
+                        scale: 620,
+                        center: [-54, -15],
+                      }
                 }
-              </Geographies>
-            </ComposableMap>
+                className="h-[360px] w-full"
+              >
+                <Geographies geography={mode === "world" ? GEO_URL : BRAZIL_GEO_URL}>
+                  {({ geographies }) =>
+                    geographies.map((geo) => {
+                      const geoName =
+                        geo?.properties?.name ||
+                        geo?.properties?.NAME ||
+                        geo?.properties?.admin ||
+                        "";
+                      const item =
+                        mode === "world"
+                          ? countryMap.get(normalizeCountryName(geoName))
+                          : stateMap.get(normalizeStateName(geoName));
+                      const isSelected =
+                        mode === "world"
+                          ? selectedCountryKey &&
+                            selectedCountryKey === normalizeCountryName(geoName)
+                          : selectedStateKey &&
+                            selectedStateKey === normalizeStateName(geoName);
+                      return (
+                        <Geography
+                          key={geo.rsmKey}
+                          geography={geo}
+                          onMouseEnter={() => setHoveredItem(item || null)}
+                          onMouseLeave={() => setHoveredItem(null)}
+                          onClick={() => {
+                            if (!item) return;
+                            if (mode === "world") {
+                              const nextKey = normalizeCountryName(
+                                item.countryName || item.countryCode || geoName,
+                              );
+                              setSelectedCountryKey((current) =>
+                                current === nextKey ? "" : nextKey,
+                              );
+                              return;
+                            }
+                            const nextKey = normalizeStateName(item.state || geoName);
+                            setSelectedStateKey((current) =>
+                              current === nextKey ? "" : nextKey,
+                            );
+                          }}
+                          style={{
+                            default: {
+                              fill: isSelected
+                                ? isDark
+                                  ? "rgba(125,211,252,0.82)"
+                                  : "#0EA5E9"
+                                : getCountryFill(item?.clicks, maxClicks, isDark),
+                              stroke: isDark ? "rgba(255,255,255,0.1)" : "#CBD5E1",
+                              strokeWidth: isSelected ? 1.2 : 0.6,
+                              outline: "none",
+                              cursor: item ? "pointer" : "default",
+                            },
+                            hover: {
+                              fill: isDark ? "rgba(56,189,248,0.72)" : "#38BDF8",
+                              stroke: isDark ? "rgba(255,255,255,0.16)" : "#94A3B8",
+                              strokeWidth: 0.9,
+                              outline: "none",
+                              cursor: item ? "pointer" : "default",
+                            },
+                            pressed: {
+                              fill: isDark ? "rgba(56,189,248,0.82)" : "#0EA5E9",
+                              outline: "none",
+                            },
+                          }}
+                        />
+                      );
+                    })
+                  }
+                </Geographies>
+              </ComposableMap>
+            </div>
+
+            <div className="space-y-5">
+              <div className="rounded-[24px] border border-slate-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                  Contexto atual
+                </div>
+                {insightItem ? (
+                  <div className="mt-4 space-y-2">
+                    <div className="text-lg font-semibold text-slate-950 dark:text-white">
+                      {mode === "world"
+                        ? insightItem.countryName || insightItem.countryCode
+                        : getStateDisplayName(insightItem.state)}
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div className="rounded-2xl bg-slate-50 px-3 py-3 dark:bg-white/[0.04]">
+                        <div className="text-xs uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                          Visitas
+                        </div>
+                        <div className="mt-1 font-bold text-slate-900 dark:text-white">
+                          {number(insightItem.visits)}
+                        </div>
+                      </div>
+                      <div className="rounded-2xl bg-slate-50 px-3 py-3 dark:bg-white/[0.04]">
+                        <div className="text-xs uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                          Cliques
+                        </div>
+                        <div className="mt-1 font-bold text-slate-900 dark:text-white">
+                          {number(insightItem.clicks)}
+                        </div>
+                      </div>
+                      <div className="rounded-2xl bg-slate-50 px-3 py-3 dark:bg-white/[0.04]">
+                        <div className="text-xs uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                          Leads
+                        </div>
+                        <div className="mt-1 font-bold text-slate-900 dark:text-white">
+                          {number(insightItem.leads)}
+                        </div>
+                      </div>
+                      <div className="rounded-2xl bg-slate-50 px-3 py-3 dark:bg-white/[0.04]">
+                        <div className="text-xs uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                          Vendas
+                        </div>
+                        <div className="mt-1 font-bold text-slate-900 dark:text-white">
+                          {number(insightItem.sales)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-4 text-sm text-slate-500 dark:text-slate-400">
+                    {mode === "world"
+                      ? "Passe o mouse ou clique em um pais para ver detalhes."
+                      : "Passe o mouse ou clique em um estado para aprofundar a leitura."}
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-[24px] border border-slate-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                  Distribuicao de cliques
+                </div>
+                <div className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                  {mode === "world"
+                    ? "Participacao por pais."
+                    : selectedState
+                      ? `Participacao por cidade em ${getStateDisplayName(selectedState.state)}.`
+                      : "Participacao por estado no Brasil."}
+                </div>
+                {pieData.length ? (
+                  <div className="mt-4 h-[260px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={pieData}
+                          dataKey="value"
+                          nameKey="label"
+                          innerRadius={58}
+                          outerRadius={92}
+                          paddingAngle={2}
+                        >
+                          {pieData.map((item) => (
+                            <Cell key={item.key} fill={item.fill} />
+                          ))}
+                        </Pie>
+                        <RechartsTooltip content={<GeoPieTooltip />} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <div className="mt-4 text-sm text-slate-500 dark:text-slate-400">
+                    Ainda nao ha cliques suficientes para montar o grafico neste recorte.
+                  </div>
+                )}
+                {pieData.length ? (
+                  <div className="mt-3 space-y-2">
+                    {pieData.slice(0, 5).map((item) => (
+                      <div
+                        key={item.key}
+                        className="flex items-center justify-between gap-3 text-sm"
+                      >
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span
+                            className="h-3 w-3 shrink-0 rounded-full"
+                            style={{ backgroundColor: item.fill }}
+                          />
+                          <span className="truncate text-slate-700 dark:text-slate-200">
+                            {item.label}
+                          </span>
+                        </div>
+                        <span className="shrink-0 font-semibold text-slate-900 dark:text-white">
+                          {percent(item.share)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
           </div>
         )}
 
-        <div className="space-y-4">
-          <div className="rounded-[24px] border border-slate-200/80 p-4 dark:border-white/10">
-            <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-              Tooltip
-            </div>
-            {hoveredCountry ? (
-              <div className="mt-3 space-y-2 text-sm">
-                <div className="text-base font-semibold text-slate-950 dark:text-white">
-                  {hoveredCountry.countryName || hoveredCountry.countryCode}
-                </div>
-                <div className="text-slate-600 dark:text-slate-300">
-                  Visitas: {number(hoveredCountry.visits)}
-                </div>
-                <div className="text-slate-600 dark:text-slate-300">
-                  Cliques: {number(hoveredCountry.clicks)}
-                </div>
-                <div className="text-slate-600 dark:text-slate-300">
-                  Leads: {number(hoveredCountry.leads)}
-                </div>
-                <div className="text-slate-600 dark:text-slate-300">
-                  Vendas: {number(hoveredCountry.sales)}
-                </div>
-              </div>
-            ) : (
-              <div className="mt-3 text-sm text-slate-500 dark:text-slate-400">
-                Passe o mouse sobre um pais para ver os detalhes.
-              </div>
-            )}
-          </div>
-
-          <TableCard
-            title="Top paises"
-            subtitle="Paises com maior volume recente."
+        <div className="grid gap-5 xl:grid-cols-2">
+          <GeoMiniList
+            title={topAreaTitle}
+            subtitle={topAreaSubtitle}
             loading={loading}
-            rows={countries.slice(0, 8).map((item) => ({
-              key: item.countryCode,
-              ...item,
-            }))}
-            emptyText="Os paises vao aparecer conforme os eventos detalhados forem sendo coletados."
-            columns={[
-              {
-                key: "countryName",
-                label: "Pais",
-                render: (row) => row.countryName || row.countryCode || "Desconhecido",
-              },
-              {
-                key: "clicks",
-                label: "Cliques",
-                render: (row) => number(row.clicks),
-              },
-              {
-                key: "sales",
-                label: "Vendas",
-                render: (row) => number(row.sales),
-              },
-            ]}
+            items={(mode === "world" ? countries : states).slice(0, 8)}
+            emptyText={
+              mode === "world"
+                ? "Os paises vao aparecer conforme os eventos detalhados forem sendo coletados."
+                : "Os estados vao aparecer conforme eventos do Brasil forem acumulados."
+            }
+            onSelect={(item) => {
+              if (mode === "world") {
+                const nextKey = normalizeCountryName(
+                  item?.countryName || item?.countryCode || "",
+                );
+                setSelectedCountryKey((current) => (current === nextKey ? "" : nextKey));
+                return;
+              }
+              const nextKey = normalizeStateName(item?.state || "");
+              setSelectedStateKey((current) => (current === nextKey ? "" : nextKey));
+            }}
+            selectedKey={mode === "world" ? selectedCountryKey : selectedStateKey}
+            getItemKey={(item) =>
+              mode === "world"
+                ? normalizeCountryName(item?.countryName || item?.countryCode || "")
+                : normalizeStateName(item?.state || "")
+            }
+            getItemLabel={(item) =>
+              mode === "world"
+                ? item?.countryName || item?.countryCode || "Desconhecido"
+                : getStateDisplayName(item?.state)
+            }
+            getItemMeta={(item) =>
+              `Visitas ${number(item?.visits)} • Leads ${number(item?.leads)} • Vendas ${number(item?.sales)}`
+            }
           />
-
-          <TableCard
-            title="Top cidades"
-            subtitle="Cidades com mais cliques."
+          <GeoMiniList
+            title={selectedState ? "Cidades do estado" : "Top cidades"}
+            subtitle={
+              selectedState
+                ? `Cidades com mais cliques em ${getStateDisplayName(selectedState.state)}.`
+                : mode === "world" && selectedCountry
+                  ? `Cidades com mais cliques em ${selectedCountry.countryName || selectedCountry.countryCode}.`
+                  : "Cidades com maior volume recente."
+            }
             loading={loading}
-            rows={cities.map((item, index) => ({
-              key: `${item.city}:${index}`,
+            items={filteredCities.slice(0, 8).map((item, index) => ({
               ...item,
+              key: `${item?.city || "cidade"}:${item?.region || ""}:${index}`,
             }))}
             emptyText="As cidades vao aparecer conforme o geo tracking comecar a acumular dados."
-            columns={[
-              {
-                key: "city",
-                label: "Cidade",
-                render: (row) =>
-                  [row.city, row.region, row.countryName].filter(Boolean).join(", "),
-              },
-              {
-                key: "clicks",
-                label: "Cliques",
-                render: (row) => number(row.clicks),
-              },
-            ]}
+            getItemKey={(item) => item?.key || ""}
+            getItemLabel={(item) =>
+              [item?.city, item?.region, item?.countryName].filter(Boolean).join(", ")
+            }
+            getItemMeta={(item) =>
+              `Pais ${item?.countryName || item?.countryCode || "Desconhecido"}`
+            }
           />
         </div>
       </CardBody>
@@ -590,9 +1271,20 @@ export default function MyPageReportsPage() {
   const topProducts = Array.isArray(data?.topProducts) ? data.topProducts : [];
   const topPages = Array.isArray(data?.topPages) ? data.topPages : [];
   const funnel = Array.isArray(data?.funnel) ? data.funnel : [];
+  const deviceBreakdown =
+    data?.deviceBreakdown && typeof data.deviceBreakdown === "object"
+      ? data.deviceBreakdown
+      : {
+          totalSessions: 0,
+          desktop: 0,
+          mobile: 0,
+          tablet: 0,
+          other: 0,
+        };
   const countries = Array.isArray(data?.geography?.countries)
     ? data.geography.countries
     : [];
+  const states = Array.isArray(data?.geography?.states) ? data.geography.states : [];
   const cities = Array.isArray(data?.geography?.cities) ? data.geography.cities : [];
   const notices = Array.isArray(data?.notices) ? data.notices : [];
 
@@ -783,39 +1475,46 @@ export default function MyPageReportsPage() {
           />
         </div>
 
-        <TableCard
-          title="Origem"
-          subtitle="Aquisicao por fonte da sessao."
-          loading={loading}
-          rows={sources.map((item) => ({ key: item.sourceBucket, ...item }))}
-          emptyText="As origens detalhadas vao aparecer conforme o novo tracking entrar em uso."
-          columns={[
-            {
-              key: "sourceBucket",
-              label: "Origem",
-            },
-            {
-              key: "visits",
-              label: "Visitas",
-              render: (row) => number(row.visits),
-            },
-            {
-              key: "leads",
-              label: "Leads",
-              render: (row) => number(row.leads),
-            },
-            {
-              key: "sales",
-              label: "Vendas",
-              render: (row) => number(row.sales),
-            },
-            {
-              key: "revenueCents",
-              label: "Receita",
-              render: (row) => money(row.revenueCents),
-            },
-          ]}
-        />
+        <div className="grid gap-4 xl:grid-cols-[1.35fr_0.95fr]">
+          <TableCard
+            title="Origem"
+            subtitle="Aquisicao por fonte da sessao."
+            loading={loading}
+            rows={sources.map((item) => ({ key: item.sourceBucket, ...item }))}
+            emptyText="As origens detalhadas vao aparecer conforme o novo tracking entrar em uso."
+            columns={[
+              {
+                key: "sourceBucket",
+                label: "Origem",
+              },
+              {
+                key: "visits",
+                label: "Visitas",
+                render: (row) => number(row.visits),
+              },
+              {
+                key: "leads",
+                label: "Leads",
+                render: (row) => number(row.leads),
+              },
+              {
+                key: "sales",
+                label: "Vendas",
+                render: (row) => number(row.sales),
+              },
+              {
+                key: "revenueCents",
+                label: "Receita",
+                render: (row) => money(row.revenueCents),
+              },
+            ]}
+          />
+
+          <DeviceBreakdownCard
+            deviceBreakdown={deviceBreakdown}
+            loading={loading}
+          />
+        </div>
 
         <div className="grid gap-4 xl:grid-cols-2">
           <TableCard
@@ -974,6 +1673,7 @@ export default function MyPageReportsPage() {
 
         <GeographyMap
           countries={countries}
+          states={states}
           cities={cities}
           loading={loading}
           coverageStartedAt={data?.coverage?.startedAt || null}

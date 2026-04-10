@@ -7,6 +7,7 @@ import {
 } from "../app/myPageApi.js";
 import {
   buildMyPageConversionContext,
+  scheduleMyPageBrowserGeo,
   trackMyPageEvent,
 } from "../app/myPagePublicAnalytics.js";
 import { Input, Textarea } from "../components/appui/Input.jsx";
@@ -107,6 +108,11 @@ export default function PublicMyPageQuoteV2() {
       blockKey: "quote_form",
     });
   }, [page?._id, productIdsKey, slug]);
+
+  useEffect(() => {
+    if (!page?._id) return undefined;
+    return scheduleMyPageBrowserGeo(slug, "quote");
+  }, [page?._id, slug]);
 
   const selectedProducts = useMemo(
     () =>

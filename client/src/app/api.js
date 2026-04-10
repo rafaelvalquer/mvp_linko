@@ -1,6 +1,37 @@
 // src/app/api.js
-export const API_BASE =
-  import.meta.env.VITE_API_BASE || "http://localhost:8011/api";
+function trimTrailingSlash(value) {
+  return String(value || "").replace(/\/+$/, "");
+}
+
+function isLocalHostname(hostname = "") {
+  const value = String(hostname || "").trim().toLowerCase();
+  return (
+    value === "localhost" ||
+    value === "127.0.0.1" ||
+    value === "0.0.0.0" ||
+    value === "[::1]"
+  );
+}
+
+function resolveApiBase() {
+  const explicitBase = trimTrailingSlash(import.meta.env.VITE_API_BASE || "");
+  if (explicitBase) return explicitBase;
+
+  if (typeof window === "undefined") {
+    return "http://localhost:8011/api";
+  }
+
+  const currentOrigin = trimTrailingSlash(window.location.origin || "");
+  if (!currentOrigin) return "/api";
+
+  if (isLocalHostname(window.location.hostname)) {
+    return "http://localhost:8011/api";
+  }
+
+  return `${currentOrigin}/api`;
+}
+
+export const API_BASE = resolveApiBase();
 
 // cache em memória para GET (opcional) – útil se algum endpoint insistir em 304
 const _memCache = new Map();
