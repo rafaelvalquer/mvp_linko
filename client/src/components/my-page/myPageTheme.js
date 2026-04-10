@@ -4,6 +4,9 @@ export const MY_PAGE_DESIGN_DEFAULTS = {
   accentPalette: "sky",
   backgroundStyle: "fill",
   backgroundColor: "#E2E8F0",
+  surfaceStyle: "soft",
+  surfacePatternVariant: "grid",
+  surfaceColor: "#FFFFFF",
   buttonColor: "#0F172A",
   buttonTextColor: "#FFFFFF",
   pageTextColor: "#64748B",
@@ -12,9 +15,11 @@ export const MY_PAGE_DESIGN_DEFAULTS = {
   backgroundPatternVariant: "grid",
   fontPreset: "inter",
   buttonStyle: "solid",
+  buttonShadow: "none",
   buttonRadius: "round",
   primaryButtonsLayout: "stack",
   secondaryLinksStyle: "text",
+  secondaryLinksIconLayout: "brand_badge",
   secondaryLinksSize: "medium",
   secondaryLinksAlign: "center",
   animationPreset: "subtle",
@@ -22,19 +27,59 @@ export const MY_PAGE_DESIGN_DEFAULTS = {
 
 export const MY_PAGE_THEME_PRESET_OPTIONS = [
   {
-    value: "premium_dark",
-    label: "Premium Dark",
-    description: "Fintech escuro e sofisticado.",
-  },
-  {
     value: "clean_light",
     label: "Clean Light",
     description: "Claro, minimo e elegante.",
   },
   {
-    value: "creator_gradient",
-    label: "Creator Gradient",
-    description: "Visual social e chamativo.",
+    value: "premium_dark",
+    label: "Premium Dark",
+    description: "Fintech escuro e sofisticado.",
+  },
+  {
+    value: "barber_gold",
+    label: "Barber Gold",
+    description: "Barbearia preta e dourada com assinatura classica.",
+  },
+  {
+    value: "nutri_fresh",
+    label: "Nutri Fresh",
+    description: "Saude natural com verde suave e leitura clean.",
+  },
+  {
+    value: "dental_clinic",
+    label: "Dental Clinic",
+    description: "Clinica moderna com azul limpo e leitura precisa.",
+  },
+  {
+    value: "pastry_atelier",
+    label: "Pastry Atelier",
+    description: "Confeitaria delicada com clima artesanal e premium.",
+  },
+  {
+    value: "aesthetic_glow",
+    label: "Aesthetic Glow",
+    description: "Estetica sofisticada com nude quente e brilho leve.",
+  },
+  {
+    value: "legal_navy",
+    label: "Legal Navy",
+    description: "Advocacia sobria com marinho premium e assinatura classica.",
+  },
+  {
+    value: "fitness_charge",
+    label: "Fitness Charge",
+    description: "Academia intensa com energia lime e foco em acao.",
+  },
+  {
+    value: "realty_luxe",
+    label: "Realty Luxe",
+    description: "Imobiliario elegante com areia, grafite e luxo discreto.",
+  },
+  {
+    value: "kids_care",
+    label: "Kids Care",
+    description: "Infantil acolhedor com tons leves e leitura amigavel.",
   },
   {
     value: "business_storefront",
@@ -42,34 +87,14 @@ export const MY_PAGE_THEME_PRESET_OPTIONS = [
     description: "Mini vitrine comercial.",
   },
   {
-    value: "editorial_luxury",
-    label: "Editorial Luxury",
-    description: "Marca premium e refinada.",
-  },
-  {
     value: "bold_conversion",
     label: "Bold Conversion",
     description: "Foco total em clique e acao.",
   },
   {
-    value: "agate",
-    label: "Agate",
-    description: "Mineral moderno e elegante.",
-  },
-  {
-    value: "air",
-    label: "Air",
-    description: "Claro, leve e arejado.",
-  },
-  {
-    value: "aura",
-    label: "Aura",
-    description: "Lavanda vibrante e criativa.",
-  },
-  {
-    value: "blocks",
-    label: "Blocks",
-    description: "Geometrico e comercial.",
+    value: "editorial_luxury",
+    label: "Editorial Luxury",
+    description: "Marca premium e refinada.",
   },
   {
     value: "twilight",
@@ -82,24 +107,49 @@ export const MY_PAGE_THEME_PRESET_OPTIONS = [
     description: "Editorial escuro com energia forte.",
   },
   {
+    value: "midnight_prism",
+    label: "Midnight Prism",
+    description: "Escuro premium com brilho neon.",
+  },
+  {
+    value: "creator_gradient",
+    label: "Creator Gradient",
+    description: "Visual social e chamativo.",
+  },
+  {
+    value: "air",
+    label: "Air",
+    description: "Claro, leve e arejado.",
+  },
+  {
+    value: "agate",
+    label: "Agate",
+    description: "Mineral moderno e elegante.",
+  },
+  {
+    value: "aura",
+    label: "Aura",
+    description: "Lavanda vibrante e criativa.",
+  },
+  {
+    value: "blocks",
+    label: "Blocks",
+    description: "Modular, direto e com cara de vitrine.",
+  },
+  {
     value: "cobalt_blaze",
     label: "Cobalt Blaze",
-    description: "Azul vibrante com topo quente e pop.",
+    description: "Azul eletrico com energia quente de campanha.",
   },
   {
     value: "violet_punch",
     label: "Violet Punch",
-    description: "Roxo eletrico com presenca social.",
+    description: "Roxo intenso para creators e lancamentos.",
   },
   {
     value: "solar_pop",
     label: "Solar Pop",
-    description: "Mistura vibrante de amarelo, teal e coral.",
-  },
-  {
-    value: "midnight_prism",
-    label: "Midnight Prism",
-    description: "Escuro premium com brilho neon.",
+    description: "Tropical vibrante para paginas promocionais.",
   },
 ];
 
@@ -163,6 +213,18 @@ export const MY_PAGE_BACKGROUND_PATTERN_VARIANT_OPTIONS = [
   { value: "matrix", label: "Matrix", description: "Ritmo tecnico e digital." },
 ];
 
+export const MY_PAGE_SURFACE_STYLE_OPTIONS = [
+  { value: "solid", label: "Solido", description: "Container opaco e direto." },
+  { value: "soft", label: "Soft", description: "Camada suave e elegante." },
+  { value: "glass", label: "Glass", description: "Translucido com blur e brilho leve." },
+  { value: "outline", label: "Outline", description: "Quase transparente com borda forte." },
+  { value: "blur", label: "Blur", description: "Camada macia com blur sutil no container." },
+  { value: "pattern", label: "Pattern", description: "Textura aplicada so na superficie." },
+];
+
+export const MY_PAGE_SURFACE_PATTERN_VARIANT_OPTIONS =
+  MY_PAGE_BACKGROUND_PATTERN_VARIANT_OPTIONS.map((option) => ({ ...option }));
+
 export const MY_PAGE_FONT_PRESET_OPTIONS = [
   { value: "inter", label: "Inter", family: "Inter, sans-serif" },
   { value: "manrope", label: "Manrope", family: "Manrope, sans-serif" },
@@ -179,9 +241,38 @@ export const MY_PAGE_FONT_PRESET_OPTIONS = [
 ];
 
 export const MY_PAGE_BUTTON_STYLE_OPTIONS = [
-  { value: "solid", label: "Sólido", description: "CTA mais forte." },
+  { value: "solid", label: "Solido", description: "CTA mais forte." },
   { value: "soft", label: "Soft", description: "Visual suave e elegante." },
   { value: "outline", label: "Outline", description: "Transparente e leve." },
+  {
+    value: "metallic",
+    label: "Metalico",
+    description: "Brilho premium com leitura de metal polido.",
+  },
+  {
+    value: "glass",
+    label: "Glass",
+    description: "Translucido com efeito de vidro e blur.",
+  },
+];
+
+export const MY_PAGE_BUTTON_SHADOW_OPTIONS = [
+  { value: "none", label: "None", description: "Sem moldura preta extra." },
+  {
+    value: "soft",
+    label: "Soft",
+    description: "Sombra leve com contorno discreto.",
+  },
+  {
+    value: "strong",
+    label: "Strong",
+    description: "Mais presenca e offset marcado.",
+  },
+  {
+    value: "hard",
+    label: "Hard",
+    description: "Borda preta dura no estilo cartaz.",
+  },
 ];
 
 export const MY_PAGE_BUTTON_RADIUS_OPTIONS = [
@@ -215,6 +306,19 @@ export const MY_PAGE_SECONDARY_LINK_STYLE_OPTIONS = [
     value: "icon_text",
     label: "Icone + texto",
     description: "Mostra o icone com o nome.",
+  },
+];
+
+export const MY_PAGE_SECONDARY_LINK_ICON_LAYOUT_OPTIONS = [
+  {
+    value: "plain",
+    label: "React Icons",
+    description: "Icone simples no estilo anterior.",
+  },
+  {
+    value: "brand_badge",
+    label: "Badge oficial",
+    description: "Usa o badge colorido da rede.",
   },
 ];
 
@@ -434,6 +538,386 @@ const THEME_PRESETS = {
     bodyFontFamily: "Inter, sans-serif",
     headingFontFamily: "Georgia, 'Times New Roman', serif",
     buttonMode: "luxury",
+  },
+  barber_gold: {
+    defaults: {
+      accentPalette: "amber",
+      backgroundStyle: "blur",
+      backgroundColor: "#0C0A09",
+      buttonColor: "#C89B3C",
+      buttonTextColor: "#17120A",
+      pageTextColor: "#C9BFAF",
+      titleTextColor: "#F7EEDC",
+      fontPreset: "editorial",
+      buttonStyle: "metallic",
+    },
+    pageFrom: "#050403",
+    pageTo: "#0C0A09",
+    pageEnd: "#15110D",
+    text: "#F7EEDC",
+    muted: "#C9BFAF",
+    surfaceFrom: "rgba(18,14,10,0.96)",
+    surfaceTo: "rgba(10,8,6,0.84)",
+    softSurfaceFrom: "rgba(28,22,16,0.84)",
+    softSurfaceTo: "rgba(13,10,7,0.72)",
+    border: "rgba(200,155,60,0.2)",
+    strongBorder: "rgba(227,184,92,0.34)",
+    ornamentA: "rgba(200,155,60,0.14)",
+    ornamentB: "rgba(247,221,161,0.1)",
+    ornamentC: "rgba(120,90,40,0.16)",
+    inputBg: "rgba(16,12,9,0.82)",
+    heroOverlayFrom: "rgba(5,4,3,0.34)",
+    heroOverlayTo: "rgba(12,10,9,0.82)",
+    accentFrom: "#B88A2A",
+    accentTo: "#E1BC6A",
+    accentContrast: "#17120A",
+    accentTint: "rgba(200,155,60,0.18)",
+    accentBorder: "rgba(227,184,92,0.3)",
+    accentText: "#F7E7BF",
+    bodyFontFamily: "Manrope, sans-serif",
+    headingFontFamily: "Georgia, 'Times New Roman', serif",
+    buttonMode: "luxury",
+  },
+  nutri_fresh: {
+    defaults: {
+      accentPalette: "emerald",
+      backgroundStyle: "gradient",
+      backgroundColor: "#EDF3E1",
+      surfaceStyle: "soft",
+      surfaceColor: "#FFF9EF",
+      buttonColor: "#7E9453",
+      buttonTextColor: "#F8F5EE",
+      pageTextColor: "#5C6649",
+      titleTextColor: "#2F4529",
+      backgroundGradientDirection: "linear_down",
+      fontPreset: "jakarta",
+      buttonStyle: "soft",
+      animationPreset: "subtle",
+    },
+    pageFrom: "#FBFDF7",
+    pageTo: "#F2F7EA",
+    pageEnd: "#EFF5E6",
+    text: "#2F4529",
+    muted: "#5C6649",
+    surfaceFrom: "rgba(255,249,239,0.98)",
+    surfaceTo: "rgba(249,244,232,0.94)",
+    softSurfaceFrom: "rgba(255,249,239,0.92)",
+    softSurfaceTo: "rgba(242,238,226,0.84)",
+    border: "rgba(126,148,83,0.16)",
+    strongBorder: "rgba(97,120,58,0.22)",
+    ornamentA: "rgba(126,148,83,0.10)",
+    ornamentB: "rgba(182,198,144,0.12)",
+    ornamentC: "rgba(229,214,184,0.10)",
+    inputBg: "rgba(255,251,244,0.96)",
+    heroOverlayFrom: "rgba(251,253,247,0.60)",
+    heroOverlayTo: "rgba(242,247,234,0.88)",
+    accentFrom: "#6F8448",
+    accentTo: "#A4B86F",
+    accentContrast: "#F8F5EE",
+    accentTint: "rgba(126,148,83,0.18)",
+    accentBorder: "rgba(126,148,83,0.24)",
+    accentText: "#4E6132",
+    bodyFontFamily: "'Plus Jakarta Sans', sans-serif",
+    headingFontFamily: "'Plus Jakarta Sans', sans-serif",
+    buttonMode: "soft",
+  },
+  dental_clinic: {
+    defaults: {
+      accentPalette: "sky",
+      backgroundStyle: "blur",
+      backgroundColor: "#EAF5FA",
+      surfaceStyle: "glass",
+      surfaceColor: "#FFFFFF",
+      buttonColor: "#3E8FB6",
+      buttonTextColor: "#FFFFFF",
+      pageTextColor: "#566671",
+      titleTextColor: "#173446",
+      fontPreset: "inter",
+      buttonStyle: "solid",
+      animationPreset: "subtle",
+    },
+    pageFrom: "#F7FCFF",
+    pageTo: "#EDF7FB",
+    pageEnd: "#FFFFFF",
+    text: "#173446",
+    muted: "#566671",
+    surfaceFrom: "rgba(255,255,255,0.74)",
+    surfaceTo: "rgba(240,249,255,0.56)",
+    softSurfaceFrom: "rgba(255,255,255,0.62)",
+    softSurfaceTo: "rgba(236,246,251,0.48)",
+    border: "rgba(62,143,182,0.14)",
+    strongBorder: "rgba(62,143,182,0.22)",
+    ornamentA: "rgba(62,143,182,0.08)",
+    ornamentB: "rgba(125,211,252,0.10)",
+    ornamentC: "rgba(148,163,184,0.08)",
+    inputBg: "rgba(255,255,255,0.86)",
+    heroOverlayFrom: "rgba(247,252,255,0.38)",
+    heroOverlayTo: "rgba(234,245,250,0.74)",
+    accentFrom: "#2F7FA6",
+    accentTo: "#6AB4D6",
+    accentContrast: "#FFFFFF",
+    accentTint: "rgba(62,143,182,0.18)",
+    accentBorder: "rgba(62,143,182,0.24)",
+    accentText: "#25627F",
+    bodyFontFamily: "Inter, sans-serif",
+    headingFontFamily: "Inter, sans-serif",
+    buttonMode: "soft",
+  },
+  pastry_atelier: {
+    defaults: {
+      accentPalette: "rose",
+      backgroundStyle: "gradient",
+      backgroundColor: "#F6E9E2",
+      surfaceStyle: "soft",
+      surfaceColor: "#FFF7F2",
+      buttonColor: "#B8747C",
+      buttonTextColor: "#FFF7F1",
+      pageTextColor: "#6D5651",
+      titleTextColor: "#4B342F",
+      backgroundGradientDirection: "radial",
+      fontPreset: "editorial",
+      buttonStyle: "soft",
+      animationPreset: "subtle",
+    },
+    pageFrom: "#FFF8F5",
+    pageTo: "#F9ECE6",
+    pageEnd: "#FFFDFB",
+    text: "#4B342F",
+    muted: "#6D5651",
+    surfaceFrom: "rgba(255,247,242,0.98)",
+    surfaceTo: "rgba(252,240,234,0.94)",
+    softSurfaceFrom: "rgba(255,247,242,0.92)",
+    softSurfaceTo: "rgba(246,232,226,0.84)",
+    border: "rgba(184,116,124,0.16)",
+    strongBorder: "rgba(160,93,102,0.22)",
+    ornamentA: "rgba(184,116,124,0.10)",
+    ornamentB: "rgba(238,198,181,0.12)",
+    ornamentC: "rgba(132,88,70,0.08)",
+    inputBg: "rgba(255,250,246,0.96)",
+    heroOverlayFrom: "rgba(255,248,245,0.58)",
+    heroOverlayTo: "rgba(249,236,230,0.88)",
+    accentFrom: "#A45D67",
+    accentTo: "#D9A6A4",
+    accentContrast: "#FFF7F1",
+    accentTint: "rgba(184,116,124,0.18)",
+    accentBorder: "rgba(184,116,124,0.24)",
+    accentText: "#8B4E58",
+    bodyFontFamily: "Inter, sans-serif",
+    headingFontFamily: "Georgia, 'Times New Roman', serif",
+    buttonMode: "soft",
+  },
+  aesthetic_glow: {
+    defaults: {
+      accentPalette: "rose",
+      backgroundStyle: "blur",
+      backgroundColor: "#F5ECE5",
+      surfaceStyle: "glass",
+      surfaceColor: "#FFF7F1",
+      buttonColor: "#C8A08F",
+      buttonTextColor: "#2D211D",
+      pageTextColor: "#7A6259",
+      titleTextColor: "#4D3630",
+      fontPreset: "editorial",
+      buttonStyle: "glass",
+      animationPreset: "strong",
+    },
+    pageFrom: "#FFF8F4",
+    pageTo: "#F7EEE8",
+    pageEnd: "#FFFDFC",
+    text: "#4D3630",
+    muted: "#7A6259",
+    surfaceFrom: "rgba(255,247,241,0.72)",
+    surfaceTo: "rgba(250,239,232,0.56)",
+    softSurfaceFrom: "rgba(255,247,241,0.62)",
+    softSurfaceTo: "rgba(244,231,224,0.48)",
+    border: "rgba(200,160,143,0.16)",
+    strongBorder: "rgba(200,160,143,0.24)",
+    ornamentA: "rgba(200,160,143,0.10)",
+    ornamentB: "rgba(240,208,192,0.14)",
+    ornamentC: "rgba(168,120,104,0.08)",
+    inputBg: "rgba(255,250,246,0.88)",
+    heroOverlayFrom: "rgba(255,248,244,0.36)",
+    heroOverlayTo: "rgba(245,236,229,0.72)",
+    accentFrom: "#B98F7D",
+    accentTo: "#E2C2B5",
+    accentContrast: "#2D211D",
+    accentTint: "rgba(200,160,143,0.18)",
+    accentBorder: "rgba(200,160,143,0.26)",
+    accentText: "#7D5A4F",
+    bodyFontFamily: "Inter, sans-serif",
+    headingFontFamily: "Georgia, 'Times New Roman', serif",
+    buttonMode: "luxury",
+  },
+  legal_navy: {
+    defaults: {
+      accentPalette: "slate",
+      backgroundStyle: "gradient",
+      backgroundColor: "#102743",
+      surfaceStyle: "solid",
+      surfaceColor: "#1A2431",
+      buttonColor: "#20344D",
+      buttonTextColor: "#F6EEE1",
+      pageTextColor: "#D3D9E2",
+      titleTextColor: "#FBF6ED",
+      backgroundGradientDirection: "linear_down",
+      fontPreset: "editorial",
+      buttonStyle: "outline",
+      animationPreset: "subtle",
+    },
+    pageFrom: "#0A1628",
+    pageTo: "#102743",
+    pageEnd: "#162D49",
+    text: "#FBF6ED",
+    muted: "#D3D9E2",
+    surfaceFrom: "rgba(26,36,49,0.98)",
+    surfaceTo: "rgba(20,30,42,0.94)",
+    softSurfaceFrom: "rgba(30,40,54,0.92)",
+    softSurfaceTo: "rgba(21,29,41,0.84)",
+    border: "rgba(246,238,225,0.10)",
+    strongBorder: "rgba(246,238,225,0.16)",
+    ornamentA: "rgba(148,163,184,0.10)",
+    ornamentB: "rgba(32,52,77,0.18)",
+    ornamentC: "rgba(251,246,237,0.06)",
+    inputBg: "rgba(19,28,39,0.88)",
+    heroOverlayFrom: "rgba(10,22,40,0.44)",
+    heroOverlayTo: "rgba(16,39,67,0.82)",
+    accentFrom: "#20344D",
+    accentTo: "#304F74",
+    accentContrast: "#F6EEE1",
+    accentTint: "rgba(32,52,77,0.26)",
+    accentBorder: "rgba(246,238,225,0.18)",
+    accentText: "#FBF6ED",
+    bodyFontFamily: "Inter, sans-serif",
+    headingFontFamily: "Georgia, 'Times New Roman', serif",
+    buttonMode: "outline",
+  },
+  fitness_charge: {
+    defaults: {
+      accentPalette: "emerald",
+      backgroundStyle: "blur",
+      backgroundColor: "#0C0F0D",
+      surfaceStyle: "pattern",
+      surfacePatternVariant: "matrix",
+      surfaceColor: "#171B18",
+      buttonColor: "#B6FF38",
+      buttonTextColor: "#12170F",
+      pageTextColor: "#DCE6DF",
+      titleTextColor: "#F7FFF3",
+      fontPreset: "manrope",
+      buttonStyle: "solid",
+      animationPreset: "impact",
+    },
+    pageFrom: "#060806",
+    pageTo: "#0B0E0B",
+    pageEnd: "#111612",
+    text: "#F7FFF3",
+    muted: "#DCE6DF",
+    surfaceFrom: "rgba(23,27,24,0.98)",
+    surfaceTo: "rgba(15,18,16,0.94)",
+    softSurfaceFrom: "rgba(29,35,31,0.92)",
+    softSurfaceTo: "rgba(17,21,18,0.84)",
+    border: "rgba(182,255,56,0.12)",
+    strongBorder: "rgba(182,255,56,0.24)",
+    ornamentA: "rgba(182,255,56,0.16)",
+    ornamentB: "rgba(255,255,255,0.05)",
+    ornamentC: "rgba(148,163,184,0.08)",
+    inputBg: "rgba(18,22,19,0.88)",
+    heroOverlayFrom: "rgba(6,8,6,0.44)",
+    heroOverlayTo: "rgba(12,15,13,0.82)",
+    accentFrom: "#8FD61E",
+    accentTo: "#D6FF72",
+    accentContrast: "#12170F",
+    accentTint: "rgba(182,255,56,0.20)",
+    accentBorder: "rgba(182,255,56,0.24)",
+    accentText: "#D9FF8C",
+    bodyFontFamily: "Manrope, sans-serif",
+    headingFontFamily: "Manrope, sans-serif",
+    buttonMode: "conversion",
+  },
+  realty_luxe: {
+    defaults: {
+      accentPalette: "amber",
+      backgroundStyle: "blur",
+      backgroundColor: "#DCCDBE",
+      surfaceStyle: "glass",
+      surfaceColor: "#F8F0E6",
+      buttonColor: "#B79A67",
+      buttonTextColor: "#201A14",
+      pageTextColor: "#544B44",
+      titleTextColor: "#2C2622",
+      fontPreset: "editorial",
+      buttonStyle: "metallic",
+      animationPreset: "subtle",
+    },
+    pageFrom: "#FBF7F2",
+    pageTo: "#F1E7DC",
+    pageEnd: "#E7DBCF",
+    text: "#2C2622",
+    muted: "#544B44",
+    surfaceFrom: "rgba(248,240,230,0.72)",
+    surfaceTo: "rgba(240,229,217,0.56)",
+    softSurfaceFrom: "rgba(248,240,230,0.62)",
+    softSurfaceTo: "rgba(233,220,206,0.48)",
+    border: "rgba(183,154,103,0.14)",
+    strongBorder: "rgba(183,154,103,0.24)",
+    ornamentA: "rgba(183,154,103,0.10)",
+    ornamentB: "rgba(44,38,34,0.08)",
+    ornamentC: "rgba(255,248,236,0.10)",
+    inputBg: "rgba(252,246,240,0.86)",
+    heroOverlayFrom: "rgba(251,247,242,0.36)",
+    heroOverlayTo: "rgba(220,205,190,0.70)",
+    accentFrom: "#A88A58",
+    accentTo: "#D8C39A",
+    accentContrast: "#201A14",
+    accentTint: "rgba(183,154,103,0.18)",
+    accentBorder: "rgba(183,154,103,0.26)",
+    accentText: "#7C6640",
+    bodyFontFamily: "Inter, sans-serif",
+    headingFontFamily: "Georgia, 'Times New Roman', serif",
+    buttonMode: "luxury",
+  },
+  kids_care: {
+    defaults: {
+      accentPalette: "sky",
+      backgroundStyle: "gradient",
+      backgroundColor: "#DDEFFD",
+      surfaceStyle: "soft",
+      surfaceColor: "#FFF8F0",
+      buttonColor: "#F6B58D",
+      buttonTextColor: "#5A4A43",
+      pageTextColor: "#61788C",
+      titleTextColor: "#355772",
+      backgroundGradientDirection: "radial",
+      fontPreset: "jakarta",
+      buttonStyle: "soft",
+      animationPreset: "subtle",
+    },
+    pageFrom: "#FDFEFF",
+    pageTo: "#ECF8FF",
+    pageEnd: "#FFF8F0",
+    text: "#355772",
+    muted: "#61788C",
+    surfaceFrom: "rgba(255,248,240,0.98)",
+    surfaceTo: "rgba(255,252,246,0.94)",
+    softSurfaceFrom: "rgba(255,248,240,0.92)",
+    softSurfaceTo: "rgba(248,242,233,0.84)",
+    border: "rgba(246,181,141,0.16)",
+    strongBorder: "rgba(53,87,114,0.14)",
+    ornamentA: "rgba(125,211,252,0.10)",
+    ornamentB: "rgba(246,181,141,0.12)",
+    ornamentC: "rgba(253,224,71,0.10)",
+    inputBg: "rgba(255,252,247,0.96)",
+    heroOverlayFrom: "rgba(253,254,255,0.56)",
+    heroOverlayTo: "rgba(221,239,253,0.86)",
+    accentFrom: "#F2A67D",
+    accentTo: "#FFD8A8",
+    accentContrast: "#5A4A43",
+    accentTint: "rgba(246,181,141,0.18)",
+    accentBorder: "rgba(246,181,141,0.24)",
+    accentText: "#87675A",
+    bodyFontFamily: "'Plus Jakarta Sans', sans-serif",
+    headingFontFamily: "'Plus Jakarta Sans', sans-serif",
+    buttonMode: "soft",
   },
   bold_conversion: {
     defaults: {
@@ -1168,6 +1652,33 @@ const LAYOUT_PROFILES = {
     previewHeaderClassName: "flex flex-col items-center text-center",
     previewButtonsClassName: "space-y-2.5",
   },
+  barber_gold: {
+    surfaceClassName: "rounded-[36px] border p-6 sm:p-8",
+    softSurfaceClassName: "rounded-[28px] border p-4",
+    buttonTextClassName: "text-sm font-medium tracking-[0.01em]",
+    pageMaxWidthClassName: "max-w-4xl",
+    homeMaxWidthClassName: "max-w-3xl",
+    heroCentered: true,
+    heroContainerClassName: "space-y-5",
+    heroCopyClassName: "flex flex-col items-center gap-5",
+    heroTextAlignClassName: "items-center text-center",
+    heroActionsClassName: "flex flex-wrap items-center justify-center gap-3",
+    heroDescriptionMaxClassName: "max-w-[34ch]",
+    heroAvatarSizeClassName: "h-24 w-24 rounded-full",
+    heroAvatarIconSizeClassName: "h-10 w-10",
+    homeShellClassName: "flex min-h-[calc(100vh-3rem)] items-center justify-center",
+    homeCardClassName: "w-full p-6 sm:p-10",
+    homeHeaderClassName: "flex flex-col items-center text-center",
+    homeTitleClassName: "mt-5 text-[2.45rem] font-black tracking-[-0.05em]",
+    homeDescriptionClassName: "mt-4 max-w-[30ch] text-sm leading-7",
+    homeButtonsClassName: "mt-8 space-y-3",
+    homeSecondaryLinksClassName: "mt-7 flex flex-wrap justify-center gap-2",
+    catalogGridClassName: "grid gap-5 md:grid-cols-2",
+    formLayoutClassName: "grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]",
+    previewHeaderClassName: "flex flex-col items-center text-center",
+    previewTitleClassName: "mt-3 text-xl font-black tracking-[-0.05em]",
+    previewButtonsClassName: "space-y-2.5",
+  },
   bold_conversion: {
     surfaceClassName: "rounded-[28px] border p-5 sm:p-6",
     softSurfaceClassName: "rounded-[22px] border p-4",
@@ -1377,6 +1888,174 @@ function alphaColor(hex, alpha) {
   return `rgba(${r}, ${g}, ${b}, ${clamp(Number(alpha) || 0, 0, 1)})`;
 }
 
+function parseCssColorMeta(value, fallback = MY_PAGE_DESIGN_DEFAULTS.surfaceColor) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return { hex: normalizeHexColor(fallback), alpha: 1 };
+  }
+
+  if (raw.startsWith("#")) {
+    return { hex: normalizeHexColor(raw, fallback), alpha: 1 };
+  }
+
+  const rgbMatch = raw.match(
+    /rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*([0-9.]+))?\s*\)/i,
+  );
+  if (rgbMatch) {
+    return {
+      hex: rgbToHex(
+        Number(rgbMatch[1]),
+        Number(rgbMatch[2]),
+        Number(rgbMatch[3]),
+      ),
+      alpha: clamp(Number(rgbMatch[4] ?? 1), 0, 1),
+    };
+  }
+
+  return { hex: normalizeHexColor(raw, fallback), alpha: 1 };
+}
+
+function buildAccentTokens(
+  accentBase,
+  accentContrast,
+  titleTextColor,
+) {
+  const accentTextColor = mixHexColors(accentBase, titleTextColor, 0.38);
+
+  return {
+    base: accentBase,
+    from: accentBase,
+    to: isDarkColor(accentBase)
+      ? lightenHex(accentBase, 0.14)
+      : darkenHex(accentBase, 0.08),
+    contrast: accentContrast,
+    tint: alphaColor(accentBase, 0.18),
+    tintSoft: alphaColor(lightenHex(accentBase, 0.08), 0.14),
+    border: alphaColor(mixHexColors(accentBase, accentContrast, 0.18), 0.34),
+    softText: accentTextColor,
+    glow: alphaColor(accentBase, isDarkColor(accentBase) ? 0.34 : 0.28),
+  };
+}
+
+function buildMetallicTones(accentBase) {
+  const deep = darkenHex(accentBase, 0.28);
+  const lowlight = darkenHex(accentBase, 0.16);
+  const mid = mixHexColors(accentBase, lightenHex(accentBase, 0.08), 0.34);
+  const sheen = lightenHex(accentBase, 0.18);
+  const highlight = mixHexColors(sheen, "#FFFFFF", 0.36);
+  const rim = mixHexColors(lowlight, highlight, 0.26);
+
+  return {
+    deep,
+    lowlight,
+    mid,
+    sheen,
+    highlight,
+    rim,
+    shadow: alphaColor(mixHexColors(deep, "#050505", 0.52), 0.34),
+    insetShadow: alphaColor(mixHexColors(deep, "#0A0A0A", 0.42), 0.28),
+  };
+}
+
+function buildMetallicBackground(accent, tone = "primary") {
+  const metallic = buildMetallicTones(accent.base || accent.from);
+  const topHighlightAlpha = tone === "secondary" ? 0.56 : 0.68;
+  const sheenAlpha = tone === "secondary" ? 0.46 : 0.58;
+  const baseGradient =
+    tone === "secondary"
+      ? `linear-gradient(180deg, ${metallic.deep} 0%, ${metallic.lowlight} 18%, ${metallic.mid} 42%, ${metallic.highlight} 54%, ${metallic.mid} 66%, ${metallic.lowlight} 84%, ${metallic.deep} 100%)`
+      : `linear-gradient(135deg, ${metallic.deep} 0%, ${metallic.lowlight} 18%, ${metallic.mid} 38%, ${metallic.highlight} 50%, ${metallic.mid} 62%, ${metallic.lowlight} 82%, ${metallic.deep} 100%)`;
+
+  return [
+    `linear-gradient(118deg, transparent 0 26%, ${alphaColor(metallic.highlight, sheenAlpha)} 38%, ${alphaColor(metallic.sheen, sheenAlpha * 0.58)} 47%, transparent 60%)`,
+    `linear-gradient(180deg, ${alphaColor(metallic.highlight, topHighlightAlpha)} 0%, ${alphaColor(metallic.sheen, topHighlightAlpha * 0.42)} 10%, transparent 32%, ${alphaColor(metallic.deep, 0.18)} 100%)`,
+    baseGradient,
+  ].join(", ");
+}
+
+function buildMetallicBorder(accent) {
+  const metallic = buildMetallicTones(accent.base || accent.from);
+  return alphaColor(metallic.rim, 0.72);
+}
+
+function buildMetallicShadow(accent, tone = "primary") {
+  const metallic = buildMetallicTones(accent.base || accent.from);
+  const outerBlur =
+    tone === "secondary" ? "0 14px 30px -24px" : "0 20px 44px -28px";
+  return [
+    `inset 0 1px 0 ${alphaColor(metallic.highlight, 0.72)}`,
+    `inset 0 -10px 18px ${metallic.insetShadow}`,
+    `${outerBlur} ${metallic.shadow}`,
+  ].join(", ");
+}
+
+function buildGlassButtonStyle(accent, fontFamily, tone = "primary") {
+  const highlight = mixHexColors(accent.base || accent.from, "#FFFFFF", 0.42);
+  const baseAlpha = tone === "secondary" ? 0.12 : 0.18;
+  const edgeAlpha = tone === "secondary" ? 0.26 : 0.34;
+  const borderAlpha = tone === "secondary" ? 0.3 : 0.42;
+
+  return {
+    border: `1px solid ${alphaColor(highlight, borderAlpha)}`,
+    color: accent.contrast,
+    background: [
+      `linear-gradient(180deg, ${alphaColor(highlight, edgeAlpha)} 0%, ${alphaColor(highlight, edgeAlpha * 0.22)} 14%, transparent 44%)`,
+      `linear-gradient(135deg, ${alphaColor(accent.base || accent.from, baseAlpha)} 0%, ${alphaColor(lightenHex(accent.base || accent.from, 0.08), baseAlpha * 0.72)} 100%)`,
+    ].join(", "),
+    backdropFilter: "blur(18px) saturate(1.18)",
+    WebkitBackdropFilter: "blur(18px) saturate(1.18)",
+    boxShadow: [
+      `inset 0 1px 0 ${alphaColor(highlight, 0.46)}`,
+      `0 18px 40px -30px ${alphaColor(accent.base || accent.from, 0.34)}`,
+    ].join(", "),
+    fontFamily,
+  };
+}
+
+function composeBoxShadowLayers(...layers) {
+  return layers
+    .flatMap((layer) => {
+      if (!layer || layer === "none") return [];
+      if (Array.isArray(layer)) return layer.filter(Boolean);
+      return [layer];
+    })
+    .join(", ");
+}
+
+function buildButtonShadowLayers(buttonShadow) {
+  if (buttonShadow === "soft") {
+    return [
+      "0 0 0 1px rgba(17,17,17,0.72)",
+      "2px 2px 0 0 rgba(17,17,17,0.58)",
+    ];
+  }
+
+  if (buttonShadow === "strong") {
+    return [
+      "0 0 0 1px rgba(17,17,17,0.86)",
+      "4px 4px 0 0 rgba(17,17,17,0.80)",
+    ];
+  }
+
+  if (buttonShadow === "hard") {
+    return ["0 0 0 2px #171717", "6px 6px 0 0 #171717"];
+  }
+
+  return [];
+}
+
+function applyButtonShadowStyle(style, buttonShadow) {
+  const boxShadow = composeBoxShadowLayers(
+    buildButtonShadowLayers(buttonShadow),
+    style?.boxShadow,
+  );
+
+  return {
+    ...style,
+    boxShadow: boxShadow || "none",
+  };
+}
+
 function buildBackgroundPalette(backgroundColor) {
   const base = normalizeHexColor(backgroundColor);
   return {
@@ -1407,12 +2086,17 @@ function buildThemeColorDefaults(preset) {
     preset?.defaults?.buttonColor || fallbackButtonColor,
     MY_PAGE_DESIGN_DEFAULTS.buttonColor,
   );
+  const surfaceColor = parseCssColorMeta(
+    preset?.defaults?.surfaceColor || preset?.surfaceFrom || preset?.surfaceTo,
+    MY_PAGE_DESIGN_DEFAULTS.surfaceColor,
+  ).hex;
 
   return {
     backgroundColor: normalizeHexColor(
       preset?.defaults?.backgroundColor,
       MY_PAGE_DESIGN_DEFAULTS.backgroundColor,
     ),
+    surfaceColor,
     buttonColor,
     buttonTextColor: normalizeHexColor(
       preset?.defaults?.buttonTextColor,
@@ -1484,6 +2168,25 @@ function resolveAnimationPreset(value) {
   );
 }
 
+function resolveSurfaceStyle(value, fallback = MY_PAGE_DESIGN_DEFAULTS.surfaceStyle) {
+  return valueFromOptions(
+    value,
+    MY_PAGE_SURFACE_STYLE_OPTIONS.map((item) => item.value),
+    fallback,
+  );
+}
+
+function resolveSurfacePatternVariant(
+  value,
+  fallback = MY_PAGE_DESIGN_DEFAULTS.surfacePatternVariant,
+) {
+  return valueFromOptions(
+    value,
+    MY_PAGE_SURFACE_PATTERN_VARIANT_OPTIONS.map((item) => item.value),
+    fallback,
+  );
+}
+
 function normalizeThemePreset(value, fallback = MY_PAGE_DESIGN_DEFAULTS.themePreset) {
   const normalized = String(value || "")
     .trim()
@@ -1500,6 +2203,11 @@ export function getMyPageThemePresetDefaults(themePreset) {
   const presetKey = normalizeThemePreset(themePreset);
   const preset = THEME_PRESETS[presetKey] || THEME_PRESETS.clean_light;
   const colorDefaults = buildThemeColorDefaults(preset);
+  const inferredSurfaceStyle =
+    parseCssColorMeta(preset?.surfaceFrom, MY_PAGE_DESIGN_DEFAULTS.surfaceColor).alpha <=
+    0.4
+      ? "glass"
+      : MY_PAGE_DESIGN_DEFAULTS.surfaceStyle;
   return {
     themePreset: presetKey,
     accentPalette:
@@ -1512,6 +2220,15 @@ export function getMyPageThemePresetDefaults(themePreset) {
         preset?.defaults?.backgroundColor,
         MY_PAGE_DESIGN_DEFAULTS.backgroundColor,
       ) || MY_PAGE_DESIGN_DEFAULTS.backgroundColor,
+    surfaceStyle: resolveSurfaceStyle(
+      preset?.defaults?.surfaceStyle,
+      inferredSurfaceStyle,
+    ),
+    surfacePatternVariant: resolveSurfacePatternVariant(
+      preset?.defaults?.surfacePatternVariant,
+      MY_PAGE_DESIGN_DEFAULTS.surfacePatternVariant,
+    ),
+    surfaceColor: colorDefaults.surfaceColor,
     buttonColor: colorDefaults.buttonColor,
     buttonTextColor: colorDefaults.buttonTextColor,
     pageTextColor: colorDefaults.pageTextColor,
@@ -1525,11 +2242,15 @@ export function getMyPageThemePresetDefaults(themePreset) {
     fontPreset: preset?.defaults?.fontPreset || MY_PAGE_DESIGN_DEFAULTS.fontPreset,
     buttonStyle:
       preset?.defaults?.buttonStyle || MY_PAGE_DESIGN_DEFAULTS.buttonStyle,
+    buttonShadow: MY_PAGE_DESIGN_DEFAULTS.buttonShadow,
     primaryButtonsLayout: MY_PAGE_DESIGN_DEFAULTS.primaryButtonsLayout,
     secondaryLinksStyle: MY_PAGE_DESIGN_DEFAULTS.secondaryLinksStyle,
+    secondaryLinksIconLayout: MY_PAGE_DESIGN_DEFAULTS.secondaryLinksIconLayout,
     secondaryLinksSize: MY_PAGE_DESIGN_DEFAULTS.secondaryLinksSize,
     secondaryLinksAlign: MY_PAGE_DESIGN_DEFAULTS.secondaryLinksAlign,
-    animationPreset: MY_PAGE_DESIGN_DEFAULTS.animationPreset,
+    animationPreset:
+      preset?.defaults?.animationPreset ||
+      MY_PAGE_DESIGN_DEFAULTS.animationPreset,
   };
 }
 
@@ -1597,6 +2318,18 @@ export function normalizeMyPageDesign(
       design?.backgroundColor,
       presetDefaults.backgroundColor,
     ),
+    surfaceStyle: resolveSurfaceStyle(
+      design?.surfaceStyle,
+      presetDefaults.surfaceStyle,
+    ),
+    surfacePatternVariant: resolveSurfacePatternVariant(
+      design?.surfacePatternVariant,
+      presetDefaults.surfacePatternVariant,
+    ),
+    surfaceColor: normalizeHexColor(
+      design?.surfaceColor,
+      presetDefaults.surfaceColor,
+    ),
     buttonColor: normalizeHexColor(
       design?.buttonColor,
       presetDefaults.buttonColor,
@@ -1633,6 +2366,11 @@ export function normalizeMyPageDesign(
       MY_PAGE_BUTTON_STYLE_OPTIONS.map((item) => item.value),
       presetDefaults.buttonStyle,
     ),
+    buttonShadow: valueFromOptions(
+      design?.buttonShadow,
+      MY_PAGE_BUTTON_SHADOW_OPTIONS.map((item) => item.value),
+      presetDefaults.buttonShadow,
+    ),
     buttonRadius: valueFromOptions(
       LEGACY_BUTTON_RADIUS_MAP[String(design?.buttonRadius || "")
         .trim()
@@ -1649,6 +2387,11 @@ export function normalizeMyPageDesign(
       design?.secondaryLinksStyle,
       MY_PAGE_SECONDARY_LINK_STYLE_OPTIONS.map((item) => item.value),
       MY_PAGE_DESIGN_DEFAULTS.secondaryLinksStyle,
+    ),
+    secondaryLinksIconLayout: valueFromOptions(
+      design?.secondaryLinksIconLayout,
+      MY_PAGE_SECONDARY_LINK_ICON_LAYOUT_OPTIONS.map((item) => item.value),
+      MY_PAGE_DESIGN_DEFAULTS.secondaryLinksIconLayout,
     ),
     secondaryLinksSize: valueFromOptions(
       design?.secondaryLinksSize,
@@ -1742,6 +2485,27 @@ export function getMyPageHomeButtonProps(
 ) {
   const buttonProps = getMyPageButtonProps(theme, variant);
   const layout = getMyPageHomeButtonLayout(theme, options);
+  const mergedStyle = {
+    ...buttonProps.style,
+    ...layout.buttonStyle,
+  };
+  const shadowMode =
+    theme?.design?.buttonShadow || MY_PAGE_DESIGN_DEFAULTS.buttonShadow;
+  const baseBoxShadow = buttonProps?.style?.boxShadow;
+  const layoutBoxShadow = layout?.buttonStyle?.boxShadow;
+
+  if (shadowMode !== "none" && layoutBoxShadow === "none") {
+    mergedStyle.boxShadow = baseBoxShadow || "none";
+  } else if (
+    shadowMode !== "none" &&
+    layoutBoxShadow &&
+    layoutBoxShadow !== "none"
+  ) {
+    mergedStyle.boxShadow = composeBoxShadowLayers(
+      baseBoxShadow,
+      layoutBoxShadow,
+    );
+  }
 
   return {
     buttonProps: {
@@ -1750,10 +2514,7 @@ export function getMyPageHomeButtonProps(
         theme?.layout?.homeButtonClassName,
         layout.buttonClassName,
       ),
-      style: {
-        ...buttonProps.style,
-        ...layout.buttonStyle,
-      },
+      style: mergedStyle,
     },
     layout,
   };
@@ -2109,64 +2870,491 @@ function buildHeroMediaStyle(preset, accent, imageUrl) {
   };
 }
 
-function buildPrimaryButtonStyle(preset, accent, buttonStyle, fontFamily) {
-  if (buttonStyle === "soft") {
+function buildSurfaceTokens(surfaceColor) {
+  const base = normalizeHexColor(surfaceColor, MY_PAGE_DESIGN_DEFAULTS.surfaceColor);
+  const dark = isDarkColor(base);
+  const top = dark ? lightenHex(base, 0.08) : mixHexColors(base, "#FFFFFF", 0.22);
+  const mid = dark ? lightenHex(base, 0.04) : mixHexColors(base, "#FFFFFF", 0.12);
+  const low = dark ? darkenHex(base, 0.16) : mixHexColors(base, "#0F172A", 0.06);
+  const edge = mixHexColors(base, dark ? "#FFFFFF" : "#0F172A", dark ? 0.18 : 0.14);
+  const strongEdge = mixHexColors(
+    base,
+    dark ? "#FFFFFF" : "#0F172A",
+    dark ? 0.32 : 0.22,
+  );
+  const highlight = mixHexColors(top, "#FFFFFF", dark ? 0.28 : 0.56);
+  const shadowBase = mixHexColors(base, "#08111F", dark ? 0.52 : 0.26);
+
+  return {
+    base,
+    dark,
+    top,
+    mid,
+    low,
+    edge,
+    strongEdge,
+    highlight,
+    glow: alphaColor(base, dark ? 0.24 : 0.14),
+    shadow: alphaColor(shadowBase, dark ? 0.42 : 0.18),
+  };
+}
+
+function buildSurfaceBaseFill(surface, tone = "main") {
+  const profile =
+    tone === "soft"
+      ? {
+          top: surface.dark ? 0.76 : 0.92,
+          base: surface.dark ? 0.62 : 0.82,
+          low: surface.dark ? 0.48 : 0.74,
+        }
+      : tone === "preview"
+        ? {
+            top: surface.dark ? 0.92 : 0.98,
+            base: surface.dark ? 0.82 : 0.92,
+            low: surface.dark ? 0.72 : 0.84,
+          }
+        : {
+            top: surface.dark ? 0.94 : 0.98,
+            base: surface.dark ? 0.82 : 0.9,
+            low: surface.dark ? 0.72 : 0.84,
+          };
+
+  return `linear-gradient(180deg, ${alphaColor(surface.top, profile.top)} 0%, ${alphaColor(surface.base, profile.base)} 58%, ${alphaColor(surface.low, profile.low)} 100%)`;
+}
+
+function buildSurfacePatternPalette(surface, tone = "main") {
+  const profile =
+    tone === "soft"
+      ? {
+          line: surface.dark ? 0.12 : 0.08,
+          haze: surface.dark ? 0.18 : 0.12,
+          glowSoft: surface.dark ? 0.16 : 0.1,
+          mist: surface.dark ? 0.18 : 0.12,
+          mesh: surface.dark ? 0.14 : 0.09,
+          lineStrong: surface.dark ? 0.24 : 0.14,
+          dot: surface.dark ? 0.18 : 0.12,
+          shadow: surface.dark ? 0.16 : 0.1,
+        }
+      : tone === "preview"
+        ? {
+            line: surface.dark ? 0.18 : 0.13,
+            haze: surface.dark ? 0.24 : 0.17,
+            glowSoft: surface.dark ? 0.22 : 0.15,
+            mist: surface.dark ? 0.24 : 0.17,
+            mesh: surface.dark ? 0.18 : 0.13,
+            lineStrong: surface.dark ? 0.3 : 0.2,
+            dot: surface.dark ? 0.24 : 0.17,
+            shadow: surface.dark ? 0.2 : 0.14,
+          }
+        : {
+            line: surface.dark ? 0.22 : 0.16,
+            haze: surface.dark ? 0.28 : 0.2,
+            glowSoft: surface.dark ? 0.24 : 0.18,
+            mist: surface.dark ? 0.28 : 0.2,
+            mesh: surface.dark ? 0.22 : 0.16,
+            lineStrong: surface.dark ? 0.36 : 0.24,
+            dot: surface.dark ? 0.28 : 0.2,
+            shadow: surface.dark ? 0.24 : 0.16,
+          };
+
+  return {
+    line: alphaColor(lightenHex(surface.base, surface.dark ? 0.22 : 0.18), profile.line),
+    haze: alphaColor(lightenHex(surface.base, surface.dark ? 0.16 : 0.12), profile.haze),
+    glowSoft: alphaColor(
+      lightenHex(surface.base, surface.dark ? 0.1 : 0.08),
+      profile.glowSoft,
+    ),
+    mist: alphaColor(lightenHex(surface.base, surface.dark ? 0.24 : 0.18), profile.mist),
+    mesh: alphaColor(lightenHex(surface.base, surface.dark ? 0.2 : 0.16), profile.mesh),
+    lineStrong: alphaColor(
+      lightenHex(surface.base, surface.dark ? 0.3 : 0.24),
+      profile.lineStrong,
+    ),
+    dot: alphaColor(lightenHex(surface.base, surface.dark ? 0.36 : 0.28), profile.dot),
+    shadow: alphaColor(darkenHex(surface.base, surface.dark ? 0.14 : 0.1), profile.shadow),
+  };
+}
+
+function buildSurfacePatternFill(surface, patternVariant, tone = "main") {
+  const variant = valueFromOptions(
+    patternVariant,
+    MY_PAGE_SURFACE_PATTERN_VARIANT_OPTIONS.map((item) => item.value),
+    MY_PAGE_DESIGN_DEFAULTS.surfacePatternVariant,
+  );
+  const palette = buildSurfacePatternPalette(surface, tone);
+  const fillBase = buildSurfaceBaseFill(surface, tone);
+  const scale = tone === "preview" ? 0.62 : tone === "soft" ? 0.82 : 1;
+  const scaled = (value) => Number((value * scale).toFixed(1));
+  const px = (value) => `${scaled(value)}px`;
+
+  if (variant === "morph") {
+    return `linear-gradient(144deg, transparent 0 18%, ${palette.mesh} 18% 34%, transparent 34% 54%, ${palette.lineStrong} 54% 68%, transparent 68% 100%), linear-gradient(112deg, transparent 0 42%, ${palette.shadow} 42% 54%, transparent 54% 100%), radial-gradient(${px(176)} ${px(104)} at 20% 24%, ${palette.haze} 0 48%, transparent 54%), radial-gradient(${px(148)} ${px(88)} at 78% 24%, ${palette.glowSoft} 0 42%, transparent 48%), radial-gradient(${px(208)} ${px(122)} at 60% 86%, ${palette.mist} 0 34%, transparent 42%), ${fillBase}`;
+  }
+
+  if (variant === "organic") {
+    return `radial-gradient(${px(224)} ${px(136)} at 14% 16%, ${palette.haze} 0 42%, transparent 48%), radial-gradient(${px(260)} ${px(160)} at 88% 18%, ${palette.glowSoft} 0 38%, transparent 45%), radial-gradient(${px(238)} ${px(148)} at 24% 92%, ${palette.mist} 0 32%, transparent 40%), radial-gradient(${px(184)} ${px(112)} at 88% 78%, ${palette.mesh} 0 30%, transparent 38%), linear-gradient(160deg, transparent 0 64%, ${palette.shadow} 64% 82%, transparent 82% 100%), ${fillBase}`;
+  }
+
+  if (variant === "matrix") {
+    return `linear-gradient(180deg, ${palette.shadow} 0%, transparent 34%), repeating-linear-gradient(90deg, transparent 0 ${px(13)}, ${palette.line} ${px(13)} ${px(14)}, transparent ${px(14)} ${px(27)}, ${palette.lineStrong} ${px(27)} ${px(28)}), repeating-linear-gradient(180deg, transparent 0 ${px(13)}, ${palette.line} ${px(13)} ${px(14)}, transparent ${px(14)} ${px(27)}, ${palette.lineStrong} ${px(27)} ${px(28)}), radial-gradient(circle at ${px(1.5)} ${px(1.5)}, ${palette.dot} 0 ${px(1.5)}, transparent ${px(1.8)}) 0 0 / ${px(14)} ${px(14)} repeat, linear-gradient(90deg, transparent 0 49%, ${palette.mesh} 49% 51%, transparent 51% 100%), ${fillBase}`;
+  }
+
+  return `repeating-linear-gradient(90deg, transparent 0 ${px(42)}, ${palette.lineStrong} ${px(42)} ${px(44)}), repeating-linear-gradient(180deg, transparent 0 ${px(42)}, ${palette.lineStrong} ${px(42)} ${px(44)}), repeating-linear-gradient(90deg, transparent 0 ${px(21)}, ${palette.line} ${px(21)} ${px(22)}, transparent ${px(22)} ${px(42)}), repeating-linear-gradient(180deg, transparent 0 ${px(21)}, ${palette.line} ${px(21)} ${px(22)}, transparent ${px(22)} ${px(42)}), radial-gradient(${px(220)} ${px(132)} at 16% 18%, ${palette.haze} 0 26%, transparent 54%), linear-gradient(135deg, transparent 0 72%, ${palette.shadow} 72% 88%, transparent 88% 100%), ${fillBase}`;
+}
+
+function buildSurfaceBlurFill(surface, tone = "main") {
+  const profile =
+    tone === "soft"
+      ? {
+          orbA: surface.dark ? 0.12 : 0.08,
+          orbB: surface.dark ? 0.1 : 0.07,
+          orbC: surface.dark ? 0.12 : 0.08,
+          backdrop: "blur(14px) saturate(1.06)",
+        }
+      : tone === "preview"
+        ? {
+            orbA: surface.dark ? 0.2 : 0.14,
+            orbB: surface.dark ? 0.16 : 0.12,
+            orbC: surface.dark ? 0.18 : 0.12,
+            backdrop: "blur(18px) saturate(1.08)",
+          }
+        : {
+            orbA: surface.dark ? 0.22 : 0.16,
+            orbB: surface.dark ? 0.18 : 0.12,
+            orbC: surface.dark ? 0.2 : 0.14,
+            backdrop: "blur(18px) saturate(1.08)",
+          };
+
+  return {
+    background: [
+      `radial-gradient(140px 84px at 14% 18%, ${alphaColor(lightenHex(surface.base, 0.18), profile.orbA)} 0%, transparent 68%)`,
+      `radial-gradient(128px 78px at 84% 22%, ${alphaColor(lightenHex(surface.base, 0.1), profile.orbB)} 0%, transparent 66%)`,
+      `radial-gradient(168px 96px at 56% 86%, ${alphaColor(lightenHex(surface.base, 0.24), profile.orbC)} 0%, transparent 70%)`,
+      buildSurfaceBaseFill(surface, tone),
+    ].join(", "),
+    backdropFilter: profile.backdrop,
+    WebkitBackdropFilter: profile.backdrop,
+  };
+}
+
+function buildSurfaceLayerStyles(
+  surface,
+  variant,
+  fontFamily,
+  pageTextColor,
+  surfacePatternVariant,
+) {
+  const shared = {
+    color: pageTextColor,
+    fontFamily,
+  };
+
+  if (variant === "solid") {
     return {
+      main: {
+        borderColor: alphaColor(surface.strongEdge, surface.dark ? 0.76 : 0.24),
+        background: `linear-gradient(180deg, ${surface.top} 0%, ${surface.base} 58%, ${surface.low} 100%)`,
+        boxShadow: [
+          `inset 0 1px 0 ${alphaColor(surface.highlight, surface.dark ? 0.14 : 0.72)}`,
+          `0 30px 72px -48px ${surface.shadow}`,
+        ].join(", "),
+        ...shared,
+      },
+      soft: {
+        borderColor: alphaColor(surface.edge, surface.dark ? 0.46 : 0.18),
+        background: `linear-gradient(180deg, ${alphaColor(surface.top, surface.dark ? 0.92 : 0.98)} 0%, ${alphaColor(surface.base, surface.dark ? 0.78 : 0.88)} 100%)`,
+        boxShadow: `0 22px 54px -46px ${surface.glow}`,
+        ...shared,
+      },
+      preview: {
+        borderColor: alphaColor(surface.strongEdge, surface.dark ? 0.7 : 0.2),
+        background: `linear-gradient(180deg, ${surface.top} 0%, ${surface.base} 62%, ${surface.low} 100%)`,
+        boxShadow: `0 26px 68px -44px ${surface.shadow}`,
+      },
+      input: {
+        background: alphaColor(surface.mid, surface.dark ? 0.78 : 0.96),
+        borderColor: alphaColor(surface.edge, surface.dark ? 0.42 : 0.18),
+        boxShadow: `inset 0 1px 0 ${alphaColor(surface.highlight, surface.dark ? 0.08 : 0.52)}`,
+        ...shared,
+      },
+    };
+  }
+
+  if (variant === "blur") {
+    return {
+      main: {
+        borderColor: alphaColor(surface.highlight, surface.dark ? 0.28 : 0.42),
+        ...buildSurfaceBlurFill(surface, "main"),
+        boxShadow: [
+          `inset 0 1px 0 ${alphaColor(surface.highlight, surface.dark ? 0.16 : 0.6)}`,
+          `0 24px 60px -46px ${surface.shadow}`,
+        ].join(", "),
+        ...shared,
+      },
+      soft: {
+        borderColor: alphaColor(surface.edge, surface.dark ? 0.24 : 0.18),
+        ...buildSurfaceBlurFill(surface, "soft"),
+        boxShadow: `0 20px 50px -46px ${surface.glow}`,
+        ...shared,
+      },
+      preview: {
+        borderColor: alphaColor(surface.highlight, surface.dark ? 0.32 : 0.46),
+        ...buildSurfaceBlurFill(surface, "preview"),
+        boxShadow: `0 26px 66px -42px ${surface.shadow}`,
+      },
+      input: {
+        background: alphaColor(surface.mid, surface.dark ? 0.72 : 0.94),
+        borderColor: alphaColor(surface.edge, surface.dark ? 0.28 : 0.18),
+        boxShadow: `inset 0 1px 0 ${alphaColor(surface.highlight, surface.dark ? 0.1 : 0.44)}`,
+        backdropFilter: "blur(12px) saturate(1.04)",
+        WebkitBackdropFilter: "blur(12px) saturate(1.04)",
+        ...shared,
+      },
+    };
+  }
+
+  if (variant === "pattern") {
+    return {
+      main: {
+        borderColor: alphaColor(surface.strongEdge, surface.dark ? 0.58 : 0.22),
+        background: buildSurfacePatternFill(
+          surface,
+          surfacePatternVariant,
+          "main",
+        ),
+        boxShadow: `0 24px 58px -44px ${surface.shadow}`,
+        ...shared,
+      },
+      soft: {
+        borderColor: alphaColor(surface.edge, surface.dark ? 0.28 : 0.16),
+        background: buildSurfacePatternFill(
+          surface,
+          surfacePatternVariant,
+          "soft",
+        ),
+        boxShadow: `0 18px 44px -42px ${surface.glow}`,
+        ...shared,
+      },
+      preview: {
+        borderColor: alphaColor(surface.strongEdge, surface.dark ? 0.62 : 0.24),
+        background: buildSurfacePatternFill(
+          surface,
+          surfacePatternVariant,
+          "preview",
+        ),
+        boxShadow: `0 26px 62px -40px ${surface.shadow}`,
+      },
+      input: {
+        background: alphaColor(surface.mid, surface.dark ? 0.72 : 0.94),
+        borderColor: alphaColor(surface.edge, surface.dark ? 0.28 : 0.16),
+        boxShadow: `inset 0 1px 0 ${alphaColor(surface.highlight, surface.dark ? 0.1 : 0.42)}`,
+        ...shared,
+      },
+    };
+  }
+
+  if (variant === "glass") {
+    const glassBorder = alphaColor(surface.highlight, surface.dark ? 0.32 : 0.5);
+    const glassBackdrop = {
+      backdropFilter: "blur(20px) saturate(1.14)",
+      WebkitBackdropFilter: "blur(20px) saturate(1.14)",
+    };
+
+    return {
+      main: {
+        borderColor: glassBorder,
+        background: [
+          `linear-gradient(180deg, ${alphaColor(surface.highlight, surface.dark ? 0.2 : 0.58)} 0%, ${alphaColor(surface.highlight, surface.dark ? 0.05 : 0.14)} 16%, transparent 46%)`,
+          `linear-gradient(135deg, ${alphaColor(surface.top, surface.dark ? 0.2 : 0.34)} 0%, ${alphaColor(surface.base, surface.dark ? 0.24 : 0.14)} 100%)`,
+        ].join(", "),
+        boxShadow: [
+          `inset 0 1px 0 ${alphaColor(surface.highlight, surface.dark ? 0.18 : 0.56)}`,
+          `0 26px 64px -48px ${surface.shadow}`,
+        ].join(", "),
+        ...glassBackdrop,
+        ...shared,
+      },
+      soft: {
+        borderColor: alphaColor(surface.highlight, surface.dark ? 0.24 : 0.42),
+        background: [
+          `linear-gradient(180deg, ${alphaColor(surface.highlight, surface.dark ? 0.14 : 0.42)} 0%, transparent 28%)`,
+          `linear-gradient(135deg, ${alphaColor(surface.top, surface.dark ? 0.16 : 0.22)} 0%, ${alphaColor(surface.base, surface.dark ? 0.18 : 0.1)} 100%)`,
+        ].join(", "),
+        boxShadow: `0 22px 54px -48px ${surface.glow}`,
+        ...glassBackdrop,
+        ...shared,
+      },
+      preview: {
+        borderColor: glassBorder,
+        background: [
+          `linear-gradient(180deg, ${alphaColor(surface.highlight, surface.dark ? 0.22 : 0.62)} 0%, transparent 24%)`,
+          `linear-gradient(135deg, ${alphaColor(surface.top, surface.dark ? 0.22 : 0.34)} 0%, ${alphaColor(surface.base, surface.dark ? 0.28 : 0.16)} 100%)`,
+        ].join(", "),
+        boxShadow: `0 28px 70px -42px ${surface.shadow}`,
+        ...glassBackdrop,
+      },
+      input: {
+        background: [
+          `linear-gradient(180deg, ${alphaColor(surface.highlight, surface.dark ? 0.12 : 0.3)} 0%, transparent 24%)`,
+          `linear-gradient(135deg, ${alphaColor(surface.top, surface.dark ? 0.14 : 0.18)} 0%, ${alphaColor(surface.base, surface.dark ? 0.2 : 0.12)} 100%)`,
+        ].join(", "),
+        borderColor: alphaColor(surface.highlight, surface.dark ? 0.24 : 0.38),
+        boxShadow: `inset 0 1px 0 ${alphaColor(surface.highlight, surface.dark ? 0.12 : 0.44)}`,
+        ...glassBackdrop,
+        ...shared,
+      },
+    };
+  }
+
+  if (variant === "outline") {
+    return {
+      main: {
+        borderColor: alphaColor(surface.strongEdge, surface.dark ? 0.56 : 0.24),
+        background: alphaColor(surface.base, surface.dark ? 0.08 : 0.04),
+        boxShadow: `inset 0 1px 0 ${alphaColor(surface.highlight, surface.dark ? 0.08 : 0.48)}`,
+        ...shared,
+      },
+      soft: {
+        borderColor: alphaColor(surface.edge, surface.dark ? 0.42 : 0.18),
+        background: alphaColor(surface.base, surface.dark ? 0.12 : 0.06),
+        boxShadow: "none",
+        ...shared,
+      },
+      preview: {
+        borderColor: alphaColor(surface.strongEdge, surface.dark ? 0.5 : 0.22),
+        background: alphaColor(surface.base, surface.dark ? 0.1 : 0.05),
+        boxShadow: `0 18px 48px -44px ${surface.glow}`,
+      },
+      input: {
+        background: alphaColor(surface.base, surface.dark ? 0.12 : 0.08),
+        borderColor: alphaColor(surface.edge, surface.dark ? 0.36 : 0.18),
+        boxShadow: "none",
+        ...shared,
+      },
+    };
+  }
+
+  return {
+    main: {
+      borderColor: alphaColor(surface.edge, surface.dark ? 0.52 : 0.18),
+      background: `linear-gradient(180deg, ${alphaColor(surface.top, surface.dark ? 0.94 : 0.98)} 0%, ${alphaColor(surface.base, surface.dark ? 0.8 : 0.9)} 100%)`,
+      boxShadow: `0 28px 68px -46px ${surface.glow}`,
+      ...shared,
+    },
+    soft: {
+      borderColor: alphaColor(surface.edge, surface.dark ? 0.42 : 0.16),
+      background: `linear-gradient(180deg, ${alphaColor(surface.mid, surface.dark ? 0.72 : 0.88)} 0%, ${alphaColor(surface.base, surface.dark ? 0.58 : 0.76)} 100%)`,
+      boxShadow: `0 18px 44px -42px ${surface.glow}`,
+      ...shared,
+    },
+    preview: {
+      borderColor: alphaColor(surface.strongEdge, surface.dark ? 0.48 : 0.18),
+      background: `linear-gradient(180deg, ${alphaColor(surface.top, surface.dark ? 0.96 : 0.98)} 0%, ${alphaColor(surface.base, surface.dark ? 0.84 : 0.92)} 100%)`,
+      boxShadow: `0 24px 62px -42px ${surface.shadow}`,
+    },
+    input: {
+      background: alphaColor(surface.mid, surface.dark ? 0.7 : 0.94),
+      borderColor: alphaColor(surface.edge, surface.dark ? 0.38 : 0.16),
+      boxShadow: `inset 0 1px 0 ${alphaColor(surface.highlight, surface.dark ? 0.08 : 0.46)}`,
+      ...shared,
+    },
+  };
+}
+
+function buildPrimaryButtonStyle(
+  _preset,
+  accent,
+  buttonStyle,
+  buttonShadow,
+  fontFamily,
+) {
+  let style;
+
+  if (buttonStyle === "metallic") {
+    style = {
+      border: `1px solid ${buildMetallicBorder(accent)}`,
+      color: accent.contrast,
+      background: buildMetallicBackground(accent, "primary"),
+      boxShadow: buildMetallicShadow(accent, "primary"),
+      fontFamily,
+    };
+  } else if (buttonStyle === "glass") {
+    style = buildGlassButtonStyle(accent, fontFamily, "primary");
+  } else if (buttonStyle === "soft") {
+    style = {
       border: `1px solid ${accent.border}`,
       color: accent.contrast,
       background: `linear-gradient(180deg, ${accent.tintSoft}, ${accent.tint})`,
       boxShadow: `0 18px 38px -28px ${accent.glow}`,
       fontFamily,
     };
-  }
-
-  if (buttonStyle === "outline") {
-    return {
+  } else if (buttonStyle === "outline") {
+    style = {
       border: `1px solid ${accent.border}`,
       color: accent.contrast,
       background: alphaColor(accent.from, 0.12),
       boxShadow: "none",
       fontFamily,
     };
+  } else {
+    style = {
+      border: `1px solid ${accent.border}`,
+      color: accent.contrast,
+      background: `linear-gradient(135deg, ${accent.from}, ${accent.to})`,
+      boxShadow: `0 20px 44px -28px ${accent.glow}`,
+      fontFamily,
+    };
   }
 
-  return {
-    border: `1px solid ${accent.border}`,
-    color: accent.contrast,
-    background: `linear-gradient(135deg, ${accent.from}, ${accent.to})`,
-    boxShadow: `0 20px 44px -28px ${accent.glow}`,
-    fontFamily,
-  };
+  return applyButtonShadowStyle(style, buttonShadow);
 }
 
-function buildSecondaryButtonStyle(preset, accent, buttonStyle, fontFamily) {
-  if (buttonStyle === "soft") {
-    return {
+function buildSecondaryButtonStyle(
+  _preset,
+  accent,
+  buttonStyle,
+  buttonShadow,
+  fontFamily,
+) {
+  let style;
+
+  if (buttonStyle === "metallic") {
+    style = {
+      border: `1px solid ${buildMetallicBorder(accent)}`,
+      color: accent.contrast,
+      background: buildMetallicBackground(accent, "secondary"),
+      boxShadow: buildMetallicShadow(accent, "secondary"),
+      fontFamily,
+    };
+  } else if (buttonStyle === "glass") {
+    style = buildGlassButtonStyle(accent, fontFamily, "secondary");
+  } else if (buttonStyle === "soft") {
+    style = {
       border: `1px solid ${accent.border}`,
       color: accent.contrast,
       background: `linear-gradient(180deg, ${accent.tintSoft}, ${alphaColor(accent.to, 0.18)})`,
       boxShadow: `0 14px 30px -26px ${accent.glow}`,
       fontFamily,
     };
-  }
-
-  if (buttonStyle === "outline") {
-    return {
+  } else if (buttonStyle === "outline") {
+    style = {
       border: `1px solid ${accent.border}`,
       color: accent.contrast,
       background: alphaColor(accent.from, 0.08),
       boxShadow: "none",
       fontFamily,
     };
+  } else {
+    style = {
+      border: `1px solid ${accent.border}`,
+      color: accent.contrast,
+      background: `linear-gradient(180deg, ${accent.from}, ${accent.to})`,
+      boxShadow: `0 16px 34px -28px ${accent.glow}`,
+      fontFamily,
+    };
   }
 
-  return {
-    border: `1px solid ${accent.border}`,
-    color: accent.contrast,
-    background: `linear-gradient(180deg, ${accent.from}, ${accent.to})`,
-    boxShadow: `0 16px 34px -28px ${accent.glow}`,
-    fontFamily,
-  };
+  return applyButtonShadowStyle(style, buttonShadow);
 }
 
 export function getMyPageTheme(pageOrDesign = {}) {
@@ -2202,6 +3390,10 @@ export function getMyPageTheme(pageOrDesign = {}) {
     design.pageTextColor,
     preset.muted || MY_PAGE_DESIGN_DEFAULTS.pageTextColor,
   );
+  const surfaceBaseColor = normalizeHexColor(
+    design.surfaceColor,
+    getMyPageThemePresetDefaults(presetKey).surfaceColor,
+  );
   const accentBase = normalizeHexColor(
     design.buttonColor,
     ACCENT_SWATCHES[design.accentPalette] ||
@@ -2212,23 +3404,19 @@ export function getMyPageTheme(pageOrDesign = {}) {
     design.buttonTextColor,
     getReadableTextColor(accentBase, "#FFFFFF", "#111827"),
   );
-  const accentTextColor = mixHexColors(accentBase, titleTextColor, 0.38);
-  const accent = {
-    from: accentBase,
-    to: isDarkColor(accentBase)
-      ? lightenHex(accentBase, 0.14)
-      : darkenHex(accentBase, 0.08),
-    contrast: accentContrast,
-    tint: alphaColor(accentBase, 0.18),
-    tintSoft: alphaColor(lightenHex(accentBase, 0.08), 0.14),
-    border: alphaColor(mixHexColors(accentBase, accentContrast, 0.18), 0.34),
-    softText: accentTextColor,
-    glow: alphaColor(accentBase, isDarkColor(accentBase) ? 0.34 : 0.28),
-  };
+  const accent = buildAccentTokens(accentBase, accentContrast, titleTextColor);
   const backgroundPalette = buildBackgroundPalette(design.backgroundColor);
   const backgroundOverlayItems = buildBackgroundOverlayItems(
     design.backgroundStyle,
     backgroundPalette,
+  );
+  const surfaceTokens = buildSurfaceTokens(surfaceBaseColor);
+  const surfaceLayers = buildSurfaceLayerStyles(
+    surfaceTokens,
+    design.surfaceStyle,
+    fontFamily,
+    pageTextColor,
+    design.surfacePatternVariant,
   );
   const shouldUseHeroPageBackground =
     usesHeroLayout && design.backgroundStyle !== "blur";
@@ -2257,37 +3445,25 @@ export function getMyPageTheme(pageOrDesign = {}) {
     fontFamily,
   };
 
-  const surfaceStyle = {
-    borderColor: preset.border,
-    background: `linear-gradient(180deg, ${preset.surfaceFrom}, ${preset.surfaceTo})`,
-    boxShadow: `0 28px 72px -44px ${accent.tint}`,
-    fontFamily,
-  };
-
-  const softSurfaceStyle = {
-    borderColor: preset.strongBorder,
-    background: `linear-gradient(180deg, ${preset.softSurfaceFrom}, ${preset.softSurfaceTo})`,
-    fontFamily,
-  };
+  const surfaceStyle = surfaceLayers.main;
+  const softSurfaceStyle = surfaceLayers.soft;
 
   const accentTextStyle = { color: accent.softText };
   const mutedTextStyle = { color: pageTextColor };
-  const dividerStyle = { borderColor: preset.border };
-  const previewFrameStyle = {
-    borderColor: preset.strongBorder,
-    background: `linear-gradient(180deg, ${preset.surfaceFrom}, ${preset.softSurfaceTo})`,
-    boxShadow: `0 26px 70px -42px ${accent.glow}`,
-  };
+  const dividerStyle = { borderColor: surfaceLayers.soft.borderColor };
+  const previewFrameStyle = surfaceLayers.preview;
   const primaryButtonStyle = buildPrimaryButtonStyle(
     preset,
     accent,
     design.buttonStyle,
+    design.buttonShadow,
     fontFamily,
   );
   const secondaryButtonStyle = buildSecondaryButtonStyle(
     preset,
     accent,
     design.buttonStyle,
+    design.buttonShadow,
     fontFamily,
   );
 
@@ -2319,12 +3495,7 @@ export function getMyPageTheme(pageOrDesign = {}) {
     mutedTextStyle,
     dividerStyle,
     previewFrameStyle,
-    inputStyle: {
-      background: preset.inputBg,
-      borderColor: preset.border,
-      color: pageTextColor,
-      fontFamily,
-    },
+    inputStyle: surfaceLayers.input,
     primaryButtonStyle,
     secondaryButtonStyle,
     activeCardStyle: {

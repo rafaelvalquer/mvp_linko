@@ -423,23 +423,147 @@ function normalizeSecondaryLinkLabel(item) {
   return String(item?.label || item?.platform || "").trim();
 }
 
-function resolveSecondaryLinkIcon(platform) {
+function resolveSecondaryLinkBrand(platform) {
   const normalized = String(platform || "").trim().toLowerCase();
-  if (normalized === "instagram") return FaInstagram;
-  if (normalized === "facebook") return FaFacebookF;
-  if (normalized === "tiktok") return FaTiktok;
-  if (normalized === "youtube") return FaYoutube;
-  if (normalized === "site") return FaGlobe;
-  return FaGlobe;
+
+  if (normalized === "instagram") {
+    return {
+      Icon: FaInstagram,
+      badgeStyle: {
+        background:
+          "linear-gradient(135deg, #F58529 0%, #FEDA77 28%, #DD2A7B 62%, #8134AF 82%, #515BD4 100%)",
+        color: "#FFFFFF",
+        border: "1px solid rgba(255,255,255,0.2)",
+        boxShadow: "0 16px 30px -20px rgba(221,42,123,0.55)",
+      },
+    };
+  }
+
+  if (normalized === "facebook") {
+    return {
+      Icon: FaFacebookF,
+      badgeStyle: {
+        background: "linear-gradient(135deg, #7AA7FF 0%, #1877F2 100%)",
+        color: "#FFFFFF",
+        border: "1px solid rgba(255,255,255,0.18)",
+        boxShadow: "0 16px 30px -20px rgba(24,119,242,0.5)",
+      },
+    };
+  }
+
+  if (normalized === "tiktok") {
+    return {
+      Icon: FaTiktok,
+      badgeStyle: {
+        background: "linear-gradient(135deg, #1F2937 0%, #020617 100%)",
+        color: "#FFFFFF",
+        border: "1px solid rgba(255,255,255,0.08)",
+        boxShadow: "0 18px 32px -22px rgba(2,6,23,0.78)",
+      },
+      iconStyle: {
+        filter:
+          "drop-shadow(1px 0 0 rgba(37,244,238,0.95)) drop-shadow(-1px 0 0 rgba(254,44,85,0.95))",
+      },
+    };
+  }
+
+  if (normalized === "youtube") {
+    return {
+      Icon: FaYoutube,
+      badgeStyle: {
+        background: "linear-gradient(135deg, #FF4D4F 0%, #FF0033 100%)",
+        color: "#FFFFFF",
+        border: "1px solid rgba(255,255,255,0.18)",
+        boxShadow: "0 16px 30px -20px rgba(255,0,51,0.5)",
+      },
+    };
+  }
+
+  if (normalized === "site") {
+    return {
+      Icon: FaGlobe,
+      badgeStyle: {
+        background: "linear-gradient(135deg, #E9D5FF 0%, #C4B5FD 100%)",
+        color: "#5B21B6",
+        border: "1px solid rgba(91,33,182,0.14)",
+        boxShadow: "0 16px 30px -20px rgba(124,58,237,0.35)",
+      },
+    };
+  }
+
+  return {
+    Icon: FaGlobe,
+    badgeStyle: null,
+    iconStyle: null,
+  };
+}
+
+function getSecondaryLinkBadgeClassName(layout, iconOnly) {
+  if (layout?.size === "small") {
+    return iconOnly
+      ? "h-7 w-7 rounded-[10px]"
+      : "h-6 w-6 rounded-[8px]";
+  }
+
+  return iconOnly
+    ? "h-8 w-8 rounded-[12px]"
+    : "h-7 w-7 rounded-[10px]";
+}
+
+function SecondaryLinkBadge({ theme, item, layout, iconOnly = false }) {
+  const brand = resolveSecondaryLinkBrand(item?.platform);
+  const Icon = brand.Icon;
+  const neutralColor =
+    theme?.mutedTextStyle?.color ||
+    theme?.titleStyle?.color ||
+    "#475569";
+  const fallbackBorder =
+    theme?.dividerStyle?.borderColor || "rgba(148,163,184,0.24)";
+  const fallbackBadgeStyle = {
+    background:
+      theme?.softSurfaceStyle?.background ||
+      "linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.06))",
+    color: neutralColor,
+    border: `1px solid ${fallbackBorder}`,
+    boxShadow: theme?.softSurfaceStyle?.boxShadow || "none",
+  };
+  const badgeStyle = brand.badgeStyle || fallbackBadgeStyle;
+
+  return (
+    <span
+      className={cls(
+        "inline-flex shrink-0 items-center justify-center border",
+        getSecondaryLinkBadgeClassName(layout, iconOnly),
+      )}
+      style={badgeStyle}
+      aria-hidden="true"
+    >
+      <Icon
+        className={cls(layout.iconClassName, "shrink-0")}
+        style={brand.iconStyle || undefined}
+      />
+    </span>
+  );
 }
 
 function SecondaryLinkContent({ theme, item, layout }) {
   const label = normalizeSecondaryLinkLabel(item);
   const style = theme?.design?.secondaryLinksStyle || "text";
-  const Icon = resolveSecondaryLinkIcon(item?.platform);
+  const iconLayout = theme?.design?.secondaryLinksIconLayout || "brand_badge";
+  const brand = resolveSecondaryLinkBrand(item?.platform);
+  const Icon = brand.Icon;
+  const plainIcon = (
+    <Icon
+      className={cls(layout.iconClassName, "shrink-0")}
+      style={brand.iconStyle || undefined}
+      aria-hidden="true"
+    />
+  );
 
   if (style === "icon") {
-    return <Icon className={cls(layout.iconClassName, "shrink-0")} aria-hidden="true" />;
+    if (iconLayout === "plain") return plainIcon;
+
+    return <SecondaryLinkBadge theme={theme} item={item} layout={layout} iconOnly />;
   }
 
   return (
@@ -450,7 +574,11 @@ function SecondaryLinkContent({ theme, item, layout }) {
       )}
     >
       {style === "icon_text" ? (
-        <Icon className={cls(layout.iconClassName, "shrink-0")} aria-hidden="true" />
+        iconLayout === "plain" ? (
+          plainIcon
+        ) : (
+          <SecondaryLinkBadge theme={theme} item={item} layout={layout} />
+        )
       ) : null}
       <span className="truncate">{label}</span>
     </span>

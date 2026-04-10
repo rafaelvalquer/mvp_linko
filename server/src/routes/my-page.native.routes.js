@@ -37,6 +37,9 @@ const DEFAULT_DESIGN = {
   accentPalette: "sky",
   backgroundStyle: "fill",
   backgroundColor: "#E2E8F0",
+  surfaceStyle: "soft",
+  surfacePatternVariant: "grid",
+  surfaceColor: "#FFFFFF",
   buttonColor: "#0F172A",
   buttonTextColor: "#FFFFFF",
   pageTextColor: "#64748B",
@@ -45,9 +48,11 @@ const DEFAULT_DESIGN = {
   backgroundPatternVariant: "grid",
   fontPreset: "inter",
   buttonStyle: "solid",
+  buttonShadow: "none",
   buttonRadius: "round",
   primaryButtonsLayout: "stack",
   secondaryLinksStyle: "text",
+  secondaryLinksIconLayout: "brand_badge",
   secondaryLinksSize: "medium",
   secondaryLinksAlign: "center",
   animationPreset: "subtle",
@@ -64,6 +69,15 @@ const QUOTE_REQUEST_STATUSES = ["new", "in_progress", "converted", "archived"];
 const MY_PAGE_THEME_PRESETS = [
   "premium_dark",
   "clean_light",
+  "barber_gold",
+  "nutri_fresh",
+  "dental_clinic",
+  "pastry_atelier",
+  "aesthetic_glow",
+  "legal_navy",
+  "fitness_charge",
+  "realty_luxe",
+  "kids_care",
   "creator_gradient",
   "business_storefront",
   "editorial_luxury",
@@ -111,17 +125,21 @@ const MY_PAGE_BACKGROUND_GRADIENT_DIRECTIONS = [
   "linear_down",
   "radial",
 ];
+const MY_PAGE_SURFACE_STYLES = ["solid", "soft", "glass", "outline", "blur", "pattern"];
 const MY_PAGE_BACKGROUND_PATTERN_VARIANTS = [
   "grid",
   "morph",
   "organic",
   "matrix",
 ];
+const MY_PAGE_SURFACE_PATTERN_VARIANTS = [...MY_PAGE_BACKGROUND_PATTERN_VARIANTS];
 const MY_PAGE_FONT_PRESETS = ["inter", "manrope", "jakarta", "editorial"];
-const MY_PAGE_BUTTON_STYLES = ["solid", "soft", "outline"];
+const MY_PAGE_BUTTON_STYLES = ["solid", "soft", "outline", "metallic", "glass"];
+const MY_PAGE_BUTTON_SHADOWS = ["none", "soft", "strong", "hard"];
 const MY_PAGE_BUTTON_RADII = ["square", "round", "pill"];
 const MY_PAGE_PRIMARY_BUTTON_LAYOUTS = ["stack", "cards", "minimal"];
 const MY_PAGE_SECONDARY_LINK_STYLES = ["text", "icon", "icon_text"];
+const MY_PAGE_SECONDARY_LINK_ICON_LAYOUTS = ["plain", "brand_badge"];
 const MY_PAGE_SECONDARY_LINK_SIZES = ["small", "medium"];
 const MY_PAGE_SECONDARY_LINK_ALIGNS = ["center", "left"];
 const MY_PAGE_ANIMATION_PRESETS = ["subtle", "strong", "impact", "off"];
@@ -177,6 +195,134 @@ const MY_PAGE_THEME_PRESET_DEFAULTS = {
     backgroundColor: "#D6A351",
     fontPreset: "editorial",
     buttonStyle: "outline",
+  },
+  barber_gold: {
+    accentPalette: "amber",
+    backgroundStyle: "blur",
+    backgroundColor: "#0C0A09",
+    buttonColor: "#C89B3C",
+    buttonTextColor: "#17120A",
+    pageTextColor: "#C9BFAF",
+    titleTextColor: "#F7EEDC",
+    fontPreset: "editorial",
+    buttonStyle: "metallic",
+  },
+  nutri_fresh: {
+    accentPalette: "emerald",
+    backgroundStyle: "gradient",
+    backgroundColor: "#EDF3E1",
+    surfaceStyle: "soft",
+    surfaceColor: "#FFF9EF",
+    buttonColor: "#7E9453",
+    buttonTextColor: "#F8F5EE",
+    pageTextColor: "#5C6649",
+    titleTextColor: "#2F4529",
+    backgroundGradientDirection: "linear_down",
+    fontPreset: "jakarta",
+    buttonStyle: "soft",
+    animationPreset: "subtle",
+  },
+  dental_clinic: {
+    accentPalette: "sky",
+    backgroundStyle: "blur",
+    backgroundColor: "#EAF5FA",
+    surfaceStyle: "glass",
+    surfaceColor: "#FFFFFF",
+    buttonColor: "#3E8FB6",
+    buttonTextColor: "#FFFFFF",
+    pageTextColor: "#566671",
+    titleTextColor: "#173446",
+    fontPreset: "inter",
+    buttonStyle: "solid",
+    animationPreset: "subtle",
+  },
+  pastry_atelier: {
+    accentPalette: "rose",
+    backgroundStyle: "gradient",
+    backgroundColor: "#F6E9E2",
+    surfaceStyle: "soft",
+    surfaceColor: "#FFF7F2",
+    buttonColor: "#B8747C",
+    buttonTextColor: "#FFF7F1",
+    pageTextColor: "#6D5651",
+    titleTextColor: "#4B342F",
+    backgroundGradientDirection: "radial",
+    fontPreset: "editorial",
+    buttonStyle: "soft",
+    animationPreset: "subtle",
+  },
+  aesthetic_glow: {
+    accentPalette: "rose",
+    backgroundStyle: "blur",
+    backgroundColor: "#F5ECE5",
+    surfaceStyle: "glass",
+    surfaceColor: "#FFF7F1",
+    buttonColor: "#C8A08F",
+    buttonTextColor: "#2D211D",
+    pageTextColor: "#7A6259",
+    titleTextColor: "#4D3630",
+    fontPreset: "editorial",
+    buttonStyle: "glass",
+    animationPreset: "strong",
+  },
+  legal_navy: {
+    accentPalette: "slate",
+    backgroundStyle: "gradient",
+    backgroundColor: "#102743",
+    surfaceStyle: "solid",
+    surfaceColor: "#1A2431",
+    buttonColor: "#20344D",
+    buttonTextColor: "#F6EEE1",
+    pageTextColor: "#D3D9E2",
+    titleTextColor: "#FBF6ED",
+    backgroundGradientDirection: "linear_down",
+    fontPreset: "editorial",
+    buttonStyle: "outline",
+    animationPreset: "subtle",
+  },
+  fitness_charge: {
+    accentPalette: "emerald",
+    backgroundStyle: "blur",
+    backgroundColor: "#0C0F0D",
+    surfaceStyle: "pattern",
+    surfacePatternVariant: "matrix",
+    surfaceColor: "#171B18",
+    buttonColor: "#B6FF38",
+    buttonTextColor: "#12170F",
+    pageTextColor: "#DCE6DF",
+    titleTextColor: "#F7FFF3",
+    fontPreset: "manrope",
+    buttonStyle: "solid",
+    animationPreset: "impact",
+  },
+  realty_luxe: {
+    accentPalette: "amber",
+    backgroundStyle: "blur",
+    backgroundColor: "#DCCDBE",
+    surfaceStyle: "glass",
+    surfaceColor: "#F8F0E6",
+    buttonColor: "#B79A67",
+    buttonTextColor: "#201A14",
+    pageTextColor: "#544B44",
+    titleTextColor: "#2C2622",
+    fontPreset: "editorial",
+    buttonStyle: "metallic",
+    animationPreset: "subtle",
+  },
+  kids_care: {
+    accentPalette: "sky",
+    backgroundStyle: "gradient",
+    backgroundColor: "#DDEFFD",
+    surfaceStyle: "soft",
+    surfaceColor: "#FFF8F0",
+    buttonColor: "#F6B58D",
+    buttonTextColor: "#5A4A43",
+    pageTextColor: "#61788C",
+    titleTextColor: "#355772",
+    backgroundGradientDirection: "radial",
+    fontPreset: "jakarta",
+    buttonStyle: "soft",
+    animationPreset: "subtle",
   },
   bold_conversion: {
     accentPalette: "coral",
@@ -255,6 +401,30 @@ const MY_PAGE_THEME_PRESET_DEFAULTS = {
     fontPreset: "manrope",
     buttonStyle: "soft",
   },
+};
+const MY_PAGE_THEME_PRESET_SURFACE_COLORS = {
+  premium_dark: "#080F1D",
+  clean_light: "#FFFFFF",
+  creator_gradient: "#FFFFFF",
+  business_storefront: "#FFFFFF",
+  editorial_luxury: "#FFFAF5",
+  barber_gold: "#120E0A",
+  bold_conversion: "#FFFFFF",
+  agate: "#FFFFFF",
+  air: "#FFFFFF",
+  aura: "#FFFFFF",
+  blocks: "#FFFFFF",
+  twilight: "#16132C",
+  vox: "#0F172A",
+  cobalt_blaze: "#FFFFFF",
+  violet_punch: "#FFFFFF",
+  solar_pop: "#FFFFFF",
+  midnight_prism: "#0A1226",
+};
+const MY_PAGE_THEME_PRESET_SURFACE_STYLES = {
+  cobalt_blaze: "glass",
+  violet_punch: "glass",
+  solar_pop: "glass",
 };
 
 const myPageUploadDir = path.resolve(process.cwd(), "uploads", "my-page");
@@ -547,25 +717,44 @@ function buildThemeColorDefaults(themePreset, presetDefaults = {}) {
     DEFAULT_DESIGN.backgroundColor,
   );
   const buttonColor = sanitizeHexColor(
-    MY_PAGE_ACCENT_SWATCHES[accentKey],
+    presetDefaults?.buttonColor || MY_PAGE_ACCENT_SWATCHES[accentKey],
     DEFAULT_DESIGN.buttonColor,
   );
-  const titleTextColor =
+  const fallbackTitleTextColor =
     themePreset === "premium_dark" ||
     themePreset === "twilight" ||
     themePreset === "vox" ||
     themePreset === "midnight_prism"
       ? "#F8FAFC"
       : "#0F172A";
+  const titleTextColor = sanitizeHexColor(
+    presetDefaults?.titleTextColor,
+    fallbackTitleTextColor,
+  );
+  const pageTextColor = sanitizeHexColor(
+    presetDefaults?.pageTextColor,
+    titleTextColor === "#F8FAFC" ? "#CBD5E1" : "#64748B",
+  );
+  const surfaceColor = sanitizeHexColor(
+    presetDefaults?.surfaceColor || MY_PAGE_THEME_PRESET_SURFACE_COLORS[themePreset],
+    DEFAULT_DESIGN.surfaceColor,
+  );
+  const surfaceStyle = sanitizeEnum(
+    presetDefaults?.surfaceStyle || MY_PAGE_THEME_PRESET_SURFACE_STYLES[themePreset],
+    MY_PAGE_SURFACE_STYLES,
+    DEFAULT_DESIGN.surfaceStyle,
+  );
 
   return {
     backgroundColor,
+    surfaceColor,
+    surfaceStyle,
     buttonColor,
-    buttonTextColor: getReadableTextColor(buttonColor, "#FFFFFF", "#111827"),
-    pageTextColor:
-      titleTextColor === "#F8FAFC"
-        ? "#CBD5E1"
-        : "#64748B",
+    buttonTextColor: sanitizeHexColor(
+      presetDefaults?.buttonTextColor,
+      getReadableTextColor(buttonColor, "#FFFFFF", "#111827"),
+    ),
+    pageTextColor,
     titleTextColor,
   };
 }
@@ -588,6 +777,17 @@ function sanitizeBackgroundPatternVariant(
   return sanitizeEnum(
     value,
     MY_PAGE_BACKGROUND_PATTERN_VARIANTS,
+    fallback,
+  );
+}
+
+function sanitizeSurfacePatternVariant(
+  value,
+  fallback = DEFAULT_DESIGN.surfacePatternVariant,
+) {
+  return sanitizeEnum(
+    value,
+    MY_PAGE_SURFACE_PATTERN_VARIANTS,
     fallback,
   );
 }
@@ -645,6 +845,19 @@ function sanitizeDesign(design = {}, coverStyle = DEFAULT_COVER_STYLE) {
       design?.backgroundColor,
       fallback.backgroundColor,
     ),
+    surfaceStyle: sanitizeEnum(
+      design?.surfaceStyle,
+      MY_PAGE_SURFACE_STYLES,
+      fallback.surfaceStyle,
+    ),
+    surfacePatternVariant: sanitizeSurfacePatternVariant(
+      design?.surfacePatternVariant,
+      fallback.surfacePatternVariant,
+    ),
+    surfaceColor: sanitizeHexColor(
+      design?.surfaceColor,
+      fallback.surfaceColor,
+    ),
     buttonColor: sanitizeHexColor(
       design?.buttonColor,
       fallback.buttonColor,
@@ -679,6 +892,11 @@ function sanitizeDesign(design = {}, coverStyle = DEFAULT_COVER_STYLE) {
       MY_PAGE_BUTTON_STYLES,
       fallback.buttonStyle,
     ),
+    buttonShadow: sanitizeEnum(
+      design?.buttonShadow,
+      MY_PAGE_BUTTON_SHADOWS,
+      fallback.buttonShadow,
+    ),
     buttonRadius: sanitizeButtonRadius(
       design?.buttonRadius,
       fallback.buttonRadius,
@@ -692,6 +910,11 @@ function sanitizeDesign(design = {}, coverStyle = DEFAULT_COVER_STYLE) {
       design?.secondaryLinksStyle,
       MY_PAGE_SECONDARY_LINK_STYLES,
       fallback.secondaryLinksStyle,
+    ),
+    secondaryLinksIconLayout: sanitizeEnum(
+      design?.secondaryLinksIconLayout,
+      MY_PAGE_SECONDARY_LINK_ICON_LAYOUTS,
+      fallback.secondaryLinksIconLayout,
     ),
     secondaryLinksSize: sanitizeEnum(
       design?.secondaryLinksSize,

@@ -1,17 +1,15 @@
-export function Input({ className = "", ...props }) {
-  return (
-    <input
-      className={`app-field w-full ${className}`}
-      {...props}
-    />
-  );
-}
+import { forwardRef } from "react";
 
-export function Textarea({ className = "", ...props }) {
-  return (
-    <textarea
-      className={`app-field w-full ${className}`}
-      {...props}
-    />
-  );
-}
+export const Input = forwardRef(function Input(
+  { className = "", ...props },
+  ref,
+) {
+  return <input ref={ref} className={`app-field w-full ${className}`} {...props} />;
+});
+
+export const Textarea = forwardRef(function Textarea(
+  { className = "", ...props },
+  ref,
+) {
+  return <textarea ref={ref} className={`app-field w-full ${className}`} {...props} />;
+});

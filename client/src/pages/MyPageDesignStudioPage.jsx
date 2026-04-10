@@ -42,11 +42,15 @@ import {
   MY_PAGE_BACKGROUND_PATTERN_VARIANT_OPTIONS,
   MY_PAGE_BACKGROUND_STYLE_OPTIONS,
   MY_PAGE_BRAND_LAYOUT_OPTIONS,
+  MY_PAGE_SURFACE_PATTERN_VARIANT_OPTIONS,
+  MY_PAGE_SURFACE_STYLE_OPTIONS,
   MY_PAGE_PRIMARY_BUTTON_LAYOUT_OPTIONS,
   MY_PAGE_BUTTON_RADIUS_OPTIONS,
+  MY_PAGE_BUTTON_SHADOW_OPTIONS,
   MY_PAGE_BUTTON_STYLE_OPTIONS,
   MY_PAGE_FONT_PRESET_OPTIONS,
   MY_PAGE_SECONDARY_LINK_ALIGN_OPTIONS,
+  MY_PAGE_SECONDARY_LINK_ICON_LAYOUT_OPTIONS,
   MY_PAGE_SECONDARY_LINK_SIZE_OPTIONS,
   MY_PAGE_SECONDARY_LINK_STYLE_OPTIONS,
   MY_PAGE_THEME_PRESET_OPTIONS,
@@ -78,6 +82,11 @@ const DESIGN_SECTIONS = [
     key: "background",
     label: "Fundo",
     icon: Image,
+  },
+  {
+    key: "surface",
+    label: "Superficie",
+    icon: Pipette,
   },
   {
     key: "text",
@@ -151,9 +160,16 @@ const COLOR_FIELD_OPTIONS = [
   { key: "titleTextColor", label: "Texto dos titulos" },
 ];
 
+const SURFACE_COLOR_FIELD = {
+  key: "surfaceColor",
+  label: "Cor do container",
+};
+
+const COLOR_MODAL_FIELD_OPTIONS = [...COLOR_FIELD_OPTIONS, SURFACE_COLOR_FIELD];
+
 function buildColorInputValues(design = {}) {
   return Object.fromEntries(
-    COLOR_FIELD_OPTIONS.map((field) => [
+    COLOR_MODAL_FIELD_OPTIONS.map((field) => [
       field.key,
       normalizeHexColor(design?.[field.key], "#000000"),
     ]),
@@ -449,6 +465,9 @@ export default function MyPageDesignStudioPage() {
       accentPalette: presetDefaults.accentPalette,
       backgroundStyle: presetDefaults.backgroundStyle,
       backgroundColor: presetDefaults.backgroundColor,
+      surfaceStyle: presetDefaults.surfaceStyle,
+      surfacePatternVariant: presetDefaults.surfacePatternVariant,
+      surfaceColor: presetDefaults.surfaceColor,
       buttonColor: presetDefaults.buttonColor,
       buttonTextColor: presetDefaults.buttonTextColor,
       pageTextColor: presetDefaults.pageTextColor,
@@ -694,6 +713,9 @@ export default function MyPageDesignStudioPage() {
                 accentPalette: presetDefaults.accentPalette,
                 backgroundStyle: presetDefaults.backgroundStyle,
                 backgroundColor: presetDefaults.backgroundColor,
+                surfaceStyle: presetDefaults.surfaceStyle,
+                surfacePatternVariant: presetDefaults.surfacePatternVariant,
+                surfaceColor: presetDefaults.surfaceColor,
                 buttonColor: presetDefaults.buttonColor,
                 buttonTextColor: presetDefaults.buttonTextColor,
                 pageTextColor: presetDefaults.pageTextColor,
@@ -761,12 +783,13 @@ export default function MyPageDesignStudioPage() {
   }
 
   function renderBackgroundSection() {
-      return (
+    return (
       <SectionShell
         eyebrow="Fundo"
         title="Escolha o estilo do fundo"
         description="Defina o estilo, a direcao e a textura do fundo."
       >
+        <div className="space-y-6">
           <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
             {MY_PAGE_BACKGROUND_STYLE_OPTIONS.map((option) => {
               const optionTheme = getOptionTheme({ backgroundStyle: option.value });
@@ -783,6 +806,39 @@ export default function MyPageDesignStudioPage() {
                 </StudioChoiceCard>
               );
             })}
+          </div>
+
+          <div className="rounded-[28px] border border-slate-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-white/5">
+            <label className="mb-3 block text-sm font-semibold text-slate-950 dark:text-white">
+              Cor do fundo
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                value={colorInputValues.backgroundColor || ""}
+                onChange={(event) =>
+                  updateColorInputValue("backgroundColor", event.target.value)
+                }
+                onBlur={() => commitColorInputValue("backgroundColor")}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    commitColorInputValue("backgroundColor");
+                  }
+                }}
+                className="h-14 w-full rounded-[18px] border border-slate-200 bg-white px-4 pr-16 text-sm font-semibold tracking-[0.04em] uppercase text-slate-950 outline-none transition focus:border-sky-300 dark:border-white/10 dark:bg-white/5 dark:text-white"
+              />
+              <button
+                type="button"
+                onClick={() => openColorModal("backgroundColor")}
+                className="absolute right-3 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 rounded-full border border-slate-300 shadow-sm transition hover:scale-[1.04] dark:border-white/20"
+                style={{
+                  background: draftDesign.backgroundColor,
+                  boxShadow: "0 0 0 3px rgba(255,255,255,0.7)",
+                }}
+                aria-label="Editar cor do fundo"
+              />
+            </div>
           </div>
 
           {draftDesign.backgroundStyle === "gradient" ? (
@@ -882,7 +938,115 @@ export default function MyPageDesignStudioPage() {
               </div>
             </div>
           ) : null}
+        </div>
+      </SectionShell>
+    );
+  }
 
+  function renderSurfaceSection() {
+    return (
+      <SectionShell
+        eyebrow="Superficie"
+        title="Container da frente"
+        description="Controle a camada onde ficam logo, titulos, botoes e formularios."
+      >
+        <div className="space-y-6">
+          <div>
+            <div className="mb-3 text-sm font-semibold text-slate-950 dark:text-white">
+              Estilo
+            </div>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {MY_PAGE_SURFACE_STYLE_OPTIONS.map((option) => {
+                const optionTheme = getOptionTheme({ surfaceStyle: option.value });
+
+                return (
+                  <StudioChoiceCard
+                    key={option.value}
+                    active={draftDesign.surfaceStyle === option.value}
+                    label={option.label}
+                    description={option.description}
+                    onClick={() => updateDesignField("surfaceStyle", option.value)}
+                  >
+                    <SurfaceStyleChoicePreview theme={optionTheme} />
+                  </StudioChoiceCard>
+                );
+              })}
+            </div>
+          </div>
+
+          {draftDesign.surfaceStyle === "pattern" ? (
+            <div className="space-y-4 rounded-[28px] border border-slate-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-white/5">
+              <div className="space-y-1">
+                <div className="text-sm font-semibold text-slate-950 dark:text-white">
+                  Pattern
+                </div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">
+                  Escolha a textura do container sem mudar a cor principal.
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                {MY_PAGE_SURFACE_PATTERN_VARIANT_OPTIONS.map((option) => {
+                  const optionTheme = getOptionTheme({
+                    surfaceStyle: "pattern",
+                    surfacePatternVariant: option.value,
+                  });
+
+                  return (
+                    <StudioChoiceCard
+                      key={option.value}
+                      active={draftDesign.surfacePatternVariant === option.value}
+                      label={option.label}
+                      description={option.description}
+                      onClick={() =>
+                        updateDesignField("surfacePatternVariant", option.value)
+                      }
+                    >
+                      <SurfaceStyleChoicePreview
+                        theme={optionTheme}
+                        heightClassName="h-24"
+                        minHeight="96px"
+                      />
+                    </StudioChoiceCard>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="rounded-[28px] border border-slate-200/80 bg-white/90 p-4 dark:border-white/10 dark:bg-white/5">
+            <label className="mb-3 block text-sm font-semibold text-slate-950 dark:text-white">
+              {SURFACE_COLOR_FIELD.label}
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                value={colorInputValues[SURFACE_COLOR_FIELD.key] || ""}
+                onChange={(event) =>
+                  updateColorInputValue(SURFACE_COLOR_FIELD.key, event.target.value)
+                }
+                onBlur={() => commitColorInputValue(SURFACE_COLOR_FIELD.key)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    commitColorInputValue(SURFACE_COLOR_FIELD.key);
+                  }
+                }}
+                className="h-14 w-full rounded-[18px] border border-slate-200 bg-white px-4 pr-16 text-sm font-semibold tracking-[0.04em] uppercase text-slate-950 outline-none transition focus:border-sky-300 dark:border-white/10 dark:bg-white/5 dark:text-white"
+              />
+              <button
+                type="button"
+                onClick={() => openColorModal(SURFACE_COLOR_FIELD.key)}
+                className="absolute right-3 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 rounded-full border border-slate-300 shadow-sm transition hover:scale-[1.04] dark:border-white/20"
+                style={{
+                  background: draftDesign.surfaceColor,
+                  boxShadow: "0 0 0 3px rgba(255,255,255,0.7)",
+                }}
+                aria-label={`Editar ${SURFACE_COLOR_FIELD.label}`}
+              />
+            </div>
+          </div>
+        </div>
       </SectionShell>
     );
   }
@@ -967,10 +1131,9 @@ export default function MyPageDesignStudioPage() {
             <div className="mb-3 text-sm font-semibold text-slate-950 dark:text-white">
               Estilo
             </div>
-            <div className="grid gap-4 lg:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
               {MY_PAGE_BUTTON_STYLE_OPTIONS.map((option) => {
                 const optionTheme = getOptionTheme({ buttonStyle: option.value });
-                const buttonProps = getMyPageButtonProps(optionTheme, "primary");
 
                 return (
                   <StudioChoiceCard
@@ -980,17 +1143,38 @@ export default function MyPageDesignStudioPage() {
                     description={option.description}
                     onClick={() => updateDesignField("buttonStyle", option.value)}
                   >
-                    <div
-                      className="space-y-3 rounded-[24px] border p-4"
-                      style={optionTheme.softSurfaceStyle}
-                    >
-                      <div
-                        className={cls(buttonProps.className, "w-full justify-center")}
-                        style={buttonProps.style}
-                      >
-                        CTA principal
-                      </div>
-                    </div>
+                    <ButtonStyleChoicePreview
+                      theme={optionTheme}
+                      buttonStyle={option.value}
+                    />
+                  </StudioChoiceCard>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-3 text-sm font-semibold text-slate-950 dark:text-white">
+              Button shadow
+            </div>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {MY_PAGE_BUTTON_SHADOW_OPTIONS.map((option) => {
+                const optionTheme = getOptionTheme({
+                  buttonShadow: option.value,
+                });
+
+                return (
+                  <StudioChoiceCard
+                    key={option.value}
+                    active={draftDesign.buttonShadow === option.value}
+                    label={option.label}
+                    description={option.description}
+                    onClick={() => updateDesignField("buttonShadow", option.value)}
+                  >
+                    <ButtonStyleChoicePreview
+                      theme={optionTheme}
+                      buttonStyle={optionTheme.design.buttonStyle}
+                    />
                   </StudioChoiceCard>
                 );
               })}
@@ -1090,6 +1274,50 @@ export default function MyPageDesignStudioPage() {
                     >
                       <div className="text-sm font-semibold" style={optionTheme.titleStyle}>
                         Redes sociais
+                      </div>
+                      <MyPageSecondaryLinks
+                        theme={optionTheme}
+                        links={SECONDARY_LINK_STYLE_SAMPLES}
+                        interactive={false}
+                        className="mt-0"
+                      />
+                    </div>
+                  </StudioChoiceCard>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-3 text-sm font-semibold text-slate-950 dark:text-white">
+              Layout do icone
+            </div>
+            <div className="grid gap-4 lg:grid-cols-2">
+              {MY_PAGE_SECONDARY_LINK_ICON_LAYOUT_OPTIONS.map((option) => {
+                const optionTheme = getOptionTheme({
+                  secondaryLinksIconLayout: option.value,
+                  secondaryLinksStyle:
+                    draftDesign.secondaryLinksStyle === "text"
+                      ? "icon_text"
+                      : draftDesign.secondaryLinksStyle,
+                });
+
+                return (
+                  <StudioChoiceCard
+                    key={option.value}
+                    active={draftDesign.secondaryLinksIconLayout === option.value}
+                    label={option.label}
+                    description={option.description}
+                    onClick={() =>
+                      updateDesignField("secondaryLinksIconLayout", option.value)
+                    }
+                  >
+                    <div
+                      className="space-y-3 rounded-[24px] border p-4"
+                      style={optionTheme.softSurfaceStyle}
+                    >
+                      <div className="text-sm font-semibold" style={optionTheme.titleStyle}>
+                        Visual do icone
                       </div>
                       <MyPageSecondaryLinks
                         theme={optionTheme}
@@ -1272,6 +1500,7 @@ export default function MyPageDesignStudioPage() {
     if (activeSection === "header") return renderHeaderSection();
     if (activeSection === "theme") return renderThemeSection();
     if (activeSection === "background") return renderBackgroundSection();
+    if (activeSection === "surface") return renderSurfaceSection();
     if (activeSection === "text") return renderTextSection();
     if (activeSection === "secondary-links") return renderSecondaryLinksSection();
     if (activeSection === "animation") return renderAnimationSection();
@@ -1281,8 +1510,8 @@ export default function MyPageDesignStudioPage() {
 
   const colorThemeDefaults = getMyPageThemePresetDefaults(draftDesign.themePreset);
   const activeColorMeta =
-    COLOR_FIELD_OPTIONS.find((field) => field.key === activeColorField) ||
-    COLOR_FIELD_OPTIONS[0];
+    COLOR_MODAL_FIELD_OPTIONS.find((field) => field.key === activeColorField) ||
+    COLOR_MODAL_FIELD_OPTIONS[0];
   const activeColorValue = normalizeHexColor(
     draftDesign?.[activeColorField],
     colorThemeDefaults?.[activeColorField],
@@ -1290,7 +1519,7 @@ export default function MyPageDesignStudioPage() {
   const colorSuggestions = uniqueColors([
     activeColorValue,
     colorThemeDefaults?.[activeColorField],
-    ...COLOR_FIELD_OPTIONS.flatMap((field) => [
+    ...COLOR_MODAL_FIELD_OPTIONS.flatMap((field) => [
       draftDesign?.[field.key],
       colorThemeDefaults?.[field.key],
     ]),
@@ -1546,6 +1775,42 @@ function BackgroundOptionPreview({
   );
 }
 
+function SurfaceStyleChoicePreview({
+  theme,
+  heightClassName = "h-32",
+  minHeight = "112px",
+}) {
+  return (
+    <BackgroundOptionPreview
+      theme={theme}
+      heightClassName={heightClassName}
+      minHeight={minHeight}
+    >
+      <div className="relative z-10 flex h-full items-center justify-center px-4 py-4">
+        <div
+          className="w-full rounded-[22px] border p-4"
+          style={theme.surfaceStyle}
+        >
+          <div
+            className="h-3 w-24 rounded-full"
+            style={{ background: theme.titleStyle?.color || "#0F172A", opacity: 0.9 }}
+          />
+          <div className="mt-3 space-y-2">
+            <div
+              className="h-9 rounded-[16px] border"
+              style={theme.softSurfaceStyle}
+            />
+            <div
+              className="h-10 rounded-[16px] border"
+              style={theme.primaryButtonStyle}
+            />
+          </div>
+        </div>
+      </div>
+    </BackgroundOptionPreview>
+  );
+}
+
 function PrimaryButtonLayoutPreview({ theme }) {
   return (
     <div
@@ -1589,6 +1854,31 @@ function PrimaryButtonLayoutPreview({ theme }) {
         );
       })}
     </div>
+  );
+}
+
+function ButtonStyleChoicePreview({ theme, buttonStyle }) {
+  const buttonProps = getMyPageButtonProps(theme, "primary");
+
+  return (
+    <BackgroundOptionPreview theme={theme} heightClassName="h-28">
+      <div className="relative flex h-full items-center justify-center px-4">
+        {buttonStyle === "glass" ? (
+          <>
+            <div className="absolute left-3 top-3 h-10 w-16 rounded-[16px] border border-white/25 bg-white/10" />
+            <div className="absolute right-4 bottom-3 h-8 w-20 rounded-[18px] border border-black/10 bg-black/10 dark:border-white/10 dark:bg-white/10" />
+          </>
+        ) : null}
+        <div className="relative z-10 w-full pb-2 pr-2">
+          <div
+            className={cls(buttonProps.className, "w-full justify-center")}
+            style={buttonProps.style}
+          >
+            CTA principal
+          </div>
+        </div>
+      </div>
+    </BackgroundOptionPreview>
   );
 }
 

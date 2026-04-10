@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { CalendarDays, CheckCircle2, Clock3 } from "lucide-react";
 import {
@@ -18,8 +18,34 @@ import {
   MyPageWhatsAppIcon,
 } from "../components/my-page/MyPagePublicUi.jsx";
 
+const AUTO_ADVANCE_LOOKAHEAD_DAYS = 30;
+
+function formatLocalDateValue(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  return formatLocalDateValue(new Date());
+}
+
+function addDays(dateValue, days) {
+  const [year, month, day] = String(dateValue || "")
+    .split("-")
+    .map(Number);
+  const nextDate = new Date(year, (month || 1) - 1, day || 1, 12, 0, 0, 0);
+  nextDate.setDate(nextDate.getDate() + Number(days || 0));
+  return formatLocalDateValue(nextDate);
+}
+
+function normalizeSlotsPayload(response, fallbackPage) {
+  return {
+    page: response?.page || fallbackPage || null,
+    scheduleAvailable: response?.scheduleAvailable !== false,
+    slots: Array.isArray(response?.slots) ? response.slots : [],
+  };
 }
 
 function fmtDateLabel(value) {
@@ -51,7 +77,8 @@ function fmtRange(startAt, endAt) {
 
 export default function PublicMyPageScheduleV2() {
   const { slug } = useParams();
-  const [date, setDate] = useState(today());
+  const [todayDate] = useState(() => today());
+  const [date, setDate] = useState(() => today());
   const [loading, setLoading] = useState(true);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [bookingBusy, setBookingBusy] = useState(false);
@@ -61,10 +88,28 @@ export default function PublicMyPageScheduleV2() {
   const [slots, setSlots] = useState([]);
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [booking, setBooking] = useState(null);
+  const [autoAdjustedDateNotice, setAutoAdjustedDateNotice] = useState("");
   const [form, setForm] = useState({
     customerName: "",
     customerWhatsApp: "",
   });
+  const dateInputRef = useRef(null);
+  const didResolveInitialDateRef = useRef(false);
+  const prefetchedSlotsRef = useRef(null);
+
+  useEffect(() => {
+    setLoading(true);
+    setDate(todayDate);
+    setErr("");
+    setPage(null);
+    setScheduleAvailable(true);
+    setSlots([]);
+    setSelectedSlot(null);
+    setBooking(null);
+    setAutoAdjustedDateNotice("");
+    didResolveInitialDateRef.current = false;
+    prefetchedSlotsRef.current = null;
+  }, [slug, todayDate]);
 
   useEffect(() => {
     let active = true;
@@ -93,15 +138,66 @@ export default function PublicMyPageScheduleV2() {
     let active = true;
     if (!page) return () => {};
 
+    async function loadSlotsForDate(targetDate, fallbackPage) {
+      if (prefetchedSlotsRef.current?.date === targetDate) {
+        const cached = prefetchedSlotsRef.current.payload;
+        prefetchedSlotsRef.current = null;
+        return cached;
+      }
+
+      const response = await getPublicMyPageScheduleSlots(slug, targetDate);
+      return normalizeSlotsPayload(response, fallbackPage);
+    }
+
+    async function findNextAvailableDate(initialDate, fallbackPage) {
+      for (let offset = 1; offset <= AUTO_ADVANCE_LOOKAHEAD_DAYS; offset += 1) {
+        const nextDate = addDays(initialDate, offset);
+        const payload = await loadSlotsForDate(nextDate, fallbackPage);
+        if (!active) return null;
+        if (!payload.scheduleAvailable) return null;
+        if (payload.slots.some((slot) => slot.available === true)) {
+          return { date: nextDate, payload };
+        }
+      }
+
+      return null;
+    }
+
     (async () => {
       try {
         setSlotsLoading(true);
         setErr("");
-        const response = await getPublicMyPageScheduleSlots(slug, date);
+        const payload = await loadSlotsForDate(date, page);
         if (!active) return;
-        setPage(response?.page || page);
-        setScheduleAvailable(response?.scheduleAvailable !== false);
-        setSlots(Array.isArray(response?.slots) ? response.slots : []);
+
+        const shouldResolveInitialDate =
+          !didResolveInitialDateRef.current &&
+          date === todayDate &&
+          payload.scheduleAvailable &&
+          !payload.slots.some((slot) => slot.available === true);
+
+        if (shouldResolveInitialDate) {
+          const nextAvailable = await findNextAvailableDate(
+            date,
+            payload.page || page,
+          );
+          if (!active) return;
+
+          didResolveInitialDateRef.current = true;
+
+          if (nextAvailable?.payload) {
+            prefetchedSlotsRef.current = nextAvailable;
+            setDate(nextAvailable.date);
+            setAutoAdjustedDateNotice("Mostrando a proxima data disponivel.");
+            return;
+          }
+        } else if (!didResolveInitialDateRef.current) {
+          didResolveInitialDateRef.current = true;
+        }
+
+        setPage(payload.page || page);
+        setScheduleAvailable(payload.scheduleAvailable);
+        setSlots(payload.slots);
         setSelectedSlot(null);
       } catch (error) {
         if (!active) return;
@@ -114,7 +210,7 @@ export default function PublicMyPageScheduleV2() {
     return () => {
       active = false;
     };
-  }, [slug, date, page?._id]);
+  }, [slug, date, page?._id, todayDate]);
 
   const whatsappButton = (page?.buttons || []).find(
     (button) => button.type === "whatsapp",
@@ -123,6 +219,23 @@ export default function PublicMyPageScheduleV2() {
     () => slots.filter((slot) => slot.available === true),
     [slots],
   );
+
+  function openDatePicker() {
+    const input = dateInputRef.current;
+    if (!input) return;
+    if (typeof input.showPicker === "function") {
+      input.showPicker();
+      return;
+    }
+    input.focus();
+    input.click();
+  }
+
+  function handleDateChange(event) {
+    didResolveInitialDateRef.current = true;
+    setAutoAdjustedDateNotice("");
+    setDate(event.target.value);
+  }
 
   async function handleBook() {
     if (!selectedSlot) return;
@@ -288,20 +401,41 @@ export default function PublicMyPageScheduleV2() {
                   <label className="text-xs font-semibold" style={theme.mutedTextStyle}>
                     Data desejada
                   </label>
-                  <Input
-                    type="date"
-                    value={date}
-                    min={today()}
-                    onChange={(event) => setDate(event.target.value)}
-                    className="h-12"
-                    style={theme.inputStyle}
-                  />
+                  <div className="relative mt-2">
+                    <Input
+                      ref={dateInputRef}
+                      type="date"
+                      value={date}
+                      min={todayDate}
+                      onChange={handleDateChange}
+                      onClick={openDatePicker}
+                      className="h-12 cursor-pointer pr-12"
+                      style={theme.inputStyle}
+                    />
+                    <button
+                      type="button"
+                      onClick={openDatePicker}
+                      className="absolute inset-y-0 right-0 flex w-12 items-center justify-center"
+                      aria-label="Abrir calendario"
+                    >
+                      <CalendarDays
+                        className="h-4 w-4"
+                        style={theme.mutedTextStyle}
+                      />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="mt-4 flex items-center gap-2 text-sm" style={theme.mutedTextStyle}>
                   <CalendarDays className="h-4 w-4" />
                   <span>{fmtDateLabel(date) || "Escolha uma data"}</span>
                 </div>
+
+                {autoAdjustedDateNotice ? (
+                  <div className="mt-2 text-xs font-medium" style={theme.mutedTextStyle}>
+                    {autoAdjustedDateNotice}
+                  </div>
+                ) : null}
 
                 {slotsLoading ? (
                   <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">

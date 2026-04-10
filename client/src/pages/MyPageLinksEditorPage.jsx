@@ -4,6 +4,7 @@ import {
   ArrowUp,
   Camera,
   Check,
+  Globe2,
   ImagePlus,
   Link2,
   Plus,
@@ -15,6 +16,7 @@ import {
 import {
   saveMyPageAvatar,
   saveMyPageLinks,
+  setMyPagePublished,
   getMyPageQuoteRequests,
 } from "../app/myPageApi.js";
 import Card, { CardBody, CardHeader } from "../components/appui/Card.jsx";
@@ -94,6 +96,7 @@ function useObjectUrl(file) {
 export default function MyPageLinksEditorPage() {
   const { page, setPage, setErr, setPreviewPage } = useMyPageContext();
   const [saving, setSaving] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const [avatarSaving, setAvatarSaving] = useState(false);
   const [quoteRequests, setQuoteRequests] = useState([]);
   const [requestsLoading, setRequestsLoading] = useState(true);
@@ -354,6 +357,28 @@ export default function MyPageLinksEditorPage() {
     }
   }
 
+  async function handleTogglePublish(nextValue) {
+    try {
+      setPublishing(true);
+      setErr("");
+      const response = await setMyPagePublished(nextValue);
+      const nextPage = response?.page || null;
+
+      setPage((prev) => {
+        if (!prev) return nextPage;
+        return {
+          ...prev,
+          isPublished: nextPage?.isPublished === true,
+          updatedAt: nextPage?.updatedAt || prev.updatedAt || null,
+        };
+      });
+    } catch (error) {
+      setErr(error?.message || "Nao consegui atualizar a publicacao.");
+    } finally {
+      setPublishing(false);
+    }
+  }
+
   const hasAnyAvatar = Boolean(currentAvatarUrl);
   const titlePreview = page?.title || "Titulo da pagina";
   const subtitlePreview = page?.subtitle || "Seu subtitulo aparece aqui.";
@@ -376,7 +401,26 @@ export default function MyPageLinksEditorPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <Button type="button" disabled={saving} onClick={handleSaveLinks}>
+            <Button
+              type="button"
+              variant={page?.isPublished ? "danger" : "primary"}
+              disabled={publishing || saving}
+              onClick={() => handleTogglePublish(!page?.isPublished)}
+            >
+              <Globe2 className="h-4 w-4" />
+              {publishing
+                ? page?.isPublished
+                  ? "Despublicando..."
+                  : "Publicando..."
+                : page?.isPublished
+                  ? "Despublicar"
+                  : "Publicar pagina"}
+            </Button>
+            <Button
+              type="button"
+              disabled={saving || publishing}
+              onClick={handleSaveLinks}
+            >
               <Check className="h-4 w-4" />
               {saving ? "Salvando..." : "Salvar Links"}
             </Button>
