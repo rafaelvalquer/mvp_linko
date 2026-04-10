@@ -93,6 +93,24 @@ function buildPayloadBodyPreview(payload) {
   }
 }
 
+function getGeoPayloadSuccess(payload) {
+  if (!payload || typeof payload !== "object") return null;
+  if (Object.prototype.hasOwnProperty.call(payload, "success")) {
+    return payload.success !== false;
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, "error")) {
+    return payload.error !== true;
+  }
+  return null;
+}
+
+function getGeoPayloadMessage(payload) {
+  if (!payload || typeof payload !== "object") return "";
+  const errorValue =
+    typeof payload.error === "string" ? payload.error : payload.reason;
+  return clampText(payload.message || errorValue || payload.reason || "", 240);
+}
+
 function clampText(value, max = 120) {
   return String(value || "")
     .trim()
@@ -246,7 +264,7 @@ async function fetchGeoForIp(ip, userAgent = "") {
   const timeout = setTimeout(() => controller.abort(), GEO_REQUEST_TIMEOUT_MS);
   const providerUrl =
     String(process.env.MY_PAGE_GEO_PROVIDER_URL || "").trim() ||
-    `https://ipwho.is/${encodeURIComponent(normalizedIp)}`;
+    `https://ipapi.co/${encodeURIComponent(normalizedIp)}/json/`;
 
   logGeoDebug("lookup:provider-request", {
     normalizedIp,
@@ -259,15 +277,22 @@ async function fetchGeoForIp(ip, userAgent = "") {
       signal: controller.signal,
     });
     const payload = await response.json().catch(() => ({}));
+    const payloadSuccess = getGeoPayloadSuccess(payload);
     const value =
-      response.ok && payload && payload.success !== false
+      response.ok && payload && payloadSuccess !== false
         ? {
             countryCode: clampText(
-              payload.country_code || payload.countryCode || "unknown",
+              payload.country_code ||
+                payload.countryCode ||
+                payload.country ||
+                "unknown",
               16,
             ),
             countryName: clampText(
-              payload.country || payload.country_name || "Desconhecido",
+              payload.country_name ||
+                payload.countryName ||
+                payload.country ||
+                "Desconhecido",
               120,
             ),
             region: clampText(
@@ -283,21 +308,17 @@ async function fetchGeoForIp(ip, userAgent = "") {
             city: "",
           };
 
-    logGeoDebug("lookup:provider-response", {
-      normalizedIp,
-      providerUrl,
-      status: response.status,
-      ok: response.ok,
-      payloadSuccess:
-        Object.prototype.hasOwnProperty.call(payload || {}, "success")
-          ? payload.success
-          : null,
-      payloadMessage:
-        clampText(payload?.message || payload?.error || payload?.reason || "", 240),
-      payloadBodyPreview: buildPayloadBodyPreview(payload),
-      countryCode: value.countryCode || "unknown",
-      region: value.region || "",
-      city: value.city || "",
+      logGeoDebug("lookup:provider-response", {
+        normalizedIp,
+        providerUrl,
+        status: response.status,
+        ok: response.ok,
+        payloadSuccess,
+        payloadMessage: getGeoPayloadMessage(payload),
+        payloadBodyPreview: buildPayloadBodyPreview(payload),
+        countryCode: value.countryCode || "unknown",
+        region: value.region || "",
+        city: value.city || "",
     });
 
     writeGeoCache(normalizedIp, value);
