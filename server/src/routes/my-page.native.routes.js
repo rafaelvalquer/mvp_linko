@@ -33,6 +33,7 @@ import {
 } from "../services/myPageAnalytics.service.js";
 
 const router = Router();
+const publicRouter = Router();
 
 const DEFAULT_COVER_STYLE = "clean_light";
 const DEFAULT_SHOP = { productIds: [], showPrices: true };
@@ -1461,7 +1462,7 @@ async function safeRecordAnalyticsEvent(args) {
   }
 }
 
-router.get(
+publicRouter.get(
   "/my-page/public/:slug",
   asyncHandler(async (req, res) => {
     const page = await loadPublishedPageBySlug(req.params.slug);
@@ -1469,7 +1470,7 @@ router.get(
   }),
 );
 
-router.get(
+publicRouter.get(
   "/my-page/public/:slug/catalog",
   asyncHandler(async (req, res) => {
     const page = await loadPublishedPageBySlug(req.params.slug);
@@ -1485,7 +1486,7 @@ router.get(
   }),
 );
 
-router.get(
+publicRouter.get(
   "/my-page/public/:slug/quote/context",
   asyncHandler(async (req, res) => {
     const page = await loadPublishedPageBySlug(req.params.slug);
@@ -1505,9 +1506,9 @@ router.get(
   }),
 );
 
-  router.post(
-    "/my-page/public/:slug/analytics/event",
-    asyncHandler(async (req, res) => {
+publicRouter.post(
+  "/my-page/public/:slug/analytics/event",
+  asyncHandler(async (req, res) => {
       const page = await loadPublishedPageBySlug(req.params.slug);
       const event = await recordMyPageAnalyticsEvent({
       page,
@@ -1532,7 +1533,7 @@ router.get(
     }),
   );
 
-router.post(
+publicRouter.post(
   "/my-page/public/:slug/quote",
   asyncHandler(async (req, res) => {
     const page = await loadPublishedPageBySlug(req.params.slug);
@@ -1639,7 +1640,7 @@ router.post(
   }),
 );
 
-router.get(
+publicRouter.get(
   "/my-page/public/:slug/schedule/slots",
   asyncHandler(async (req, res) => {
     const page = await loadPublishedPageBySlug(req.params.slug);
@@ -1650,7 +1651,7 @@ router.get(
   }),
 );
 
-router.post(
+publicRouter.post(
   "/my-page/public/:slug/schedule/book",
   asyncHandler(async (req, res) => {
     const page = await loadPublishedPageBySlug(req.params.slug);
@@ -1776,7 +1777,7 @@ router.post(
   }),
 );
 
-router.post(
+publicRouter.post(
   "/my-page/public/:slug/pay/resolve",
   asyncHandler(async (req, res) => {
     const page = await loadPublishedPageBySlug(req.params.slug);
@@ -1863,7 +1864,7 @@ router.post(
   }),
 );
 
-router.post(
+publicRouter.post(
   "/my-page/public/:slug/click",
   asyncHandler(async (req, res) => {
     const page = await loadPublishedPageBySlug(req.params.slug);
@@ -1906,7 +1907,8 @@ router.post(
   }),
 );
 
-router.use(/^\/my-page(?!\/public(?:\/|$))/, ensureAuth, tenantFromUser);
+router.use(publicRouter);
+router.use("/my-page", ensureAuth, tenantFromUser);
 
 function requireMyPageSettingsAccess(req, _res, next) {
   try {

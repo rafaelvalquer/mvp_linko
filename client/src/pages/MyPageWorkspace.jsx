@@ -141,6 +141,17 @@ export default function MyPageWorkspace() {
     return `${window.location.origin}/u/${page.slug}`;
   }, [page?.slug]);
 
+  const publicQrUrl = useMemo(() => {
+    if (!publicUrl) return "";
+    try {
+      const url = new URL(publicUrl);
+      url.searchParams.set("qr", "1");
+      return url.toString();
+    } catch {
+      return publicUrl ? `${publicUrl}${publicUrl.includes("?") ? "&" : "?"}qr=1` : "";
+    }
+  }, [publicUrl]);
+
   const publicUrlLabel = useMemo(
     () => displayPublicUrl(publicUrl),
     [publicUrl],
@@ -455,7 +466,7 @@ export default function MyPageWorkspace() {
               <div className="mt-4 flex justify-center">
                 {publicUrl ? (
                   <div className="rounded-[28px] bg-white p-4 shadow-[0_18px_42px_-28px_rgba(15,23,42,0.25)]">
-                    <QRCodeCanvas value={publicUrl} size={180} includeMargin />
+                    <QRCodeCanvas value={publicQrUrl || publicUrl} size={180} includeMargin />
                   </div>
                 ) : (
                   <div className="flex h-[212px] w-[212px] items-center justify-center rounded-[28px] border border-dashed border-slate-300 bg-slate-50 text-sm text-slate-400 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-500">

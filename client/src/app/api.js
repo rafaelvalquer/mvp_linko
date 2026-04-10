@@ -36,6 +36,10 @@ export const API_BASE = resolveApiBase();
 // cache em memória para GET (opcional) – útil se algum endpoint insistir em 304
 const _memCache = new Map();
 
+function isPublicMyPagePath(path = "") {
+  return String(path || "").startsWith("/my-page/public/");
+}
+
 export async function api(path, opts = {}) {
   const token =
     typeof window !== "undefined" ? localStorage.getItem("auth_token") : "";
@@ -55,7 +59,12 @@ export async function api(path, opts = {}) {
   }
 
   // Authorization (vai gerar preflight, mas normalmente seu backend já permite)
-  if (token && !headers.Authorization && !headers.authorization) {
+  if (
+    token &&
+    !isPublicMyPagePath(path) &&
+    !headers.Authorization &&
+    !headers.authorization
+  ) {
     headers.Authorization = `Bearer ${token}`;
   }
 
