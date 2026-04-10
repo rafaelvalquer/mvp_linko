@@ -45,15 +45,22 @@ const GEO_CHART_COLORS = [
 ];
 const FUNNEL_HELP_TEXT = {
   page_view:
-    "Sessoes que visualizaram alguma pagina publica da Minha Pagina no periodo.",
+    "Sessoes que abriram alguma pagina publica da Minha Pagina no periodo.",
   cta_click:
     "Sessoes que clicaram em botao principal ou link secundario da pagina.",
   intent_view:
-    "Sessoes que entraram em uma etapa de intencao forte: orcamento, agendamento ou pagamento.",
+    "Sessoes que entraram em uma etapa de maior intencao: orcamento, agendamento ou pagamento.",
   mid_conversion:
-    "Sessoes que enviaram um pedido de orcamento ou selecionaram um horario na agenda.",
+    "Sessoes que enviaram um pedido de orcamento ou escolheram um horario.",
   final_conversion:
     "Sessoes que geraram agendamento concluido ou venda atribuida a Minha Pagina.",
+};
+const FUNNEL_LABELS = {
+  page_view: "Visitas",
+  cta_click: "Cliques em botoes e links",
+  intent_view: "Entraram em orcamento, agendamento ou pagamento",
+  mid_conversion: "Enviaram orcamento ou escolheram horario",
+  final_conversion: "Agendamentos ou vendas",
 };
 const DEVICE_LABELS = {
   desktop: "Desktop",
@@ -506,7 +513,7 @@ function FunnelCard({ funnel = [], loading }) {
     <Card className="rounded-[24px]">
       <CardHeader
         title="Funil e abandono"
-        subtitle="Queda entre entrada, clique, intencao e conversao."
+        subtitle="Acompanhe onde as sessoes avancam e onde abandonam o fluxo."
       />
       <CardBody className="space-y-3">
         {loading ? (
@@ -520,7 +527,7 @@ function FunnelCard({ funnel = [], loading }) {
                 <div>
                   <div className="flex items-center gap-2">
                     <div className="text-sm font-semibold text-slate-950 dark:text-white">
-                      {item.label}
+                      {FUNNEL_LABELS[item.key] || item.label}
                     </div>
                     {FUNNEL_HELP_TEXT[item.key] ? (
                       <InlineHelpTooltip
@@ -535,8 +542,8 @@ function FunnelCard({ funnel = [], loading }) {
                 </div>
                 <Badge tone={item.dropoffPct > 0 ? "ACCEPTED" : "PAID"}>
                   {item.dropoffPct > 0
-                    ? `Drop-off ${percent(item.dropoffPct)}`
-                    : "Etapa inicial"}
+                    ? `Abandono ${percent(item.dropoffPct)}`
+                    : "Inicio do funil"}
                 </Badge>
               </div>
 
@@ -553,7 +560,7 @@ function FunnelCard({ funnel = [], loading }) {
               </div>
 
               <div className="mt-3 text-xs text-slate-500 dark:text-slate-400">
-                Perda na etapa: {number(item.dropoffCount)} sessoes
+                Sessoes perdidas nesta etapa: {number(item.dropoffCount)}
               </div>
             </div>
           ))

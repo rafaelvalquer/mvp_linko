@@ -1919,27 +1919,27 @@ export async function buildMyPageAnalyticsReport({
   const funnel = [
     {
       key: "page_view",
-      label: "Page view",
+      label: "Visitas",
       sessions: funnelPageViewSessions.length,
     },
     {
       key: "cta_click",
-      label: "Clique em CTA",
+      label: "Cliques em botoes e links",
       sessions: funnelClickSessions.length,
     },
     {
       key: "intent_view",
-      label: "Quote / Schedule / Pay",
+      label: "Entraram em orcamento, agendamento ou pagamento",
       sessions: funnelIntentSessions.length,
     },
     {
       key: "mid_conversion",
-      label: "Quote submit / Slot select",
+      label: "Enviaram orcamento ou escolheram horario",
       sessions: funnelMidSessions.length,
     },
     {
       key: "final_conversion",
-      label: "Booking / Sale",
+      label: "Agendamentos ou vendas",
       sessions: saleSessions.size + bookingSubmitCount,
     },
   ].map((item, index, list) => {
