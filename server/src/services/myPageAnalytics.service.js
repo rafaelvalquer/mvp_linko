@@ -85,6 +85,14 @@ function logGeoDebug(stage, details = {}) {
   console.log("[my-page-geo]", stage, details);
 }
 
+function buildPayloadBodyPreview(payload) {
+  try {
+    return JSON.stringify(payload).replace(/\s+/g, " ").slice(0, 400);
+  } catch {
+    return "[unserializable payload]";
+  }
+}
+
 function clampText(value, max = 120) {
   return String(value || "")
     .trim()
@@ -277,9 +285,16 @@ async function fetchGeoForIp(ip, userAgent = "") {
 
     logGeoDebug("lookup:provider-response", {
       normalizedIp,
+      providerUrl,
       status: response.status,
       ok: response.ok,
-      providerSuccess: payload?.success !== false,
+      payloadSuccess:
+        Object.prototype.hasOwnProperty.call(payload || {}, "success")
+          ? payload.success
+          : null,
+      payloadMessage:
+        clampText(payload?.message || payload?.error || payload?.reason || "", 240),
+      payloadBodyPreview: buildPayloadBodyPreview(payload),
       countryCode: value.countryCode || "unknown",
       region: value.region || "",
       city: value.city || "",
