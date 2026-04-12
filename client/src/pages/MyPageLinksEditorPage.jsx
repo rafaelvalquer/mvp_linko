@@ -40,6 +40,7 @@ const BUTTON_TYPE_OPTIONS = [
   { value: "public_schedule", label: "Agendar atendimento" },
   { value: "catalog", label: "Ver catalogo" },
   { value: "payment_link", label: "Pagar proposta" },
+  { value: "location", label: "Localizacao" },
   { value: "external_url", label: "Link externo" },
 ];
 
@@ -75,6 +76,10 @@ function isNativeButtonType(type) {
     type === "catalog" ||
     type === "payment_link"
   );
+}
+
+function isLocationButtonType(type) {
+  return type === "location";
 }
 
 function useObjectUrl(file) {
@@ -196,6 +201,7 @@ export default function MyPageLinksEditorPage() {
           label: "Novo link",
           type: "external_url",
           url: "",
+          address: "",
           enabled: false,
           sortOrder: (prev?.buttons || []).length,
         },
@@ -586,14 +592,21 @@ export default function MyPageLinksEditorPage() {
                   <select
                     className="app-field w-full"
                     value={button.type}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const nextType = event.target.value;
                       updateButton(button.id, {
-                        type: event.target.value,
-                        url: isNativeButtonType(event.target.value)
-                          ? ""
-                          : button.url || "",
-                      })
-                    }
+                        type: nextType,
+                        url:
+                          nextType === "whatsapp" ||
+                          isNativeButtonType(nextType) ||
+                          isLocationButtonType(nextType)
+                            ? ""
+                            : button.url || "",
+                        address: isLocationButtonType(nextType)
+                          ? button.address || ""
+                          : "",
+                      });
+                    }}
                   >
                     {BUTTON_TYPE_OPTIONS.map((option) => (
                       <option key={option.value} value={option.value}>
@@ -607,24 +620,40 @@ export default function MyPageLinksEditorPage() {
               <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
                 <div>
                   <label className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                    URL de destino
+                    {isLocationButtonType(button.type) ? "Endereco" : "URL de destino"}
                   </label>
                   <Input
-                    value={button.url || ""}
+                    value={
+                      isLocationButtonType(button.type)
+                        ? button.address || ""
+                        : button.url || ""
+                    }
                     disabled={
                       button.type === "whatsapp" || isNativeButtonType(button.type)
                     }
                     onChange={(event) =>
-                      updateButton(button.id, { url: event.target.value })
+                      updateButton(
+                        button.id,
+                        isLocationButtonType(button.type)
+                          ? { address: event.target.value }
+                          : { url: event.target.value },
+                      )
                     }
                     placeholder={
                       button.type === "whatsapp"
                         ? "Usa o WhatsApp principal da pagina"
+                        : isLocationButtonType(button.type)
+                          ? "Rua, numero, bairro, cidade e estado"
                         : isNativeButtonType(button.type)
                           ? "Destino nativo da LuminorPay"
                           : "https://..."
                     }
                   />
+                  {isLocationButtonType(button.type) ? (
+                    <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                      Esse botao abre o Google Maps automaticamente e mostra um minimapa na pagina.
+                    </div>
+                  ) : null}
                   {isNativeButtonType(button.type) ? (
                     <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
                       Esse botao abre um workflow nativo da LuminorPay.

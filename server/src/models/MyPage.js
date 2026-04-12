@@ -7,6 +7,7 @@ const MY_PAGE_BUTTON_TYPES = [
   "public_offer",
   "catalog",
   "payment_link",
+  "location",
 ];
 
 const MY_PAGE_THEME_PRESETS = [
@@ -47,6 +48,7 @@ const MyPageButtonSchema = new mongoose.Schema(
       default: "external_url",
     },
     url: { type: String, default: "", trim: true, maxlength: 2000 },
+    address: { type: String, default: "", trim: true, maxlength: 240 },
     enabled: { type: Boolean, default: false },
     sortOrder: { type: Number, default: 0 },
   },

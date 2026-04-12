@@ -10,12 +10,14 @@ import {
 } from "../app/myPagePublicAnalytics.js";
 import {
   cls,
+  findMyPageLocationButton,
   getMyPageButtonIcon,
   getMyPageButtonMetaLabel,
   MyPagePublicAvatar,
   MyPagePublicCard,
   MyPagePublicFooter,
   MyPagePublicHeroMedia,
+  MyPageLocationCard,
   MyPagePublicLoadingSplash,
   MyPageSecondaryLinks,
   MyPagePublicScreen,
@@ -64,6 +66,7 @@ export default function PublicMyPageV2() {
 
   const buttons = useMemo(() => page?.buttons || [], [page?.buttons]);
   const socialLinks = useMemo(() => page?.socialLinks || [], [page?.socialLinks]);
+  const locationButton = useMemo(() => findMyPageLocationButton(buttons), [buttons]);
 
   useEffect(() => {
     if (!page?._id) return;
@@ -165,6 +168,7 @@ export default function PublicMyPageV2() {
                   motionPreset={motionPreset}
                   err={err}
                   buttons={buttons}
+                  locationButton={locationButton}
                   socialLinks={socialLinks}
                   onButtonClick={handleButtonClick}
                   onSecondaryLinkClick={handleSecondaryLinkClick}
@@ -185,6 +189,7 @@ function HomeContent({
   motionPreset,
   err,
   buttons,
+  locationButton,
   socialLinks,
   onButtonClick,
   onSecondaryLinkClick,
@@ -262,6 +267,16 @@ function HomeContent({
                   motionPreset={motionPreset}
                 />
               </motion.div>
+
+              {locationButton ? (
+                <motion.div variants={motionPreset.itemVariants}>
+                  <MyPageLocationCard
+                    theme={theme}
+                    button={locationButton}
+                    onClick={() => onButtonClick(locationButton)}
+                  />
+                </motion.div>
+              ) : null}
 
               <motion.div variants={motionPreset.itemVariants}>
                 <MyPageSecondaryLinks

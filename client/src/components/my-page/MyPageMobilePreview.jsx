@@ -15,10 +15,12 @@ import {
   getMyPageTheme,
 } from "./myPageTheme.js";
 import {
+  findMyPageLocationButton,
   MyPagePublicAvatar,
   MyPageBackgroundOverlay,
   getMyPageButtonIcon,
   getMyPageButtonMetaLabel,
+  MyPageLocationCard,
   MyPagePublicHeroMedia,
   MyPageSecondaryLinks,
 } from "./MyPagePublicUi.jsx";
@@ -187,9 +189,9 @@ export default function MyPageMobilePreview({
   const shouldReduceMotion = useReducedMotion();
   const motionPreset = getMyPageMotionPreset(theme, shouldReduceMotion);
   const isStudio = variant === "studio";
-  const buttons = (page?.buttons || [])
-    .filter((button) => button.enabled)
-    .slice(0, isStudio ? 4 : 3);
+  const enabledButtons = (page?.buttons || []).filter((button) => button.enabled);
+  const buttons = enabledButtons.slice(0, isStudio ? 4 : 3);
+  const locationButton = findMyPageLocationButton(enabledButtons);
   const shopCount = Number(page?.summary?.selectedProductsCount || 0);
   const previewContentKey = [
     mode,
@@ -438,7 +440,7 @@ export default function MyPageMobilePreview({
                     motionPreset={motionPreset}
                   />
                 ))
-              ) : (
+            ) : (
                 <PreviewCard
                   theme={theme}
                   variant="soft"
@@ -448,6 +450,16 @@ export default function MyPageMobilePreview({
                 </PreviewCard>
               )}
             </motion.div>
+
+            {locationButton ? (
+              <MyPageLocationCard
+                theme={theme}
+                button={locationButton}
+                interactive={false}
+                className="p-3"
+                heightClassName={isStudio ? "h-40" : "h-32"}
+              />
+            ) : null}
 
             <MyPageSecondaryLinks
               theme={theme}

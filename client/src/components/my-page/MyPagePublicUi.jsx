@@ -3,6 +3,7 @@ import {
   CreditCard,
   FileText,
   Link2,
+  MapPin,
   ShoppingBag,
 } from "lucide-react";
 import { motion } from "framer-motion";
@@ -35,6 +36,7 @@ export function getMyPageButtonIcon(type) {
   if (type === "public_offer") return FileText;
   if (type === "catalog") return ShoppingBag;
   if (type === "payment_link") return CreditCard;
+  if (type === "location") return MapPin;
   return Link2;
 }
 
@@ -44,7 +46,43 @@ export function getMyPageButtonMetaLabel(type) {
   if (type === "public_offer") return "Orcamento";
   if (type === "catalog") return "Catalogo";
   if (type === "payment_link") return "Pagamento";
+  if (type === "location") return "Localizacao";
   return "Link";
+}
+
+export function normalizeMyPageLocationAddress(address = "") {
+  return String(address || "").trim();
+}
+
+export function buildMyPageLocationTargetUrl(address = "") {
+  const normalized = normalizeMyPageLocationAddress(address);
+  if (!normalized) return "";
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(normalized)}`;
+}
+
+export function buildMyPageLocationEmbedUrl(address = "") {
+  const normalized = normalizeMyPageLocationAddress(address);
+  if (!normalized) return "";
+  return `https://www.google.com/maps?q=${encodeURIComponent(normalized)}&output=embed`;
+}
+
+export function findMyPageLocationButton(buttons = []) {
+  if (!Array.isArray(buttons)) return null;
+  const item = buttons.find(
+    (button) =>
+      button?.enabled === true &&
+      button?.type === "location" &&
+      normalizeMyPageLocationAddress(button?.address),
+  );
+  if (!item) return null;
+
+  const address = normalizeMyPageLocationAddress(item.address);
+  return {
+    ...item,
+    address,
+    targetUrl: item?.targetUrl || buildMyPageLocationTargetUrl(address),
+    mapEmbedUrl: item?.mapEmbedUrl || buildMyPageLocationEmbedUrl(address),
+  };
 }
 
 export function getPublicButtonProps(theme, variant = "primary", className = "") {
@@ -125,6 +163,92 @@ export function MyPagePublicCard({
     >
       {children}
     </section>
+  );
+}
+
+export function MyPageLocationCard({
+  theme,
+  button,
+  interactive = true,
+  onClick = null,
+  className = "",
+  heightClassName = "h-48 sm:h-56",
+}) {
+  const locationButton = findMyPageLocationButton(button ? [button] : []);
+  if (!locationButton?.address || !locationButton?.targetUrl || !locationButton?.mapEmbedUrl) {
+    return null;
+  }
+
+  const cardProps = getPublicSelectableCardProps(theme, false);
+  const Container = interactive ? "button" : "div";
+
+  return (
+    <Container
+      type={interactive ? "button" : undefined}
+      onClick={interactive ? onClick : undefined}
+      className={cls(
+        cardProps.className,
+        "group block w-full overflow-hidden text-left transition-transform duration-200",
+        interactive ? "cursor-pointer hover:-translate-y-0.5" : "",
+        className,
+      )}
+      style={cardProps.style}
+    >
+      <div className="space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div
+              className="text-[11px] font-bold uppercase tracking-[0.2em]"
+              style={theme?.accentTextStyle}
+            >
+              Localizacao
+            </div>
+            <div className="mt-1 text-base font-semibold" style={theme?.headingStyle}>
+              {locationButton.label || "Como chegar"}
+            </div>
+            <div className="mt-2 text-sm leading-6" style={theme?.mutedTextStyle}>
+              {locationButton.address}
+            </div>
+          </div>
+
+          <div
+            className={cls(
+              "flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border",
+              theme?.buttonIconRadiusClassName,
+            )}
+            style={theme?.softSurfaceStyle}
+          >
+            <MapPin className="h-5 w-5" />
+          </div>
+        </div>
+
+        <div className="overflow-hidden rounded-[24px] border" style={theme?.softSurfaceStyle}>
+          <div className={cls("pointer-events-none relative w-full overflow-hidden", heightClassName)}>
+            <iframe
+              title={`Mapa de ${locationButton.label || "Localizacao"}`}
+              src={locationButton.mapEmbedUrl}
+              loading="lazy"
+              referrerPolicy="no-referrer-when-downgrade"
+              className="absolute inset-0 h-full w-full border-0"
+            />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-slate-950/18 to-transparent" />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 text-xs">
+          <span style={theme?.mutedTextStyle}>Abrir no Google Maps</span>
+          <span
+            className={cls(
+              "rounded-full border px-3 py-1 font-semibold transition-colors",
+              interactive ? "group-hover:border-current" : "",
+            )}
+            style={theme?.softSurfaceStyle}
+          >
+            Ver rota
+          </span>
+        </div>
+      </div>
+    </Container>
   );
 }
 

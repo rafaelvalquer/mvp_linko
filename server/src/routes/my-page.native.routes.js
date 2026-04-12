@@ -70,6 +70,7 @@ const BUTTON_TYPE_LABELS = {
   public_offer: "Pedir orcamento",
   catalog: "Ver catalogo",
   payment_link: "Pagar proposta",
+  location: "Ver localizacao",
 };
 const QUOTE_REQUEST_STATUSES = ["new", "in_progress", "converted", "archived"];
 const MY_PAGE_THEME_PRESETS = [
@@ -627,7 +628,11 @@ function sanitizeButtons(buttons = [], fallbackWhatsAppPhone = "") {
           80,
         ),
         type,
-        url: type === "whatsapp" ? "" : sanitizeUrl(item?.url),
+        url:
+          type === "whatsapp" || type === "location"
+            ? ""
+            : sanitizeUrl(item?.url),
+        address: type === "location" ? sanitizeText(item?.address, 240) : "",
         enabled: item?.enabled === true,
         sortOrder: Number.isFinite(Number(item?.sortOrder))
           ? Number(item.sortOrder)
@@ -950,6 +955,18 @@ function buildWhatsAppUrl(phone, title = "") {
   return `https://wa.me/${withCountry}?text=${message}`;
 }
 
+function buildGoogleMapsSearchUrl(address = "") {
+  const normalized = sanitizeText(address, 240);
+  if (!normalized) return "";
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(normalized)}`;
+}
+
+function buildGoogleMapsEmbedUrl(address = "") {
+  const normalized = sanitizeText(address, 240);
+  if (!normalized) return "";
+  return `https://www.google.com/maps?q=${encodeURIComponent(normalized)}&output=embed`;
+}
+
 function buildNativeTarget(page, type) {
   const slug = String(page?.slug || "").trim();
   if (!slug) return "";
@@ -964,6 +981,9 @@ function resolveButtonTarget(page, button) {
   if (!button?.enabled) return "";
   if (button.type === "whatsapp") {
     return buildWhatsAppUrl(page?.whatsappPhone, page?.title);
+  }
+  if (button.type === "location") {
+    return buildGoogleMapsSearchUrl(button?.address);
   }
   if (
     button.type === "catalog" ||
@@ -982,10 +1002,19 @@ function resolvePageShopProductIds(page) {
 
 function serializePage(pageDoc) {
   const page = pageDoc?.toObject ? pageDoc.toObject() : { ...(pageDoc || {}) };
-  const buttons = sortByOrder(page.buttons || []).map((button) => ({
-    ...button,
-    targetUrl: resolveButtonTarget(page, button),
-  }));
+  const buttons = sortByOrder(page.buttons || []).map((button) => {
+    const targetUrl = resolveButtonTarget(page, button);
+    const address = sanitizeText(button?.address, 240);
+    return {
+      ...button,
+      address,
+      targetUrl,
+      mapEmbedUrl:
+        button?.enabled === true && button?.type === "location"
+          ? buildGoogleMapsEmbedUrl(address)
+          : "",
+    };
+  });
   const socialLinks = sortByOrder(page.socialLinks || []);
   const sanitizedShop = sanitizeShop(page.shop || {});
   const shop = {
