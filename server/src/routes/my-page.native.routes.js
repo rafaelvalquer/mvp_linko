@@ -151,6 +151,9 @@ const MY_PAGE_SECONDARY_LINK_SIZES = ["small", "medium"];
 const MY_PAGE_SECONDARY_LINK_ALIGNS = ["center", "left"];
 const MY_PAGE_ANIMATION_PRESETS = ["subtle", "strong", "impact", "off"];
 const MY_PAGE_AVATAR_MODES = ["keep", "upload", "url", "remove"];
+const LOCATION_SEARCH_MIN_LENGTH = 3;
+const LOCATION_SEARCH_LIMIT = 5;
+const LOCATION_SEARCH_TIMEOUT_MS = 5000;
 const LEGACY_THEME_PRESET_MAP = {
   ocean: "clean_light",
   sunset: "creator_gradient",
@@ -472,6 +475,120 @@ function sanitizeLongText(value, max = 1500) {
 
 function sanitizeUrl(value) {
   return String(value || "").trim().slice(0, 2000);
+}
+
+function pickLocationCity(address = {}) {
+  return sanitizeText(
+    address.city ||
+      address.town ||
+      address.village ||
+      address.municipality ||
+      address.city_district ||
+      address.county ||
+      address.state_district ||
+      address.state ||
+      "",
+    120,
+  );
+}
+
+function pickLocationStreet(address = {}) {
+  return sanitizeText(
+    address.road ||
+      address.pedestrian ||
+      address.footway ||
+      address.cycleway ||
+      address.residential ||
+      address.path ||
+      address.street ||
+      address.neighbourhood ||
+      "",
+    120,
+  );
+}
+
+function formatLocationSearchLabel(item = {}) {
+  const address = item?.address && typeof item.address === "object" ? item.address : {};
+  const street = pickLocationStreet(address);
+  const houseNumber = sanitizeText(address.house_number, 32);
+  const city = pickLocationCity(address);
+  const locality = sanitizeText(
+    address.suburb || address.neighbourhood || address.hamlet || address.quarter || "",
+    120,
+  );
+
+  const parts = [];
+  if (street) {
+    parts.push(houseNumber ? `${street}, ${houseNumber}` : street);
+  } else if (locality) {
+    parts.push(locality);
+  }
+  if (city && city !== parts[parts.length - 1]) {
+    parts.push(city);
+  }
+
+  return sanitizeText(
+    parts.join(", ") ||
+      item?.name ||
+      address.amenity ||
+      city ||
+      locality ||
+      item?.display_name,
+    240,
+  );
+}
+
+async function searchLocationSuggestions(query) {
+  const normalized = sanitizeText(query, 160);
+  if (normalized.length < LOCATION_SEARCH_MIN_LENGTH) return [];
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), LOCATION_SEARCH_TIMEOUT_MS);
+  const providerUrl =
+    "https://nominatim.openstreetmap.org/search" +
+    `?format=jsonv2&addressdetails=1&limit=${LOCATION_SEARCH_LIMIT}` +
+    `&q=${encodeURIComponent(normalized)}`;
+
+  try {
+    const response = await fetch(providerUrl, {
+      headers: {
+        Accept: "application/json",
+        "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
+        "User-Agent": "mvp-linko-location-search/1.0",
+      },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Location provider failed with status ${response.status}`);
+    }
+
+    const payload = await response.json().catch(() => []);
+    const items = Array.isArray(payload) ? payload : [];
+    const seen = new Set();
+    const suggestions = [];
+
+    for (const item of items) {
+      const label = formatLocationSearchLabel(item);
+      if (!label) continue;
+
+      const dedupeKey = label.toLowerCase();
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+
+      suggestions.push({
+        label,
+        address: label,
+        fullAddress: sanitizeLongText(item?.display_name, 320),
+      });
+
+      if (suggestions.length >= LOCATION_SEARCH_LIMIT) break;
+    }
+
+    return suggestions;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function parseMaybeJson(value, fallback) {
@@ -1974,6 +2091,20 @@ router.get(
   asyncHandler(async (req, res) => {
     const { page } = await loadWorkspacePage(req);
     return res.json({ ok: true, page: serializePage(page) });
+  }),
+);
+
+router.get(
+  "/my-page/location/search",
+  requireMyPageSettingsAccess,
+  asyncHandler(async (req, res) => {
+    const query = sanitizeText(req.query?.q, 160);
+    if (query.length < LOCATION_SEARCH_MIN_LENGTH) {
+      return res.json({ ok: true, items: [] });
+    }
+
+    const items = await searchLocationSuggestions(query);
+    return res.json({ ok: true, items });
   }),
 );
 

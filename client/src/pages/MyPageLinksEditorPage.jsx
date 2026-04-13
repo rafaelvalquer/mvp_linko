@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -16,6 +16,7 @@ import {
 import {
   saveMyPageAvatar,
   saveMyPageLinks,
+  searchMyPageLocationSuggestions,
   setMyPagePublished,
   getMyPageQuoteRequests,
 } from "../app/myPageApi.js";
@@ -96,6 +97,240 @@ function useObjectUrl(file) {
   }, [file]);
 
   return objectUrl;
+}
+
+const LOCATION_SEARCH_MIN_LENGTH = 3;
+const LOCATION_SEARCH_DEBOUNCE_MS = 250;
+
+function LocationAddressInput({
+  value = "",
+  disabled = false,
+  placeholder = "",
+  onChange,
+}) {
+  const [query, setQuery] = useState(value || "");
+  const [items, setItems] = useState([]);
+  const [status, setStatus] = useState("idle");
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const requestRef = useRef(0);
+  const blurTimeoutRef = useRef(null);
+  const skipNextSearchRef = useRef(false);
+
+  useEffect(() => {
+    setQuery(value || "");
+  }, [value]);
+
+  useEffect(() => {
+    return () => {
+      if (blurTimeoutRef.current) {
+        clearTimeout(blurTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (disabled) {
+      requestRef.current += 1;
+      setItems([]);
+      setStatus("idle");
+      setLoading(false);
+      setOpen(false);
+      setActiveIndex(-1);
+      return undefined;
+    }
+
+    if (skipNextSearchRef.current) {
+      skipNextSearchRef.current = false;
+      return undefined;
+    }
+
+    const trimmed = String(query || "").trim();
+    if (!trimmed) {
+      requestRef.current += 1;
+      setItems([]);
+      setStatus("idle");
+      setLoading(false);
+      setOpen(false);
+      setActiveIndex(-1);
+      return undefined;
+    }
+
+    if (trimmed.length < LOCATION_SEARCH_MIN_LENGTH) {
+      requestRef.current += 1;
+      setItems([]);
+      setStatus("min");
+      setLoading(false);
+      setOpen(false);
+      setActiveIndex(-1);
+      return undefined;
+    }
+
+    const requestId = requestRef.current + 1;
+    requestRef.current = requestId;
+
+    const timeout = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const response = await searchMyPageLocationSuggestions(trimmed);
+        if (requestRef.current !== requestId) return;
+
+        const nextItems = Array.isArray(response?.items) ? response.items : [];
+        setItems(nextItems);
+        setStatus(nextItems.length ? "ready" : "empty");
+        setOpen(true);
+        setActiveIndex(nextItems.length ? 0 : -1);
+      } catch {
+        if (requestRef.current !== requestId) return;
+        setItems([]);
+        setStatus("error");
+        setOpen(true);
+        setActiveIndex(-1);
+      } finally {
+        if (requestRef.current === requestId) {
+          setLoading(false);
+        }
+      }
+    }, LOCATION_SEARCH_DEBOUNCE_MS);
+
+    return () => clearTimeout(timeout);
+  }, [disabled, query]);
+
+  function commitManualValue(nextValue) {
+    setQuery(nextValue);
+    onChange?.(nextValue);
+  }
+
+  function selectSuggestion(item) {
+    const nextValue = item?.address || item?.label || "";
+    requestRef.current += 1;
+    skipNextSearchRef.current = true;
+    setQuery(nextValue);
+    setItems([]);
+    setStatus("idle");
+    setLoading(false);
+    setOpen(false);
+    setActiveIndex(-1);
+    onChange?.(nextValue);
+  }
+
+  function handleFocus() {
+    if (blurTimeoutRef.current) {
+      clearTimeout(blurTimeoutRef.current);
+      blurTimeoutRef.current = null;
+    }
+    if (items.length || status === "empty" || status === "error") {
+      setOpen(true);
+    }
+  }
+
+  function handleBlur() {
+    blurTimeoutRef.current = setTimeout(() => {
+      setOpen(false);
+      setActiveIndex(-1);
+    }, 120);
+  }
+
+  function handleKeyDown(event) {
+    if (!open && event.key === "ArrowDown" && items.length) {
+      event.preventDefault();
+      setOpen(true);
+      setActiveIndex(0);
+      return;
+    }
+
+    if (!open) return;
+
+    if (event.key === "ArrowDown" && items.length) {
+      event.preventDefault();
+      setActiveIndex((prev) => (prev + 1 >= items.length ? 0 : prev + 1));
+      return;
+    }
+
+    if (event.key === "ArrowUp" && items.length) {
+      event.preventDefault();
+      setActiveIndex((prev) => (prev - 1 < 0 ? items.length - 1 : prev - 1));
+      return;
+    }
+
+    if (event.key === "Enter" && activeIndex >= 0 && items[activeIndex]) {
+      event.preventDefault();
+      selectSuggestion(items[activeIndex]);
+      return;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setOpen(false);
+      setActiveIndex(-1);
+    }
+  }
+
+  return (
+    <div className="relative">
+      <Input
+        value={query}
+        disabled={disabled}
+        placeholder={placeholder}
+        autoComplete="off"
+        onChange={(event) => commitManualValue(event.target.value)}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+        onKeyDown={handleKeyDown}
+      />
+
+      {open ? (
+        <div className="absolute z-20 mt-2 w-full overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-[0_24px_48px_-28px_rgba(15,23,42,0.28)]">
+          {loading ? (
+            <div className="px-4 py-3 text-sm text-slate-500">
+              Buscando enderecos...
+            </div>
+          ) : null}
+
+          {!loading && items.length ? (
+            <div className="max-h-64 overflow-y-auto py-1">
+              {items.map((item, index) => (
+                <button
+                  key={`${item.label}-${index}`}
+                  type="button"
+                  className={`block w-full px-4 py-3 text-left text-sm transition ${
+                    index === activeIndex
+                      ? "bg-slate-100 text-slate-900"
+                      : "text-slate-700 hover:bg-slate-50"
+                  }`}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    selectSuggestion(item);
+                  }}
+                >
+                  <div className="font-medium">{item.label}</div>
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {!loading && status === "empty" ? (
+            <div className="px-4 py-3 text-sm text-slate-500">
+              Nenhum endereco encontrado. Voce pode continuar digitando manualmente.
+            </div>
+          ) : null}
+
+          {!loading && status === "error" ? (
+            <div className="px-4 py-3 text-sm text-slate-500">
+              Nao foi possivel buscar agora. Voce pode continuar digitando manualmente.
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {status === "min" ? (
+        <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+          Digite pelo menos 3 caracteres para buscar sugestoes.
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export default function MyPageLinksEditorPage() {
@@ -622,36 +857,36 @@ export default function MyPageLinksEditorPage() {
                   <label className="text-xs font-semibold text-slate-500 dark:text-slate-400">
                     {isLocationButtonType(button.type) ? "Endereco" : "URL de destino"}
                   </label>
-                  <Input
-                    value={
-                      isLocationButtonType(button.type)
-                        ? button.address || ""
-                        : button.url || ""
-                    }
-                    disabled={
-                      button.type === "whatsapp" || isNativeButtonType(button.type)
-                    }
-                    onChange={(event) =>
-                      updateButton(
-                        button.id,
-                        isLocationButtonType(button.type)
-                          ? { address: event.target.value }
-                          : { url: event.target.value },
-                      )
-                    }
-                    placeholder={
-                      button.type === "whatsapp"
-                        ? "Usa o WhatsApp principal da pagina"
-                        : isLocationButtonType(button.type)
-                          ? "Rua, numero, bairro, cidade e estado"
-                        : isNativeButtonType(button.type)
-                          ? "Destino nativo da LuminorPay"
-                          : "https://..."
-                    }
-                  />
+                  {isLocationButtonType(button.type) ? (
+                    <LocationAddressInput
+                      value={button.address || ""}
+                      disabled={false}
+                      placeholder="Rua ou avenida, numero e cidade"
+                      onChange={(nextValue) =>
+                        updateButton(button.id, { address: nextValue })
+                      }
+                    />
+                  ) : (
+                    <Input
+                      value={button.url || ""}
+                      disabled={
+                        button.type === "whatsapp" || isNativeButtonType(button.type)
+                      }
+                      onChange={(event) =>
+                        updateButton(button.id, { url: event.target.value })
+                      }
+                      placeholder={
+                        button.type === "whatsapp"
+                          ? "Usa o WhatsApp principal da pagina"
+                          : isNativeButtonType(button.type)
+                            ? "Destino nativo da LuminorPay"
+                            : "https://..."
+                      }
+                    />
+                  )}
                   {isLocationButtonType(button.type) ? (
                     <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                      Esse botao abre o Google Maps automaticamente e mostra um minimapa na pagina.
+                      Ao selecionar uma sugestao, vamos salvar um endereco curto para exibir na sua pagina.
                     </div>
                   ) : null}
                   {isNativeButtonType(button.type) ? (

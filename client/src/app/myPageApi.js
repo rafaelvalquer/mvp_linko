@@ -4,6 +4,12 @@ export function getMyPage() {
   return api("/my-page");
 }
 
+export function searchMyPageLocationSuggestions(q = "") {
+  const query = String(q || "").trim();
+  if (!query) return Promise.resolve({ ok: true, items: [] });
+  return api(`/my-page/location/search?q=${encodeURIComponent(query)}`);
+}
+
 export function saveMyPage(payload) {
   return api("/my-page", {
     method: "PUT",
