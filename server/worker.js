@@ -2,9 +2,9 @@ import os from "node:os";
 import process from "node:process";
 import mongoose from "mongoose";
 
-import { createApp } from "./src/app.js";
 import { connectMongo } from "./src/config/mongo.js";
 import { env } from "./src/config/env.js";
+import { startBackgroundRunners, stopBackgroundRunners } from "./src/services/backgroundRunners.js";
 
 function ts() {
   return new Date().toISOString();
@@ -21,32 +21,7 @@ function log(level, scope, message, extra) {
 
 function maskMongoUri(uri) {
   if (!uri) return "";
-  // mascara credenciais: mongodb://user:pass@host -> mongodb://***:***@host
   return String(uri).replace(/\/\/([^:/]+):([^@]+)@/g, "//***:***@");
-}
-
-function countRoutes(app) {
-  // Melhor esforço: conta rotas registradas no Express
-  try {
-    const stack = app?._router?.stack || [];
-    let n = 0;
-
-    const walk = (layer) => {
-      if (!layer) return;
-      if (layer.route && layer.route.path) {
-        n += 1;
-        return;
-      }
-      if (layer.name === "router" && layer.handle?.stack) {
-        for (const l of layer.handle.stack) walk(l);
-      }
-    };
-
-    for (const layer of stack) walk(layer);
-    return n;
-  } catch {
-    return null;
-  }
 }
 
 function attachMongoLogs() {
@@ -68,27 +43,23 @@ async function pingMongo() {
     if (!db) return { ok: false, reason: "NO_DB_HANDLE" };
     await db.admin().ping();
     return { ok: true };
-  } catch (e) {
-    return { ok: false, reason: e?.message || "PING_FAILED" };
+  } catch (error) {
+    return { ok: false, reason: error?.message || "PING_FAILED" };
   }
 }
 
 async function bootstrap() {
   const bootAt = Date.now();
 
-  const nodeEnv = String(process.env.NODE_ENV || env.nodeEnv || "development");
-  const port = Number(process.env.PORT || env.port || 8011);
-
-  log("INFO", "boot", "starting", {
+  log("INFO", "boot", "starting worker", {
     node: process.version,
     pid: process.pid,
-    env: nodeEnv,
+    env: env.nodeEnv,
     role: env.appRole,
     host: os.hostname(),
     platform: process.platform,
   });
 
-  // Loga URI mascarada (se existir em env)
   const mongoUri =
     process.env.MONGO_URL ||
     process.env.MONGODB_URI ||
@@ -108,60 +79,21 @@ async function bootstrap() {
   const ping = await pingMongo();
   log("INFO", "mongo", "ready", { ms: mongoMs, ping });
 
-  const appAt = Date.now();
-  const app = createApp();
-  const appMs = Date.now() - appAt;
-
-  const routes = countRoutes(app);
-  log("INFO", "app", "created", { ms: appMs, routes });
-
-  if (env.appRole === "all") {
-    const { startBackgroundRunners } = await import(
-      "./src/services/backgroundRunners.js"
-    );
-    startBackgroundRunners();
-  }
-
-  const server = app.listen(port, "0.0.0.0", () => {
-    log("INFO", "http", "listening", {
-      bind: "0.0.0.0",
-      port,
-      uptimeMs: Date.now() - bootAt,
-    });
-    log("INFO", "boot", "startup OK");
+  startBackgroundRunners();
+  log("INFO", "worker", "background runners ready", {
+    uptimeMs: Date.now() - bootAt,
   });
 
-  server.on("error", (err) => {
-    log("ERROR", "http", "listen error", {
-      message: err?.message,
-      code: err?.code,
-    });
-    process.exitCode = 1;
-  });
-
-  // Shutdown limpo (Render/PM2/K8s mandam SIGTERM)
   const shutdown = async (signal) => {
     log("WARN", "shutdown", `signal received: ${signal}`);
 
-    if (env.appRole === "all") {
-      const { stopBackgroundRunners } = await import(
-        "./src/services/backgroundRunners.js"
-      );
-      stopBackgroundRunners();
-    }
-
-    await new Promise((resolve) => {
-      server.close(() => {
-        log("INFO", "http", "server closed");
-        resolve();
-      });
-    });
+    stopBackgroundRunners();
 
     try {
       await mongoose.disconnect();
       log("INFO", "mongo", "disconnected (shutdown)");
-    } catch (e) {
-      log("ERROR", "mongo", "disconnect failed", { message: e?.message });
+    } catch (error) {
+      log("ERROR", "mongo", "disconnect failed", { message: error?.message });
     }
 
     log("INFO", "shutdown", "done");
@@ -171,21 +103,19 @@ async function bootstrap() {
   process.on("SIGINT", () => shutdown("SIGINT"));
   process.on("SIGTERM", () => shutdown("SIGTERM"));
 
-  // Captura erros que normalmente “matam” o processo sem contexto
   process.on("unhandledRejection", (reason) => {
     log("ERROR", "process", "unhandledRejection", {
       reason: String(reason?.message || reason),
     });
   });
 
-  process.on("uncaughtException", (err) => {
-    log("ERROR", "process", "uncaughtException", { message: err?.message });
-    // em uncaughtException o estado do app pode ficar inconsistente
+  process.on("uncaughtException", (error) => {
+    log("ERROR", "process", "uncaughtException", { message: error?.message });
     shutdown("uncaughtException").catch(() => process.exit(1));
   });
 }
 
-bootstrap().catch((err) => {
-  log("ERROR", "boot", "startup failed", { message: err?.message });
+bootstrap().catch((error) => {
+  log("ERROR", "boot", "startup failed", { message: error?.message });
   process.exit(1);
 });

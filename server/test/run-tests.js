@@ -86,12 +86,18 @@ process.env.MONGODB_URI = process.env.MONGODB_URI || "mongodb://localhost:27017/
 const { buildUserPayload, validateRegisterPayload } = await import(
   "../src/routes/auth.routes.js"
 );
+const { normalizeAppRole } = await import("../src/config/env.js");
+const { createApp } = await import("../src/app.js");
 const { buildOfferPublicUrl, resolvePublicAppOrigin } = await import(
   "../src/services/publicUrl.service.js"
 );
 const { buildRecurringOfferScopeQuery } = await import(
   "../src/services/recurring-offers.service.js"
 );
+const {
+  clearRuntimeStatuses,
+  listRuntimeStatuses,
+} = await import("../src/services/runtimeStatus.js");
 const { validateInboundPayload, validateMessageAckPayload } = await import(
   "../src/routes/whatsapp-ai.routes.js"
 );
@@ -121,6 +127,19 @@ await check("normalizeDestinationPhoneN11 keeps only national 11 digits", () => 
   assert.equal(normalizeDestinationPhoneN11("11999998888"), "11999998888");
   assert.equal(normalizeDestinationPhoneN11("+55 11 99999-8888"), "11999998888");
   assert.equal(normalizeDestinationPhoneN11("1133334444"), "");
+});
+
+await check("normalizeAppRole defaults to all in development and web in production", () => {
+  assert.equal(normalizeAppRole("", "development"), "all");
+  assert.equal(normalizeAppRole("", "production"), "web");
+  assert.equal(normalizeAppRole("worker", "production"), "worker");
+});
+
+await check("createApp has no runner side effects", () => {
+  clearRuntimeStatuses();
+  const app = createApp();
+  assert.ok(app);
+  assert.deepEqual(listRuntimeStatuses(), []);
 });
 
 await check("normalizeUserWhatsAppPhone validates and clears values", () => {

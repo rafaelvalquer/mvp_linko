@@ -1,4 +1,6 @@
 import { processDueUserAutomations } from "./userAutomations.service.js";
+import { env } from "../config/env.js";
+import { runWithDistributedLease } from "./distributedLease.service.js";
 import {
   markRuntimeCycleError,
   markRuntimeCycleStart,
@@ -9,6 +11,7 @@ import {
 
 let runnerStarted = false;
 let intervalRef = null;
+let initialTimeoutRef = null;
 let running = false;
 const RUNTIME_NAME = "user-automations-runner";
 
@@ -20,15 +23,63 @@ registerRuntime(RUNTIME_NAME, {
   ),
 });
 
+function resolveSchedulerLeaseTtlMs(intervalMs) {
+  return Math.max(
+    30_000,
+    Number(
+      process.env.USER_AUTOMATIONS_RUNNER_SCHEDULER_LOCK_TTL_MS ||
+        intervalMs * 2,
+    ),
+  );
+}
+
 export async function runUserAutomationsCycle(options = {}) {
   if (running) {
     return { ok: true, skipped: true, reason: "already_running" };
   }
 
+  const intervalMs = Math.max(
+    60000,
+    Number(process.env.USER_AUTOMATIONS_RUNNER_MS || 300000),
+  );
+
   running = true;
   markRuntimeCycleStart(RUNTIME_NAME);
   try {
-    const summary = await processDueUserAutomations(options);
+    const summary = await runWithDistributedLease(
+      {
+        key: `runner-scheduler:${RUNTIME_NAME}`,
+        ttlMs: resolveSchedulerLeaseTtlMs(intervalMs),
+        meta: {
+          runner: RUNTIME_NAME,
+          role: env.appRole,
+        },
+        renewLabel: RUNTIME_NAME,
+        onLeaseUnavailable: () => ({
+          ok: true,
+          skipped: true,
+          reason: "lease_not_acquired",
+        }),
+      },
+      async (lease) => {
+        console.log("[user-automations-runner]", {
+          role: env.appRole,
+          runner: RUNTIME_NAME,
+          lockId: lease?.lockId || null,
+          reason: "cycle_started",
+        });
+        return processDueUserAutomations(options);
+      },
+    );
+
+    if (summary?.reason === "lease_not_acquired") {
+      console.log("[user-automations-runner]", {
+        role: env.appRole,
+        runner: RUNTIME_NAME,
+        reason: "lease_not_acquired",
+      });
+    }
+
     markRuntimeCycleSuccess(RUNTIME_NAME, summary);
     return summary;
   } catch (error) {
@@ -59,7 +110,16 @@ export function startUserAutomationsRunner(options = {}) {
     }
   };
 
-  setTimeout(run, 15000);
+  initialTimeoutRef = setTimeout(run, 15000);
   intervalRef = setInterval(run, intervalMs);
   return intervalRef;
+}
+
+export function stopUserAutomationsRunner() {
+  if (initialTimeoutRef) clearTimeout(initialTimeoutRef);
+  if (intervalRef) clearInterval(intervalRef);
+  initialTimeoutRef = null;
+  intervalRef = null;
+  running = false;
+  runnerStarted = false;
 }

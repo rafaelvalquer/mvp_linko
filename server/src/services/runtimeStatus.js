@@ -113,3 +113,7 @@ export function listRuntimeStatuses() {
     .sort((left, right) => left.localeCompare(right))
     .map((name) => getRuntimeStatus(name));
 }
+
+export function clearRuntimeStatuses() {
+  runtimeRegistry.clear();
+}

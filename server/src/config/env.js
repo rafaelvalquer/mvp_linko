@@ -30,8 +30,22 @@ function parseNumber(raw, defaultValue) {
   return Number.isFinite(value) ? value : defaultValue;
 }
 
+export function normalizeAppRole(raw, nodeEnv = process.env.NODE_ENV || "development") {
+  const value = String(raw || "")
+    .trim()
+    .toLowerCase();
+
+  if (["web", "worker", "all"].includes(value)) return value;
+  return nodeEnv === "production" ? "web" : "all";
+}
+
+const appRole = normalizeAppRole(process.env.APP_ROLE, process.env.NODE_ENV);
+
 export const env = {
   nodeEnv: process.env.NODE_ENV || "development",
+  appRole,
+  isWebRole: appRole === "web" || appRole === "all",
+  isWorkerRole: appRole === "worker" || appRole === "all",
   port: Number(process.env.PORT || 8011),
   mongoUri: required("MONGODB_URI", process.env.MONGODB_URI || ""),
   corsOrigin: process.env.CORS_ORIGIN || "http://localhost:5173",

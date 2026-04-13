@@ -3,6 +3,7 @@ import { AppSettings } from "../models/AppSettings.js";
 import Booking from "../models/Booking.js";
 import { MessageLog } from "../models/MessageLog.js";
 import { DEFAULT_AGENDA } from "./agendaSettings.js";
+import { runWithDistributedLease } from "./distributedLease.service.js";
 import { queueOrSendWhatsApp } from "./whatsappOutbox.service.js";
 import {
   canSendWhatsAppBookingReminders,
@@ -14,6 +15,10 @@ const DEFAULT_TIMEZONE = DEFAULT_AGENDA.timezone || "America/Sao_Paulo";
 const MS_IN_HOUR = 36e5;
 const REMINDER_WINDOW_24H = "24h";
 const REMINDER_WINDOW_2H = "2h";
+const BOOKING_REMINDER_LEASE_TTL_MS = Math.max(
+  30_000,
+  Number(process.env.BOOKING_REMINDER_ITEM_LOCK_TTL_MS || 10 * 60 * 1000),
+);
 
 function onlyDigits(value) {
   return String(value || "").replace(/\D+/g, "");
@@ -430,11 +435,30 @@ export async function processAutomaticBookingReminders({
     const trigger = pickBookingReminderTrigger(booking, now);
     if (!trigger) continue;
 
-    const result = await dispatchBookingReminder({
-      booking,
-      kind: trigger.kind,
-      origin,
-    });
+    const result = await runWithDistributedLease(
+      {
+        key: `booking-reminder:${String(booking._id)}:${trigger.kind}`,
+        ttlMs: BOOKING_REMINDER_LEASE_TTL_MS,
+        meta: {
+          bookingId: String(booking._id),
+          workspaceId: String(booking.workspaceId || ""),
+          kind: trigger.kind,
+          runner: "booking-reminders-runner",
+        },
+        renewLabel: "booking-reminder-item",
+        onLeaseUnavailable: () => ({
+          ok: true,
+          status: "SKIPPED",
+          reason: "LEASE_NOT_ACQUIRED",
+        }),
+      },
+      async () =>
+        dispatchBookingReminder({
+          booking,
+          kind: trigger.kind,
+          origin,
+        }),
+    );
 
     summary.items.push({
       bookingId: String(booking._id),

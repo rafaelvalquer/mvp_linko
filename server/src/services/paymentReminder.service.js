@@ -1,5 +1,6 @@
 import { Offer } from "../models/Offer.js";
 import OfferReminderLog from "../models/OfferReminderLog.js";
+import { runWithDistributedLease } from "./distributedLease.service.js";
 import { queueOrSendWhatsApp } from "./whatsappOutbox.service.js";
 import {
   getNotificationFeatureCapability,
@@ -8,6 +9,10 @@ import {
 import { buildOfferPublicUrl } from "./publicUrl.service.js";
 
 const TZ = "America/Sao_Paulo";
+const PAYMENT_REMINDER_LEASE_TTL_MS = Math.max(
+  30_000,
+  Number(process.env.PAYMENT_REMINDER_ITEM_LOCK_TTL_MS || 10 * 60 * 1000),
+);
 
 function onlyDigits(v) {
   return String(v || "").replace(/\D+/g, "");
@@ -682,19 +687,39 @@ export async function processAutomaticPaymentReminders({
     const trigger = pickAutomaticReminderTrigger(offer, now);
     if (!trigger) continue;
 
-    const result = await dispatchPaymentReminder({
-      offer,
-      workspaceId: offer.workspaceId,
-      userId: null,
-      kind: trigger.kind,
-      origin,
-      triggerKey: trigger.triggerKey,
-      meta: {
-        source: "automation",
-        evaluatedAt: formatDateTimeSP(now),
-        dueDate: computeOfferDueDate(offer),
+    const result = await runWithDistributedLease(
+      {
+        key: `payment-reminder:${trigger.triggerKey}`,
+        ttlMs: PAYMENT_REMINDER_LEASE_TTL_MS,
+        meta: {
+          offerId: String(offer._id),
+          workspaceId: String(offer.workspaceId || ""),
+          triggerKey: trigger.triggerKey,
+          kind: trigger.kind,
+          runner: "payment-reminders-runner",
+        },
+        renewLabel: "payment-reminder-item",
+        onLeaseUnavailable: () => ({
+          ok: true,
+          status: "skipped",
+          reason: "LEASE_NOT_ACQUIRED",
+        }),
       },
-    });
+      async () =>
+        dispatchPaymentReminder({
+          offer,
+          workspaceId: offer.workspaceId,
+          userId: null,
+          kind: trigger.kind,
+          origin,
+          triggerKey: trigger.triggerKey,
+          meta: {
+            source: "automation",
+            evaluatedAt: formatDateTimeSP(now),
+            dueDate: computeOfferDueDate(offer),
+          },
+        }),
+    );
 
     summary.items.push({
       offerId: String(offer._id),

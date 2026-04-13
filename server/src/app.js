@@ -25,11 +25,6 @@ import billingStripeRoutes from "./routes/billing.stripe.routes.js";
 import webhooksStripeRoutes from "./routes/webhooks.stripe.routes.js";
 import analyticsRoutes from "./routes/analytics.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
-import { startBookingRemindersRunner } from "./services/booking-reminders.runner.js";
-import { startRecurringOffersRunner } from "./services/recurring-offers.runner.js";
-import { startPaymentRemindersRunner } from "./services/payment-reminders.runner.js";
-import { startUserAutomationsRunner } from "./services/user-automations.runner.js";
-import { startWhatsAppOutboxRunner } from "./services/whatsappOutbox.runner.js";
 
 import path from "path";
 
@@ -43,12 +38,6 @@ function sendLegacyPixGatewayDisabled(res) {
 
 export function createApp() {
   const app = express();
-  const publicOrigin =
-    String(env.corsOrigin || "")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean)[0] || "";
-
   const allowlist = String(env.corsOrigin || "")
     .split(",")
     .map((s) => s.trim())
@@ -122,14 +111,6 @@ export function createApp() {
   app.use("/api", userAutomationsRoutes);
   app.use("/api", billingStripeRoutes);
   app.use("/api", adminRoutes);
-
-  startRecurringOffersRunner({
-    origin: publicOrigin,
-  });
-  startBookingRemindersRunner({ origin: publicOrigin });
-  startPaymentRemindersRunner({ origin: publicOrigin });
-  startUserAutomationsRunner();
-  startWhatsAppOutboxRunner();
 
   app.use("/api", offerRemindersRoutes);
 

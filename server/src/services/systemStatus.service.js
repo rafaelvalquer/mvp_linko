@@ -2,6 +2,7 @@ import os from "node:os";
 import process from "node:process";
 import mongoose from "mongoose";
 
+import { env } from "../config/env.js";
 import { listRuntimeStatuses } from "./runtimeStatus.js";
 import { getWhatsAppGatewayStatus, hasWhatsAppGatewayConfig } from "./waGateway.js";
 
@@ -175,6 +176,7 @@ function getApiServiceStatus() {
     updatedAt: new Date(),
     details: {
       pid: process.pid,
+      role: env.appRole,
       node: process.version,
       platform: process.platform,
       hostname: os.hostname(),
@@ -239,11 +241,15 @@ export async function getSystemServicesStatus() {
     getWhatsAppGatewayServiceStatus(),
   ]);
 
+  const runtimeServices = env.isWorkerRole
+    ? listRuntimeStatuses().map(getRunnerServiceStatus)
+    : [];
+
   const services = [
     getApiServiceStatus(),
     mongo,
     waGateway,
-    ...listRuntimeStatuses().map(getRunnerServiceStatus),
+    ...runtimeServices,
   ];
 
   return services;
@@ -256,6 +262,8 @@ export async function getSystemHealthSnapshot() {
   return {
     ok: true,
     now: new Date().toISOString(),
+    role: env.appRole,
+    runnersExpected: env.isWorkerRole,
     services,
     api: servicesById.api || null,
     mongo: servicesById.mongo || null,

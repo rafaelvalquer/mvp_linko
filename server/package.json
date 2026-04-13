@@ -4,8 +4,12 @@
   "version": "0.1.0",
   "main": "server.js",
   "scripts": {
-    "dev": "node --watch server.js",
-    "start": "node server.js",
+    "dev": "node --watch run-with-role.js all ./server.js",
+    "dev:web": "node --watch run-with-role.js web ./server.js",
+    "dev:worker": "node --watch run-with-role.js worker ./worker.js",
+    "start": "node run-with-role.js web ./server.js",
+    "start:web": "node run-with-role.js web ./server.js",
+    "start:worker": "node run-with-role.js worker ./worker.js",
     "test": "node test/run-tests.js"
   },
   "dependencies": {
